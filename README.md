@@ -111,6 +111,33 @@ This is an active prototype. The codebase is organized into:
 - **datetime.js** - Date/time state management and height calculations
 - **main.js** - Three.js scene setup, rendering loop, user interaction, and navigation logic
 
+### Local Testing
+
+To test changes locally, you need to run a local web server (browsers block some features when opening HTML files directly).
+
+**Option 1: Python (built into macOS/Linux)**
+```bash
+cd circaevum
+python3 -m http.server 8000
+# Then open http://localhost:8000 in your browser
+```
+
+**Option 2: Node.js**
+```bash
+npx serve circaevum
+# Then open the URL shown in terminal
+```
+
+**Option 3: VS Code**
+Install the "Live Server" extension, then right-click `index.html` → "Open with Live Server"
+
+**Option 4: PHP (if installed)**
+```bash
+cd circaevum
+php -S localhost:8000
+# Then open http://localhost:8000 in your browser
+```
+
 ### Version Naming
 
 Versions follow the format `vYY.Q.TT` where:

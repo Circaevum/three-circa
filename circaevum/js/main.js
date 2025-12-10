@@ -263,9 +263,10 @@ function initScene() {
     const currentYearHeight = getHeightForYear(currentYear, 1);
     camera.position.set(0, currentYearHeight + 400, 800);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    // Limit pixel ratio on mobile for better performance (max 2)
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
@@ -376,7 +377,8 @@ function getMarkerColor() {
 // Note: getHeightForYear is now in datetime.js
 
 // Create selection arc to highlight selected time period
-function createSelectionArc(startHeight, endHeight, earthDistance, innerRadiusFactor = 0.8, outerRadiusFactor = 1.2) {
+// currentDateHeight: the height of the current date (for accurate angle calculation)
+function createSelectionArc(startHeight, endHeight, earthDistance, innerRadiusFactor = 0.8, outerRadiusFactor = 1.2, currentDateHeight = null) {
     // Remove old selection arcs
     selectionArcs.forEach(arc => scene.remove(arc));
     selectionArcs = [];
@@ -385,7 +387,9 @@ function createSelectionArc(startHeight, endHeight, earthDistance, innerRadiusFa
     const spanHeight = endHeight - startHeight;
     
     // Calculate Earth's angle at start of selection
-    const startYearsFromCurrent = (startHeight - getHeightForYear(currentYear, 1)) / 100;
+    // Use currentDateHeight if provided, otherwise fall back to year start
+    const referenceHeight = currentDateHeight !== null ? currentDateHeight : getHeightForYear(currentYear, 1);
+    const startYearsFromCurrent = (startHeight - referenceHeight) / 100;
     const startOrbitsFromCurrent = startYearsFromCurrent / earth.orbitalPeriod;
     const startAngleFromCurrent = startOrbitsFromCurrent * Math.PI * 2;
     const startAngle = earth.startAngle - startAngleFromCurrent;
@@ -1054,111 +1058,151 @@ function createQuarterMarkers(earthDistance, config, quarterOffset, passedCurren
 // Month view - radial lines for each week
 function createMonthMarkers(earthDistance, config, monthOffset, currentDateHeight) {
     const spanHeight = config.timeYears * 100; // ~8.33 units for month
-    const weeksInMonth = 4;
+    const dayHeight = ZOOM_LEVELS[8].timeYears * 100; // One day in height units
     
     // Get ACTUAL system time values (not navigation-modified variables)
-    // Markers stay FIXED at system time month - only red highlighting moves with selection
     const now = new Date();
     const actualYear = now.getFullYear();
     const actualMonthInYear = now.getMonth();
     const actualDayOfMonth = now.getDate();
     const actualHourInDay = now.getHours();
-    const actualWeekInMonth = Math.floor((actualDayOfMonth - 1) / 7);
     
     // Get Earth's orbital data
     const earth = PLANET_DATA.find(p => p.name === 'Earth');
-    const timeSpanYears = spanHeight / 100;
-    const orbitsInSpan = timeSpanYears / earth.orbitalPeriod;
     
-    // Calculate the START of the current week (first day at midnight) using ACTUAL system time
-    const dayHeight = ZOOM_LEVELS[8].timeYears * 100; // One day in height units
-    const weekHeight = spanHeight / 4; // Month / 4 weeks
-    const actualCurrentWeekStartHeight = currentDateHeight - ((actualHourInDay / 24) * dayHeight);
+    // Calculate the displayed month
+    const displayedDate = new Date(actualYear, actualMonthInYear + monthOffset, 1);
+    const displayedMonth = displayedDate.getMonth();
+    const displayedYear = displayedDate.getFullYear();
     
-    // Calculate the START of the current month (markers stay fixed)
-    const monthHeight = spanHeight;
-    const monthStartHeight = actualCurrentWeekStartHeight - (actualWeekInMonth * weekHeight) + (monthOffset * monthHeight);
-    
-    // Calculate Earth's angle at START of month
-    const yearsFromCurrentToMonthStart = (monthStartHeight - currentDateHeight) / 100;
-    const orbitsFromCurrentToMonthStart = yearsFromCurrentToMonthStart / earth.orbitalPeriod;
-    const angleFromCurrentToMonthStart = orbitsFromCurrentToMonthStart * Math.PI * 2;
-    const monthStartAngle = earth.startAngle - angleFromCurrentToMonthStart;
-    
-    // Calculate center for label placement
-    const selectedMonthCenterHeight = monthStartHeight + (spanHeight / 2);
-    const yearsFromStartToCenter = (selectedMonthCenterHeight - monthStartHeight) / 100;
-    const orbitsFromStartToCenter = yearsFromStartToCenter / earth.orbitalPeriod;
-    const angleFromStartToCenter = orbitsFromStartToCenter * Math.PI * 2;
-    const selectedMonthCenterAngle = monthStartAngle - angleFromStartToCenter;
-    
-    console.log('Month markers - monthOffset:', monthOffset, 'monthCenterHeight:', selectedMonthCenterHeight);
-    
-    // Calculate which month we're displaying using ACTUAL system month
-    const selectedMonthIndex = (actualMonthInYear + monthOffset + 12) % 12; // Wrap around
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
                       'July', 'August', 'September', 'October', 'November', 'December'];
-    const selectedMonthName = monthNames[selectedMonthIndex];
+    const selectedMonthName = monthNames[displayedMonth];
     
-    // Add month name label at the CENTER of the selected month (bisecting it)
-    const labelHeight = selectedMonthCenterHeight; // Center, not top
-    const labelAngle = selectedMonthCenterAngle; // Center angle
-    createTextLabel(selectedMonthName, labelHeight, earthDistance * 1.4, 5, labelAngle);
+    // Get days in the displayed month
+    const daysInDisplayedMonth = new Date(displayedYear, displayedMonth + 1, 0).getDate();
+    
+    // Calculate the height of the 1st of the displayed month
+    const daysFromToday = Math.floor((displayedDate - now) / (1000 * 60 * 60 * 24));
+    const monthFirstHeight = currentDateHeight + (daysFromToday * dayHeight);
+    
+    // Find all Sundays in and around this month
+    const sundays = [];
+    // Start from the Sunday before the 1st (or the 1st if it's a Sunday)
+    const firstOfMonth = new Date(displayedYear, displayedMonth, 1);
+    const firstSundayOffset = -firstOfMonth.getDay(); // Days to go back to get Sunday
+    
+    // Collect Sundays from before the month starts to after it ends
+    for (let weekNum = -1; weekNum <= 5; weekNum++) {
+        const sundayDay = 1 + firstSundayOffset + (weekNum * 7);
+        const sundayDate = new Date(displayedYear, displayedMonth, sundayDay);
+        
+        // Only include Sundays that fall within our view range
+        if (sundayDay >= -6 && sundayDay <= daysInDisplayedMonth + 7) {
+            sundays.push({
+                date: sundayDate,
+                dayOfMonth: sundayDay,
+                isInMonth: sundayDay >= 1 && sundayDay <= daysInDisplayedMonth
+            });
+        }
+    }
+    
+    // Calculate height for the month center (15th)
+    const monthCenterHeight = monthFirstHeight + (14 * dayHeight); // Roughly middle of month
+    const heightDiffCenter = monthCenterHeight - currentDateHeight;
+    const yearsFromCurrentCenter = heightDiffCenter / 100;
+    const orbitsFromCurrentCenter = yearsFromCurrentCenter / earth.orbitalPeriod;
+    const monthCenterAngle = earth.startAngle - (orbitsFromCurrentCenter * Math.PI * 2);
+    
+    // Add month name label
+    createTextLabel(`${selectedMonthName} ${displayedYear}`, monthCenterHeight, earthDistance * 1.4, 5, monthCenterAngle);
     
     // Add context markers for previous and next month
-    createContextMarkers(earthDistance, config, -1); // Previous month
-    createContextMarkers(earthDistance, config, 1);  // Next month
+    createContextMarkers(earthDistance, config, -1);
+    createContextMarkers(earthDistance, config, 1);
     
-    // Calculate which week is actually at the selected position
-    // currentWeekInMonth is the selected week within the month (0-3)
-    // It's modified directly by navigateUnit() when pressing A/D
-    const displayedWeekIndex = currentWeekInMonth;
+    // Find the currently selected Sunday based on currentWeekInMonth
+    // currentWeekInMonth tracks which week we're in (0, 1, 2, 3, 4...)
+    const selectedSundayIndex = Math.min(currentWeekInMonth, sundays.length - 2);
     
-    // Create selection arcs around the actually selected week
-    const selectionWeekStartHeight = monthStartHeight + (displayedWeekIndex / weeksInMonth) * spanHeight;
-    const selectionWeekEndHeight = monthStartHeight + ((displayedWeekIndex + 1) / weeksInMonth) * spanHeight;
-    const arcInfo = createSelectionArc(selectionWeekStartHeight, selectionWeekEndHeight, earthDistance, 0.8, 1.2);
-    
-    // Create markers for all weeks in the selected month
-    for (let week = 0; week <= weeksInMonth; week++) {
-        const t = week / weeksInMonth;
-        const angle = monthStartAngle - (t * orbitsInSpan * Math.PI * 2);
-        const height = monthStartHeight + (t * spanHeight);
+    // Create selection arcs around the selected week
+    if (selectedSundayIndex >= 0 && selectedSundayIndex < sundays.length - 1) {
+        const selectedWeekStart = sundays[selectedSundayIndex];
+        const selectedWeekEnd = sundays[selectedSundayIndex + 1];
         
-        // Highlight START and END of actually selected week in red
-        const isSelectedWeekStart = (week === displayedWeekIndex);
-        const isSelectedWeekEnd = (week === displayedWeekIndex + 1);
-        const isSelectedWeekBoundary = isSelectedWeekStart || isSelectedWeekEnd;
+        const startHeight = monthFirstHeight + ((selectedWeekStart.dayOfMonth - 1) * dayHeight);
+        const endHeight = monthFirstHeight + ((selectedWeekEnd.dayOfMonth - 1) * dayHeight);
         
-        // For red boundaries, extend from Sun to outer arc
-        const endRadius = isSelectedWeekBoundary ? arcInfo.outerRadius : earthDistance;
+        const arcInfo = createSelectionArc(startHeight, endHeight, earthDistance, 0.8, 1.2, currentDateHeight);
         
-        const points = [
-            0, height, 0,
-            Math.cos(angle) * endRadius, height, Math.sin(angle) * endRadius
-        ];
-        
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-        
-        const material = new THREE.LineBasicMaterial({
-            color: isSelectedWeekBoundary ? 0xFF0000 : getMarkerColor(),
-            transparent: true,
-            opacity: isSelectedWeekBoundary ? 0.9 : 0.6,
-            linewidth: isSelectedWeekBoundary ? 3 : 2
-        });
-        
-        const line = new THREE.Line(geometry, material);
-        scene.add(line);
-        timeMarkers.push(line);
-        
-        // Add label at CENTER of week (bisecting it) rather than at start
-        if (week < weeksInMonth) {
-            const labelT = (week + 0.5) / weeksInMonth; // Center of this week
-            const labelAngle = monthStartAngle - (labelT * orbitsInSpan * Math.PI * 2);
-            const labelHeight = monthStartHeight + (labelT * spanHeight);
-            const weekLabel = `Week ${week + 1}`;
-            createTextLabel(weekLabel, labelHeight, earthDistance * 1.2, 5, labelAngle);
+        // Create markers for each Sunday
+        for (let i = 0; i < sundays.length; i++) {
+            const sunday = sundays[i];
+            const height = monthFirstHeight + ((sunday.dayOfMonth - 1) * dayHeight);
+            
+            // Calculate angle at this height
+            const heightDiff = height - currentDateHeight;
+            const yearsFromCurrent = heightDiff / 100;
+            const orbitsFromCurrent = yearsFromCurrent / earth.orbitalPeriod;
+            const angle = earth.startAngle - (orbitsFromCurrent * Math.PI * 2);
+            
+            // Check if this is a boundary of the selected week
+            const isSelectedWeekStart = (i === selectedSundayIndex);
+            const isSelectedWeekEnd = (i === selectedSundayIndex + 1);
+            const isSelectedWeekBoundary = isSelectedWeekStart || isSelectedWeekEnd;
+            
+            const endRadius = isSelectedWeekBoundary ? arcInfo.outerRadius : earthDistance;
+            
+            const points = [
+                0, height, 0,
+                Math.cos(angle) * endRadius, height, Math.sin(angle) * endRadius
+            ];
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            
+            const material = new THREE.LineBasicMaterial({
+                color: isSelectedWeekBoundary ? 0xFF0000 : getMarkerColor(),
+                transparent: true,
+                opacity: isSelectedWeekBoundary ? 0.9 : 0.6,
+                linewidth: isSelectedWeekBoundary ? 3 : 2
+            });
+            
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            timeMarkers.push(line);
+            
+            // Add week label at the center of each week
+            if (i < sundays.length - 1) {
+                const nextSunday = sundays[i + 1];
+                const weekCenterDay = (sunday.dayOfMonth + nextSunday.dayOfMonth - 1) / 2;
+                const labelHeight = monthFirstHeight + ((weekCenterDay - 1) * dayHeight);
+                
+                const labelHeightDiff = labelHeight - currentDateHeight;
+                const labelYearsFromCurrent = labelHeightDiff / 100;
+                const labelOrbitsFromCurrent = labelYearsFromCurrent / earth.orbitalPeriod;
+                const labelAngle = earth.startAngle - (labelOrbitsFromCurrent * Math.PI * 2);
+                
+                // Show date range (e.g., "8-14" or "Dec 29-Jan 3")
+                const weekStartDate = sunday.date.getDate();
+                const weekEndDate = new Date(nextSunday.date);
+                weekEndDate.setDate(weekEndDate.getDate() - 1); // Saturday
+                const weekEndDay = weekEndDate.getDate();
+                
+                let weekLabel;
+                if (sunday.date.getMonth() === weekEndDate.getMonth()) {
+                    // Same month: just show "8-14"
+                    weekLabel = `${weekStartDate}-${weekEndDay}`;
+                } else {
+                    // Week spans two months: show "Dec 29-Jan 3"
+                    const startMonthShort = monthNames[sunday.date.getMonth()].substring(0, 3);
+                    const endMonthShort = monthNames[weekEndDate.getMonth()].substring(0, 3);
+                    weekLabel = `${startMonthShort} ${weekStartDate}-${endMonthShort} ${weekEndDay}`;
+                }
+                
+                const isSelectedWeek = (i === selectedSundayIndex);
+                createTextLabel(weekLabel, labelHeight, earthDistance * 1.15, 5, labelAngle, isSelectedWeek);
+            }
         }
     }
     
@@ -1570,12 +1614,35 @@ function createWeekMarkers(earthDistance, config, weekOffset, currentDateHeight)
     // Create selection arcs around the actually selected day
     const selectionDayStartHeight = weekStartHeight + (displayedDayIndex / daysInWeek) * spanHeight;
     const selectionDayEndHeight = weekStartHeight + ((displayedDayIndex + 1) / daysInWeek) * spanHeight;
-    const arcInfo = createSelectionArc(selectionDayStartHeight, selectionDayEndHeight, earthDistance, 0.8, 1.2);
+    const arcInfo = createSelectionArc(selectionDayStartHeight, selectionDayEndHeight, earthDistance, 0.8, 1.2, currentDateHeight);
     
     // Calculate which day of the month we're starting at for the SELECTED week
     // Use actual system date to find current week's Sunday, then add week offset
     const actualWeekStartDayOfMonth = actualDayOfMonth - actualDayInWeek; // Sunday of current week
     const weekStartDayOfMonth = actualWeekStartDayOfMonth + (selectedDayOffset * 7); // Sunday of selected week
+    
+    // Get month name for the week - calculate from the selected week's date
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                        'July', 'August', 'September', 'October', 'November', 'December'];
+    const selectedWeekDate = new Date(now);
+    selectedWeekDate.setDate(weekStartDayOfMonth + 3); // Middle of week to get correct month
+    const weekMonthName = monthNames[selectedWeekDate.getMonth()];
+    const weekYear = selectedWeekDate.getFullYear();
+    
+    // Calculate month midpoint height (not week midpoint)
+    // Find the 15th of the current month as the midpoint
+    const monthMidpointDate = new Date(selectedWeekDate.getFullYear(), selectedWeekDate.getMonth(), 15);
+    const daysFromWeekStartToMonthMid = (monthMidpointDate - selectedWeekDate) / (1000 * 60 * 60 * 24);
+    const monthMidHeight = weekStartHeight + (spanHeight / 2) + (daysFromWeekStartToMonthMid / 7) * spanHeight;
+    
+    // Calculate angle at month midpoint
+    const heightDiffFromCurrent = monthMidHeight - currentDateHeight;
+    const yearsFromCurrent = heightDiffFromCurrent / 100;
+    const orbitsFromCurrent = yearsFromCurrent / earth.orbitalPeriod;
+    const monthMidAngle = earth.startAngle - (orbitsFromCurrent * Math.PI * 2);
+    
+    // Add month name label at center of MONTH, outside orbit, using large format
+    createTextLabel(`${weekMonthName} ${weekYear}`, monthMidHeight, earthDistance * 1.45, 7, monthMidAngle, false, true);
     
     // Create markers for all days in the selected week (8 markers = 7 day boundaries)
     for (let day = 0; day <= daysInWeek; day++) {
@@ -1622,19 +1689,14 @@ function createWeekMarkers(earthDistance, config, weekOffset, currentDateHeight)
             const isSelectedDay = (day === displayedDayIndex);
             
             if (isSelectedDay) {
-                // For selected day: show full day name on far side, date on near side
+                // Selected day: full name in RED outside, number in RED inside
                 const fullDayName = dayNamesFull[day];
-                
-                // Day name on opposite side from Earth (far side)
-                const dayNameAngleFar = labelAngle + Math.PI; // 180 degrees opposite
-                createTextLabel(fullDayName, labelHeight, earthDistance * 1.4, 7, dayNameAngleFar, true); // Red color
-                
-                // Day of month on near side (toward Earth)
-                createTextLabel(dayOfMonth.toString(), labelHeight, earthDistance * 0.8, 7, labelAngle, true); // Red color
+                createTextLabel(fullDayName, labelHeight, earthDistance * 1.15, 7, labelAngle, true); // Red, outside
+                createTextLabel(dayOfMonth.toString(), labelHeight, earthDistance * 0.7, 7, labelAngle, true); // Red, inside
             } else {
-                // For other days: show abbreviated day name and date together on near side
-                const dayLabel = `${dayNamesShort[day]} ${dayOfMonth}`;
-                createTextLabel(dayLabel, labelHeight, earthDistance * 0.95, 7, labelAngle);
+                // Other days: abbreviated name outside, number inside
+                createTextLabel(dayNamesShort[day], labelHeight, earthDistance * 1.1, 7, labelAngle); // Outside orbit
+                createTextLabel(dayOfMonth.toString(), labelHeight, earthDistance * 0.75, 7, labelAngle); // Inside orbit
             }
         }
     }
@@ -1946,19 +2008,27 @@ function createRadialTick(height, outerRadius, innerRadius, isMajor, label, zoom
 }
 
 // Create 3D text label (using sprites for simplicity)
-function createTextLabel(text, height, radius, zoomLevel, angle = 0, isRed = false) {
+// isLarge: if true, uses wider canvas and larger scale for month/year labels
+function createTextLabel(text, height, radius, zoomLevel, angle = 0, isRed = false, isLarge = false) {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
-    canvas.width = 512;
-    canvas.height = 128;
+    
+    // Use wider canvas for large labels (like "December 2025")
+    if (isLarge) {
+        canvas.width = 1536; // Extra wide for month names
+        canvas.height = 256;
+    } else {
+        canvas.width = 512;
+        canvas.height = 128;
+    }
     
     // Use red color if specified, otherwise use default
     const textColor = isRed ? 'rgba(255, 0, 0, 0.9)' : (isLightMode ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)');
     context.fillStyle = textColor;
-    context.font = 'bold 60px Orbitron';
+    context.font = isLarge ? 'bold 80px Orbitron' : 'bold 60px Orbitron';
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    context.fillText(text, 256, 64);
+    context.fillText(text, canvas.width / 2, canvas.height / 2);
     
     const texture = new THREE.CanvasTexture(canvas);
     const spriteMaterial = new THREE.SpriteMaterial({ 
@@ -1986,7 +2056,7 @@ function createTextLabel(text, height, radius, zoomLevel, angle = 0, isRed = fal
     } else if (zoomLevel === 6) {
         scale = 15; // Lunar - much smaller (was 60)
     } else if (zoomLevel === 7) {
-        scale = 5; // Week - half size (was 10)
+        scale = isLarge ? 15 : 5; // Week - much larger for month label
     } else {
         scale = 6; // Day
     }
@@ -2074,15 +2144,24 @@ function createWorldline(planetData, timeYears, zoomLevel) {
     const opacity = (isEarth && zoomLevel >= 3) ? 0.9 : SCENE_CONFIG.worldlineOpacity;
     const lineWidth = (isEarth && zoomLevel >= 3) ? 3 : 2;
     
-    // Darken colors for light mode visibility
+    // Adjust colors for light mode visibility - make them more saturated/vibrant
     let worldlineColor = planetData.color;
     if (isLightMode) {
-        // Convert to darker versions for better contrast on white background
-        const darkenFactor = 0.4; // Multiply RGB values by this to darken
-        const r = ((worldlineColor >> 16) & 0xFF) * darkenFactor;
-        const g = ((worldlineColor >> 8) & 0xFF) * darkenFactor;
-        const b = (worldlineColor & 0xFF) * darkenFactor;
-        worldlineColor = (r << 16) | (g << 8) | b;
+        // Increase saturation and slightly darken for better contrast on light background
+        const saturationBoost = 1.3; // Boost saturation
+        const darkenFactor = 0.7; // Slight darkening (was 0.4, too dark)
+        let r = ((worldlineColor >> 16) & 0xFF);
+        let g = ((worldlineColor >> 8) & 0xFF);
+        let b = (worldlineColor & 0xFF);
+        
+        // Find max and boost others relative to it for more saturation
+        const max = Math.max(r, g, b);
+        if (max > 0) {
+            r = Math.min(255, r * saturationBoost * darkenFactor);
+            g = Math.min(255, g * saturationBoost * darkenFactor);
+            b = Math.min(255, b * saturationBoost * darkenFactor);
+        }
+        worldlineColor = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
     }
     
     const material = new THREE.LineBasicMaterial({
@@ -2228,15 +2307,16 @@ function createPlanets(zoomLevel) {
     
     console.log('createPlanets - zoom:', zoomLevel, 'offset:', selectedHeightOffset, 'selectedHeight:', selectedDateHeight, 'currentHeight:', currentDateHeight);
     
+    // Calculate scale factor for all planets based on zoom level
+    let planetScaleFactor = 1.0;
+    if (zoomLevel >= 7) {
+        planetScaleFactor = 0.3; // 30% size for Week and Day views
+    }
+    
     PLANET_DATA.forEach(planetData => {
         // Show all planets at all zoom levels
-        // (previously filtered to only Earth for zoom 4+)
-        
-        // Scale Earth down in Week and Day views so hour markers are visible
-        let planetSize = planetData.size;
-        if (planetData.name === 'Earth' && zoomLevel >= 7) {
-            planetSize = planetData.size * 0.3; // 30% size for Week and Day views
-        }
+        // Scale all planets proportionally at close zoom levels
+        let planetSize = planetData.size * planetScaleFactor;
         
         const geometry = new THREE.SphereGeometry(planetSize, 32, 32);
         const material = new THREE.MeshStandardMaterial({
@@ -2426,10 +2506,26 @@ function initControls() {
     renderer.domElement.addEventListener('mouseleave', () => { isDragging = false; });
 
     document.addEventListener('keydown', (e) => {
+        // Check if user is typing in a text field
+        const activeElement = document.activeElement;
+        const isTyping = activeElement && (
+            activeElement.tagName === 'INPUT' || 
+            activeElement.tagName === 'TEXTAREA' || 
+            activeElement.isContentEditable
+        );
+        
+        // Disable all keyboard shortcuts when typing in form fields
+        if (isTyping) {
+            return;
+        }
+        
+        // Disable WASD navigation on landing page (Zoom 0)
+        const isLandingPage = currentZoom === 0;
+        
         const key = parseInt(e.key);
         if (key >= 0 && key <= 9) {
             setZoomLevel(key);
-        } else if (e.key.toLowerCase() === 'w') {
+        } else if (e.key.toLowerCase() === 'w' && !isLandingPage) {
             // Zoom in (increase zoom level), skip Lunar view (6)
             if (currentZoom < 9) {
                 let nextZoom = currentZoom + 1;
@@ -2439,7 +2535,7 @@ function initControls() {
                 }
                 setZoomLevel(nextZoom);
             }
-        } else if (e.key.toLowerCase() === 's') {
+        } else if (e.key.toLowerCase() === 's' && !isLandingPage) {
             // Zoom out (decrease zoom level), skip Lunar view (6)
             if (currentZoom > 1) {
                 let prevZoom = currentZoom - 1;
@@ -2449,19 +2545,19 @@ function initControls() {
                 }
                 setZoomLevel(prevZoom);
             }
-        } else if (e.key.toLowerCase() === 'a') {
+        } else if (e.key.toLowerCase() === 'a' && !isLandingPage) {
             navigateUnit(-1); // Navigate down one unit (previous week, day, hour, etc.)
-        } else if (e.key.toLowerCase() === 'd') {
+        } else if (e.key.toLowerCase() === 'd' && !isLandingPage) {
             navigateUnit(1); // Navigate up one unit (next week, day, hour, etc.)
-        } else if (e.key.toLowerCase() === 'n') {
+        } else if (e.key.toLowerCase() === 'n' && !isLandingPage) {
             returnToPresent(); // Return selection to current date/time
-        } else if (e.key.toLowerCase() === 'm') {
+        } else if (e.key.toLowerCase() === 'm' && !isLandingPage) {
             toggleMoonWorldline(); // Toggle moon worldline visibility
-        } else if (e.key.toLowerCase() === 't') {
+        } else if (e.key.toLowerCase() === 't' && !isLandingPage) {
             toggleTimeRotation(); // Toggle time axis rotation (horizontal view)
-        } else if (e.key.toLowerCase() === 'r') {
+        } else if (e.key.toLowerCase() === 'r' && !isLandingPage) {
             rotate90Right(); // Rotate system 90 degrees clockwise
-        } else if (e.code === 'Space') {
+        } else if (e.code === 'Space' && !isLandingPage) {
             e.preventDefault(); // Prevent page scroll
             smoothReturnToPresent(); // Smoothly animate back to current time
         }
@@ -2838,15 +2934,15 @@ function navigateUnit(direction) {
             console.log('  Month after:', currentMonth, 'offset:', selectedQuarterOffset);
             break;
             
-        case 5: // Month view - navigate weeks
+        case 5: // Month view - navigate weeks (real calendar weeks, typically 4-5 per month)
             console.log('  Week before:', currentWeekInMonth, 'offset:', selectedWeekOffset);
             currentWeekInMonth += direction;
             
-            // Wrap to adjacent months if needed
+            // Wrap to adjacent months if needed (most months have 4-5 weeks)
             if (currentWeekInMonth < 0) {
                 selectedWeekOffset--;
-                currentWeekInMonth = 3; // Go to last week of previous month
-            } else if (currentWeekInMonth > 3) {
+                currentWeekInMonth = 4; // Go to last week of previous month (could be week 4 or 5)
+            } else if (currentWeekInMonth > 4) {
                 selectedWeekOffset++;
                 currentWeekInMonth = 0; // Go to first week of next month
             }
@@ -3272,29 +3368,68 @@ function animate() {
     renderer.render(scene, camera);
 }
 
+// Check for WebGL support
+function webGLSupported() {
+    try {
+        const canvas = document.createElement('canvas');
+        return !!(window.WebGLRenderingContext && 
+            (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+    } catch(e) {
+        return false;
+    }
+}
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    initScene();
+    const loadingElement = document.getElementById('loading');
+    const loadingText = document.querySelector('.loading-text');
     
-    // Initialize camera distance
-    const config = ZOOM_LEVELS[currentZoom];
-    targetCameraDistance = config.distance;
-    currentCameraDistance = config.distance;
-    
-    // Initialize focus point to current date
-    const currentDateHeight = getHeightForYear(currentYear, 1);
-    focusPoint.y = currentDateHeight;
-    targetFocusPoint.y = currentDateHeight;
-    
-    createPlanets(currentZoom);
-    initControls();
-    updateTimeDisplays(); // Initialize time displays
-    animate();
-    
-    setTimeout(() => {
-        const loadingElement = document.getElementById('loading');
-        if (loadingElement) {
-            loadingElement.style.display = 'none';
+    // Check if Three.js loaded
+    if (typeof THREE === 'undefined') {
+        if (loadingText) {
+            loadingText.textContent = 'Failed to load 3D library. Check your connection.';
         }
-    }, 1500);
+        console.error('Three.js failed to load from CDN');
+        return;
+    }
+    
+    // Check WebGL support
+    if (!webGLSupported()) {
+        if (loadingText) {
+            loadingText.textContent = 'WebGL not supported. Please use a modern browser.';
+        }
+        console.error('WebGL is not supported on this device/browser');
+        return;
+    }
+    
+    try {
+        initScene();
+        
+        // Initialize camera distance
+        const config = ZOOM_LEVELS[currentZoom];
+        targetCameraDistance = config.distance;
+        currentCameraDistance = config.distance;
+        
+        // Initialize focus point to current date
+        const currentDateHeight = getHeightForYear(currentYear, 1);
+        focusPoint.y = currentDateHeight;
+        targetFocusPoint.y = currentDateHeight;
+        
+        createPlanets(currentZoom);
+        initControls();
+        updateTimeDisplays(); // Initialize time displays
+        animate();
+        
+        setTimeout(() => {
+            if (loadingElement) {
+                loadingElement.style.display = 'none';
+            }
+        }, 1500);
+        
+    } catch (error) {
+        console.error('Failed to initialize Circaevum:', error);
+        if (loadingText) {
+            loadingText.textContent = 'Failed to load. Check console for details.';
+        }
+    }
 });

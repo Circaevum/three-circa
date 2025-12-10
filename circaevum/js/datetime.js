@@ -29,8 +29,13 @@ let currentSecond = now.getSeconds(); // 0-59
 // Derived date values
 let currentQuarter = Math.floor(currentMonthInYear / 3); // 0-3 for Q1-Q4
 let currentMonth = currentMonthInYear % 3; // Month within quarter (0-2)
-let currentWeekInMonth = Math.floor((currentDayOfMonth - 1) / 7); // 0-indexed
 let currentDayInWeek = now.getDay(); // 0=Sunday, 6=Saturday
+
+// Calculate which calendar week of the month we're in (based on Sundays)
+// Find the first Sunday of the month (or count from Sunday before the 1st)
+const firstOfMonth = new Date(currentYear, currentMonthInYear, 1);
+const firstSundayOffset = -firstOfMonth.getDay(); // Days to go back to get Sunday (0 if 1st is Sunday)
+let currentWeekInMonth = Math.floor((currentDayOfMonth - 1 - firstSundayOffset) / 7);
 
 // Log initialization
 console.log('Circaevum DateTime initialized:', now.toISOString());
@@ -214,8 +219,12 @@ function refreshCurrentDate() {
     // Recalculate derived values
     currentQuarter = Math.floor(currentMonthInYear / 3);
     currentMonth = currentMonthInYear % 3;
-    currentWeekInMonth = Math.floor((currentDayOfMonth - 1) / 7);
     currentDayInWeek = refreshedNow.getDay();
+    
+    // Calculate which calendar week of the month we're in (based on Sundays)
+    const refreshedFirstOfMonth = new Date(currentYear, currentMonthInYear, 1);
+    const refreshedFirstSundayOffset = -refreshedFirstOfMonth.getDay();
+    currentWeekInMonth = Math.floor((currentDayOfMonth - 1 - refreshedFirstSundayOffset) / 7);
     
     console.log('DateTime refreshed:', refreshedNow.toISOString());
 }
