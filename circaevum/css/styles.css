@@ -551,4 +551,282 @@ h1 {
     margin: 30px 0;
 }
 
+/* ============================================
+   MOBILE RESPONSIVE STYLES
+   ============================================ */
+
+/* Tablet and below (768px and smaller) */
+@media screen and (max-width: 768px) {
+    /* Hide the Orbital Data panel on mobile */
+    .info-panel {
+        display: none !important;
+    }
+    
+    /* Scale down the title block */
+    .title-block {
+        top: 20px;
+        left: 20px;
+    }
+    
+    h1 {
+        font-size: 2rem;
+        letter-spacing: 0.1em;
+    }
+    
+    .subtitle {
+        font-size: 0.75rem;
+        letter-spacing: 0.2em;
+    }
+    
+    /* Adjust toggle controls for mobile */
+    .toggle-controls {
+        top: 15px;
+        right: 15px;
+        gap: 6px;
+    }
+    
+    .toggle-btn {
+        padding: 8px 10px;
+        font-size: 9px;
+        border-radius: 20px;
+    }
+    
+    /* Make zoom slider scrollable on mobile */
+    .controls {
+        bottom: 20px;
+        padding: 6px 12px;
+        max-width: calc(100vw - 30px);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .zoom-slider {
+        flex-wrap: nowrap;
+    }
+    
+    .zoom-option {
+        padding: 5px 10px;
+        min-width: 40px;
+        flex-shrink: 0;
+    }
+    
+    .zoom-number {
+        font-size: 14px;
+    }
+    
+    .zoom-desc {
+        font-size: 7px;
+    }
+    
+    /* Landing page adjustments */
+    .landing-page {
+        padding: 80px 15px 30px 15px;
+    }
+    
+    .landing-hero h1 {
+        font-size: 36px;
+    }
+    
+    .landing-hero .tagline {
+        font-size: 16px;
+        letter-spacing: 2px;
+    }
+    
+    .landing-section {
+        padding: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .landing-section h2 {
+        font-size: 22px;
+    }
+    
+    .landing-section p {
+        font-size: 14px;
+        line-height: 1.6;
+    }
+    
+    .explore-btn {
+        padding: 12px 25px;
+        font-size: 14px;
+    }
+    
+    .registration-form {
+        padding: 20px;
+    }
+    
+    .registration-form::before {
+        font-size: 32px;
+        top: 10px;
+        right: 15px;
+    }
+}
+
+/* Small phones (480px and smaller) */
+@media screen and (max-width: 480px) {
+    /* Further scale down title */
+    .title-block {
+        top: 15px;
+        left: 15px;
+    }
+    
+    h1 {
+        font-size: 1.5rem;
+        letter-spacing: 0.08em;
+    }
+    
+    .subtitle {
+        font-size: 0.65rem;
+        letter-spacing: 0.15em;
+    }
+    
+    /* Stack toggle controls vertically on very small screens */
+    .toggle-controls {
+        flex-direction: column;
+        top: auto;
+        bottom: 90px;
+        right: 10px;
+        gap: 5px;
+    }
+    
+    .toggle-btn {
+        padding: 6px 8px;
+        font-size: 8px;
+    }
+    
+    /* Compact zoom slider even more */
+    .controls {
+        bottom: 15px;
+        padding: 5px 8px;
+    }
+    
+    .zoom-option {
+        padding: 4px 8px;
+        min-width: 35px;
+    }
+    
+    .zoom-number {
+        font-size: 12px;
+    }
+    
+    .zoom-desc {
+        font-size: 6px;
+    }
+    
+    /* Landing page further adjustments */
+    .landing-hero h1 {
+        font-size: 28px;
+    }
+    
+    .landing-hero .tagline {
+        font-size: 14px;
+        letter-spacing: 1px;
+    }
+    
+    .landing-section h2 {
+        font-size: 18px;
+    }
+    
+    .landing-section p {
+        font-size: 13px;
+    }
+    
+    .explore-btn {
+        padding: 10px 20px;
+        font-size: 12px;
+        letter-spacing: 1px;
+    }
+    
+    .submit-btn {
+        padding: 12px;
+        font-size: 14px;
+    }
+    
+    .form-group label {
+        font-size: 12px;
+    }
+    
+    .form-group input,
+    .form-group textarea {
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+}
+
+/* Prevent text selection and improve touch experience */
+@media (hover: none) and (pointer: coarse) {
+    /* Touch device specific styles */
+    body {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+    }
+    
+    /* Larger touch targets for buttons */
+    .zoom-option {
+        min-height: 44px;
+    }
+    
+    .toggle-btn {
+        min-height: 40px;
+    }
+    
+    /* Prevent pull-to-refresh on the canvas */
+    #canvas-container {
+        touch-action: none;
+        overscroll-behavior: none;
+    }
+}
+
+/* Landscape mode on mobile */
+@media screen and (max-height: 480px) and (orientation: landscape) {
+    .title-block {
+        top: 10px;
+        left: 15px;
+    }
+    
+    h1 {
+        font-size: 1.3rem;
+        margin-bottom: 4px;
+    }
+    
+    .subtitle {
+        font-size: 0.6rem;
+    }
+    
+    .toggle-controls {
+        top: 10px;
+        right: 10px;
+        flex-direction: row;
+    }
+    
+    .toggle-btn {
+        padding: 5px 8px;
+        font-size: 8px;
+    }
+    
+    .controls {
+        bottom: 10px;
+        padding: 4px 10px;
+    }
+    
+    .zoom-option {
+        padding: 3px 6px;
+        min-width: 30px;
+    }
+    
+    .zoom-number {
+        font-size: 11px;
+    }
+    
+    .zoom-desc {
+        font-size: 5px;
+    }
+    
+    /* Hide landing page content in landscape mobile */
+    .landing-page {
+        padding: 60px 15px 20px 15px;
+    }
+}
+
 

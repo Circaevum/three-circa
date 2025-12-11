@@ -1692,7 +1692,7 @@ function createWeekMarkers(earthDistance, config, weekOffset, currentDateHeight)
                 // Selected day: full name in RED outside, number in RED inside
                 const fullDayName = dayNamesFull[day];
                 createTextLabel(fullDayName, labelHeight, earthDistance * 1.15, 7, labelAngle, true); // Red, outside
-                createTextLabel(dayOfMonth.toString(), labelHeight, earthDistance * 0.7, 7, labelAngle, true); // Red, inside
+                createTextLabel(dayOfMonth.toString(), labelHeight, earthDistance * 0.75, 7, labelAngle, true); // Red, inside (same radius as white ones)
             } else {
                 // Other days: abbreviated name outside, number inside
                 createTextLabel(dayNamesShort[day], labelHeight, earthDistance * 1.1, 7, labelAngle); // Outside orbit
@@ -2484,6 +2484,7 @@ function createConnectorWorldline(planetData, currentHeight, selectedHeight) {
 }
 
 function initControls() {
+    // Mouse events for desktop
     renderer.domElement.addEventListener('mousedown', (e) => {
         isDragging = true;
         previousMousePosition = { x: e.clientX, y: e.clientY };
@@ -2504,6 +2505,63 @@ function initControls() {
 
     renderer.domElement.addEventListener('mouseup', () => { isDragging = false; });
     renderer.domElement.addEventListener('mouseleave', () => { isDragging = false; });
+    
+    // Touch events for mobile
+    let lastTouchDistance = 0;
+    
+    renderer.domElement.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+            // Single touch - rotate camera
+            isDragging = true;
+            previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        } else if (e.touches.length === 2) {
+            // Two fingers - pinch to zoom
+            isDragging = false;
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
+        }
+        e.preventDefault();
+    }, { passive: false });
+    
+    renderer.domElement.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1 && isDragging) {
+            // Single touch drag - rotate camera
+            const deltaX = e.touches[0].clientX - previousMousePosition.x;
+            const deltaY = e.touches[0].clientY - previousMousePosition.y;
+            
+            cameraRotation.y -= deltaX * 0.005;
+            cameraRotation.x -= deltaY * 0.005;
+            cameraRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraRotation.x));
+            
+            previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        } else if (e.touches.length === 2) {
+            // Pinch to zoom
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (lastTouchDistance > 0) {
+                const zoomFactor = lastTouchDistance / distance;
+                targetCameraDistance *= zoomFactor;
+                // Clamp to reasonable limits
+                const config = ZOOM_LEVELS[currentZoom];
+                targetCameraDistance = Math.max(config.distance * 0.3, Math.min(config.distance * 3, targetCameraDistance));
+            }
+            lastTouchDistance = distance;
+        }
+        e.preventDefault();
+    }, { passive: false });
+    
+    renderer.domElement.addEventListener('touchend', (e) => {
+        isDragging = false;
+        lastTouchDistance = 0;
+    });
+    
+    renderer.domElement.addEventListener('touchcancel', (e) => {
+        isDragging = false;
+        lastTouchDistance = 0;
+    });
 
     document.addEventListener('keydown', (e) => {
         // Check if user is typing in a text field
