@@ -181,7 +181,13 @@
                 </p>
                 
                 <div class="registration-form">
-                    <form id="registration-form">
+                    <form id="registration-form" action="https://formsubmit.co/adam@circaevum.com" method="POST">
+                        <!-- FormSubmit configuration -->
+                        <input type="hidden" name="_subject" value="New Circaevum Interest">
+                        <input type="hidden" name="_captcha" value="true">
+                        <input type="hidden" name="_template" value="table">
+                        <input type="text" name="_honey" style="display:none">
+                        
                         <div class="form-group">
                             <label for="name">Name</label>
                             <input type="text" id="name" name="name" required placeholder="Your name">
@@ -330,18 +336,10 @@
             playAmbientTone(880, 0.08, true);
         }
         
-        // Form submission handler
+        // Form submission handler - plays sound, then allows FormSubmit to handle
         document.getElementById('registration-form').addEventListener('submit', function(e) {
-            e.preventDefault();
             playAmbientTone(660, 0.5, true); // Confirmation tone
-            const formData = {
-                name: document.getElementById('name').value,
-                email: document.getElementById('email').value,
-                interest: document.getElementById('interest').value
-            };
-            console.log('Registration submitted:', formData);
-            alert('Thank you for your interest! We will contact you soon.');
-            this.reset();
+            // Form will be submitted to FormSubmit.co
         });
         
         // Add click sounds to buttons

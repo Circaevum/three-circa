@@ -40,6 +40,9 @@ let showTimeMarkers = true;
 let showMoonWorldline = false; // Toggle for moon worldline
 let moonWorldlines = []; // Store moon worldline meshes
 let selectionArcs = []; // Store selection arc meshes
+let sunMesh = null; // Store sun mesh for position updates
+let sunGlow = null; // Store sun glow for position updates
+let sunLight = null; // Store sun light for position updates
 
 // Function to get current selection offset in height units (universal across all zoom levels)
 function getCurrentSelectionOffset() {
@@ -274,7 +277,7 @@ function initScene() {
 
     // Position sun light at current date height so it illuminates planets
     const currentDateHeight = getHeightForYear(currentYear, 1);
-    const sunLight = new THREE.PointLight(SCENE_CONFIG.sunColor, 3, 5000);
+    sunLight = new THREE.PointLight(SCENE_CONFIG.sunColor, 3, 5000);
     sunLight.position.set(0, currentDateHeight, 0);
     scene.add(sunLight);
 
@@ -285,9 +288,9 @@ function initScene() {
     const sunMaterial = new THREE.MeshBasicMaterial({
         color: SCENE_CONFIG.sunColor
     });
-    const sun = new THREE.Mesh(sunGeometry, sunMaterial);
-    sun.position.set(0, getHeightForYear(currentYear, 1), 0); // Position at current date
-    scene.add(sun);
+    sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+    sunMesh.position.set(0, currentDateHeight, 0); // Position at current date
+    scene.add(sunMesh);
 
     // Add sun glow
     const glowGeometry = new THREE.SphereGeometry(SCENE_CONFIG.sunGlowSize, 32, 32);
@@ -296,8 +299,8 @@ function initScene() {
         transparent: true,
         opacity: 0.3
     });
-    const sunGlow = new THREE.Mesh(glowGeometry, glowMaterial);
-    sunGlow.position.set(0, getHeightForYear(currentYear, 1), 0); // Position at current date
+    sunGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+    sunGlow.position.set(0, currentDateHeight, 0); // Position at current date
     scene.add(sunGlow);
     
     // Create Sun's worldline (vertical line through time)
@@ -571,7 +574,7 @@ function createTimeMarkers(zoomLevel) {
         createMonthMarkers(earthDistance, config, selectedWeekOffset, currentDateHeight);
     } else if (zoomLevel === 6) {
         // Lunar cycle - show moon orbit and weekly markers
-        createLunarCycleMarkers(earthDistance, config);
+        createLunarCycleMarkers(earthDistance, config, selectedLunarOffset, currentDateHeight);
     } else if (zoomLevel === 7) {
         // Week view - show daily radial lines
         // Pass only the WEEK offset (selectedDayOffset), not the day position within week
@@ -1309,10 +1312,14 @@ function createMonthMarkers(earthDistance, config, monthOffset, currentDateHeigh
 }
 
 // Lunar cycle view - show moon's orbit around Earth
-function createLunarCycleMarkers(earthDistance, config) {
-    const currentDateHeight = getHeightForYear(currentYear, 1);
+function createLunarCycleMarkers(earthDistance, config, lunarOffset, passedCurrentDateHeight) {
     const spanHeight = config.timeYears * 100; // ~7.67 units for lunar cycle
-    const startHeight = currentDateHeight - (spanHeight / 2);
+    
+    // Calculate selected lunar cycle position based on offset
+    const lunarHeight = spanHeight; // One lunar cycle height
+    const selectedHeightOffset = lunarOffset * lunarHeight;
+    const selectedDateHeight = passedCurrentDateHeight + selectedHeightOffset;
+    const startHeight = selectedDateHeight - (spanHeight / 2);
     const moonDistance = 15; // Moon distance from Earth
     const lunarPeriod = 0.0767; // ~28 days in years
     const segments = 200;
@@ -1327,7 +1334,7 @@ function createLunarCycleMarkers(earthDistance, config) {
     // Calculate Earth's angles using same method as worldline
     const timeSpanYears = spanHeight / 100;
     const earthOrbitsInSpan = timeSpanYears / earth.orbitalPeriod;
-    const yearsBeforeCurrent = (currentDateHeight - startHeight) / 100;
+    const yearsBeforeCurrent = (selectedDateHeight - startHeight) / 100;
     const earthOrbitsBeforeCurrent = yearsBeforeCurrent / earth.orbitalPeriod;
     const earthAngleBeforeCurrent = earthOrbitsBeforeCurrent * Math.PI * 2;
     const earthStartAngle = earth.startAngle + earthAngleBeforeCurrent;
@@ -2306,6 +2313,17 @@ function createPlanets(zoomLevel) {
     }
     
     console.log('createPlanets - zoom:', zoomLevel, 'offset:', selectedHeightOffset, 'selectedHeight:', selectedDateHeight, 'currentHeight:', currentDateHeight);
+    
+    // Update Sun position to match selected date height
+    if (sunMesh) {
+        sunMesh.position.y = selectedDateHeight;
+    }
+    if (sunGlow) {
+        sunGlow.position.y = selectedDateHeight;
+    }
+    if (sunLight) {
+        sunLight.position.y = selectedDateHeight;
+    }
     
     // Calculate scale factor for all planets based on zoom level
     let planetScaleFactor = 1.0;
