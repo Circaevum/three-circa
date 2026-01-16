@@ -493,9 +493,9 @@ function createTimeMarkers(zoomLevel) {
 
     // Calculate selected position offset (same logic as in createPlanets)
     // For zoom levels 3+ (Year, Quarter, etc.), use precise date; for 1-2 use year start
-    // For Zoom 4, we need to use ACTUAL system date to avoid issues with navigated variables
+    // For Zoom 3 and 4, we need to use ACTUAL system date to avoid issues with navigated variables
     let currentDateHeight;
-    if (zoomLevel === 4) {
+    if (zoomLevel === 3 || zoomLevel === 4) {
         // Calculate actual system date height directly (bypass navigated variables)
         const nowActual = new Date();
         const actualYear = nowActual.getFullYear();
@@ -573,8 +573,9 @@ function createTimeMarkers(zoomLevel) {
         // Sun-centered views (Century, Decade)
         createSunCenteredMarkers(zoomLevel, markers, config);
     } else if (zoomLevel === 3) {
-        // Year view - radial lines from Sun to Earth's orbital position for each month
-        createYearMarkers(earthDistance, config, selectedYearOffset, currentDateHeight);
+        // Year view - show all 4 quarters and all 12 months for the entire year
+        // Quarterly markers at 0.25 (midpoint of first half), Monthly markers at 0.75 (midpoint of second half)
+        createYearQuarterMarkers(earthDistance, config, selectedYearOffset, currentDateHeight);
     } else if (zoomLevel === 4) {
         // Quarter view - show quarterly markers
         createQuarterMarkers(quarterMarkerRadius, earthDistance, config, selectedQuarterOffset, currentDateHeight);
@@ -1004,7 +1005,7 @@ function createYearMarkers(earthDistance, config, yearOffset, currentDateHeight)
 }
 
 // Quarter view - radial lines from Sun to Earth's orbital path for each month
-function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset, passedCurrentDateHeight, skipMonthLabels = false) {
+function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset, passedCurrentDateHeight, skipMonthLabels = false, customQuarterRadius = null, customMonthRadius = null) {
     // Quarter view should show the CURRENT quarter (Q4 for Dec 9)
     // Markers stay FIXED at system time quarter - only red highlighting moves with selection
     
@@ -1104,16 +1105,15 @@ function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     
     // Define radii for quarter view layout
-    // Quarter curve at first third from Sun to Earth
-    const quarterCurveRadius = earthDistance * (1/3); // First third
-    // Month labels at second third from Sun to Earth
+    // Use custom radii if provided (for Zoom 3), otherwise use defaults
+    const quarterCurveRadius = customQuarterRadius !== null ? customQuarterRadius : (earthDistance * (1/3)); // Default: First third
     const monthLabelRadius = earthDistance * (2/3); // Second third
     
     // Text label positions at midway points within their respective thirds
-    // Q1 label at midway point of first third (1/6 from Sun)
-    const quarterLabelRadius = earthDistance * (1/6); // Midway of first third
-    // Month labels at midway point of second third (halfway between 1/3 and 2/3 = 0.5)
-    const monthTextLabelRadius = earthDistance * 0.5; // Midway of second third
+    // Q1 label at midway point of first third (1/6 from Sun) or custom if provided
+    const quarterLabelRadius = customQuarterRadius !== null ? customQuarterRadius : (earthDistance * (1/6)); // Default: Midway of first third
+    // Month labels at midway point of second third (halfway between 1/3 and 2/3 = 0.5) or custom if provided
+    const monthTextLabelRadius = customMonthRadius !== null ? customMonthRadius : (earthDistance * 0.5); // Default: Midway of second third
     
     // Create quarter curve - a ring that follows Earth's orbital path at half radius
     const quarterCurvePoints = [];
@@ -1356,6 +1356,201 @@ function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset
             const line = new THREE.Line(geometry, material);
             scene.add(line);
             timeMarkers.push(line);
+        }
+    }
+}
+
+// Year view (Zoom 3) - create markers for all 4 quarters and all 12 months of the year
+function createYearQuarterMarkers(earthDistance, config, yearOffset, currentDateHeight) {
+    // Get ACTUAL system time values
+    const now = new Date();
+    const actualYear = now.getFullYear();
+    const actualMonthInYear = now.getMonth();
+    const actualDayOfMonth = now.getDate();
+    const actualHourInDay = now.getHours();
+    
+    // Calculate selected year
+    const displayYear = actualYear + yearOffset;
+    
+    // Custom radii: Quarterly at 0.25 (first half), Monthly at 0.75 (second half)
+    const quarterCurveRadius = earthDistance * 0.25; // First half midpoint
+    const monthTextLabelRadius = earthDistance * 0.75; // Second half midpoint
+    const dividingCurveRadius = earthDistance * 0.5; // Dividing curve at 1/2 radius
+    
+    // Year height configuration
+    const yearHeight = 100;
+    const spanHeight = config.timeYears * 100; // Should be 100 for a full year
+    
+    // Get Earth's orbital data
+    const earth = PLANET_DATA.find(p => p.name === 'Earth');
+    const timeSpanYears = spanHeight / 100; // 1 year
+    const orbitsInSpan = timeSpanYears / earth.orbitalPeriod;
+    
+    // Calculate year start height
+    const yearStartHeight = (displayYear - CENTURY_START) * yearHeight;
+    
+    // Calculate Earth's angle at start of year
+    const yearsFromCurrentToYearStart = (yearStartHeight - currentDateHeight) / 100;
+    const orbitsFromCurrentToYearStart = yearsFromCurrentToYearStart / earth.orbitalPeriod;
+    const angleFromCurrentToYearStart = orbitsFromCurrentToYearStart * Math.PI * 2;
+    const yearStartAngle = earth.startAngle - angleFromCurrentToYearStart;
+    
+    // Create dividing curve at 1/2 radius spanning the entire year (separates quarters from months)
+    const curveSegments = 64;
+    const dividingCurvePoints = [];
+    for (let i = 0; i <= curveSegments; i++) {
+        const t = i / curveSegments;
+        const angle = yearStartAngle - (t * orbitsInSpan * Math.PI * 2);
+        const height = yearStartHeight + (t * spanHeight);
+        dividingCurvePoints.push(
+            Math.cos(angle) * dividingCurveRadius, height, Math.sin(angle) * dividingCurveRadius
+        );
+    }
+    const dividingCurveGeometry = new THREE.BufferGeometry();
+    dividingCurveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(dividingCurvePoints, 3));
+    const dividingCurveMaterial = new THREE.LineBasicMaterial({
+        color: getMarkerColor(),
+        transparent: true,
+        opacity: 0.6,
+        linewidth: 2
+    });
+    const dividingCurve = new THREE.Line(dividingCurveGeometry, dividingCurveMaterial);
+    scene.add(dividingCurve);
+    timeMarkers.push(dividingCurve);
+    
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const isLeapYear = (displayYear % 4 === 0 && displayYear % 100 !== 0) || (displayYear % 400 === 0);
+    if (isLeapYear) daysInMonth[1] = 29;
+    
+    // Create quarter labels and boundary lines
+    const quarterHeight = yearHeight / 4; // 25 units per quarter
+    
+    for (let quarter = 0; quarter < 4; quarter++) {
+        const quarterStartMonth = quarter * 3; // Q1=0, Q2=3, Q3=6, Q4=9
+        const quarterStartHeight = yearStartHeight + (quarter * quarterHeight);
+        const quarterT = quarter / 4;
+        const quarterAngle = yearStartAngle - (quarterT * orbitsInSpan * Math.PI * 2);
+        
+        // Add quarter label at center of quarter (at 0.25 radius)
+        const quarterCenterHeight = quarterStartHeight + (quarterHeight / 2);
+        const quarterCenterT = (quarter + 0.5) / 4;
+        const quarterCenterAngle = yearStartAngle - (quarterCenterT * orbitsInSpan * Math.PI * 2);
+        
+        // Determine color: red for current time, blue for selected time
+        const isSystemCurrentQuarter = (quarter === Math.floor(actualMonthInYear / 3) && yearOffset === 0);
+        const isSelectedQuarter = (quarter === Math.floor(currentMonthInYear / 3));
+        const quarterLabelColor = isSystemCurrentQuarter ? 'red' : (isSelectedQuarter && yearOffset === 0 ? 'blue' : false);
+        createTextLabel(`Q${quarter + 1}`, quarterCenterHeight, quarterCurveRadius, 4, quarterCenterAngle, quarterLabelColor, false, 0.85);
+        
+        // Create quarter boundary lines (extend from Sun to dividing curve at 0.5)
+        // Start boundary
+        const quarterStartPoints = [
+            0, quarterStartHeight, 0, // Sun
+            Math.cos(quarterAngle) * dividingCurveRadius, quarterStartHeight, Math.sin(quarterAngle) * dividingCurveRadius
+        ];
+        const quarterStartGeom = new THREE.BufferGeometry();
+        quarterStartGeom.setAttribute('position', new THREE.Float32BufferAttribute(quarterStartPoints, 3));
+        const quarterStartMaterial = new THREE.LineBasicMaterial({
+            color: getMarkerColor(),
+            transparent: true,
+            opacity: 0.8,
+            linewidth: 2
+        });
+        const quarterStartLine = new THREE.Line(quarterStartGeom, quarterStartMaterial);
+        scene.add(quarterStartLine);
+        timeMarkers.push(quarterStartLine);
+        
+        // End boundary (last quarter also needs end of year boundary)
+        if (quarter === 3) {
+            const yearEndAngle = yearStartAngle - orbitsInSpan * Math.PI * 2;
+            const yearEndHeight = yearStartHeight + yearHeight;
+            const yearEndPoints = [
+                0, yearEndHeight, 0, // Sun
+                Math.cos(yearEndAngle) * dividingCurveRadius, yearEndHeight, Math.sin(yearEndAngle) * dividingCurveRadius
+            ];
+            const yearEndGeom = new THREE.BufferGeometry();
+            yearEndGeom.setAttribute('position', new THREE.Float32BufferAttribute(yearEndPoints, 3));
+            const yearEndLine = new THREE.Line(yearEndGeom, quarterStartMaterial);
+            scene.add(yearEndLine);
+            timeMarkers.push(yearEndLine);
+        }
+    }
+    
+    // Create month markers for all 12 months (at 0.75 radius - second half)
+    const monthHeight = yearHeight / 12;
+    
+    for (let month = 0; month <= 12; month++) {
+        let monthStartYear, monthStartMonth, monthStartDay;
+        
+        if (month === 0) {
+            monthStartMonth = 0; // January
+            monthStartYear = displayYear;
+            monthStartDay = 1;
+        } else if (month === 12) {
+            // Start of next year
+            monthStartMonth = 0;
+            monthStartYear = displayYear + 1;
+            monthStartDay = 1;
+        } else {
+            monthStartMonth = month;
+            monthStartYear = displayYear;
+            monthStartDay = 1;
+        }
+        
+        // Calculate exact height using actual date
+        const monthStartHeight = calculateDateHeight(monthStartYear, monthStartMonth, monthStartDay, 0);
+        
+        // Calculate angle based on exact height
+        const yearsFromCurrentToMonthStart = (monthStartHeight - currentDateHeight) / 100;
+        const orbitsFromCurrentToMonthStart = yearsFromCurrentToMonthStart / earth.orbitalPeriod;
+        const angleFromCurrentToMonthStart = orbitsFromCurrentToMonthStart * Math.PI * 2;
+        const angle = earth.startAngle - angleFromCurrentToMonthStart;
+        
+        const height = monthStartHeight;
+        
+        // Check if this is a quarterly boundary (extend from Sun)
+        const isQuarterBoundary = (month % 3 === 0);
+        const startRadius = isQuarterBoundary ? 0 : dividingCurveRadius;
+        
+        // Create line from start radius (Sun for quarter boundaries, or dividing curve at 0.5 for others) to Earth worldline
+        const points = [
+            Math.cos(angle) * startRadius, height, Math.sin(angle) * startRadius,
+            Math.cos(angle) * earthDistance, height, Math.sin(angle) * earthDistance
+        ];
+        
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+        
+        // Check if this is the current or selected month
+        const isSystemCurrentMonth = (month === actualMonthInYear && yearOffset === 0);
+        const isSelectedMonth = (month === currentMonthInYear);
+        const monthBoundaryColor = isSystemCurrentMonth ? 0xFF0000 : (isSelectedMonth ? 0x00FFFF : getMarkerColor());
+        
+        const material = new THREE.LineBasicMaterial({
+            color: monthBoundaryColor,
+            transparent: true,
+            opacity: isSystemCurrentMonth || isSelectedMonth ? 0.9 : 0.7,
+            linewidth: isSystemCurrentMonth || isSelectedMonth ? 3 : 2
+        });
+        
+        const line = new THREE.Line(geometry, material);
+        scene.add(line);
+        timeMarkers.push(line);
+        
+        // Add month label at center of month (skip for month 12 which is next year)
+        if (month < 12) {
+            const labelMonthCenterDay = Math.floor(daysInMonth[month] / 2) + 1;
+            const labelHeight = calculateDateHeight(displayYear, month, labelMonthCenterDay, 12); // Noon of middle day
+            
+            const yearsFromCurrentToLabel = (labelHeight - currentDateHeight) / 100;
+            const orbitsFromCurrentToLabel = yearsFromCurrentToLabel / earth.orbitalPeriod;
+            const angleFromCurrentToLabel = orbitsFromCurrentToLabel * Math.PI * 2;
+            const labelAngle = earth.startAngle - angleFromCurrentToLabel;
+            
+            const actualMonthName = monthNames[month];
+            const monthLabelColor = isSystemCurrentMonth ? 'red' : (isSelectedMonth && yearOffset === 0 ? 'blue' : false);
+            createTextLabel(actualMonthName, labelHeight, monthTextLabelRadius, 4, labelAngle, monthLabelColor, false, 0.85);
         }
     }
 }
@@ -2741,9 +2936,25 @@ function createWorldline(planetData, timeYears, zoomLevel) {
     const config = ZOOM_LEVELS[zoomLevel];
     
     // For zoom levels 3+ use precise current date; for 1-2 use year start
-    const currentDateHeight = (zoomLevel >= 3) 
-        ? calculateCurrentDateHeight() 
-        : getHeightForYear(currentYear, 1);
+    // For Zoom 3 and 4, use ACTUAL system date to avoid issues with navigated variables
+    let currentDateHeight;
+    if (zoomLevel === 3 || zoomLevel === 4) {
+        // Calculate actual system date height directly (bypass navigated variables)
+        const nowActual = new Date();
+        const actualYear = nowActual.getFullYear();
+        const actualMonth = nowActual.getMonth();
+        const actualDay = nowActual.getDate();
+        const actualHour = nowActual.getHours();
+        const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        const isLeap = (actualYear % 4 === 0 && actualYear % 100 !== 0) || (actualYear % 400 === 0);
+        if (isLeap) daysInMonth[1] = 29;
+        const yearProgress = (actualMonth + (actualDay - 1) / daysInMonth[actualMonth] + actualHour / (24 * daysInMonth[actualMonth])) / 12;
+        currentDateHeight = ((actualYear - 2000) * 100) + (yearProgress * 100);
+    } else if (zoomLevel >= 3) {
+        currentDateHeight = calculateCurrentDateHeight();
+    } else {
+        currentDateHeight = getHeightForYear(currentYear, 1);
+    }
     
     // Calculate worldline span based on zoom level
     let startHeight, endHeight;
@@ -2756,11 +2967,15 @@ function createWorldline(planetData, timeYears, zoomLevel) {
         endHeight = getHeightForYear(2030, 1);
     } else if (zoomLevel === 3) { // Year - show full year with current date
         const yearHeight = 100; // 100 units per year
-        // Calculate progress dynamically
+        // Use actual system date for worldlines (not navigated variables)
+        const nowWorldline = new Date();
+        const actualYear = nowWorldline.getFullYear();
+        const actualMonth = nowWorldline.getMonth();
+        const actualDay = nowWorldline.getDate();
         const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-        const isLeapYear = (currentYear % 4 === 0 && currentYear % 100 !== 0) || (currentYear % 400 === 0);
+        const isLeapYear = (actualYear % 4 === 0 && actualYear % 100 !== 0) || (actualYear % 400 === 0);
         if (isLeapYear) daysInMonth[1] = 29;
-        const yearProgress = (currentMonthInYear + currentDayOfMonth / daysInMonth[currentMonthInYear]) / 12;
+        const yearProgress = (actualMonth + (actualDay - 1) / daysInMonth[actualMonth]) / 12;
         startHeight = currentDateHeight - (yearProgress * yearHeight);
         endHeight = startHeight + yearHeight;
     } else { // Higher zooms - show time span around current date
@@ -2864,9 +3079,9 @@ function createPlanets(zoomLevel) {
     
     // The orbital plane is at the current date
     // For zoom levels 3+ (Year, Quarter, etc.), use precise date; for 1-2 use year start
-    // For Zoom 4, we need to use ACTUAL system date to avoid issues with navigated variables
+    // For Zoom 3 and 4, we need to use ACTUAL system date to avoid issues with navigated variables
     let currentDateHeight;
-    if (zoomLevel === 4) {
+    if (zoomLevel === 3 || zoomLevel === 4) {
         // Calculate actual system date height directly (bypass navigated variables)
         const nowActual = new Date();
         const actualYear = nowActual.getFullYear();
@@ -3647,6 +3862,9 @@ function navigateUnit(direction) {
                 currentYear++; // Also update currentYear for calculateCurrentDateHeight()
                 currentMonthInYear = 0; // Go to January of next year
             }
+            
+            // Keep currentMonth in sync for createQuarterMarkers highlighting
+            currentMonth = currentMonthInYear % 3;
             
             console.log('  Month after:', currentMonthInYear, 'year:', currentYear, 'offset:', selectedYearOffset);
             break;
