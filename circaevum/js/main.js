@@ -381,7 +381,7 @@ function getMarkerColor() {
 
 // Create selection arc to highlight selected time period
 // currentDateHeight: the height of the current date (for accurate angle calculation)
-function createSelectionArc(startHeight, endHeight, earthDistance, innerRadiusFactor = 0.8, outerRadiusFactor = 1.2, currentDateHeight = null) {
+function createSelectionArc(startHeight, endHeight, earthDistance, innerRadiusFactor = 0.8, outerRadiusFactor = 1.2, currentDateHeight = null, skipOuterArc = false) {
     // Remove old selection arcs
     selectionArcs.forEach(arc => scene.remove(arc));
     selectionArcs = [];
@@ -429,30 +429,32 @@ function createSelectionArc(startHeight, endHeight, earthDistance, innerRadiusFa
     selectionArcs.push(innerArc);
     timeMarkers.push(innerArc);
     
-    // Create OUTER helical arc (larger radius)
-    const outerRadius = earthDistance * outerRadiusFactor;
-    const outerPoints = [];
-    for (let i = 0; i <= segments; i++) {
-        const t = i / segments;
-        const height = startHeight + (t * spanHeight);
-        const angle = startAngle - (t * angleSpan); // Counter-clockwise
+    // Create OUTER helical arc (larger radius) - skip if requested
+    let outerRadius = earthDistance * outerRadiusFactor;
+    if (!skipOuterArc) {
+        const outerPoints = [];
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const height = startHeight + (t * spanHeight);
+            const angle = startAngle - (t * angleSpan); // Counter-clockwise
+            
+            const x = Math.cos(angle) * outerRadius;
+            const z = Math.sin(angle) * outerRadius;
+            outerPoints.push(x, height, z);
+        }
         
-        const x = Math.cos(angle) * outerRadius;
-        const z = Math.sin(angle) * outerRadius;
-        outerPoints.push(x, height, z);
+        const outerGeom = new THREE.BufferGeometry();
+        outerGeom.setAttribute('position', new THREE.Float32BufferAttribute(outerPoints, 3));
+        const outerArc = new THREE.Line(outerGeom, new THREE.LineBasicMaterial({
+            color: 0xFF0000,
+            transparent: true,
+            opacity: 0.8,
+            linewidth: 4
+        }));
+        scene.add(outerArc);
+        selectionArcs.push(outerArc);
+        timeMarkers.push(outerArc);
     }
-    
-    const outerGeom = new THREE.BufferGeometry();
-    outerGeom.setAttribute('position', new THREE.Float32BufferAttribute(outerPoints, 3));
-    const outerArc = new THREE.Line(outerGeom, new THREE.LineBasicMaterial({
-        color: 0xFF0000,
-        transparent: true,
-        opacity: 0.8,
-        linewidth: 4
-    }));
-    scene.add(outerArc);
-    selectionArcs.push(outerArc);
-    timeMarkers.push(outerArc);
     
     // Return start and end angles and radii for connecting lines
     return {
@@ -643,10 +645,118 @@ function createTimeMarkers(zoomLevel) {
         createLunarCycleMarkers(earthDistance, config, selectedLunarOffset, currentDateHeight);
         // No createMonthMarkers - use only the refined markers from Zoom 4
     } else if (zoomLevel === 7) {
-        // Week view - show only refined quarter markers + weekly markers
+        // Week view - show refined quarter markers + ALL week markers from month view + detailed day markers
         const quarterConfig = ZOOM_LEVELS[4];
         createQuarterMarkers(quarterMarkerRadius, earthDistance, quarterConfig, selectedQuarterOffset, currentDateHeight);
-        createWeekMarkers(weekMarkerRadius, earthDistance, config, selectedDayOffset, currentDateHeight);
+        
+        // Show week markers for ALL weeks in the current month (same as Zoom 5)
+        const weekMarkerRadius = earthDistance * 0.75; // 3/4 - midpoint of first half of 3rd third
+        const weekConfig = ZOOM_LEVELS[7]; // Use Zoom 7 config for week calculations
+        const monthHeight = config.timeYears * 100;
+        const weekHeight = weekConfig.timeYears * 100;
+        const dayHeight = ZOOM_LEVELS[8].timeYears * 100;
+        
+        // Get current month information
+        const now7 = new Date();
+        const actualYear = now7.getFullYear();
+        const actualMonthInYear = now7.getMonth();
+        const actualDayOfMonth = now7.getDate();
+        const actualHourInDay = now7.getHours();
+        const actualDayInWeek = now7.getDay(); // Need to define this for week calculation
+        
+        // Calculate the displayed month based on the selected week (not always current month)
+        // This ensures week markers follow when navigating to different months
+        // In Zoom 7, selectedDayOffset is in days, but we need week offset for createWeekMarkersForMonthView
+        // Calculate week offset from selectedDayOffset: divide by 7 and round to nearest week
+        const weekOffset = Math.round(selectedDayOffset / 7);
+        // Calculate which month the selected week is in
+        const selectedWeekSunday = new Date(now7);
+        selectedWeekSunday.setDate(now7.getDate() - actualDayInWeek); // Go to Sunday of current week
+        selectedWeekSunday.setDate(selectedWeekSunday.getDate() + (weekOffset * 7)); // Add week offset
+        selectedWeekSunday.setHours(0, 0, 0, 0);
+        // Get the month that contains the middle of the selected week (Wednesday)
+        const selectedWeekWednesday = new Date(selectedWeekSunday);
+        selectedWeekWednesday.setDate(selectedWeekSunday.getDate() + 3); // Wednesday of the week
+        const displayedMonth = selectedWeekWednesday.getMonth();
+        const displayedYear = selectedWeekWednesday.getFullYear();
+        
+        // Calculate the height of the 1st of the displayed month
+        const displayedDate = new Date(displayedYear, displayedMonth, 1);
+        const daysFromToday = Math.floor((displayedDate - now7) / (1000 * 60 * 60 * 24));
+        const actualDayStartHeight = currentDateHeight - ((actualHourInDay / 24) * dayHeight);
+        const monthFirstHeight = actualDayStartHeight + (daysFromToday * dayHeight);
+        
+        // Create week markers for all weeks in the month (same as Zoom 5)
+        // Pass weekOffset (in weeks) to createWeekMarkersForMonthView
+        createWeekMarkersForMonthView(weekMarkerRadius, earthDistance, weekConfig, currentDateHeight, 
+            displayedYear, displayedMonth, monthFirstHeight, dayHeight, weekOffset);
+        
+        // Also show detailed day markers for the current week (skip week boundary and label since they're already shown by createWeekMarkersForMonthView)
+        createWeekMarkers(weekMarkerRadius, earthDistance, config, selectedDayOffset, currentDateHeight, true, true, true); // skipMonthLabel=true, skipWeekBoundaryAndLabel=true, skipDaySelectionArc=true
+        
+        // Always show the current day (system time) in RED if it's outside the selected week
+        const actualCurrentDay = new Date(actualYear, actualMonthInYear, actualDayOfMonth);
+        actualCurrentDay.setHours(0, 0, 0, 0);
+        
+        // Calculate the selected week's Sunday to check if current day is within it
+        // Match the calculation used in createWeekMarkers: it multiplies weekOffset by 7
+        // Since we're passing selectedDayOffset (days) but createWeekMarkers expects weeks,
+        // we need to calculate the week start the same way createWeekMarkers does
+        // createWeekMarkers does: go to Sunday of current week, then add (weekOffset * 7) days
+        // So we use weekOffset which is Math.round(selectedDayOffset / 7) in weeks
+        const selectedWeekStartDate = new Date(now7);
+        selectedWeekStartDate.setDate(now7.getDate() - actualDayInWeek); // Go to Sunday of current week
+        selectedWeekStartDate.setDate(selectedWeekStartDate.getDate() + (weekOffset * 7)); // Add week offset (in weeks, converted to days)
+        selectedWeekStartDate.setHours(0, 0, 0, 0);
+        
+        const selectedWeekEndDate = new Date(selectedWeekStartDate);
+        selectedWeekEndDate.setDate(selectedWeekStartDate.getDate() + 6); // Saturday
+        selectedWeekEndDate.setHours(23, 59, 59, 999);
+        
+        // Check if current day is outside the selected week
+        const isCurrentDayInSelectedWeek = (actualCurrentDay >= selectedWeekStartDate && actualCurrentDay <= selectedWeekEndDate);
+        
+        if (!isCurrentDayInSelectedWeek) {
+            // Create a marker for the current day outside the selected week
+            const currentDayHeight = calculateDateHeight(actualYear, actualMonthInYear, actualDayOfMonth, 12); // Noon
+            
+            // Get Earth's orbital data
+            const earth = PLANET_DATA.find(p => p.name === 'Earth');
+            const yearsFromCurrentToDay = (currentDayHeight - currentDateHeight) / 100;
+            const orbitsFromCurrentToDay = yearsFromCurrentToDay / earth.orbitalPeriod;
+            const angleFromCurrentToDay = orbitsFromCurrentToDay * Math.PI * 2;
+            const currentDayAngle = earth.startAngle - angleFromCurrentToDay;
+            
+            // Create a line marker for the current day
+            const dayLineStartRadius = earthDistance * (5/6);
+            const dayLineEndRadius = earthDistance;
+            const points = [
+                Math.cos(currentDayAngle) * dayLineStartRadius, currentDayHeight, Math.sin(currentDayAngle) * dayLineStartRadius,
+                Math.cos(currentDayAngle) * dayLineEndRadius, currentDayHeight, Math.sin(currentDayAngle) * dayLineEndRadius
+            ];
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            const material = new THREE.LineBasicMaterial({
+                color: 0xFF0000, // RED for current time
+                transparent: true,
+                opacity: 0.9,
+                linewidth: 3
+            });
+            
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            timeMarkers.push(line);
+            
+            // Create labels for the current day
+            const dayNamesFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const fullDayName = dayNamesFull[actualDayInWeek];
+            const dayTextRadius = earthDistance * (11/12);
+            
+            createTextLabel(fullDayName, currentDayHeight, weekMarkerRadius * 1.15, 7, currentDayAngle, 'red');
+            createTextLabel(actualDayOfMonth.toString(), currentDayHeight, dayTextRadius, 7, currentDayAngle, 'red');
+        }
+        
         // No createMonthMarkers - use only the refined markers from Zoom 4
     } else if (zoomLevel === 8 || zoomLevel === 9) {
         // Day view (8) and Clock view (9) - show only refined quarter markers + weekly + daily markers
@@ -945,15 +1055,16 @@ function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset
     // Work backwards to start of current quarter using ACTUAL month in quarter
     const currentQuarterStartHeight = currentMonthStartHeight - (actualMonthInQuarter * monthHeight);
     
-    // Markers always show the CURRENT quarter (Q4 for Dec 9)
-    // quarterOffset does NOT shift the markers - only Earth moves (via updateEarthPosition)
-    const selectedQuarterStartHeight = currentQuarterStartHeight; // No offset applied to markers
+    // Calculate which quarter to display based on selected time
+    // Calculate the selected quarter's start height based on quarterOffset
+    const selectedQuarterStartHeight = currentQuarterStartHeight + (quarterOffset * quarterHeight);
     
     // Debug logging
-    console.log('Quarter view - markers at CURRENT quarter, Earth moves via offset');
+    console.log('Quarter view - markers follow selected quarter');
     console.log('  actualCurrentDateHeight:', actualCurrentDateHeight);
     console.log('  currentQuarterStartHeight:', currentQuarterStartHeight);
-    console.log('  quarterOffset (NOT applied to markers):', quarterOffset);
+    console.log('  selectedQuarterStartHeight:', selectedQuarterStartHeight);
+    console.log('  quarterOffset:', quarterOffset);
     
     // Calculate Earth's angle at START of current quarter (not selected)
     const yearsFromCurrentToQuarterStart = (selectedQuarterStartHeight - actualCurrentDateHeight) / 100;
@@ -974,12 +1085,22 @@ function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset
     createContextMarkers(earthDistance, config, -1); // Previous quarter
     createContextMarkers(earthDistance, config, 1);  // Next quarter
     
-    // Always display the ACTUAL SYSTEM quarter (markers don't shift with navigation)
-    const quarterNumber = actualQuarter + 1; // Convert 0-indexed to 1-indexed (Q1-Q4)
-    const displayYear = actualYear;
+    // Calculate which quarter to display based on selected time (quarterOffset + currentMonth)
+    // This ensures quarter and month markers follow when navigating
+    const systemQuarter = Math.floor(actualMonthInYear / 3); // Current quarter (0-3)
+    const selectedQuarter = systemQuarter + quarterOffset; // Selected quarter accounting for navigation
+    const selectedAbsoluteMonth = (selectedQuarter * 3) + currentMonth; // Month within selected quarter (0-2)
     
-    // Calculate starting month of current quarter
-    const quarterStartMonth = (quarterNumber - 1) * 3; // Q1=0, Q2=3, Q3=6, Q4=9
+    // Handle year rollover for quarters outside 0-3
+    const yearAdjust = Math.floor(selectedQuarter / 4);
+    const adjustedQuarter = ((selectedQuarter % 4) + 4) % 4;
+    const adjustedMonth = ((selectedAbsoluteMonth % 12) + 12) % 12;
+    
+    const quarterNumber = adjustedQuarter + 1; // Convert 0-indexed to 1-indexed (Q1-Q4)
+    const displayYear = actualYear + yearAdjust;
+    
+    // Calculate starting month of selected quarter
+    const quarterStartMonth = (adjustedQuarter * 3); // Q1=0, Q2=3, Q3=6, Q4=9
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     
     // Define radii for quarter view layout
@@ -1023,15 +1144,51 @@ function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset
     // Position quarter label at midway point of first third (1/6 from Sun)
     const quarterTextRadius = skipMonthLabels ? markerRadius * 0.35 : quarterLabelRadius;
     // Remove year from quarter label, make text slightly smaller
-    createTextLabel(`Q${quarterNumber}`, quarterLabelHeight, quarterTextRadius, 4, quarterLabelAngle, false, false, 0.85);
+    // Determine color: red for current time, blue for selected time
+    const isSystemCurrentQuarter = (adjustedQuarter === actualQuarter && yearAdjust === 0);
+    const quarterLabelColor = isSystemCurrentQuarter ? 'red' : (quarterOffset !== 0 ? 'blue' : false);
+    createTextLabel(`Q${quarterNumber}`, quarterLabelHeight, quarterTextRadius, 4, quarterLabelAngle, quarterLabelColor, false, 0.85);
     
     // For a quarter (3 months), create month separator lines
     // Lines at quarterly boundaries (start and end of quarter) extend to the Sun
+    // Use actual month start dates to ensure exact positioning (not generic 1/3 divisions)
     for (let month = 0; month <= monthsInQuarter; month++) {
-        const t = month / monthsInQuarter;
-        // Counter-clockwise orbit (negative angle change)
-        const angle = startAngle - (t * orbitsInSpan * Math.PI * 2);
-        const height = startHeight + (t * spanHeight);
+        // Calculate the actual date for the start of this month in the selected quarter
+        let monthStartYear, monthStartMonth, monthStartDay;
+        
+        if (month === 0) {
+            // First month of quarter (e.g., Jan for Q1, Apr for Q2, etc.)
+            monthStartMonth = quarterStartMonth;
+            monthStartYear = displayYear;
+            monthStartDay = 1;
+        } else if (month === monthsInQuarter) {
+            // Month after the quarter ends (start of next quarter)
+            const nextQuarterMonth = quarterStartMonth + 3;
+            if (nextQuarterMonth >= 12) {
+                monthStartMonth = nextQuarterMonth - 12;
+                monthStartYear = displayYear + 1;
+            } else {
+                monthStartMonth = nextQuarterMonth;
+                monthStartYear = displayYear;
+            }
+            monthStartDay = 1;
+        } else {
+            // Month within the quarter (month 1 or 2 of the quarter)
+            monthStartMonth = quarterStartMonth + month;
+            monthStartYear = displayYear;
+            monthStartDay = 1;
+        }
+        
+        // Calculate exact height using actual date (accounts for leap years and actual days per month)
+        const monthStartHeight = calculateDateHeight(monthStartYear, monthStartMonth, monthStartDay, 0);
+        
+        // Calculate angle based on the exact height
+        const yearsFromCurrentToMonthStart = (monthStartHeight - actualCurrentDateHeight) / 100;
+        const orbitsFromCurrentToMonthStart = yearsFromCurrentToMonthStart / earth.orbitalPeriod;
+        const angleFromCurrentToMonthStart = orbitsFromCurrentToMonthStart * Math.PI * 2;
+        const angle = earth.startAngle - angleFromCurrentToMonthStart;
+        
+        const height = monthStartHeight;
         
         // Check if this is a quarterly boundary (start or end of quarter)
         const isQuarterBoundary = (month === 0 || month === monthsInQuarter);
@@ -1048,13 +1205,23 @@ function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
         
-        // Highlight START and END of current month in red
-        const isCurrentMonthStart = (month === currentMonth);
-        const isCurrentMonthEnd = (month === currentMonth + 1);
-        const isCurrentMonthBoundary = isCurrentMonthStart || isCurrentMonthEnd;
+        // Check if this is the actual current month (system time) or selected month (navigation)
+        const actualCurrentMonthInQuarter = actualMonthInYear % 3;
+        const isSystemCurrentMonthStart = (month === actualCurrentMonthInQuarter);
+        const isSystemCurrentMonthEnd = (month === actualCurrentMonthInQuarter + 1);
+        const isSystemCurrentMonthBoundary = isSystemCurrentMonthStart || isSystemCurrentMonthEnd;
+        
+        // Check if this is the selected month (navigation)
+        const isSelectedMonthStart = (month === adjustedMonth % 3);
+        const isSelectedMonthEnd = (month === (adjustedMonth % 3) + 1);
+        const isSelectedMonthBoundary = isSelectedMonthStart || isSelectedMonthEnd;
+        
+        // Highlight: red for current time, blue for selected time
+        const isCurrentMonthBoundary = isSystemCurrentMonthBoundary || isSelectedMonthBoundary;
+        const monthBoundaryColor = isSystemCurrentMonthBoundary ? 0xFF0000 : (isSelectedMonthBoundary ? 0x00FFFF : getMarkerColor());
         
         const material = new THREE.LineBasicMaterial({
-            color: isCurrentMonthBoundary ? 0xFF0000 : getMarkerColor(),
+            color: monthBoundaryColor, // Red for current time, blue for selected time
             transparent: true,
             opacity: isCurrentMonthBoundary ? 0.9 : 0.7,
             linewidth: isCurrentMonthBoundary ? 3 : 2
@@ -1067,13 +1234,34 @@ function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset
         // Add label at CENTER of month (bisecting it) rather than at start
         // Skip month labels if called from higher zoom level
         if (month < monthsInQuarter && !skipMonthLabels) {
-            const labelT = (month + 0.5) / monthsInQuarter; // Center of this month
-            const labelAngle = startAngle - (labelT * orbitsInSpan * Math.PI * 2);
-            const labelHeight = startHeight + (labelT * spanHeight);
-            const actualMonthName = monthNames[quarterStartMonth + month];
+            // Calculate the center of this month using actual dates
+            const labelMonthIndex = quarterStartMonth + month;
+            const labelYear = displayYear;
+            
+            // Get actual days in this month (handles leap years)
+            const daysInLabelMonth = getDaysInMonth(labelYear, labelMonthIndex);
+            const labelMonthCenterDay = Math.floor(daysInLabelMonth / 2) + 1; // Middle of the month
+            
+            // Calculate exact height for center of month
+            const labelHeight = calculateDateHeight(labelYear, labelMonthIndex, labelMonthCenterDay, 12); // Noon of middle day
+            
+            // Calculate angle based on exact height
+            const yearsFromCurrentToLabel = (labelHeight - actualCurrentDateHeight) / 100;
+            const orbitsFromCurrentToLabel = yearsFromCurrentToLabel / earth.orbitalPeriod;
+            const angleFromCurrentToLabel = orbitsFromCurrentToLabel * Math.PI * 2;
+            const labelAngle = earth.startAngle - angleFromCurrentToLabel;
+            
+            const actualMonthName = monthNames[labelMonthIndex];
+            // Check if this is the actual current month (system time) or selected month (navigation)
+            // Calculate the absolute month for this label (0-11)
+            const labelAbsoluteMonth = (adjustedQuarter * 3) + month; // Month 0-11 in the selected quarter/year
+            const isSystemCurrentMonth = (quarterStartMonth + month === actualMonthInYear && yearAdjust === 0);
+            const isSelectedMonth = (labelAbsoluteMonth === adjustedMonth);
             // Position month labels at midway point of second third (halfway between 1/3 and 2/3)
             // Make text slightly smaller
-            createTextLabel(actualMonthName, labelHeight, monthTextLabelRadius, 4, labelAngle, false, false, 0.85);
+            // Determine color: red for current time, blue for selected time
+            const monthLabelColor = isSystemCurrentMonth ? 'red' : (isSelectedMonth ? 'blue' : false);
+            createTextLabel(actualMonthName, labelHeight, monthTextLabelRadius, 4, labelAngle, monthLabelColor, false, 0.85);
         }
     }
     
@@ -1169,36 +1357,6 @@ function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset
             scene.add(line);
             timeMarkers.push(line);
         }
-    }
-    
-    // Add weekly ticks (12 weeks in a quarter)
-    for (let week = 0; week < 12; week++) {
-        const t = week / 12;
-        const angle = startAngle - (t * orbitsInSpan * Math.PI * 2);
-        const height = startHeight + (t * spanHeight);
-        
-        // Shorter tick
-        const tickStart = earthDistance * 0.9;
-        const tickEnd = earthDistance;
-        
-        const points = [
-            Math.cos(angle) * tickStart, height, Math.sin(angle) * tickStart,
-            Math.cos(angle) * tickEnd, height, Math.sin(angle) * tickEnd
-        ];
-        
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-        
-        const material = new THREE.LineBasicMaterial({
-            color: getMarkerColor(),
-            transparent: true,
-            opacity: 0.3,
-            linewidth: 1
-        });
-        
-        const line = new THREE.Line(geometry, material);
-        scene.add(line);
-        timeMarkers.push(line);
     }
 }
 
@@ -1761,7 +1919,7 @@ function createLunarLabel(text, height, x, z) {
 }
 
 // Week view - daily radial markers
-function createWeekMarkers(markerRadius, earthDistance, config, weekOffset, currentDateHeight, skipMonthLabel = false) {
+function createWeekMarkers(markerRadius, earthDistance, config, weekOffset, currentDateHeight, skipMonthLabel = false, skipWeekBoundaryAndLabel = false, skipDaySelectionArc = false) {
     const spanHeight = config.timeYears * 100; // ~1.92 units for week
     const daysInWeek = 7;
     
@@ -1777,13 +1935,22 @@ function createWeekMarkers(markerRadius, earthDistance, config, weekOffset, curr
     const timeSpanYears = spanHeight / 100;
     const orbitsInSpan = timeSpanYears / earth.orbitalPeriod;
     
-    // Calculate the START of the current day (at midnight) using ACTUAL system time
-    const dayHeight = ZOOM_LEVELS[8].timeYears * 100; // One day in height units
-    const actualDayStartHeight = currentDateHeight - ((actualHourInDay / 24) * dayHeight);
+    // Calculate the actual date for the Sunday of the selected week FIRST
+    // Start from current date, go back to Sunday of current week, then add week offset
+    // weekOffset is in weeks (selectedDayOffset represents weeks)
+    const weekStartDate = new Date(now);
+    weekStartDate.setDate(weekStartDate.getDate() - actualDayInWeek); // Go back to Sunday of current week
+    weekStartDate.setDate(weekStartDate.getDate() + (weekOffset * 7)); // Add week offset (convert weeks to days)
+    // Set to midnight to ensure clean day boundaries
+    weekStartDate.setHours(0, 0, 0, 0);
     
-    // Calculate the START of the selected week (accounting for offset)
-    const weekHeight = spanHeight;
-    const weekStartHeight = actualDayStartHeight - (actualDayInWeek * dayHeight) + (weekOffset * weekHeight);
+    // Calculate weekStartHeight directly from the weekStartDate to ensure perfect alignment
+    // Use calculateDateHeight to properly handle year boundaries
+    const weekStartYear = weekStartDate.getFullYear();
+    const weekStartMonth = weekStartDate.getMonth();
+    const weekStartDay = weekStartDate.getDate();
+    const weekStartHour = weekStartDate.getHours();
+    const weekStartHeight = calculateDateHeight(weekStartYear, weekStartMonth, weekStartDay, weekStartHour);
     
     // Calculate Earth's angle at START of selected week
     const yearsFromCurrentToWeekStart = (weekStartHeight - currentDateHeight) / 100;
@@ -1799,27 +1966,28 @@ function createWeekMarkers(markerRadius, earthDistance, config, weekOffset, curr
     // It's modified directly by navigateUnit() when pressing A/D
     const displayedDayIndex = currentDayInWeek;
     
-    // Create selection arcs around the actually selected day
-    const selectionDayStartHeight = weekStartHeight + (displayedDayIndex / daysInWeek) * spanHeight;
-    const selectionDayEndHeight = weekStartHeight + ((displayedDayIndex + 1) / daysInWeek) * spanHeight;
-    const arcInfo = createSelectionArc(selectionDayStartHeight, selectionDayEndHeight, earthDistance, 0.8, 1.2, currentDateHeight);
+    // Create selection arcs around the actually selected day (inner only, no outer lines)
+    // Skip entirely if skipDaySelectionArc is true (e.g., for Zoom 7)
+    if (!skipDaySelectionArc) {
+        const selectionDayStartHeight = weekStartHeight + (displayedDayIndex / daysInWeek) * spanHeight;
+        const selectionDayEndHeight = weekStartHeight + ((displayedDayIndex + 1) / daysInWeek) * spanHeight;
+        const arcInfo = createSelectionArc(selectionDayStartHeight, selectionDayEndHeight, earthDistance, 0.8, 1.2, currentDateHeight, true);
+    }
     
     // Create selection arc for the entire current week (red outline)
-    const weekArcInfo = createSelectionArc(weekStartHeight, weekStartHeight + spanHeight, earthDistance, 0.75, 1.25, currentDateHeight);
-    
-    // Calculate which day of the month we're starting at for the SELECTED week
-    // Use actual system date to find current week's Sunday, then add week offset
-    const actualWeekStartDayOfMonth = actualDayOfMonth - actualDayInWeek; // Sunday of current week
-    const weekStartDayOfMonth = actualWeekStartDayOfMonth + (selectedDayOffset * 7); // Sunday of selected week
+    // Skip if week boundary is already shown by createWeekMarkersForMonthView
+    if (!skipWeekBoundaryAndLabel) {
+        const weekArcInfo = createSelectionArc(weekStartHeight, weekStartHeight + spanHeight, earthDistance, 0.75, 1.25, currentDateHeight);
+    }
     
     // Get month name for the week - calculate from the selected week's date
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
                         'July', 'August', 'September', 'October', 'November', 'December'];
-    // Calculate the actual date for the Sunday of the selected week
-    const weekStartDate = new Date(now);
-    weekStartDate.setDate(weekStartDayOfMonth);
     const selectedWeekDate = new Date(weekStartDate);
     selectedWeekDate.setDate(weekStartDate.getDate() + 3); // Middle of week to get correct month
+    
+    // Calculate week start day of month for label display
+    const weekStartDayOfMonth = weekStartDate.getDate();
     const weekMonthName = monthNames[selectedWeekDate.getMonth()];
     const weekYear = selectedWeekDate.getFullYear();
     
@@ -1841,20 +2009,42 @@ function createWeekMarkers(markerRadius, earthDistance, config, weekOffset, curr
         createTextLabel(`${weekMonthName} ${weekYear}`, monthMidHeight, markerRadius * 0.5, 7, monthMidAngle, false, true);
     }
     
-    // Add week label for current week (e.g., "11-17") at centerpoint of week boundary range (2/3 to 3/3)
-    // Centerpoint = (2/3 + 3/3) / 2 = 5/6
-    const weekTextRadius = earthDistance * (5/6);
-    const weekCenterHeight = weekStartHeight + (spanHeight / 2);
-    const weekCenterHeightDiff = weekCenterHeight - currentDateHeight;
-    const weekCenterYearsFromCurrent = weekCenterHeightDiff / 100;
-    const weekCenterOrbitsFromCurrent = weekCenterYearsFromCurrent / earth.orbitalPeriod;
-    const weekCenterAngle = earth.startAngle - (weekCenterOrbitsFromCurrent * Math.PI * 2);
+        // Add week label for current week (e.g., "11-17") at centerpoint of week boundary range (2/3 to 3/3)
+        // Centerpoint = (2/3 + 3/3) / 2 = 5/6
+        // Skip if week boundary and label are already shown by createWeekMarkersForMonthView
+        if (!skipWeekBoundaryAndLabel) {
+            const weekTextRadius = earthDistance * (5/6);
+            const weekCenterHeight = weekStartHeight + (spanHeight / 2);
+            const weekCenterHeightDiff = weekCenterHeight - currentDateHeight;
+            const weekCenterYearsFromCurrent = weekCenterHeightDiff / 100;
+            const weekCenterOrbitsFromCurrent = weekCenterYearsFromCurrent / earth.orbitalPeriod;
+            const weekCenterAngle = earth.startAngle - (weekCenterOrbitsFromCurrent * Math.PI * 2);
+            
+            // Check if this is the actual current week (system time)
+            const actualCurrentWeekSunday = new Date(now);
+            actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+            actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+            const isSystemCurrentWeek = weekStartDate.getTime() === actualCurrentWeekSunday.getTime();
+            const isSelectedWeek = weekOffset !== 0; // If we've navigated away from current week
+            
+            // Determine label color: red for current time, blue for selected time
+            const weekLabelColor = isSystemCurrentWeek ? 'red' : (isSelectedWeek ? 'blue' : false);
+            
+            // Calculate week label (e.g., "11-17")
+            // Use actual Date objects to handle month boundaries correctly
+            const weekEndDate = new Date(weekStartDate);
+            weekEndDate.setDate(weekStartDate.getDate() + 6); // Saturday of the week
+            const weekStartDay = weekStartDate.getDate();
+            const weekEndDay = weekEndDate.getDate();
+            
+            // Always use day numbers only, no month abbreviations
+            const weekLabelText = `${weekStartDay}-${weekEndDay}`;
+            createTextLabel(weekLabelText, weekCenterHeight, weekTextRadius, 7, weekCenterAngle, weekLabelColor); // Red for current time, blue for selected time
+        }
     
-    // Calculate week label (e.g., "11-17")
-    const weekStartDay = weekStartDayOfMonth;
-    const weekEndDay = weekStartDayOfMonth + 6;
-    const weekLabelText = `${weekStartDay}-${weekEndDay}`;
-    createTextLabel(weekLabelText, weekCenterHeight, weekTextRadius, 7, weekCenterAngle, true); // Red for current week, at centerpoint
+    // Calculate the actual current day (system time) once before the loop
+    const actualCurrentDay = new Date(now);
+    actualCurrentDay.setHours(0, 0, 0, 0);
     
     // Create markers for all days in the selected week (8 markers = 7 day boundaries)
     for (let day = 0; day <= daysInWeek; day++) {
@@ -1862,44 +2052,57 @@ function createWeekMarkers(markerRadius, earthDistance, config, weekOffset, curr
         const angle = weekStartAngle - (t * orbitsInSpan * Math.PI * 2);
         const height = weekStartHeight + (t * spanHeight);
         
-        // Highlight START and END of actually selected day in red
+        // Calculate date for this day
+        const dayDate = new Date(weekStartDate);
+        dayDate.setDate(weekStartDate.getDate() + day);
+        dayDate.setHours(0, 0, 0, 0);
+        const isSystemCurrentDay = dayDate.getTime() === actualCurrentDay.getTime();
+        
+        // Highlight START and END of selected day
         const isSelectedDayStart = (day === displayedDayIndex);
         const isSelectedDayEnd = (day === displayedDayIndex + 1);
         const isSelectedDayBoundary = isSelectedDayStart || isSelectedDayEnd;
         
         // Also highlight week boundaries
         const isWeekBoundary = (day === 0 || day === daysInWeek);
-        const isRedBoundary = isSelectedDayBoundary || isWeekBoundary;
-        
-        // Week boundaries extend from 2/3 to 3/3 (Earth), individual days from 5/6 to 6/6 (Earth)
-        let lineStartRadius, lineEndRadius;
-        if (isWeekBoundary) {
-            // Week boundaries: from 2/3 to 3/3 (Earth)
-            lineStartRadius = earthDistance * (2/3);
-            lineEndRadius = earthDistance; // 3/3 = Earth
+        // Skip week boundary lines if they're already shown by createWeekMarkersForMonthView
+        if (skipWeekBoundaryAndLabel && isWeekBoundary) {
+            // Skip creating week boundary lines - they're already shown
         } else {
-            // Individual day lines: from 5/6 to 6/6 (Earth)
-            lineStartRadius = earthDistance * (5/6);
-            lineEndRadius = earthDistance; // 6/6 = Earth
+            // Determine color: red for current time, blue for selected time
+            const isHighlighted = isSystemCurrentDay || isSelectedDayBoundary || (isWeekBoundary && !skipWeekBoundaryAndLabel);
+            const boundaryColor = isSystemCurrentDay ? 0xFF0000 : (isSelectedDayBoundary ? 0x00FFFF : (isWeekBoundary && !skipWeekBoundaryAndLabel ? 0xFF0000 : getMarkerColor()));
+            
+            // Week boundaries extend from 2/3 to 3/3 (Earth), individual days from 5/6 to 6/6 (Earth)
+            let lineStartRadius, lineEndRadius;
+            if (isWeekBoundary) {
+                // Week boundaries: from 2/3 to 3/3 (Earth)
+                lineStartRadius = earthDistance * (2/3);
+                lineEndRadius = earthDistance; // 3/3 = Earth
+            } else {
+                // Individual day lines: from 5/6 to 6/6 (Earth)
+                lineStartRadius = earthDistance * (5/6);
+                lineEndRadius = earthDistance; // 6/6 = Earth
+            }
+            
+            const points = [
+                Math.cos(angle) * lineStartRadius, height, Math.sin(angle) * lineStartRadius,
+                Math.cos(angle) * lineEndRadius, height, Math.sin(angle) * lineEndRadius
+            ];
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            const material = new THREE.LineBasicMaterial({
+                color: boundaryColor, // Red for current time, blue for selected time
+                transparent: true,
+                opacity: isHighlighted ? 0.9 : 0.6,
+                linewidth: isHighlighted ? 3 : 2
+            });
+            
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            timeMarkers.push(line);
         }
-        
-        const points = [
-            Math.cos(angle) * lineStartRadius, height, Math.sin(angle) * lineStartRadius,
-            Math.cos(angle) * lineEndRadius, height, Math.sin(angle) * lineEndRadius
-        ];
-        
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-        const material = new THREE.LineBasicMaterial({
-            color: isRedBoundary ? 0xFF0000 : getMarkerColor(),
-            transparent: true,
-            opacity: isRedBoundary ? 0.9 : 0.6,
-            linewidth: isRedBoundary ? 3 : 2
-        });
-        
-        const line = new THREE.Line(geometry, material);
-        scene.add(line);
-        timeMarkers.push(line);
         
         // Add labels at CENTER of day (bisecting it) rather than at start
         if (day < daysInWeek) {
@@ -1911,31 +2114,41 @@ function createWeekMarkers(markerRadius, earthDistance, config, weekOffset, curr
             const dayNamesFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             
             // Calculate the actual date for this day in the week
-            const dayDate = new Date(weekStartDate);
-            dayDate.setDate(weekStartDate.getDate() + day);
-            const dayOfMonth = dayDate.getDate(); // Get actual day of month (handles month boundaries correctly)
+            const dayDateForLabel = new Date(weekStartDate);
+            dayDateForLabel.setDate(weekStartDate.getDate() + day);
+            dayDateForLabel.setHours(0, 0, 0, 0);
+            const dayOfMonth = dayDateForLabel.getDate(); // Get actual day of month (handles month boundaries correctly)
+            
+            // Check if this is the actual current day (system time) - reuse actualCurrentDay from above
+            const isSystemCurrentDayForLabel = dayDateForLabel.getTime() === actualCurrentDay.getTime();
             
             const isSelectedDay = (day === displayedDayIndex);
             
-            // Day text labels positioned at centerpoint of day line range (5/6 to 6/6)
-            // Centerpoint = (5/6 + 6/6) / 2 = 11/12
-            const dayTextRadius = earthDistance * (11/12);
-            
-            if (isSelectedDay) {
-                // Selected day: full name in RED outside, number in RED at centerpoint
+            // Current day (system time) ALWAYS shows in RED with full name and number, regardless of selection
+            if (isSystemCurrentDayForLabel) {
+                // Current day: always show full name and number in RED
                 const fullDayName = dayNamesFull[day];
-                createTextLabel(fullDayName, labelHeight, markerRadius * 1.15, 7, labelAngle, true); // Red, outside
-                createTextLabel(dayOfMonth.toString(), labelHeight, dayTextRadius, 7, labelAngle, true); // Red, at centerpoint
+                const dayTextRadius = earthDistance * (11/12);
+                createTextLabel(fullDayName, labelHeight, markerRadius * 1.15, 7, labelAngle, 'red'); // Always RED for current time
+                createTextLabel(dayOfMonth.toString(), labelHeight, dayTextRadius, 7, labelAngle, 'red'); // Always RED for current time
+            } else if (isSelectedDay) {
+                // Selected day (but not current): full name and number in blue
+                const fullDayName = dayNamesFull[day];
+                const dayTextRadius = earthDistance * (11/12);
+                createTextLabel(fullDayName, labelHeight, markerRadius * 1.15, 7, labelAngle, 'blue'); // Blue for selected time
+                createTextLabel(dayOfMonth.toString(), labelHeight, dayTextRadius, 7, labelAngle, 'blue'); // Blue for selected time
             } else {
                 // Other days: abbreviated name outside, number at centerpoint
-                createTextLabel(dayNamesShort[day], labelHeight, markerRadius * 1.1, 7, labelAngle); // Outside orbit
+                const dayTextRadius = earthDistance * (11/12);
+                createTextLabel(dayNamesShort[day], labelHeight, markerRadius * 1.15, 7, labelAngle); // Outside orbit (same position as full day name)
                 createTextLabel(dayOfMonth.toString(), labelHeight, dayTextRadius, 7, labelAngle); // At centerpoint
             }
         }
     }
     
     // Create ghost markers at actual current week if offset
-    if (weekOffset !== 0) {
+    // Skip ghost week boundaries if they're already shown by createWeekMarkersForMonthView
+    if (weekOffset !== 0 && !skipWeekBoundaryAndLabel) {
         const ghostStartHeight = currentDateHeight - (spanHeight / 2);
         const ghostYearsFromStart = (currentDateHeight - ghostStartHeight) / 100;
         const ghostOrbitsFromStart = ghostYearsFromStart / earth.orbitalPeriod;
@@ -2042,16 +2255,53 @@ function createWeekMarkersForMonthView(markerRadius, earthDistance, config, curr
         }
     }
     
+    // Calculate the actual current week's Sunday (system time)
+    const actualCurrentWeekSunday = new Date(now);
+    actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+    actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+    
+    // Calculate the selected week's Sunday based on selectedWeekOffset (week offset from current)
+    // selectedWeekOffset is in weeks, so multiply by 7 to get days
+    const selectedWeekSunday = new Date(actualCurrentWeekSunday);
+    selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedWeekOffset * 7));
+    selectedWeekSunday.setHours(0, 0, 0, 0);
+    
+    // Check if selected week is already in the weeks array
+    const selectedWeekInArray = weeks.some(w => {
+        w.setHours(0, 0, 0, 0);
+        return w.getTime() === selectedWeekSunday.getTime();
+    });
+    
+    // Add selected week if it's not already included
+    if (!selectedWeekInArray) {
+        weeks.push(new Date(selectedWeekSunday));
+    }
+    
+    // Sort weeks by date to maintain order
+    weeks.sort((a, b) => a.getTime() - b.getTime());
+    
     // Create markers for each week
     weeks.forEach((weekSunday) => {
-        // Calculate if this is the current week
-        const isCurrentWeek = isCurrentMonth && 
-            weekSunday.getDate() === actualWeekStartDayOfMonth && 
-            weekSunday.getMonth() === actualMonthInYear;
+        // Normalize weekSunday to midnight for accurate comparison
+        const normalizedWeekSunday = new Date(weekSunday);
+        normalizedWeekSunday.setHours(0, 0, 0, 0);
         
-        // Calculate week start height
-        const daysFromMonthStart = (weekSunday.getTime() - firstOfMonth.getTime()) / (1000 * 60 * 60 * 24);
-        const weekStartHeight = monthFirstHeight + (daysFromMonthStart * dayHeight);
+        // Calculate if this is the current week (system time) - must match exactly
+        const isSystemCurrentWeek = normalizedWeekSunday.getTime() === actualCurrentWeekSunday.getTime();
+        
+        // Check if this is the selected week (navigation) - must match exactly
+        const isSelectedWeek = normalizedWeekSunday.getTime() === selectedWeekSunday.getTime();
+        
+        // Determine color: red for current time, blue for selected time (if different from current)
+        const weekColor = isSystemCurrentWeek ? 0xFF0000 : (isSelectedWeek ? 0x00FFFF : getMarkerColor());
+        const weekLabelColor = isSystemCurrentWeek ? 'red' : (isSelectedWeek ? 'blue' : false);
+        
+        // Calculate week start height - always use calculateDateHeight for accuracy
+        // This ensures proper alignment regardless of month boundaries
+        const weekSundayYear = weekSunday.getFullYear();
+        const weekSundayMonth = weekSunday.getMonth();
+        const weekSundayDay = weekSunday.getDate();
+        const weekStartHeight = calculateDateHeight(weekSundayYear, weekSundayMonth, weekSundayDay, 0);
         
         // Calculate Earth's angle at start of week
         const yearsFromCurrentToWeekStart = (weekStartHeight - currentDateHeight) / 100;
@@ -2060,9 +2310,9 @@ function createWeekMarkersForMonthView(markerRadius, earthDistance, config, curr
         const weekStartAngle = earth.startAngle - angleFromCurrentToWeekStart;
         
         // Week boundary lines: extend from 2/3 to 3/3 (Earth)
-        const weekBoundaryStart = orbitRadius * (2/3);
-        const weekBoundaryEnd = orbitRadius; // Earth (3/3)
-        const weekOuterCurveRadius = orbitRadius * (5/6); // Outer curve at 5/6
+        const weekBoundaryStart = earthDistance * (2/3);
+        const weekBoundaryEnd = earthDistance; // Earth (3/3)
+        const weekOuterCurveRadius = earthDistance * (5/6); // Outer curve at 5/6
         
         // Create lines for start and end of week
         for (let day = 0; day <= daysInWeek; day += daysInWeek) { // Only start (0) and end (7)
@@ -2079,10 +2329,10 @@ function createWeekMarkersForMonthView(markerRadius, earthDistance, config, curr
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
             
             const material = new THREE.LineBasicMaterial({
-                color: isCurrentWeek ? 0xFF0000 : getMarkerColor(), // Red for current week, white for others
+                color: weekColor, // Red for current time, blue for selected time, white for others
                 transparent: true,
-                opacity: isCurrentWeek ? 0.9 : 0.6,
-                linewidth: isCurrentWeek ? 3 : 2
+                opacity: (isSystemCurrentWeek || isSelectedWeek) ? 0.9 : 0.6,
+                linewidth: (isSystemCurrentWeek || isSelectedWeek) ? 3 : 2
             });
             
             const line = new THREE.Line(geometry, material);
@@ -2104,32 +2354,36 @@ function createWeekMarkersForMonthView(markerRadius, earthDistance, config, curr
         const weekCurveGeometry = new THREE.BufferGeometry();
         weekCurveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(weekCurvePoints, 3));
         const weekCurveMaterial = new THREE.LineBasicMaterial({
-            color: isCurrentWeek ? 0xFF0000 : getMarkerColor(),
+            color: weekColor, // Red for current time, blue for selected time, white for others
             transparent: true,
-            opacity: isCurrentWeek ? 0.9 : 0.6,
+            opacity: (isSystemCurrentWeek || isSelectedWeek) ? 0.9 : 0.6,
             linewidth: 2
         });
         const weekCurve = new THREE.Line(weekCurveGeometry, weekCurveMaterial);
         scene.add(weekCurve);
         timeMarkers.push(weekCurve);
         
-        // Add week label (e.g., "11-17") at centerpoint of week boundary range (2/3 to 3/3)
-        // Centerpoint = (2/3 + 3/3) / 2 = 5/6
-        const weekTextRadius = orbitRadius * (5/6);
+        // Add week label (e.g., "11-17") centered between outer month curve (2/3) and outer week curve (5/6)
+        // Center = (2/3 + 5/6) / 2 = (4/6 + 5/6) / 2 = 9/12 = 3/4
+        const outerMonthCurveRadius = earthDistance * (2/3);
+        const outerWeekCurveRadius = earthDistance * (5/6);
+        const weekTextRadius = (outerMonthCurveRadius + outerWeekCurveRadius) / 2; // 3/4
         const weekCenterHeight = weekStartHeight + (spanHeight / 2);
         const weekCenterHeightDiff = weekCenterHeight - currentDateHeight;
         const weekCenterYearsFromCurrent = weekCenterHeightDiff / 100;
         const weekCenterOrbitsFromCurrent = weekCenterYearsFromCurrent / earth.orbitalPeriod;
         const weekCenterAngle = earth.startAngle - (weekCenterOrbitsFromCurrent * Math.PI * 2);
         
-        // Calculate week label (e.g., "11-17")
+        // Calculate week label - always use day numbers only (e.g., "11-17" or "28-3")
         const weekStartDay = weekSunday.getDate();
         const weekEndDate = new Date(weekSunday);
         weekEndDate.setDate(weekSunday.getDate() + 6);
         const weekEndDay = weekEndDate.getDate();
+        
+        // Always use day numbers only, no month abbreviations
         const weekLabelText = `${weekStartDay}-${weekEndDay}`;
         
-        createTextLabel(weekLabelText, weekCenterHeight, weekTextRadius, 5, weekCenterAngle, isCurrentWeek); // Red for current week, white for others
+        createTextLabel(weekLabelText, weekCenterHeight, weekTextRadius, 5, weekCenterAngle, weekLabelColor); // Red for current time, blue for selected time, white for others
     });
 }
 
@@ -2407,7 +2661,8 @@ function createRadialTick(height, outerRadius, innerRadius, isMajor, label, zoom
 // Create 3D text label (using sprites for simplicity)
 // isLarge: if true, uses wider canvas and larger scale for month/year labels
 // sizeMultiplier: optional multiplier for text size (e.g., 0.5 for half size)
-function createTextLabel(text, height, radius, zoomLevel, angle = 0, isRed = false, isLarge = false, sizeMultiplier = 1.0) {
+// colorType: 'red' for current time, 'blue' for selected time, false/undefined for default
+function createTextLabel(text, height, radius, zoomLevel, angle = 0, colorType = false, isLarge = false, sizeMultiplier = 1.0) {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     
@@ -2420,8 +2675,15 @@ function createTextLabel(text, height, radius, zoomLevel, angle = 0, isRed = fal
         canvas.height = 128;
     }
     
-    // Use red color if specified, otherwise use default
-    const textColor = isRed ? 'rgba(255, 0, 0, 0.9)' : (isLightMode ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)');
+    // Use color based on colorType: 'red' for current time, 'blue' for selected time, false for default
+    let textColor;
+    if (colorType === true || colorType === 'red') {
+        textColor = 'rgba(255, 0, 0, 0.9)'; // Red for current time
+    } else if (colorType === 'blue') {
+        textColor = 'rgba(0, 255, 255, 0.9)'; // Cyan/blue for selected time (matches connector worldline)
+    } else {
+        textColor = isLightMode ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)'; // Default
+    }
     context.fillStyle = textColor;
     // Apply size multiplier to font size
     const baseFontSize = isLarge ? 80 : 60;
