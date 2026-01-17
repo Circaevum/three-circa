@@ -3406,13 +3406,11 @@ function createPlanets(zoomLevel) {
         const planet = new THREE.Mesh(geometry, material);
         
         // Calculate angle at selected height based on orbital motion
-        let planetAngle = planetData.startAngle;
-        if (selectedHeightOffset !== 0) {
-            const yearsOffset = selectedHeightOffset / 100;
-            const orbitsOffset = yearsOffset / planetData.orbitalPeriod;
-            const angleOffset = orbitsOffset * Math.PI * 2;
-            planetAngle = planetData.startAngle - angleOffset; // Counter-clockwise
-        }
+        // Use the same calculation method as time markers: calculate from currentDateHeight to selectedDateHeight
+        const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
+        const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / planetData.orbitalPeriod;
+        const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
+        const planetAngle = planetData.startAngle - angleFromCurrentToSelected; // Counter-clockwise
         
         // Position planet at selected date height
         planet.position.x = Math.cos(planetAngle) * planetData.distance;
