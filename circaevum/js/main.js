@@ -87,7 +87,124 @@ function getCurrentSelectionOffset() {
     return offset;
 }
 
+// Function to convert a selected date to a specific zoom level's offset system
+// This maintains selected time when switching between zoom levels
+function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
+    const now = new Date();
+    const actualYear = now.getFullYear();
+    const actualMonth = now.getMonth();
+    const actualDayInWeek = now.getDay();
+    const actualHour = now.getHours();
+    
+    const selectedYear = selectedDate.getFullYear();
+    const selectedMonth = selectedDate.getMonth();
+    const selectedDay = selectedDate.getDate();
+    const selectedDayOfWeek = selectedDate.getDay();
+    const selectedHour = selectedDate.getHours();
+    
+    switch(targetZoomLevel) {
+        case 1: // Century view
+            currentYear = selectedYear - (selectedYear % 25); // Round to nearest 25-year boundary
+            break;
+            
+        case 2: // Decade view
+            currentYear = selectedYear;
+            const decadeStart = selectedYear - (selectedYear % 10);
+            selectedDecadeOffset = Math.floor((selectedYear - decadeStart) / 10);
+            break;
+            
+        case 3: // Year view - navigate by quarters
+            selectedYearOffset = selectedYear - actualYear;
+            // Calculate which quarter the selected month is in
+            currentQuarter = Math.floor(selectedMonth / 3);
+            currentMonthInYear = selectedMonth; // Full month index (0-11)
+            currentMonth = selectedMonth % 3; // Month within quarter (0-2)
+            break;
+            
+        case 4: // Quarter view - navigate by months
+            // Calculate selected quarter
+            const systemQuarter = Math.floor(actualMonth / 3);
+            const selectedQuarter = Math.floor(selectedMonth / 3);
+            const selectedQuarterYear = selectedYear;
+            const systemQuarterYear = actualYear;
+            
+            // Calculate quarter offset (quarters since system quarter)
+            const totalSystemQuarters = systemQuarterYear * 4 + systemQuarter;
+            const totalSelectedQuarters = selectedQuarterYear * 4 + selectedQuarter;
+            selectedQuarterOffset = totalSelectedQuarters - totalSystemQuarters;
+            
+            // Calculate month within quarter (0-2)
+            currentMonth = selectedMonth % 3;
+            break;
+            
+        case 5: // Month view - navigate by weeks
+            // Calculate month offset (months since system month)
+            const totalSystemMonths = actualYear * 12 + actualMonth;
+            const totalSelectedMonths = selectedYear * 12 + selectedMonth;
+            selectedWeekOffset = totalSelectedMonths - totalSystemMonths;
+            
+            // Calculate which week in the month the selected day is in
+            // Find the first Sunday of the month (or before it)
+            const firstOfMonth = new Date(selectedYear, selectedMonth, 1);
+            const firstSundayOffset = -firstOfMonth.getDay();
+            const firstSunday = new Date(selectedYear, selectedMonth, 1 + firstSundayOffset);
+            
+            // Calculate how many weeks from first Sunday to selected day
+            const daysFromFirstSunday = Math.floor((selectedDate - firstSunday) / (1000 * 60 * 60 * 24));
+            currentWeekInMonth = Math.floor(daysFromFirstSunday / 7);
+            // Clamp to reasonable range (0-5)
+            currentWeekInMonth = Math.max(0, Math.min(5, currentWeekInMonth));
+            
+            // Calculate day within week
+            currentDayInWeek = selectedDayOfWeek;
+            break;
+            
+        case 6: // Lunar view
+            // Similar to month view but with lunar cycles
+            const lunarCycleLength = 29.5; // days
+            const daysSinceSystem = (selectedDate - now) / (1000 * 60 * 60 * 24);
+            selectedLunarOffset = Math.floor(daysSinceSystem / lunarCycleLength);
+            currentWeekInMonth = Math.floor((daysSinceSystem % lunarCycleLength) / 7);
+            break;
+            
+        case 7: // Week view - navigate by days
+            // Calculate week offset (weeks since system week)
+            const currentSunday = new Date(now);
+            currentSunday.setDate(now.getDate() - actualDayInWeek);
+            currentSunday.setHours(0, 0, 0, 0);
+            
+            const selectedSunday = new Date(selectedDate);
+            selectedSunday.setDate(selectedDate.getDate() - selectedDayOfWeek);
+            selectedSunday.setHours(0, 0, 0, 0);
+            
+            const daysBetween = Math.floor((selectedSunday - currentSunday) / (1000 * 60 * 60 * 24));
+            selectedDayOffset = Math.floor(daysBetween / 7);
+            
+            // Day within week (0-6, where 0 is Sunday)
+            currentDayInWeek = selectedDayOfWeek;
+            currentHourInDay = selectedHour;
+            break;
+            
+        case 8: // Day view
+        case 9: // Clock view
+            // Calculate day offset
+            const currentMidnight = new Date(now);
+            currentMidnight.setHours(0, 0, 0, 0);
+            const selectedMidnight = new Date(selectedDate);
+            selectedMidnight.setHours(0, 0, 0, 0);
+            
+            const daysOffset = Math.floor((selectedMidnight - currentMidnight) / (1000 * 60 * 60 * 24));
+            const dayHeight = ZOOM_LEVELS[8].timeYears * 100;
+            selectedHourOffset = Math.floor((daysOffset * 24 * (100 / 365)) / (dayHeight / 100));
+            
+            // Hour within day
+            currentHourInDay = selectedHour;
+            break;
+    }
+}
+
 // Function to apply a height offset to all zoom level variables
+// (Kept for backward compatibility, but prefer applySelectedDateToZoomLevel)
 function applyOffsetToAllZoomLevels(heightOffset) {
     // Reset all navigation variables to match this height offset
     // This is approximate - we're converting a single height to all the different unit systems
@@ -184,11 +301,22 @@ function getSelectedDateTime() {
             break;
             
         case 5: // Month view - selectedWeekOffset + currentWeekInMonth + currentDayInWeek
-            selected.setMonth(selected.getMonth() + selectedWeekOffset);
-            // Calculate day based on week position
-            const weekDiff5 = currentWeekInMonth - Math.floor((now.getDate() - 1) / 7);
-            const dayDiff5 = currentDayInWeek - actualDayInWeek;
-            selected.setDate(selected.getDate() + (weekDiff5 * 7) + dayDiff5);
+            // First, move to the selected month
+            const targetMonth = actualMonth + selectedWeekOffset;
+            const targetYear = actualYear + Math.floor(targetMonth / 12);
+            const targetMonthIndex = ((targetMonth % 12) + 12) % 12;
+            selected.setFullYear(targetYear);
+            selected.setMonth(targetMonthIndex);
+            
+            // Now calculate the specific week and day within that month
+            // Find the first Sunday of the selected month (or before it)
+            const firstOfSelectedMonth = new Date(targetYear, targetMonthIndex, 1);
+            const firstSundayOffset = -firstOfSelectedMonth.getDay();
+            const firstSunday = new Date(targetYear, targetMonthIndex, 1 + firstSundayOffset);
+            
+            // Add weeks and days from the first Sunday
+            const daysToAdd = (currentWeekInMonth * 7) + currentDayInWeek;
+            selected.setTime(firstSunday.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
             break;
             
         case 6: // Lunar view
@@ -525,7 +653,8 @@ function createTimeMarkers(zoomLevel) {
                 currentMonthInYear,
                 currentMonth,
                 currentWeekInMonth, // Needed for Zoom 5 week calculation
-                currentQuarter // Needed for Zoom 3 quarter navigation
+                currentQuarter, // Needed for Zoom 3 quarter navigation
+                currentDayInWeek // Needed for Zoom 7 day calculation
             });
         }
         TimeMarkers.createTimeMarkers(zoomLevel);
@@ -4224,6 +4353,11 @@ function updateVisualization() {
 }
 
 function setZoomLevel(level) {
+    // CRITICAL: Get selected date BEFORE changing currentZoom
+    // This ensures we use the OLD zoom level's logic to calculate the date
+    const selectedDate = getSelectedDateTime();
+    
+    // Now change the zoom level
     currentZoom = level;
     const config = ZOOM_LEVELS[level];
     
@@ -4264,9 +4398,27 @@ function setZoomLevel(level) {
         }
     });
     
-    // Preserve current selection offset when changing zoom levels
-    const currentOffset = getCurrentSelectionOffset();
-    applyOffsetToAllZoomLevels(currentOffset);
+    // Preserve selected time across zoom levels by converting the selected date
+    // to the new zoom level's offset system
+    applySelectedDateToZoomLevel(selectedDate, level);
+    
+    // Update TimeMarkers module with new offsets
+    if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
+        TimeMarkers.updateOffsets({
+            selectedYearOffset,
+            selectedQuarterOffset,
+            selectedWeekOffset,
+            selectedDayOffset,
+            selectedHourOffset,
+            currentMonthInYear,
+            currentMonth,
+            currentQuarter,
+            currentWeekInMonth,
+            currentDayInWeek,
+            currentDayOfMonth,
+            currentHourInDay
+        });
+    }
     
     createStarField(); // Update star visibility based on zoom level
     createPlanets(currentZoom);

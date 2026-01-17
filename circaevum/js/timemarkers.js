@@ -107,16 +107,25 @@ const TimeMarkers = (function() {
             selectedMonth = ((actualMonth + selectedWeekOffset) % 12 + 12) % 12;
             selectedQuarter = Math.floor(selectedMonth / 3);
         } else if (zoomLevel === 7) {
-            // Week view - use day offset to determine week/month
+            // Week view - use day offset + currentDayInWeek to determine the actual selected day
             const actualDayInWeek = now.getDay();
-            const weekOffset = Math.round(selectedDayOffset / 7);
-            const selectedWeekSunday = new Date(now);
-            selectedWeekSunday.setDate(now.getDate() - actualDayInWeek);
-            selectedWeekSunday.setDate(selectedWeekSunday.getDate() + (weekOffset * 7));
-            const selectedWeekWednesday = new Date(selectedWeekSunday);
-            selectedWeekWednesday.setDate(selectedWeekSunday.getDate() + 3);
-            selectedMonth = selectedWeekWednesday.getMonth();
-            selectedYear = selectedWeekWednesday.getFullYear();
+            const actualCurrentWeekSunday = new Date(now);
+            actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+            actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+            
+            // Calculate selected week Sunday from selectedDayOffset
+            const selectedWeekSunday = new Date(actualCurrentWeekSunday);
+            selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
+            selectedWeekSunday.setHours(0, 0, 0, 0);
+            
+            // Calculate actual selected day by adding currentDayInWeek
+            const selectedDay = new Date(selectedWeekSunday);
+            selectedDay.setDate(selectedWeekSunday.getDate() + (currentDayInWeek || 0));
+            selectedDay.setHours(0, 0, 0, 0);
+            
+            // Extract month, year, quarter from the actual selected day
+            selectedMonth = selectedDay.getMonth();
+            selectedYear = selectedDay.getFullYear();
             selectedQuarter = Math.floor(selectedMonth / 3);
         }
 
@@ -137,6 +146,7 @@ const TimeMarkers = (function() {
             selectedWeekOffset,
             selectedDayOffset,
             selectedHourOffset,
+            currentDayInWeek, // Needed for Zoom 7 day calculation
             actualMonthInYear: actualMonth,
             actualQuarter,
             actualYear
@@ -284,7 +294,8 @@ const TimeMarkers = (function() {
             const yearStartAngle = earth.startAngle - (orbitsFromCurrentToYearStart * Math.PI * 2);
             
             // Calculate unit start angle (assuming units are evenly distributed within parent)
-            const totalUnits = 4; // Quarters per year
+            // Determine totalUnits based on unitHeight: quarters=4, months=12
+            const totalUnits = (unitHeight > 20) ? 4 : 12; // Quarters per year (25 units) vs months (8.33 units)
             const unitT = unitIndex / totalUnits;
             const timeSpanYearsForParent = 1; // One year
             const orbitsInSpanForParent = timeSpanYearsForParent / earth.orbitalPeriod;
@@ -675,9 +686,54 @@ const TimeMarkers = (function() {
                         const actualWeekInMonth = Math.floor((actualCurrentWeekSunday.getTime() - actualFirstSunday.getTime()) / (7 * 24 * 60 * 60 * 1000));
                         const weekInMonthDifferent = (currentWeekInMonth !== actualWeekInMonth) && (selectedMonth === actualMonth && selectedYear === actualYear);
                         hasOffset = monthDifferent || weekInMonthDifferent;
+                    } else if (zoomLevel === 7) {
+                        // Zoom 7: Use selectedDayOffset (in weeks) to determine selected week
+                        // Check if selected week is different from current week
+                        const now = timeState.currentDate;
+                        const actualDayInWeek = now.getDay();
+                        const actualCurrentWeekSunday = new Date(now);
+                        actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+                        actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+                        
+                        // Calculate selected week Sunday (from selectedDayOffset)
+                        const selectedDayOffset = timeState.selectedDayOffset || 0;
+                        const selectedWeekSunday = new Date(actualCurrentWeekSunday);
+                        selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
+                        selectedWeekSunday.setHours(0, 0, 0, 0);
+                        
+                        // Check if we're in a different week
+                        hasOffset = (selectedDayOffset !== 0) || (selectedWeekSunday.getTime() !== actualCurrentWeekSunday.getTime());
                     } else {
                         // For other zoom levels, selectedWeekOffset might be in weeks
                         hasOffset = (timeState.selectedWeekOffset || 0) !== 0;
+                    }
+                } else if (unitType === 'day') {
+                    // For days in Zoom 7, selectedDayOffset is in WEEKS, not days
+                    // Check if selected week is different OR currentDayInWeek is different from actual
+                    if (zoomLevel === 7) {
+                        const now = timeState.currentDate;
+                        const actualDayInWeek = now.getDay();
+                        const actualCurrentWeekSunday = new Date(now);
+                        actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+                        actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+                        
+                        // Calculate selected week Sunday
+                        const selectedDayOffset = timeState.selectedDayOffset || 0;
+                        const selectedWeekSunday = new Date(actualCurrentWeekSunday);
+                        selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
+                        selectedWeekSunday.setHours(0, 0, 0, 0);
+                        
+                        // Check if we're in a different week
+                        const weekDifferent = (selectedDayOffset !== 0) || (selectedWeekSunday.getTime() !== actualCurrentWeekSunday.getTime());
+                        
+                        // Check if currentDayInWeek differs from actual day in week (even within same week)
+                        // Use the module's currentDayInWeek variable, which is updated by updateOffsets
+                        const dayInWeekDifferent = (currentDayInWeek !== actualDayInWeek);
+                        
+                        hasOffset = weekDifferent || dayInWeekDifferent;
+                    } else {
+                        // For other zoom levels, selectedDayOffset might be in days
+                        hasOffset = (timeState.selectedDayOffset || 0) !== 0;
                     }
                 }
                 
@@ -1234,6 +1290,50 @@ const TimeMarkers = (function() {
             return normalizedWeekSunday.getTime() === actualCurrentWeekSunday.getTime();
         }
         
+        // CURVE: Weekly frame outer boundary (Zoom 4+ only)
+        // For Zoom 4+, create weekly frame outer boundary curve at 5/6 for visible months
+        if (zoomLevel >= 4) {
+            const yearHeight = 100;
+            const monthHeight = yearHeight / 12;
+            
+            // Get visible quarters and expand to months (same logic as month system)
+            const quartersToShow = getVisibleParentUnits(
+                zoomLevel,
+                timeState,
+                (ts) => ({ unit: ts.selectedQuarter, year: ts.selectedYear }),
+                (ts) => {
+                    const now = ts.currentDate;
+                    return { unit: Math.floor(now.getMonth() / 3), year: now.getFullYear() };
+                },
+                4
+            );
+            let monthsToShow = expandQuartersToMonths(quartersToShow);
+            
+            // ALWAYS ensure selected month is included
+            const { selectedMonth, selectedYear } = timeState;
+            if (selectedMonth !== undefined && selectedYear !== undefined) {
+                const selectedMonthExists = monthsToShow.some(m => m.unit === selectedMonth && m.year === selectedYear);
+                if (!selectedMonthExists) {
+                    monthsToShow.push({ unit: selectedMonth, year: selectedYear });
+                }
+            }
+            
+            createParentUnitCurvesForUnits({
+                earthDistance,
+                timeState,
+                currentDateHeight,
+                yearHeight,
+                unitHeight: monthHeight,
+                outerRadius,
+                parentUnitsToShow: monthsToShow,
+                getSelectedUnit: (ts) => ({ unit: ts.selectedMonth, year: ts.selectedYear }),
+                getActualUnit: (ts) => {
+                    const now = ts.currentDate;
+                    return { unit: now.getMonth(), year: now.getFullYear() };
+                }
+            });
+        }
+        
         function isSelectedWeekValue(unitInfo, unitIndex, unitYear) {
             const now = timeState.currentDate;
             const actualDayInWeek = now.getDay();
@@ -1241,8 +1341,7 @@ const TimeMarkers = (function() {
             actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
             actualCurrentWeekSunday.setHours(0, 0, 0, 0);
             
-            // Calculate selected week Sunday
-            // For Zoom 5, selectedWeekOffset is in MONTHS, not weeks!
+            // Calculate selected week Sunday - reuse the same logic as getTimeState for consistency
             let selectedWeekSunday;
             if (zoomLevel === 5) {
                 // Zoom 5: Use selectedMonth and currentWeekInMonth to find the specific week
@@ -1254,6 +1353,14 @@ const TimeMarkers = (function() {
                 // Add currentWeekInMonth weeks (0-4)
                 selectedWeekSunday = new Date(firstSunday);
                 selectedWeekSunday.setDate(firstSunday.getDate() + (currentWeekInMonth * 7));
+                selectedWeekSunday.setHours(0, 0, 0, 0);
+            } else if (zoomLevel === 7) {
+                // Zoom 7: Use selectedDayOffset (in weeks) + currentDayInWeek to find the selected day, then get its week Sunday
+                const selectedDayOffset = timeState.selectedDayOffset || 0;
+                selectedWeekSunday = new Date(actualCurrentWeekSunday);
+                selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
+                // Get the Sunday of the week containing the selected day
+                // (selectedWeekSunday is already the Sunday, since we calculated it from currentDayInWeek = 0)
                 selectedWeekSunday.setHours(0, 0, 0, 0);
             } else {
                 // For other zoom levels, selectedWeekOffset might be in weeks
@@ -1292,6 +1399,322 @@ const TimeMarkers = (function() {
     }
 
     // ============================================
+    // SYSTEM 4: DAY SYSTEM
+    // ============================================
+    /**
+     * Creates day markers: curves, lines, and text
+     * Used in Zoom 7+ (lines + text at 7)
+     */
+    function createDaySystem(earthDistance, timeState, zoomLevel, options = {}) {
+        const { selectedYear, selectedMonth, selectedQuarter, currentDateHeight } = timeState;
+        const { skipLabels = false } = options;
+        
+        // Adjust radii based on zoom level
+        // Zoom 7+: daily frame at 11/12, labels at center between 5/6 and 11/12 (approximately 21/24)
+        const innerRadius = earthDistance * (5/6); // Weekly frame outer
+        const outerRadius = earthDistance * (11/12); // Daily frame outer
+        const labelRadius = earthDistance * (21/24); // Center between 5/6 and 11/12
+        
+        const parentHeight = 7 / 365; // One week in years (~7 days)
+        
+        // Helper functions for unified createTimeFrame
+        function getDaysToShow(zoomLevel, timeState) {
+            const { selectedYear, selectedMonth } = timeState;
+            let daysToShow = [];
+            
+            if (zoomLevel >= 7) {
+                // Get visible weeks from week system logic
+                // For days, we need to show all days within visible weeks
+                const selectedQuarterFromMonth = Math.floor(selectedMonth / 3);
+                
+                // Determine which months to get days for (include selected month's quarter + current quarter)
+                let monthsForDays = [];
+                
+                // Always include selected month's quarter
+                const selectedQuarterStartMonth = selectedQuarterFromMonth * 3;
+                for (let m = selectedQuarterStartMonth; m < selectedQuarterStartMonth + 3; m++) {
+                    monthsForDays.push({ month: m % 12, year: selectedYear + Math.floor(m / 12) });
+                }
+                
+                // Add current quarter months if different
+                const now = timeState.currentDate;
+                const actualYear = now.getFullYear();
+                const actualMonthInYear = now.getMonth();
+                const actualQuarter = Math.floor(actualMonthInYear / 3);
+                const isCurrentDifferent = (actualQuarter !== selectedQuarterFromMonth) || (actualYear !== selectedYear);
+                if (isCurrentDifferent) {
+                    const currentQuarterStartMonth = actualQuarter * 3;
+                    for (let m = currentQuarterStartMonth; m < currentQuarterStartMonth + 3; m++) {
+                        const monthYear = actualYear + Math.floor(m / 12);
+                        const monthIndex = m % 12;
+                        const alreadyExists = monthsForDays.some(mo => mo.month === monthIndex && mo.year === monthYear);
+                        if (!alreadyExists) {
+                            monthsForDays.push({ month: monthIndex, year: monthYear });
+                        }
+                    }
+                }
+                
+                // ALWAYS ensure selected month is included
+                const selectedMonthExists = monthsForDays.some(mo => mo.month === selectedMonth && mo.year === selectedYear);
+                if (!selectedMonthExists) {
+                    monthsForDays.push({ month: selectedMonth, year: selectedYear });
+                }
+                
+                // Get all days that intersect with visible weeks
+                monthsForDays.forEach(({ month, year }) => {
+                    const daysInMonth = new Date(year, month + 1, 0).getDate();
+                    
+                    // Find first Sunday of the month (or before)
+                    const firstOfMonth = new Date(year, month, 1);
+                    const firstSundayOffset = -firstOfMonth.getDay();
+                    const firstSunday = new Date(year, month, 1 + firstSundayOffset);
+                    firstSunday.setHours(0, 0, 0, 0);
+                    
+                    // Collect all days in weeks that intersect with this month
+                    let currentSunday = new Date(firstSunday);
+                    const lastOfMonth = new Date(year, month, daysInMonth);
+                    
+                    while (currentSunday <= lastOfMonth || (currentSunday.getMonth() === month)) {
+                        // Add all 7 days of this week
+                        for (let d = 0; d < 7; d++) {
+                            const dayDate = new Date(currentSunday);
+                            dayDate.setDate(currentSunday.getDate() + d);
+                            dayDate.setHours(0, 0, 0, 0);
+                            
+                            // Only include days that are in the visible month or adjacent weeks that touch it
+                            if (dayDate >= firstSunday && dayDate <= lastOfMonth) {
+                                // Check if we already have this day
+                                const dayExists = daysToShow.some(d => d.getTime() === dayDate.getTime());
+                                if (!dayExists) {
+                                    daysToShow.push(dayDate);
+                                }
+                            }
+                        }
+                        
+                        // Move to next Sunday
+                        currentSunday.setDate(currentSunday.getDate() + 7);
+                    }
+                });
+                
+                // Sort by date
+                daysToShow.sort((a, b) => a - b);
+            }
+            
+            return daysToShow;
+        }
+        
+        function getDayDate(unitInfo, unitIndex, unitYear) {
+            // unitInfo is a Date object for days
+            if (unitInfo instanceof Date) {
+                return unitInfo;
+            }
+            // Fallback: construct date from index and year (not ideal but safe)
+            return new Date(unitYear || timeState.selectedYear, timeState.selectedMonth || 0, (unitIndex || 0) + 1, 0, 0, 0);
+        }
+        
+        function getDayCenterDate(dayStartDate, unitInfo) {
+            // For days, the center is just the day itself (at noon)
+            const center = new Date(dayStartDate);
+            center.setHours(12, 0, 0, 0);
+            return center;
+        }
+        
+        function getDayLabelText(unitInfo, unitIndex, unitYear) {
+            // unitInfo is a Date object for days
+            const dayDate = unitInfo instanceof Date ? unitInfo : getDayDate(unitInfo, unitIndex, unitYear);
+            return dayDate.getDate().toString(); // Just the day number (1-31)
+        }
+        
+        function isCurrentDay(unitInfo, unitIndex, unitYear) {
+            const now = timeState.currentDate;
+            const dayDate = unitInfo instanceof Date ? unitInfo : getDayDate(unitInfo, unitIndex, unitYear);
+            return dayDate.getFullYear() === now.getFullYear() &&
+                   dayDate.getMonth() === now.getMonth() &&
+                   dayDate.getDate() === now.getDate();
+        }
+        
+        function isSelectedDayValue(unitInfo, unitIndex, unitYear) {
+            const now = timeState.currentDate;
+            const actualDayInWeek = now.getDay();
+            const actualCurrentWeekSunday = new Date(now);
+            actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+            actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+            
+            // Calculate selected day
+            // For Zoom 7, selectedDayOffset is in WEEKS, not days!
+            // Use currentDayInWeek from the module's state (not timeState) since it's updated by updateOffsets
+            const selectedDayOffset = timeState.selectedDayOffset || 0;
+            const selectedWeekSunday = new Date(actualCurrentWeekSunday);
+            selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
+            selectedWeekSunday.setHours(0, 0, 0, 0);
+            
+            // Add currentDayInWeek days to get the selected day (use module variable, not timeState)
+            // Default to actualDayInWeek if currentDayInWeek is undefined (shouldn't happen but safety check)
+            const dayOffset = (currentDayInWeek !== undefined && currentDayInWeek !== null) ? currentDayInWeek : actualDayInWeek;
+            const selectedDay = new Date(selectedWeekSunday);
+            selectedDay.setDate(selectedWeekSunday.getDate() + dayOffset);
+            selectedDay.setHours(0, 0, 0, 0);
+            
+            const dayDate = unitInfo instanceof Date ? unitInfo : getDayDate(unitInfo, unitIndex, unitYear);
+            const normalizedDay = new Date(dayDate);
+            normalizedDay.setHours(0, 0, 0, 0);
+            
+            return normalizedDay.getTime() === selectedDay.getTime();
+        }
+
+        // CURVE: Daily frame outer boundary (Zoom 7+ only)
+        // For Zoom 7+, create daily frame outer boundary curve at 11/12 for visible weeks
+        if (zoomLevel >= 7) {
+            const yearHeight = 100;
+            const weekHeight = yearHeight * (7 / 365); // One week in years
+            
+            // Get visible weeks (from week system logic)
+            const weeksToShow = getDaysToShow(zoomLevel, timeState);
+            
+            // Convert days to weeks (group by Sunday)
+            const weekSundays = new Set();
+            weeksToShow.forEach(dayDate => {
+                const sunday = new Date(dayDate);
+                const dayOfWeek = sunday.getDay();
+                sunday.setDate(sunday.getDate() - dayOfWeek);
+                sunday.setHours(0, 0, 0, 0);
+                weekSundays.add(sunday.getTime());
+            });
+            
+            // Create curves for each visible week
+            const earth = PLANET_DATA.find(p => p.name === 'Earth');
+            const curveSegments = 64;
+            
+            Array.from(weekSundays).forEach(sundayTime => {
+                const weekSunday = new Date(sundayTime);
+                const weekStart = new Date(weekSunday);
+                const weekEnd = new Date(weekSunday);
+                weekEnd.setDate(weekSunday.getDate() + 7);
+                
+                // Use calculateDateHeight for accurate week positioning
+                const weekStartHeight = calculateDateHeight(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate(), 0);
+                const weekEndHeight = calculateDateHeight(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate(), 0);
+                const weekHeightActual = weekEndHeight - weekStartHeight;
+                
+                const yearsFromCurrentToWeekStart = (weekStartHeight - currentDateHeight) / 100;
+                const orbitsFromCurrentToWeekStart = yearsFromCurrentToWeekStart / earth.orbitalPeriod;
+                const weekStartAngle = earth.startAngle - (orbitsFromCurrentToWeekStart * Math.PI * 2);
+                
+                const timeSpanYears = weekHeightActual / 100;
+                const orbitsInSpan = timeSpanYears / earth.orbitalPeriod;
+                
+                const curvePoints = [];
+                for (let i = 0; i <= curveSegments; i++) {
+                    const t = i / curveSegments;
+                    const angle = weekStartAngle - (t * orbitsInSpan * Math.PI * 2);
+                    const height = weekStartHeight + (t * weekHeightActual);
+                    curvePoints.push(
+                        Math.cos(angle) * outerRadius, height, Math.sin(angle) * outerRadius
+                    );
+                }
+                const curveGeometry = new THREE.BufferGeometry();
+                curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
+                const curveMaterial = new THREE.LineBasicMaterial({
+                    color: getMarkerColor(),
+                    transparent: true,
+                    opacity: 0.6,
+                    linewidth: 2
+                });
+                const curve = new THREE.Line(curveGeometry, curveMaterial);
+                scene.add(curve);
+                timeMarkers.push(curve);
+            });
+        }
+
+        // Use unified createTimeFrame helper
+        createTimeFrame({
+            unitType: 'day',
+            zoomLevel,
+            outerRadius,
+            innerRadius,
+            earthDistance,
+            timeState,
+            unitsPerParent: 7, // 7 days per week
+            unitNames: getDayLabelText, // Function for dynamic labels
+            parentHeight,
+            getUnitsToShow: getDaysToShow,
+            getUnitDate: getDayDate,
+            getUnitCenterDate: getDayCenterDate,
+            isCurrentUnit: isCurrentDay,
+            isSelectedUnit: isSelectedDayValue,
+            skipLabels,
+            labelRadius: labelRadius
+        });
+        
+        // DAY-OF-WEEK LABELS: 3-letter day names (full names for current/selected) between day numbers and Earth
+        if (zoomLevel >= 7 && !skipLabels) {
+            const earth = PLANET_DATA.find(p => p.name === 'Earth');
+            const dayOfWeekNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const dayOfWeekNamesFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            
+            // Position day-of-week labels midway between day number labels and Earth
+            // labelRadius is at 21/24, Earth is at 1.0, so midpoint is at (21/24 + 1) / 2 = 45/48 = 15/16
+            const dayOfWeekLabelRadius = earthDistance * (15/16);
+            
+            // Check if there's a navigation offset for days (same logic as createTimeFrame)
+            const now = timeState.currentDate;
+            const actualDayInWeek = now.getDay();
+            const actualCurrentWeekSunday = new Date(now);
+            actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+            actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+            
+            const selectedDayOffset = timeState.selectedDayOffset || 0;
+            const selectedWeekSunday = new Date(actualCurrentWeekSunday);
+            selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
+            selectedWeekSunday.setHours(0, 0, 0, 0);
+            
+            const dayOffset = (currentDayInWeek !== undefined && currentDayInWeek !== null) ? currentDayInWeek : actualDayInWeek;
+            const hasDayOffset = (selectedDayOffset !== 0) || (currentDayInWeek !== actualDayInWeek);
+            
+            // Get all days to show (same as createTimeFrame logic)
+            const daysToShow = getDaysToShow(zoomLevel, timeState);
+            
+            daysToShow.forEach(dayDate => {
+                const isCurrent = isCurrentDay(dayDate, null, null);
+                const isSelected = isSelectedDayValue(dayDate, null, null);
+                
+                // Color logic: Red for current, Blue for selected (when offset exists), White default
+                // Use string format ('red', 'blue') or false for default, same as createTimeFrame
+                let dayOfWeekColor;
+                if (isCurrent) {
+                    dayOfWeekColor = 'red';
+                } else if (hasDayOffset && isSelected) {
+                    dayOfWeekColor = 'blue';
+                } else {
+                    dayOfWeekColor = false; // Default (white/black based on light mode)
+                }
+                
+                // Get day-of-week text: full name for current/selected, 3-letter abbreviation otherwise
+                const dayOfWeekIndex = dayDate.getDay();
+                const dayOfWeekText = (isCurrent || (hasDayOffset && isSelected)) 
+                    ? dayOfWeekNamesFull[dayOfWeekIndex] 
+                    : dayOfWeekNamesShort[dayOfWeekIndex];
+                
+                // Calculate position for day-of-week label (at noon of the day)
+                const dayCenterDate = getDayCenterDate(dayDate, dayDate);
+                const dayHeight = calculateDateHeight(
+                    dayCenterDate.getFullYear(),
+                    dayCenterDate.getMonth(),
+                    dayCenterDate.getDate(),
+                    dayCenterDate.getHours()
+                );
+                
+                const yearsFromCurrentToDay = (dayHeight - currentDateHeight) / 100;
+                const orbitsFromCurrentToDay = yearsFromCurrentToDay / earth.orbitalPeriod;
+                const dayAngle = earth.startAngle - (orbitsFromCurrentToDay * Math.PI * 2);
+                
+                // Create day-of-week label using the same text size as day numbers (Zoom 7)
+                createTextLabel(dayOfWeekText, dayHeight, dayOfWeekLabelRadius, 7, dayAngle, dayOfWeekColor, false, 0.85);
+            });
+        }
+    }
+
+    // ============================================
     // MAIN ENTRY POINT
     // ============================================
     function createTimeMarkers(zoomLevel) {
@@ -1322,7 +1745,10 @@ const TimeMarkers = (function() {
             createWeekSystem(earthDistance, timeState, zoomLevel);
         }
 
-        // TODO: Add Day System (Zoom 7) here
+        // Day system: Zoom 7+ (lines + text at 7)
+        if (zoomLevel >= 7) {
+            createDaySystem(earthDistance, timeState, zoomLevel);
+        }
     }
 
     // ============================================
@@ -1339,6 +1765,7 @@ const TimeMarkers = (function() {
         currentMonth = newOffsets.currentMonth;
         currentWeekInMonth = newOffsets.currentWeekInMonth; // Needed for Zoom 5 week calculation
         currentQuarter = newOffsets.currentQuarter; // Needed for Zoom 3 quarter navigation
+        currentDayInWeek = newOffsets.currentDayInWeek; // Needed for Zoom 7 day calculation
     }
 
     // ============================================
