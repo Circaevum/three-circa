@@ -467,13 +467,73 @@ function createSelectionArc(startHeight, endHeight, earthDistance, innerRadiusFa
     };
 }
 
+// Initialize TimeMarkers module once
+let timeMarkersInitialized = false;
+function initTimeMarkers() {
+    if (!timeMarkersInitialized && typeof TimeMarkers !== 'undefined') {
+        TimeMarkers.init({
+            scene,
+            timeMarkers,
+            showTimeMarkers,
+            getMarkerColor,
+            createTextLabel,
+            PLANET_DATA,
+            ZOOM_LEVELS,
+            TIME_MARKERS,
+            CENTURY_START,
+            currentYear,
+            currentMonthInYear,
+            currentMonth,
+            currentQuarter,
+            currentWeekInMonth,
+            currentDayInWeek,
+            currentDayOfMonth,
+            currentHourInDay,
+            selectedYearOffset,
+            selectedQuarterOffset,
+            selectedWeekOffset,
+            selectedDayOffset,
+            selectedHourOffset,
+            selectedLunarOffset,
+            selectedDecadeOffset,
+            isLightMode,
+            calculateDateHeight,
+            getHeightForYear,
+            calculateCurrentDateHeight,
+            planetMeshes
+        });
+        timeMarkersInitialized = true;
+    }
+}
+
 // Create time marker ticks at specific heights
 function createTimeMarkers(zoomLevel) {
-    // Clear existing markers
-    timeMarkers.forEach(m => scene.remove(m));
-    timeMarkers.length = 0;
+    // Initialize TimeMarkers if not already done
+    initTimeMarkers();
+    
+    // Delegate to TimeMarkers module if available, otherwise fall back to old code
+    if (typeof TimeMarkers !== 'undefined' && TimeMarkers.createTimeMarkers) {
+        // CRITICAL: Update offset values before recreating markers
+        // These are captured by value in TimeMarkers.init(), so we need to update them
+        if (typeof TimeMarkers.updateOffsets === 'function') {
+            TimeMarkers.updateOffsets({
+                selectedYearOffset,
+                selectedQuarterOffset,
+                selectedWeekOffset,
+                selectedDayOffset,
+                selectedHourOffset,
+                currentMonthInYear,
+                currentMonth,
+                currentWeekInMonth, // Needed for Zoom 5 week calculation
+                currentQuarter // Needed for Zoom 3 quarter navigation
+            });
+        }
+        TimeMarkers.createTimeMarkers(zoomLevel);
+        return;
+    }
 
-    console.log('Creating time markers for zoom level:', zoomLevel);
+    // FALLBACK: Old implementation (will be removed once TimeMarkers is fully integrated)
+    console.log('Using fallback createTimeMarkers for zoom level:', zoomLevel);
 
     const config = ZOOM_LEVELS[zoomLevel];
     const markers = TIME_MARKERS[zoomLevel];
@@ -3849,24 +3909,26 @@ function navigateUnit(direction) {
             console.log('  Year after:', currentYear, 'offset:', selectedDecadeOffset);
             break;
             
-        case 3: // Year view - navigate months
-            console.log('  Month before:', currentMonthInYear, 'year:', currentYear, 'offset:', selectedYearOffset);
-            currentMonthInYear += direction;
+        case 3: // Year view - navigate by quarters
+            console.log('  Quarter before:', currentQuarter, 'year:', currentYear, 'offset:', selectedYearOffset);
+            currentQuarter += direction;
             
-            if (currentMonthInYear < 0) {
+            if (currentQuarter < 0) {
                 selectedYearOffset--;
                 currentYear--; // Also update currentYear for calculateCurrentDateHeight()
-                currentMonthInYear = 11; // Go to December of previous year
-            } else if (currentMonthInYear > 11) {
+                currentQuarter = 3; // Go to Q4 of previous year
+            } else if (currentQuarter > 3) {
                 selectedYearOffset++;
                 currentYear++; // Also update currentYear for calculateCurrentDateHeight()
-                currentMonthInYear = 0; // Go to January of next year
+                currentQuarter = 0; // Go to Q1 of next year
             }
             
+            // Update currentMonthInYear to be the first month of the selected quarter
+            currentMonthInYear = currentQuarter * 3;
             // Keep currentMonth in sync for createQuarterMarkers highlighting
-            currentMonth = currentMonthInYear % 3;
+            currentMonth = 0; // First month of quarter
             
-            console.log('  Month after:', currentMonthInYear, 'year:', currentYear, 'offset:', selectedYearOffset);
+            console.log('  Quarter after:', currentQuarter, 'year:', currentYear, 'offset:', selectedYearOffset, 'month:', currentMonthInYear);
             break;
             
         case 4: // Quarter view - navigate months
