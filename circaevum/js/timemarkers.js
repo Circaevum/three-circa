@@ -483,9 +483,16 @@ const TimeMarkers = (function() {
             } else {
                 // Zoom 4+: Lines go from inner radius to outer radius
                 // Parent boundaries (quarter boundaries for months) go from Sun (0) to outer
+                // For weeks, if day labels are shown (zoomLevel >= 7), extend to Earth's worldline
                 const isParentBoundary = (unitType === 'month' && unitIndex % 3 === 0);
                 startRadius = isParentBoundary ? 0 : (innerRadius || 0);
-                endRadius = outerRadius;
+                
+                // Week lines extend to Earth when day labels are visible (Zoom 7+)
+                if (unitType === 'week' && zoomLevel >= 7) {
+                    endRadius = earthDistance;
+                } else {
+                    endRadius = outerRadius;
+                }
             }
 
             const points = [
@@ -498,6 +505,114 @@ const TimeMarkers = (function() {
 
             const isCurrent = isCurrentUnit(unitInfo, unitIndex, unitYear);
             const isSelected = isSelectedUnit(unitInfo, unitIndex, unitYear);
+            
+            // For all unit types, also check if the previous unit is current/selected
+            // This ensures both lines bordering a unit are colored (the one before and after)
+            let isPreviousUnitCurrent = false;
+            let isPreviousUnitSelected = false;
+            let hasPreviousUnitOffset = false;
+            
+            // Calculate previous unit based on unit type
+            let previousUnitInfo = null;
+            let previousUnitIndex = null;
+            let previousUnitYear = null;
+            
+            if (unitType === 'quarter') {
+                // Previous quarter: decrease quarter index, handle year boundary
+                const prevQuarterIndex = unitIndex - 1;
+                if (prevQuarterIndex < 0) {
+                    previousUnitIndex = 3;
+                    previousUnitYear = unitYear - 1;
+                } else {
+                    previousUnitIndex = prevQuarterIndex;
+                    previousUnitYear = unitYear;
+                }
+                previousUnitInfo = { unit: previousUnitIndex, year: previousUnitYear };
+            } else if (unitType === 'month') {
+                // Previous month: decrease month index, handle year boundary
+                const prevMonthIndex = unitIndex - 1;
+                if (prevMonthIndex < 0) {
+                    previousUnitIndex = 11;
+                    previousUnitYear = unitYear - 1;
+                } else {
+                    previousUnitIndex = prevMonthIndex;
+                    previousUnitYear = unitYear;
+                }
+                previousUnitInfo = { unit: previousUnitIndex, year: previousUnitYear };
+            } else if (unitType === 'week') {
+                // Previous week: subtract 7 days from week Sunday
+                // Weeks are stored as Date objects (Sunday of the week)
+                const weekSunday = unitInfo instanceof Date ? unitInfo : (unitIndex instanceof Date ? unitIndex : null);
+                if (weekSunday instanceof Date) {
+                    const prevWeekDate = new Date(weekSunday);
+                    prevWeekDate.setDate(prevWeekDate.getDate() - 7);
+                    prevWeekDate.setHours(0, 0, 0, 0);
+                    previousUnitInfo = prevWeekDate;
+                    // For weeks, unitIndex is the Date object
+                    previousUnitIndex = prevWeekDate;
+                }
+            } else if (unitType === 'day') {
+                // Previous day: subtract 1 day
+                const previousDayDate = new Date(unitStartDate);
+                previousDayDate.setDate(previousDayDate.getDate() - 1);
+                previousDayDate.setHours(0, 0, 0, 0);
+                previousUnitInfo = previousDayDate;
+            }
+            
+            // Check if previous unit is current or selected (if we calculated a previous unit)
+            if (previousUnitInfo !== null) {
+                isPreviousUnitCurrent = isCurrentUnit(previousUnitInfo, previousUnitIndex, previousUnitYear);
+                isPreviousUnitSelected = isSelectedUnit(previousUnitInfo, previousUnitIndex, previousUnitYear);
+                
+                // Calculate hasOffset for previous unit (use same logic as current unit)
+                if (unitType === 'quarter') {
+                    hasPreviousUnitOffset = timeState.selectedQuarterOffset !== 0;
+                } else if (unitType === 'month') {
+                    const now = timeState.currentDate;
+                    const actualMonth = now.getMonth();
+                    const actualYear = now.getFullYear();
+                    const { selectedMonth, selectedYear } = timeState;
+                    hasPreviousUnitOffset = (selectedMonth !== actualMonth) || (selectedYear !== actualYear);
+                } else if (unitType === 'week') {
+                    if (zoomLevel === 5) {
+                        const now = timeState.currentDate;
+                        const actualMonth = now.getMonth();
+                        const actualYear = now.getFullYear();
+                        const { selectedMonth, selectedYear } = timeState;
+                        const monthDifferent = (selectedMonth !== actualMonth) || (selectedYear !== actualYear);
+                        const actualDayInWeek = now.getDay();
+                        const actualCurrentWeekSunday = new Date(now);
+                        actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+                        actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+                        const actualMonthStart = new Date(actualYear, actualMonth, 1);
+                        const actualFirstSundayOffset = -actualMonthStart.getDay();
+                        const actualFirstSunday = new Date(actualYear, actualMonth, 1 + actualFirstSundayOffset);
+                        actualFirstSunday.setHours(0, 0, 0, 0);
+                        const actualWeekInMonth = Math.floor((actualCurrentWeekSunday.getTime() - actualFirstSunday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+                        const weekInMonthDifferent = (currentWeekInMonth !== actualWeekInMonth) && (selectedMonth === actualMonth && selectedYear === actualYear);
+                        hasPreviousUnitOffset = monthDifferent || weekInMonthDifferent;
+                    } else {
+                        hasPreviousUnitOffset = (timeState.selectedWeekOffset || 0) !== 0;
+                    }
+                } else if (unitType === 'day') {
+                    if (zoomLevel === 7) {
+                        const now = timeState.currentDate;
+                        const actualDayInWeek = now.getDay();
+                        const actualCurrentWeekSunday = new Date(now);
+                        actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+                        actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+                        const selectedDayOffset = timeState.selectedDayOffset || 0;
+                        const selectedWeekSunday = new Date(actualCurrentWeekSunday);
+                        selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
+                        selectedWeekSunday.setHours(0, 0, 0, 0);
+                        const weekDifferent = (selectedDayOffset !== 0) || (selectedWeekSunday.getTime() !== actualCurrentWeekSunday.getTime());
+                        const dayInWeekDifferent = (currentDayInWeek !== actualDayInWeek);
+                        hasPreviousUnitOffset = weekDifferent || dayInWeekDifferent;
+                    } else {
+                        hasPreviousUnitOffset = (timeState.selectedDayOffset || 0) !== 0;
+                    }
+                }
+            }
             
             // Check if there's a navigation offset (like the old code did)
             // This is the key: if offset is non-zero, we're navigating away from current time
@@ -538,11 +653,44 @@ const TimeMarkers = (function() {
                     // For other zoom levels, selectedWeekOffset might be in weeks
                     hasOffset = (timeState.selectedWeekOffset || 0) !== 0;
                 }
+            } else if (unitType === 'day') {
+                // For days in Zoom 7, selectedDayOffset is in WEEKS, not days
+                // Check if selected week is different OR currentDayInWeek is different from actual
+                if (zoomLevel === 7) {
+                    const now = timeState.currentDate;
+                    const actualDayInWeek = now.getDay();
+                    const actualCurrentWeekSunday = new Date(now);
+                    actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+                    actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+                    
+                    // Calculate selected week Sunday
+                    const selectedDayOffset = timeState.selectedDayOffset || 0;
+                    const selectedWeekSunday = new Date(actualCurrentWeekSunday);
+                    selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
+                    selectedWeekSunday.setHours(0, 0, 0, 0);
+                    
+                    // Check if we're in a different week
+                    const weekDifferent = (selectedDayOffset !== 0) || (selectedWeekSunday.getTime() !== actualCurrentWeekSunday.getTime());
+                    
+                    // Check if currentDayInWeek differs from actual day in week (even within same week)
+                    // Use the module's currentDayInWeek variable, which is updated by updateOffsets
+                    const dayInWeekDifferent = (currentDayInWeek !== actualDayInWeek);
+                    
+                    hasOffset = weekDifferent || dayInWeekDifferent;
+                } else {
+                    // For other zoom levels, selectedDayOffset might be in days
+                    hasOffset = (timeState.selectedDayOffset || 0) !== 0;
+                }
             }
             
             // Color logic: Red for current time, Blue for selected time (when offset exists)
+            // For all unit types, also check previous unit to color both bordering lines
+            // This ensures both lines bordering a current/selected unit are colored
             // This matches the old main.js logic: isSystemCurrent ? red : (offset !== 0 ? blue : default)
-            const lineColor = isCurrent ? 0xFF0000 : (hasOffset && isSelected ? 0x00FFFF : getMarkerColor());
+            const lineIsCurrent = isCurrent || isPreviousUnitCurrent;
+            const lineIsSelected = (isSelected && hasOffset) || (isPreviousUnitSelected && hasPreviousUnitOffset);
+            
+            const lineColor = lineIsCurrent ? 0xFF0000 : (lineIsSelected ? 0x00FFFF : getMarkerColor());
             
             // DEBUG: Log color decision
             if (hasOffset && isSelected) {
