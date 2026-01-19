@@ -690,7 +690,9 @@ const TimeMarkers = (function() {
             const lineIsCurrent = isCurrent || isPreviousUnitCurrent;
             const lineIsSelected = (isSelected && hasOffset) || (isPreviousUnitSelected && hasPreviousUnitOffset);
             
-            const lineColor = lineIsCurrent ? 0xFF0000 : (lineIsSelected ? 0x00FFFF : getMarkerColor());
+            // Darker blue in light mode for better contrast
+            const selectedTimeColor = isLightMode ? 0x0066CC : 0x00FFFF;
+            const lineColor = lineIsCurrent ? 0xFF0000 : (lineIsSelected ? selectedTimeColor : getMarkerColor());
             
             // DEBUG: Log color decision
             if (hasOffset && isSelected) {

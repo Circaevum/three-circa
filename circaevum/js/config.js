@@ -86,8 +86,8 @@ const SCENE_CONFIG = {
     starCount: 10000,
     starFieldSize: 4000,  // Horizontal spread
     starFieldHeight: 12000,  // Vertical spread to cover century view
-    sunSize: 8,  // Reduced from 20 to avoid blocking planets
-    sunGlowSize: 10,  // Reduced from 25
+    sunSize: 5,  // Reduced from 6 so Q1 isn't engulfed
+    sunGlowSize: 7,  // Reduced from 8 to match sunSize reduction
     sunColor: 0xffd60a,
     orbitLineColor: 0x00b4d8,
     orbitLineOpacity: 0.3,

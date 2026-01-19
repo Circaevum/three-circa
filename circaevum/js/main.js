@@ -505,6 +505,16 @@ function getMarkerColor() {
     return isLightMode ? 0x000000 : 0xffffff;
 }
 
+// Get selected time color (blue) - darker in light mode for better contrast
+function getSelectedTimeColor() {
+    return isLightMode ? 0x0066CC : 0x00FFFF; // Darker blue in light mode
+}
+
+// Get orbit line color - darker in light mode for better contrast
+function getOrbitLineColor() {
+    return isLightMode ? 0x0066CC : SCENE_CONFIG.orbitLineColor; // Darker blue in light mode
+}
+
 // Note: getHeightForYear is now in datetime.js
 
 // Create selection arc to highlight selected time period
@@ -1407,7 +1417,7 @@ function createQuarterMarkers(markerRadius, earthDistance, config, quarterOffset
         
         // Highlight: red for current time, blue for selected time
         const isCurrentMonthBoundary = isSystemCurrentMonthBoundary || isSelectedMonthBoundary;
-        const monthBoundaryColor = isSystemCurrentMonthBoundary ? 0xFF0000 : (isSelectedMonthBoundary ? 0x00FFFF : getMarkerColor());
+        const monthBoundaryColor = isSystemCurrentMonthBoundary ? 0xFF0000 : (isSelectedMonthBoundary ? getSelectedTimeColor() : getMarkerColor());
         
         const material = new THREE.LineBasicMaterial({
             color: monthBoundaryColor, // Red for current time, blue for selected time
@@ -1714,7 +1724,7 @@ function createYearQuarterMarkers(earthDistance, config, yearOffset, currentDate
         // Check if this is the current or selected month
         const isSystemCurrentMonth = (month === actualMonthInYear && yearOffset === 0);
         const isSelectedMonth = (month === currentMonthInYear);
-        const monthBoundaryColor = isSystemCurrentMonth ? 0xFF0000 : (isSelectedMonth ? 0x00FFFF : getMarkerColor());
+        const monthBoundaryColor = isSystemCurrentMonth ? 0xFF0000 : (isSelectedMonth ? getSelectedTimeColor() : getMarkerColor());
         
         const material = new THREE.LineBasicMaterial({
             color: monthBoundaryColor,
@@ -2455,7 +2465,7 @@ function createWeekMarkers(markerRadius, earthDistance, config, weekOffset, curr
         } else {
             // Determine color: red for current time, blue for selected time
             const isHighlighted = isSystemCurrentDay || isSelectedDayBoundary || (isWeekBoundary && !skipWeekBoundaryAndLabel);
-            const boundaryColor = isSystemCurrentDay ? 0xFF0000 : (isSelectedDayBoundary ? 0x00FFFF : (isWeekBoundary && !skipWeekBoundaryAndLabel ? 0xFF0000 : getMarkerColor()));
+            const boundaryColor = isSystemCurrentDay ? 0xFF0000 : (isSelectedDayBoundary ? getSelectedTimeColor() : (isWeekBoundary && !skipWeekBoundaryAndLabel ? 0xFF0000 : getMarkerColor()));
             
             // Week boundaries extend from 2/3 to 3/3 (Earth), individual days from 5/6 to 6/6 (Earth)
             let lineStartRadius, lineEndRadius;
@@ -2677,7 +2687,7 @@ function createWeekMarkersForMonthView(markerRadius, earthDistance, config, curr
         const isSelectedWeek = normalizedWeekSunday.getTime() === selectedWeekSunday.getTime();
         
         // Determine color: red for current time, blue for selected time (if different from current)
-        const weekColor = isSystemCurrentWeek ? 0xFF0000 : (isSelectedWeek ? 0x00FFFF : getMarkerColor());
+        const weekColor = isSystemCurrentWeek ? 0xFF0000 : (isSelectedWeek ? getSelectedTimeColor() : getMarkerColor());
         const weekLabelColor = isSystemCurrentWeek ? 'red' : (isSelectedWeek ? 'blue' : false);
         
         // Calculate week start height - always use calculateDateHeight for accuracy
@@ -3064,7 +3074,8 @@ function createTextLabel(text, height, radius, zoomLevel, angle = 0, colorType =
     if (colorType === true || colorType === 'red') {
         textColor = 'rgba(255, 0, 0, 0.9)'; // Red for current time
     } else if (colorType === 'blue') {
-        textColor = 'rgba(0, 255, 255, 0.9)'; // Cyan/blue for selected time (matches connector worldline)
+        // Darker blue in light mode for better contrast
+        textColor = isLightMode ? 'rgba(0, 102, 204, 0.9)' : 'rgba(0, 255, 255, 0.9)'; // Cyan/blue for selected time
     } else {
         textColor = isLightMode ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)'; // Default
     }
@@ -3464,7 +3475,7 @@ function createPlanets(zoomLevel) {
         
         orbitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(orbitPoints, 3));
         const orbitMaterial = new THREE.LineBasicMaterial({
-            color: SCENE_CONFIG.orbitLineColor,
+            color: getOrbitLineColor(), // Darker blue in light mode
             transparent: true,
             opacity: SCENE_CONFIG.orbitLineOpacity
         });
@@ -3488,7 +3499,7 @@ function createPlanets(zoomLevel) {
             
             ghostOrbitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(ghostOrbitPoints, 3));
             const ghostOrbitMaterial = new THREE.LineBasicMaterial({
-                color: SCENE_CONFIG.orbitLineColor,
+                color: getOrbitLineColor(), // Darker blue in light mode
                 transparent: true,
                 opacity: SCENE_CONFIG.orbitLineOpacity * 0.3
             });
@@ -3551,7 +3562,7 @@ function createConnectorWorldline(planetData, currentHeight, selectedHeight) {
     
     // Distinct color for connector - slightly transparent
     const material = new THREE.LineBasicMaterial({
-        color: 0x00FFFF, // Cyan to distinguish from main worldline
+        color: getSelectedTimeColor(), // Cyan/blue for selected time, darker in light mode
         transparent: true,
         opacity: 0.5,
         linewidth: 2
