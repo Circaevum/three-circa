@@ -126,6 +126,36 @@ function calculateDateHeight(year, month, day, hour = 0) {
 }
 
 /**
+ * Calculate year progress (0.0 to 1.0) for a given date
+ * @param {number} year - Year
+ * @param {number} month - Month (0-11)
+ * @param {number} day - Day of month (1-31)
+ * @param {number} hour - Hour (0-23, optional, defaults to 0)
+ * @returns {number} Fraction of year elapsed (0.0 to 1.0)
+ */
+function calculateYearProgressForDate(year, month, day, hour = 0) {
+    const daysInMonth = getDaysInMonth(year, month);
+    const yearProgress = (month + (day - 1) / daysInMonth + hour / (24 * daysInMonth)) / 12;
+    return yearProgress;
+}
+
+/**
+ * Calculate current date height from actual system date (bypasses navigated variables)
+ * This is used for worldlines and other calculations that need the real current date
+ * @returns {number} Height in scene units
+ */
+function calculateActualCurrentDateHeight() {
+    const nowActual = new Date();
+    const actualYear = nowActual.getFullYear();
+    const actualMonth = nowActual.getMonth();
+    const actualDay = nowActual.getDate();
+    const actualHour = nowActual.getHours();
+    
+    const yearProgress = calculateYearProgressForDate(actualYear, actualMonth, actualDay, actualHour);
+    return ((actualYear - 2000) * 100) + (yearProgress * 100);
+}
+
+/**
  * Calculate progress through current year (0.0 to 1.0)
  * @returns {number} Fraction of year elapsed
  */

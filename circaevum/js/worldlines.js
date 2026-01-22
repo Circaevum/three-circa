@@ -11,6 +11,7 @@ const Worldlines = (function() {
     let calculateDateHeight, getHeightForYear, calculateCurrentDateHeight;
     let CENTURY_START, currentYear, isLightMode, getSelectedTimeColor;
     let SceneGeometry;
+    let calculateYearProgressForDate, getDaysInMonth;
     
     // ============================================
     // INITIALIZATION
@@ -28,6 +29,8 @@ const Worldlines = (function() {
         isLightMode = dependencies.isLightMode;
         getSelectedTimeColor = dependencies.getSelectedTimeColor;
         SceneGeometry = dependencies.SceneGeometry;
+        calculateYearProgressForDate = dependencies.calculateYearProgressForDate;
+        getDaysInMonth = dependencies.getDaysInMonth;
         
         // Initialize SceneGeometry if provided
         if (SceneGeometry && typeof SceneGeometry.init === 'function') {
@@ -38,7 +41,11 @@ const Worldlines = (function() {
                 calculateCurrentDateHeight,
                 CENTURY_START,
                 ZOOM_LEVELS,
-                currentYear
+                currentYear,
+                calculateActualCurrentDateHeight: dependencies.calculateActualCurrentDateHeight,
+                calculateYearProgressForDate,
+                getDaysInMonth,
+                isLeapYear: dependencies.isLeapYear
             });
         }
     }
@@ -84,10 +91,15 @@ const Worldlines = (function() {
             const actualYear = nowWorldline.getFullYear();
             const actualMonth = nowWorldline.getMonth();
             const actualDay = nowWorldline.getDate();
-            const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-            const isLeapYear = (actualYear % 4 === 0 && actualYear % 100 !== 0) || (actualYear % 400 === 0);
-            if (isLeapYear) daysInMonth[1] = 29;
-            const yearProgress = (actualMonth + (actualDay - 1) / daysInMonth[actualMonth]) / 12;
+            // Use centralized year progress calculation if available
+            let yearProgress;
+            if (typeof calculateYearProgressForDate === 'function') {
+                yearProgress = calculateYearProgressForDate(actualYear, actualMonth, actualDay, 0);
+            } else {
+                // Fallback
+                const daysInMonth = getDaysInMonth ? getDaysInMonth(actualYear, actualMonth) : 30;
+                yearProgress = (actualMonth + (actualDay - 1) / daysInMonth) / 12;
+            }
             startHeight = currentDateHeight - (yearProgress * yearHeight);
             endHeight = startHeight + yearHeight;
         } else { // Higher zooms - show time span around current date

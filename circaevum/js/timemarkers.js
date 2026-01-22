@@ -69,10 +69,15 @@ const TimeMarkers = (function() {
         
         let currentDateHeight = calculateCurrentDateHeight();
         if (zoomLevel === 3 || zoomLevel === 4) {
-            const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-            const isLeap = (actualYear % 4 === 0 && actualYear % 100 !== 0) || (actualYear % 400 === 0);
-            if (isLeap) daysInMonth[1] = 29;
-            const yearProgress = (actualMonth + (actualDay - 1) / daysInMonth[actualMonth]) / 12;
+            // Use centralized functions if available
+            let yearProgress;
+            if (typeof calculateYearProgressForDate === 'function') {
+                yearProgress = calculateYearProgressForDate(actualYear, actualMonth, actualDay, 0);
+            } else {
+                // Fallback
+                const daysInMonth = getDaysInMonth ? getDaysInMonth(actualYear, actualMonth) : 30;
+                yearProgress = (actualMonth + (actualDay - 1) / daysInMonth) / 12;
+            }
             currentDateHeight = ((actualYear - 2000) * 100) + (yearProgress * 100);
         }
 
