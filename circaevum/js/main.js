@@ -839,11 +839,22 @@ function createTimeMarkers(zoomLevel) {
         createWeekMarkersForMonthView(weekMarkerRadius, earthDistance, weekConfig, currentDateHeight, 
             displayedYear, displayedMonth, monthFirstHeight, dayHeight, selectedWeekOffset);
     } else if (zoomLevel === 6) {
-        // Lunar cycle - show only refined quarter markers + lunar cycle markers
-        const quarterConfig = ZOOM_LEVELS[4];
-        createQuarterMarkers(quarterMarkerRadius, earthDistance, quarterConfig, selectedQuarterOffset, currentDateHeight);
-        createLunarCycleMarkers(earthDistance, config, selectedLunarOffset, currentDateHeight);
-        // No createMonthMarkers - use only the refined markers from Zoom 4
+        // Lunar cycle - use TimeMarkers module for week and day markers + moon phase images
+        // TimeMarkers module will handle quarter, month, week, and day systems
+        // Moon phase images are added by TimeMarkers module
+        TimeMarkers.updateOffsets({
+            selectedYearOffset,
+            selectedQuarterOffset,
+            selectedWeekOffset,
+            selectedDayOffset,
+            selectedHourOffset,
+            currentMonthInYear,
+            currentMonth,
+            currentWeekInMonth,
+            currentQuarter,
+            currentDayInWeek
+        });
+        TimeMarkers.createTimeMarkers(zoomLevel);
     } else if (zoomLevel === 7) {
         // Week view - show refined quarter markers + ALL week markers from month view + detailed day markers
         const quarterConfig = ZOOM_LEVELS[4];
