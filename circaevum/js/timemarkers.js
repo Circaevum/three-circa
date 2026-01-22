@@ -96,6 +96,12 @@ const TimeMarkers = (function() {
             selectedMonth = selectedDay.getMonth();
             selectedYear = selectedDay.getFullYear();
             selectedQuarter = Math.floor(selectedMonth / 3);
+        } else {
+            // Default case for zoom levels not explicitly handled (e.g., zoom 2, 8, 9)
+            // Use current month/year as fallback
+            selectedYear = actualYear;
+            selectedMonth = actualMonth;
+            selectedQuarter = Math.floor(actualMonth / 3);
         }
 
         if (!selectedDateHeight) {
@@ -223,7 +229,7 @@ const TimeMarkers = (function() {
                 }
                 return units;
             },
-            getDate: (index, year) => new Date(year, index * 3, 1),
+            getDate: (unitInfo, index, year) => new Date(year || (typeof unitInfo === 'object' && unitInfo.year) || 2026, (index !== undefined ? index : (typeof unitInfo === 'object' ? unitInfo.index : 0)) * 3, 1),
             names: ['Q1', 'Q2', 'Q3', 'Q4'],
             isCurrent: (unit, state) => {
                 const now = state.currentDate;
@@ -239,21 +245,37 @@ const TimeMarkers = (function() {
             getUnits: (zoom, state) => {
                 const units = [];
                 const selectedQ = Math.floor(state.selectedMonth / 3);
+                // Include all months in the selected quarter
                 for (let m = selectedQ * 3; m < (selectedQ + 1) * 3; m++) {
                     units.push({index: m, year: state.selectedYear});
+                }
+                // Include the first month of the next quarter for boundary line (if not Q4)
+                if (selectedQ < 3) {
+                    const boundaryMonth = (selectedQ + 1) * 3;
+                    units.push({index: boundaryMonth, year: state.selectedYear});
                 }
                 const now = state.currentDate;
                 const actualQ = Math.floor(now.getMonth() / 3);
                 if (actualQ !== selectedQ || now.getFullYear() !== state.selectedYear) {
+                    // Include all months in the current quarter
                     for (let m = actualQ * 3; m < (actualQ + 1) * 3; m++) {
                         units.push({index: m, year: now.getFullYear()});
+                    }
+                    // Include the first month of the next quarter for boundary line (if not Q4)
+                    if (actualQ < 3) {
+                        const boundaryMonth = (actualQ + 1) * 3;
+                        units.push({index: boundaryMonth, year: now.getFullYear()});
                     }
                 }
                 const exists = units.some(u => u.index === state.selectedMonth && u.year === state.selectedYear);
                 if (!exists) units.push({index: state.selectedMonth, year: state.selectedYear});
                 return units.sort((a, b) => a.year !== b.year ? a.year - b.year : a.index - b.index);
             },
-            getDate: (index, year) => index === 12 ? new Date(year + 1, 0, 1) : new Date(year, index, 1),
+            getDate: (unitInfo, index, year) => {
+                const monthIndex = index !== undefined ? index : (typeof unitInfo === 'object' ? unitInfo.index : 0);
+                const monthYear = year || (typeof unitInfo === 'object' && unitInfo.year) || 2026;
+                return monthIndex === 12 ? new Date(monthYear + 1, 0, 1) : new Date(monthYear, monthIndex, 1);
+            },
             names: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
             isCurrent: (unit, state) => {
                 const now = state.currentDate;
@@ -284,30 +306,41 @@ const TimeMarkers = (function() {
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
         const unitsToShow = getUnitsToShow(zoomLevel, timeState);
         
-        // Zoom 3 curve for quarters
+        // Zoom 3 curves for quarter boundaries
         if (zoomLevel === 3 && innerRadius === null && unitType === 'quarter') {
             const selectedYear = timeState.selectedYear;
-            const yearStartHeight = (selectedYear - CENTURY_START) * 100;
-            const angle = getAngle(yearStartHeight, timeState.currentDateHeight);
-            const orbitsInSpan = 1 / earth.orbitalPeriod;
-            const curvePoints = [];
-            for (let i = 0; i <= 64; i++) {
-                const t = i / 64;
-                const a = angle - (t * orbitsInSpan * Math.PI * 2);
-                const h = yearStartHeight + (t * 100);
-                curvePoints.push(Math.cos(a) * outerRadius, h, Math.sin(a) * outerRadius);
+            const earth = PLANET_DATA.find(p => p.name === 'Earth');
+            
+            // Create a curve for each quarter using actual date heights
+            for (let q = 0; q < 4; q++) {
+                const quarterStartMonth = q * 3;
+                const quarterStartHeight = calculateDateHeight(selectedYear, quarterStartMonth, 1, 0);
+                const quarterEndMonth = quarterStartMonth + 3;
+                const quarterEndHeight = calculateDateHeight(selectedYear, quarterEndMonth, 1, 0);
+                const quarterHeight = quarterEndHeight - quarterStartHeight;
+                
+                const angle = getAngle(quarterStartHeight, timeState.currentDateHeight);
+                const orbitsInSpan = (quarterHeight / 100) / earth.orbitalPeriod;
+                
+                const curvePoints = [];
+                for (let i = 0; i <= 64; i++) {
+                    const t = i / 64;
+                    const a = angle - (t * orbitsInSpan * Math.PI * 2);
+                    const h = quarterStartHeight + (t * quarterHeight);
+                    curvePoints.push(Math.cos(a) * outerRadius, h, Math.sin(a) * outerRadius);
+                }
+                const curveGeometry = new THREE.BufferGeometry();
+                curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
+                const curveMaterial = new THREE.LineBasicMaterial({
+                    color: getMarkerColor(),
+                    transparent: true,
+                    opacity: 0.6,
+                    linewidth: 2
+                });
+                const curve = new THREE.Line(curveGeometry, curveMaterial);
+                scene.add(curve);
+                timeMarkers.push(curve);
             }
-            const curveGeometry = new THREE.BufferGeometry();
-            curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
-            const curveMaterial = new THREE.LineBasicMaterial({
-                color: getMarkerColor(),
-                transparent: true,
-                opacity: 0.6,
-                linewidth: 2
-            });
-            const curve = new THREE.Line(curveGeometry, curveMaterial);
-            scene.add(curve);
-            timeMarkers.push(curve);
         }
         
         // Create lines and labels
@@ -329,8 +362,10 @@ const TimeMarkers = (function() {
                                               unitStartDate.getDate(), unitStartDate.getHours());
             const angle = getAngle(height, timeState.currentDateHeight);
             
-            const isCurrent = isCurrentUnit(unitInfo, unitIndex, unitYear);
-            const isSelected = isSelectedUnit(unitInfo, unitIndex, unitYear);
+            // Convert to unit object format expected by isCurrent/isSelected functions
+            const unit = { index: unitIndex, year: unitYear };
+            const isCurrent = isCurrentUnit(unit, timeState);
+            const isSelected = isSelectedUnit(unit, timeState);
             const hasOffset = calculateOffset(unitType, zoomLevel, timeState);
             
             // Previous unit for both-sides coloring
@@ -348,8 +383,9 @@ const TimeMarkers = (function() {
                     prevIndex = prevUnit;
                     prevYear = timeState.selectedYear;
                 }
-                prevIsCurrent = isCurrentUnit(prevUnit, prevIndex, prevYear);
-                prevIsSelected = isSelectedUnit(prevUnit, prevIndex, prevYear);
+                const prevUnitObj = { index: prevIndex, year: prevYear };
+                prevIsCurrent = isCurrentUnit(prevUnitObj, timeState);
+                prevIsSelected = isSelectedUnit(prevUnitObj, timeState);
                 prevHasOffset = calculateOffset(unitType, zoomLevel, timeState);
             }
             
@@ -359,8 +395,9 @@ const TimeMarkers = (function() {
             if (zoomLevel === 3 && innerRadius === null) {
                 startRadius = 0;
             } else if (zoomLevel >= 4) {
-                if (unitType === 'month' && typeof unitIndex === 'number' && unitIndex % 3 === 0) {
-                    startRadius = 0; // Quarter boundaries
+                if (unitType === 'month' && typeof unitIndex === 'number' && unitIndex % 3 === 0 && unitIndex > 0) {
+                    startRadius = 0; // Quarter boundaries (end of previous quarter)
+                    endRadius = earthDistance; // Extend to Earth's worldline
                 }
                 if (unitType === 'week' && zoomLevel >= 7) {
                     endRadius = earthDistance;
@@ -450,21 +487,26 @@ const TimeMarkers = (function() {
         if (zoomLevel >= 4) {
             const quartersToShow = system.getUnits(zoomLevel, timeState);
             const earth = PLANET_DATA.find(p => p.name === 'Earth');
-            const yearHeight = 100;
-            const quarterHeight = yearHeight / 4;
             
             quartersToShow.forEach(qInfo => {
                 const qIndex = typeof qInfo === 'object' ? qInfo.index : qInfo;
                 const qYear = typeof qInfo === 'object' ? qInfo.year : timeState.selectedYear;
-                const unitStartHeight = (qYear - CENTURY_START) * yearHeight + (qIndex * quarterHeight);
-                const angle = getAngle(unitStartHeight, timeState.currentDateHeight);
+                
+                // Use calculateDateHeight to match actual line positions
+                const quarterStartMonth = qIndex * 3;
+                const quarterStartHeight = calculateDateHeight(qYear, quarterStartMonth, 1, 0);
+                const quarterEndMonth = quarterStartMonth + 3;
+                const quarterEndHeight = calculateDateHeight(qYear, quarterEndMonth, 1, 0);
+                const quarterHeight = quarterEndHeight - quarterStartHeight;
+                
+                const angle = getAngle(quarterStartHeight, timeState.currentDateHeight);
                 const orbitsInSpan = (quarterHeight / 100) / earth.orbitalPeriod;
                 
                 const curvePoints = [];
                 for (let i = 0; i <= 64; i++) {
                     const t = i / 64;
                     const a = angle - (t * orbitsInSpan * Math.PI * 2);
-                    const h = unitStartHeight + (t * quarterHeight);
+                    const h = quarterStartHeight + (t * quarterHeight);
                     curvePoints.push(Math.cos(a) * radii.outer, h, Math.sin(a) * radii.outer);
                 }
                 const curveGeometry = new THREE.BufferGeometry();
@@ -503,25 +545,79 @@ const TimeMarkers = (function() {
         const system = SYSTEMS.month;
         const radii = system.getRadii(zoomLevel, earthDistance);
         
-        // Parent curves for Zoom 4+
-        if (zoomLevel >= 4) {
+        // Month curves for Zoom 3
+        if (zoomLevel === 3) {
             const monthsToShow = system.getUnits(zoomLevel, timeState);
             const earth = PLANET_DATA.find(p => p.name === 'Earth');
-            const yearHeight = 100;
-            const monthHeight = yearHeight / 12;
             
             monthsToShow.forEach(mInfo => {
                 const mIndex = typeof mInfo === 'object' ? mInfo.index : mInfo;
                 const mYear = typeof mInfo === 'object' ? mInfo.year : timeState.selectedYear;
-                const unitStartHeight = (mYear - CENTURY_START) * yearHeight + (mIndex * monthHeight);
-                const angle = getAngle(unitStartHeight, timeState.currentDateHeight);
+                
+                // Use calculateDateHeight to match actual line positions
+                let monthStartHeight, monthEndHeight;
+                if (mIndex === 12) {
+                    monthStartHeight = calculateDateHeight(mYear + 1, 0, 1, 0);
+                    monthEndHeight = calculateDateHeight(mYear + 1, 1, 1, 0);
+                } else {
+                    monthStartHeight = calculateDateHeight(mYear, mIndex, 1, 0);
+                    const nextMonth = mIndex + 1;
+                    monthEndHeight = calculateDateHeight(mYear, nextMonth, 1, 0);
+                }
+                const monthHeight = monthEndHeight - monthStartHeight;
+                
+                const angle = getAngle(monthStartHeight, timeState.currentDateHeight);
                 const orbitsInSpan = (monthHeight / 100) / earth.orbitalPeriod;
                 
                 const curvePoints = [];
                 for (let i = 0; i <= 64; i++) {
                     const t = i / 64;
                     const a = angle - (t * orbitsInSpan * Math.PI * 2);
-                    const h = unitStartHeight + (t * monthHeight);
+                    const h = monthStartHeight + (t * monthHeight);
+                    curvePoints.push(Math.cos(a) * radii.outer, h, Math.sin(a) * radii.outer);
+                }
+                const curveGeometry = new THREE.BufferGeometry();
+                curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
+                const curveMaterial = new THREE.LineBasicMaterial({
+                    color: getMarkerColor(),
+                    transparent: true,
+                    opacity: 0.6,
+                    linewidth: 2
+                });
+                scene.add(new THREE.Line(curveGeometry, curveMaterial));
+            });
+        }
+        
+        // Parent curves for Zoom 4+
+        if (zoomLevel >= 4) {
+            const monthsToShow = system.getUnits(zoomLevel, timeState);
+            const earth = PLANET_DATA.find(p => p.name === 'Earth');
+            
+            monthsToShow.forEach(mInfo => {
+                const mIndex = typeof mInfo === 'object' ? mInfo.index : mInfo;
+                const mYear = typeof mInfo === 'object' ? mInfo.year : timeState.selectedYear;
+                
+                // Use calculateDateHeight to match actual line positions
+                // Handle month 12 (next year boundary)
+                let monthStartHeight, monthEndHeight;
+                if (mIndex === 12) {
+                    monthStartHeight = calculateDateHeight(mYear + 1, 0, 1, 0);
+                    monthEndHeight = calculateDateHeight(mYear + 1, 1, 1, 0);
+                } else {
+                    monthStartHeight = calculateDateHeight(mYear, mIndex, 1, 0);
+                    const nextMonth = mIndex + 1;
+                    monthEndHeight = calculateDateHeight(mYear, nextMonth, 1, 0);
+                }
+                const monthHeight = monthEndHeight - monthStartHeight;
+                
+                const angle = getAngle(monthStartHeight, timeState.currentDateHeight);
+                const orbitsInSpan = (monthHeight / 100) / earth.orbitalPeriod;
+                
+                const curvePoints = [];
+                for (let i = 0; i <= 64; i++) {
+                    const t = i / 64;
+                    const a = angle - (t * orbitsInSpan * Math.PI * 2);
+                    const h = monthStartHeight + (t * monthHeight);
                     curvePoints.push(Math.cos(a) * radii.outer, h, Math.sin(a) * radii.outer);
                 }
                 const curveGeometry = new THREE.BufferGeometry();
@@ -676,20 +772,24 @@ const TimeMarkers = (function() {
             return centerDate;
         }
         
-        function isCurrentWeek(unitInfo, unitIndex, unitYear) {
-            const now = timeState.currentDate;
+        function isCurrentWeek(unit, state) {
+            // unit is { index: Date, year: number } for weeks
+            if (!unit || !unit.index || !(unit.index instanceof Date)) return false;
+            const now = state.currentDate;
             const actualDayInWeek = now.getDay();
             const actualCurrentWeekSunday = new Date(now);
             actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
             actualCurrentWeekSunday.setHours(0, 0, 0, 0);
-            const weekSunday = unitIndex instanceof Date ? unitIndex : unitInfo;
-            const normalizedWeekSunday = new Date(weekSunday);
+            
+            const normalizedWeekSunday = new Date(unit.index);
             normalizedWeekSunday.setHours(0, 0, 0, 0);
             return normalizedWeekSunday.getTime() === actualCurrentWeekSunday.getTime();
         }
         
-        function isSelectedWeekValue(unitInfo, unitIndex, unitYear) {
-            const now = timeState.currentDate;
+        function isSelectedWeekValue(unit, state) {
+            // unit is { index: Date, year: number } for weeks
+            if (!unit || !unit.index || !(unit.index instanceof Date)) return false;
+            const now = state.currentDate;
             const actualDayInWeek = now.getDay();
             const actualCurrentWeekSunday = new Date(now);
             actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
@@ -697,27 +797,26 @@ const TimeMarkers = (function() {
             
             let selectedWeekSunday;
             if (zoomLevel === 5) {
-                const selectedMonthStart = new Date(timeState.selectedYear, timeState.selectedMonth, 1);
+                const selectedMonthStart = new Date(state.selectedYear, state.selectedMonth, 1);
                 const firstSundayOffset = -selectedMonthStart.getDay();
-                const firstSunday = new Date(timeState.selectedYear, timeState.selectedMonth, 1 + firstSundayOffset);
+                const firstSunday = new Date(state.selectedYear, state.selectedMonth, 1 + firstSundayOffset);
                 firstSunday.setHours(0, 0, 0, 0);
                 selectedWeekSunday = new Date(firstSunday);
                 selectedWeekSunday.setDate(firstSunday.getDate() + (currentWeekInMonth * 7));
                 selectedWeekSunday.setHours(0, 0, 0, 0);
             } else if (zoomLevel === 7) {
-                const selectedDayOffset = timeState.selectedDayOffset || 0;
+                const selectedDayOffset = state.selectedDayOffset || 0;
                 selectedWeekSunday = new Date(actualCurrentWeekSunday);
                 selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
                 selectedWeekSunday.setHours(0, 0, 0, 0);
             } else {
-                const selectedWeekOffset = timeState.selectedWeekOffset || 0;
+                const selectedWeekOffset = state.selectedWeekOffset || 0;
                 selectedWeekSunday = new Date(actualCurrentWeekSunday);
                 selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedWeekOffset * 7));
                 selectedWeekSunday.setHours(0, 0, 0, 0);
             }
             
-            const weekSunday = unitIndex instanceof Date ? unitIndex : unitInfo;
-            const normalizedWeekSunday = new Date(weekSunday);
+            const normalizedWeekSunday = new Date(unit.index);
             normalizedWeekSunday.setHours(0, 0, 0, 0);
             return normalizedWeekSunday.getTime() === selectedWeekSunday.getTime();
         }
@@ -860,21 +959,25 @@ const TimeMarkers = (function() {
             return dayDate.getDate().toString();
         }
         
-        function isCurrentDay(unitInfo, unitIndex, unitYear) {
-            const now = timeState.currentDate;
-            const dayDate = unitInfo instanceof Date ? unitInfo : getDayDate(unitInfo, unitIndex, unitYear);
+        function isCurrentDay(unit, state) {
+            // unit is { index: Date, year: number } for days
+            if (!unit || !unit.index || !(unit.index instanceof Date)) return false;
+            const now = state.currentDate;
+            const dayDate = unit.index;
             return dayDate.getFullYear() === now.getFullYear() &&
                    dayDate.getMonth() === now.getMonth() &&
                    dayDate.getDate() === now.getDate();
         }
         
-        function isSelectedDayValue(unitInfo, unitIndex, unitYear) {
-            const now = timeState.currentDate;
+        function isSelectedDayValue(unit, state) {
+            // unit is { index: Date, year: number } for days
+            if (!unit || !unit.index || !(unit.index instanceof Date)) return false;
+            const now = state.currentDate;
             const actualDayInWeek = now.getDay();
             const actualCurrentWeekSunday = new Date(now);
             actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
             actualCurrentWeekSunday.setHours(0, 0, 0, 0);
-            const selectedDayOffset = timeState.selectedDayOffset || 0;
+            const selectedDayOffset = state.selectedDayOffset || 0;
             const selectedWeekSunday = new Date(actualCurrentWeekSunday);
             selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
             selectedWeekSunday.setHours(0, 0, 0, 0);
@@ -882,8 +985,7 @@ const TimeMarkers = (function() {
             const selectedDay = new Date(selectedWeekSunday);
             selectedDay.setDate(selectedWeekSunday.getDate() + dayOffset);
             selectedDay.setHours(0, 0, 0, 0);
-            const dayDate = unitInfo instanceof Date ? unitInfo : getDayDate(unitInfo, unitIndex, unitYear);
-            const normalizedDay = new Date(dayDate);
+            const normalizedDay = new Date(unit.index);
             normalizedDay.setHours(0, 0, 0, 0);
             return normalizedDay.getTime() === selectedDay.getTime();
         }
@@ -968,8 +1070,9 @@ const TimeMarkers = (function() {
             
             const daysToShow = getDaysToShow(zoomLevel, timeState);
             daysToShow.forEach(dayDate => {
-                const isCurrent = isCurrentDay(dayDate, null, null);
-                const isSelected = isSelectedDayValue(dayDate, null, null);
+                const unit = { index: dayDate, year: dayDate.getFullYear() };
+                const isCurrent = isCurrentDay(unit, timeState);
+                const isSelected = isSelectedDayValue(unit, timeState);
                 const dayOfWeekColor = isCurrent ? 'red' : (hasDayOffset && isSelected ? 'blue' : false);
                 const dayOfWeekIndex = dayDate.getDay();
                 const dayOfWeekText = (isCurrent || (hasDayOffset && isSelected)) 
