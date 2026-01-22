@@ -609,6 +609,24 @@ function createSelectionArc(startHeight, endHeight, earthDistance, innerRadiusFa
 let timeMarkersInitialized = false;
 function initTimeMarkers() {
     if (!timeMarkersInitialized && typeof TimeMarkers !== 'undefined') {
+        // Initialize Worldlines first (needed by TimeMarkers)
+        if (typeof Worldlines !== 'undefined' && typeof Worldlines.init === 'function') {
+            Worldlines.init({
+                scene,
+                PLANET_DATA,
+                ZOOM_LEVELS,
+                SCENE_CONFIG,
+                calculateDateHeight,
+                getHeightForYear,
+                calculateCurrentDateHeight,
+                CENTURY_START,
+                currentYear,
+                isLightMode,
+                getSelectedTimeColor,
+                SceneGeometry: typeof SceneGeometry !== 'undefined' ? SceneGeometry : null
+            });
+        }
+        
         TimeMarkers.init({
             scene,
             timeMarkers,
@@ -638,7 +656,8 @@ function initTimeMarkers() {
             calculateDateHeight,
             getHeightForYear,
             calculateCurrentDateHeight,
-            planetMeshes
+            planetMeshes,
+            SceneGeometry: typeof SceneGeometry !== 'undefined' ? SceneGeometry : null
         });
         timeMarkersInitialized = true;
     }
@@ -3139,134 +3158,29 @@ function createTextLabel(text, height, radius, zoomLevel, angle = 0, colorType =
     timeMarkers.push(sprite);
 }
 
-function createWorldline(planetData, timeYears, zoomLevel) {
-    const points = [];
-    // Increase segments for higher zoom levels for better detail
-    const segments = zoomLevel >= 4 ? 400 : 200;
-    const orbits = timeYears / planetData.orbitalPeriod;
-    const config = ZOOM_LEVELS[zoomLevel];
-    
-    // For zoom levels 3+ use precise current date; for 1-2 use year start
-    // For Zoom 3 and 4, use ACTUAL system date to avoid issues with navigated variables
-    let currentDateHeight;
-    if (zoomLevel === 3 || zoomLevel === 4) {
-        // Calculate actual system date height directly (bypass navigated variables)
-        const nowActual = new Date();
-        const actualYear = nowActual.getFullYear();
-        const actualMonth = nowActual.getMonth();
-        const actualDay = nowActual.getDate();
-        const actualHour = nowActual.getHours();
-        const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-        const isLeap = (actualYear % 4 === 0 && actualYear % 100 !== 0) || (actualYear % 400 === 0);
-        if (isLeap) daysInMonth[1] = 29;
-        const yearProgress = (actualMonth + (actualDay - 1) / daysInMonth[actualMonth] + actualHour / (24 * daysInMonth[actualMonth])) / 12;
-        currentDateHeight = ((actualYear - 2000) * 100) + (yearProgress * 100);
-    } else if (zoomLevel >= 3) {
-        currentDateHeight = calculateCurrentDateHeight();
-    } else {
-        currentDateHeight = getHeightForYear(currentYear, 1);
-    }
-    
-    // Calculate worldline span based on zoom level
-    let startHeight, endHeight;
-    
-    if (zoomLevel === 1) { // Century - show full 2000-2100
-        startHeight = getHeightForYear(2000, 1);
-        endHeight = getHeightForYear(2100, 1);
-    } else if (zoomLevel === 2) { // Decade - show 2020-2030
-        startHeight = getHeightForYear(2020, 1);
-        endHeight = getHeightForYear(2030, 1);
-    } else if (zoomLevel === 3) { // Year - show full year with current date
-        const yearHeight = 100; // 100 units per year
-        // Use actual system date for worldlines (not navigated variables)
-        const nowWorldline = new Date();
-        const actualYear = nowWorldline.getFullYear();
-        const actualMonth = nowWorldline.getMonth();
-        const actualDay = nowWorldline.getDate();
-        const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-        const isLeapYear = (actualYear % 4 === 0 && actualYear % 100 !== 0) || (actualYear % 400 === 0);
-        if (isLeapYear) daysInMonth[1] = 29;
-        const yearProgress = (actualMonth + (actualDay - 1) / daysInMonth[actualMonth]) / 12;
-        startHeight = currentDateHeight - (yearProgress * yearHeight);
-        endHeight = startHeight + yearHeight;
-    } else { // Higher zooms - show time span around current date
-        // timeYears is the span (e.g., 0.25 for quarter = 3 months)
-        // Use 100 units per year, so for a quarter that's 25 units
-        const spanHeight = timeYears * 100;
-        // Extend worldlines beyond the visible time markers for context
-        const extensionFactor = 2.5; // Show 2.5x the span (1.25x before and after)
-        startHeight = currentDateHeight - (spanHeight * extensionFactor / 2);
-        endHeight = currentDateHeight + (spanHeight * extensionFactor / 2);
-    }
-    
-    const totalHeight = endHeight - startHeight;
-    
-    // Calculate how much time this height span represents
-    const timeSpanYears = totalHeight / 100;
-    
-    // Calculate what fraction of an orbit occurs in this time span
-    const orbitsInSpan = timeSpanYears / planetData.orbitalPeriod;
-    
-    // Calculate the starting angle based on how far back in time we're going from current date
-    const yearsBeforeCurrent = (currentDateHeight - startHeight) / 100;
-    const orbitsBeforeCurrent = yearsBeforeCurrent / planetData.orbitalPeriod;
-    const angleBeforeCurrent = orbitsBeforeCurrent * Math.PI * 2;
-    
-    // Start angle is the current angle plus the angle that will be subtracted (counter-clockwise)
-    const startAngle = planetData.startAngle + angleBeforeCurrent;
-    
-    for (let i = 0; i <= segments; i++) {
-        const t = i / segments;
-        // Negative angle for counter-clockwise rotation (when viewed from North/above)
-        const angle = startAngle - (t * orbitsInSpan * Math.PI * 2);
-        const height = startHeight + (t * totalHeight);
-        
-        const x = Math.cos(angle) * planetData.distance;
-        const y = height;
-        const z = Math.sin(angle) * planetData.distance;
-        
-        points.push(x, y, z);
-    }
-    
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-    
-    // Make Earth's worldline more prominent at higher zoom levels
-    const isEarth = planetData.name === 'Earth';
-    const opacity = (isEarth && zoomLevel >= 3) ? 0.9 : SCENE_CONFIG.worldlineOpacity;
-    const lineWidth = (isEarth && zoomLevel >= 3) ? 3 : 2;
-    
-    // Adjust colors for light mode visibility - make them more saturated/vibrant
-    let worldlineColor = planetData.color;
-    if (isLightMode) {
-        // Increase saturation and slightly darken for better contrast on light background
-        const saturationBoost = 1.3; // Boost saturation
-        const darkenFactor = 0.7; // Slight darkening (was 0.4, too dark)
-        let r = ((worldlineColor >> 16) & 0xFF);
-        let g = ((worldlineColor >> 8) & 0xFF);
-        let b = (worldlineColor & 0xFF);
-        
-        // Find max and boost others relative to it for more saturation
-        const max = Math.max(r, g, b);
-        if (max > 0) {
-            r = Math.min(255, r * saturationBoost * darkenFactor);
-            g = Math.min(255, g * saturationBoost * darkenFactor);
-            b = Math.min(255, b * saturationBoost * darkenFactor);
-        }
-        worldlineColor = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
-    }
-    
-    const material = new THREE.LineBasicMaterial({
-        color: worldlineColor,
-        transparent: true,
-        opacity: isLightMode ? 0.95 : opacity, // Higher opacity in light mode
-        linewidth: isLightMode ? lineWidth + 1 : lineWidth // Thicker in light mode
-    });
-    
-    return new THREE.Line(geometry, material);
-}
+// createWorldline moved to worldlines.js module
 
 function createPlanets(zoomLevel) {
+    // Ensure Worldlines is initialized before use
+    if (typeof Worldlines !== 'undefined' && typeof Worldlines.init === 'function') {
+        // Initialize Worldlines if not already done (check by trying to call a method that requires init)
+        // We'll initialize it here to be safe
+        Worldlines.init({
+            scene,
+            PLANET_DATA,
+            ZOOM_LEVELS,
+            SCENE_CONFIG,
+            calculateDateHeight,
+            getHeightForYear,
+            calculateCurrentDateHeight,
+            CENTURY_START,
+            currentYear,
+            isLightMode,
+            getSelectedTimeColor,
+            SceneGeometry: typeof SceneGeometry !== 'undefined' ? SceneGeometry : null
+        });
+    }
+    
     planetMeshes.forEach(p => scene.remove(p));
     orbitLines.forEach(o => scene.remove(o));
     worldlines.forEach(w => scene.remove(w));
@@ -3518,16 +3432,25 @@ function createPlanets(zoomLevel) {
             scene.add(ghostOrbitLine);
         }
         
-        // Create worldline
-        const worldline = createWorldline(planetData, config.timeYears, zoomLevel);
-        scene.add(worldline);
-        worldlines.push(worldline);
-        
-        // Create connector worldline if viewing a different time than present
-        if (selectedHeightOffset !== 0) {
-            const connectorWorldline = createConnectorWorldline(planetData, currentDateHeight, selectedDateHeight);
-            scene.add(connectorWorldline);
-            worldlines.push(connectorWorldline);
+        // Create worldline using Worldlines module
+        if (typeof Worldlines !== 'undefined' && Worldlines.createWorldline) {
+            const worldline = Worldlines.createWorldline(planetData, config.timeYears, zoomLevel);
+            if (worldline) { // Check if worldline was created successfully
+                scene.add(worldline);
+                worldlines.push(worldline);
+            }
+            
+            // Create connector worldline if viewing a different time than present
+            if (selectedHeightOffset !== 0) {
+                const connectorWorldline = Worldlines.createConnectorWorldline(planetData, currentDateHeight, selectedDateHeight);
+                if (connectorWorldline) {
+                    scene.add(connectorWorldline);
+                    worldlines.push(connectorWorldline);
+                }
+            }
+        } else {
+            // Fallback if Worldlines module not available
+            console.warn('Worldlines module not available, worldlines will not be created');
         }
     });
 
@@ -3535,52 +3458,7 @@ function createPlanets(zoomLevel) {
     createTimeMarkers(zoomLevel);
 }
 
-// Create a worldline connecting selected time to current time
-function createConnectorWorldline(planetData, currentHeight, selectedHeight) {
-    const points = [];
-    const segments = 100;
-    
-    // Determine start and end heights
-    const startHeight = Math.min(currentHeight, selectedHeight);
-    const endHeight = Math.max(currentHeight, selectedHeight);
-    const totalHeight = endHeight - startHeight;
-    
-    // Calculate angles
-    const timeSpanYears = totalHeight / 100;
-    const orbitsInSpan = timeSpanYears / planetData.orbitalPeriod;
-    
-    // Calculate starting angle
-    const yearsFromCurrent = (currentHeight - startHeight) / 100;
-    const orbitsFromCurrent = yearsFromCurrent / planetData.orbitalPeriod;
-    const angleFromCurrent = orbitsFromCurrent * Math.PI * 2;
-    const startAngle = planetData.startAngle + angleFromCurrent;
-    
-    // Create helical path from start to end
-    for (let i = 0; i <= segments; i++) {
-        const t = i / segments;
-        const angle = startAngle - (t * orbitsInSpan * Math.PI * 2);
-        const height = startHeight + (t * totalHeight);
-        
-        const x = Math.cos(angle) * planetData.distance;
-        const y = height;
-        const z = Math.sin(angle) * planetData.distance;
-        
-        points.push(x, y, z);
-    }
-    
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-    
-    // Distinct color for connector - slightly transparent
-    const material = new THREE.LineBasicMaterial({
-        color: getSelectedTimeColor(), // Cyan/blue for selected time, darker in light mode
-        transparent: true,
-        opacity: 0.5,
-        linewidth: 2
-    });
-    
-    return new THREE.Line(geometry, material);
-}
+// createConnectorWorldline moved to worldlines.js module
 
 function initControls() {
     // Mouse events for desktop
@@ -3864,7 +3742,12 @@ function toggleMoonWorldline() {
     showMoonWorldline = !showMoonWorldline;
     
     if (showMoonWorldline) {
-        createMoonWorldline();
+        if (typeof Worldlines !== 'undefined' && Worldlines.createMoonWorldline) {
+            const currentDateHeight = calculateCurrentDateHeight();
+            const moonWorldline = Worldlines.createMoonWorldline(currentDateHeight, currentZoom);
+            scene.add(moonWorldline);
+            moonWorldlines.push(moonWorldline);
+        }
     } else {
         // Remove all moon worldline meshes
         moonWorldlines.forEach(mesh => {
@@ -3874,77 +3757,7 @@ function toggleMoonWorldline() {
     }
 }
 
-function createMoonWorldline() {
-    // Remove existing moon worldlines
-    moonWorldlines.forEach(mesh => {
-        scene.remove(mesh);
-    });
-    moonWorldlines = [];
-    
-    // Create extended moon worldline (beyond time marker frame)
-    const currentDateHeight = getHeightForYear(currentYear, 1);
-    const extensionFactor = 5; // Extend 5x beyond current view
-    const baseSpan = ZOOM_LEVELS[currentZoom].timeYears * 100;
-    const totalSpan = baseSpan * extensionFactor;
-    const startHeight = currentDateHeight - (totalSpan / 2);
-    
-    const moonDistance = 15; // Moon distance from Earth
-    const lunarPeriod = 0.0767; // ~28 days in years
-    const segments = 1000; // More segments for smoother line
-    
-    // Get Earth's orbital data
-    const earth = PLANET_DATA.find(p => p.name === 'Earth');
-    
-    // Calculate Earth's angles
-    const timeSpanYears = totalSpan / 100;
-    const earthOrbitsInSpan = timeSpanYears / earth.orbitalPeriod;
-    const yearsBeforeCurrent = (currentDateHeight - startHeight) / 100;
-    const earthOrbitsBeforeCurrent = yearsBeforeCurrent / earth.orbitalPeriod;
-    const earthAngleBeforeCurrent = earthOrbitsBeforeCurrent * Math.PI * 2;
-    const earthStartAngle = earth.startAngle + earthAngleBeforeCurrent;
-    
-    // Calculate moon's orbital parameters
-    const moonOrbitsInSpan = timeSpanYears / lunarPeriod;
-    
-    // Create moon worldline
-    const moonPoints = [];
-    for (let i = 0; i <= segments; i++) {
-        const t = i / segments;
-        const earthAngle = earthStartAngle - (t * earthOrbitsInSpan * Math.PI * 2);
-        const height = startHeight + (t * totalSpan);
-        
-        // Earth position
-        const earthX = Math.cos(earthAngle) * earth.distance;
-        const earthZ = Math.sin(earthAngle) * earth.distance;
-        
-        // Sun to Earth direction
-        const sunToEarthAngle = Math.atan2(earthZ, earthX);
-        
-        // Moon phase progress
-        const moonPhaseProgress = (t * moonOrbitsInSpan) % 1;
-        const moonAngleRelativeToSun = sunToEarthAngle + Math.PI - (moonPhaseProgress * Math.PI * 2);
-        
-        // Moon position relative to Earth
-        const moonX = earthX + Math.cos(moonAngleRelativeToSun) * moonDistance;
-        const moonZ = earthZ + Math.sin(moonAngleRelativeToSun) * moonDistance;
-        
-        moonPoints.push(moonX, height, moonZ);
-    }
-    
-    const moonGeometry = new THREE.BufferGeometry();
-    moonGeometry.setAttribute('position', new THREE.Float32BufferAttribute(moonPoints, 3));
-    
-    const moonMaterial = new THREE.LineBasicMaterial({
-        color: 0x888888,
-        transparent: true,
-        opacity: 0.4,
-        linewidth: 1
-    });
-    
-    const moonWorldline = new THREE.Line(moonGeometry, moonMaterial);
-    scene.add(moonWorldline);
-    moonWorldlines.push(moonWorldline);
-}
+// createMoonWorldline moved to worldlines.js module
 
 function toggleTimeMarkers() {
     showTimeMarkers = !showTimeMarkers;

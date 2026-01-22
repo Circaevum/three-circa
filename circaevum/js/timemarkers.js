@@ -18,6 +18,7 @@ const TimeMarkers = (function() {
     let selectedYearOffset, selectedQuarterOffset, selectedWeekOffset, selectedDayOffset;
     let isLightMode, calculateDateHeight, getHeightForYear, calculateCurrentDateHeight;
     let planetMeshes;
+    let SceneGeometry; // Shared geometry utilities
 
     function init(dependencies) {
         scene = dependencies.scene;
@@ -41,6 +42,20 @@ const TimeMarkers = (function() {
         getHeightForYear = dependencies.getHeightForYear;
         calculateCurrentDateHeight = dependencies.calculateCurrentDateHeight;
         planetMeshes = dependencies.planetMeshes;
+        SceneGeometry = dependencies.SceneGeometry;
+        
+        // Initialize SceneGeometry if provided
+        if (SceneGeometry) {
+            SceneGeometry.init({
+                PLANET_DATA,
+                calculateDateHeight,
+                getHeightForYear,
+                calculateCurrentDateHeight,
+                CENTURY_START,
+                ZOOM_LEVELS,
+                currentYear
+            });
+        }
     }
 
     // ============================================
@@ -129,6 +144,11 @@ const TimeMarkers = (function() {
     // ============================================
     
     function getAngle(height, currentHeight) {
+        // Use SceneGeometry if available, otherwise fallback to local calculation
+        if (SceneGeometry) {
+            return SceneGeometry.getAngle(height, currentHeight);
+        }
+        // Fallback for backwards compatibility
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
         const years = (height - currentHeight) / 100;
         const orbits = years / earth.orbitalPeriod;
@@ -317,18 +337,24 @@ const TimeMarkers = (function() {
                 const quarterStartHeight = calculateDateHeight(selectedYear, quarterStartMonth, 1, 0);
                 const quarterEndMonth = quarterStartMonth + 3;
                 const quarterEndHeight = calculateDateHeight(selectedYear, quarterEndMonth, 1, 0);
-                const quarterHeight = quarterEndHeight - quarterStartHeight;
                 
-                const angle = getAngle(quarterStartHeight, timeState.currentDateHeight);
-                const orbitsInSpan = (quarterHeight / 100) / earth.orbitalPeriod;
-                
-                const curvePoints = [];
-                for (let i = 0; i <= 64; i++) {
-                    const t = i / 64;
-                    const a = angle - (t * orbitsInSpan * Math.PI * 2);
-                    const h = quarterStartHeight + (t * quarterHeight);
-                    curvePoints.push(Math.cos(a) * outerRadius, h, Math.sin(a) * outerRadius);
-                }
+                // Use SceneGeometry for consistent curve generation
+                const curvePoints = SceneGeometry ? 
+                    SceneGeometry.createEarthHelicalCurve(quarterStartHeight, quarterEndHeight, outerRadius, timeState.currentDateHeight, 64) :
+                    (() => {
+                        // Fallback if SceneGeometry not available
+                        const quarterHeight = quarterEndHeight - quarterStartHeight;
+                        const angle = getAngle(quarterStartHeight, timeState.currentDateHeight);
+                        const orbitsInSpan = (quarterHeight / 100) / earth.orbitalPeriod;
+                        const points = [];
+                        for (let i = 0; i <= 64; i++) {
+                            const t = i / 64;
+                            const a = angle - (t * orbitsInSpan * Math.PI * 2);
+                            const h = quarterStartHeight + (t * quarterHeight);
+                            points.push(Math.cos(a) * outerRadius, h, Math.sin(a) * outerRadius);
+                        }
+                        return points;
+                    })();
                 const curveGeometry = new THREE.BufferGeometry();
                 curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
                 const curveMaterial = new THREE.LineBasicMaterial({
@@ -404,11 +430,13 @@ const TimeMarkers = (function() {
                 }
             }
             
-            // Create line
-            const points = [
-                Math.cos(angle) * startRadius, height, Math.sin(angle) * startRadius,
-                Math.cos(angle) * endRadius, height, Math.sin(angle) * endRadius
-            ];
+            // Create line using SceneGeometry
+            const points = SceneGeometry ?
+                SceneGeometry.createEarthStraightLine(height, startRadius, endRadius, timeState.currentDateHeight) :
+                [
+                    Math.cos(angle) * startRadius, height, Math.sin(angle) * startRadius,
+                    Math.cos(angle) * endRadius, height, Math.sin(angle) * endRadius
+                ];
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
             
@@ -497,18 +525,24 @@ const TimeMarkers = (function() {
                 const quarterStartHeight = calculateDateHeight(qYear, quarterStartMonth, 1, 0);
                 const quarterEndMonth = quarterStartMonth + 3;
                 const quarterEndHeight = calculateDateHeight(qYear, quarterEndMonth, 1, 0);
-                const quarterHeight = quarterEndHeight - quarterStartHeight;
                 
-                const angle = getAngle(quarterStartHeight, timeState.currentDateHeight);
-                const orbitsInSpan = (quarterHeight / 100) / earth.orbitalPeriod;
-                
-                const curvePoints = [];
-                for (let i = 0; i <= 64; i++) {
-                    const t = i / 64;
-                    const a = angle - (t * orbitsInSpan * Math.PI * 2);
-                    const h = quarterStartHeight + (t * quarterHeight);
-                    curvePoints.push(Math.cos(a) * radii.outer, h, Math.sin(a) * radii.outer);
-                }
+                // Use SceneGeometry for consistent curve generation
+                const curvePoints = SceneGeometry ?
+                    SceneGeometry.createEarthHelicalCurve(quarterStartHeight, quarterEndHeight, radii.outer, timeState.currentDateHeight, 64) :
+                    (() => {
+                        // Fallback if SceneGeometry not available
+                        const quarterHeight = quarterEndHeight - quarterStartHeight;
+                        const angle = getAngle(quarterStartHeight, timeState.currentDateHeight);
+                        const orbitsInSpan = (quarterHeight / 100) / earth.orbitalPeriod;
+                        const points = [];
+                        for (let i = 0; i <= 64; i++) {
+                            const t = i / 64;
+                            const a = angle - (t * orbitsInSpan * Math.PI * 2);
+                            const h = quarterStartHeight + (t * quarterHeight);
+                            points.push(Math.cos(a) * radii.outer, h, Math.sin(a) * radii.outer);
+                        }
+                        return points;
+                    })();
                 const curveGeometry = new THREE.BufferGeometry();
                 curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
                 const curveMaterial = new THREE.LineBasicMaterial({
@@ -564,18 +598,23 @@ const TimeMarkers = (function() {
                     const nextMonth = mIndex + 1;
                     monthEndHeight = calculateDateHeight(mYear, nextMonth, 1, 0);
                 }
-                const monthHeight = monthEndHeight - monthStartHeight;
-                
-                const angle = getAngle(monthStartHeight, timeState.currentDateHeight);
-                const orbitsInSpan = (monthHeight / 100) / earth.orbitalPeriod;
-                
-                const curvePoints = [];
-                for (let i = 0; i <= 64; i++) {
-                    const t = i / 64;
-                    const a = angle - (t * orbitsInSpan * Math.PI * 2);
-                    const h = monthStartHeight + (t * monthHeight);
-                    curvePoints.push(Math.cos(a) * radii.outer, h, Math.sin(a) * radii.outer);
-                }
+                // Use SceneGeometry for consistent curve generation
+                const curvePoints = SceneGeometry ?
+                    SceneGeometry.createEarthHelicalCurve(monthStartHeight, monthEndHeight, radii.outer, timeState.currentDateHeight, 64) :
+                    (() => {
+                        // Fallback if SceneGeometry not available
+                        const monthHeight = monthEndHeight - monthStartHeight;
+                        const angle = getAngle(monthStartHeight, timeState.currentDateHeight);
+                        const orbitsInSpan = (monthHeight / 100) / earth.orbitalPeriod;
+                        const points = [];
+                        for (let i = 0; i <= 64; i++) {
+                            const t = i / 64;
+                            const a = angle - (t * orbitsInSpan * Math.PI * 2);
+                            const h = monthStartHeight + (t * monthHeight);
+                            points.push(Math.cos(a) * radii.outer, h, Math.sin(a) * radii.outer);
+                        }
+                        return points;
+                    })();
                 const curveGeometry = new THREE.BufferGeometry();
                 curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
                 const curveMaterial = new THREE.LineBasicMaterial({
@@ -608,18 +647,23 @@ const TimeMarkers = (function() {
                     const nextMonth = mIndex + 1;
                     monthEndHeight = calculateDateHeight(mYear, nextMonth, 1, 0);
                 }
-                const monthHeight = monthEndHeight - monthStartHeight;
-                
-                const angle = getAngle(monthStartHeight, timeState.currentDateHeight);
-                const orbitsInSpan = (monthHeight / 100) / earth.orbitalPeriod;
-                
-                const curvePoints = [];
-                for (let i = 0; i <= 64; i++) {
-                    const t = i / 64;
-                    const a = angle - (t * orbitsInSpan * Math.PI * 2);
-                    const h = monthStartHeight + (t * monthHeight);
-                    curvePoints.push(Math.cos(a) * radii.outer, h, Math.sin(a) * radii.outer);
-                }
+                // Use SceneGeometry for consistent curve generation
+                const curvePoints = SceneGeometry ?
+                    SceneGeometry.createEarthHelicalCurve(monthStartHeight, monthEndHeight, radii.outer, timeState.currentDateHeight, 64) :
+                    (() => {
+                        // Fallback if SceneGeometry not available
+                        const monthHeight = monthEndHeight - monthStartHeight;
+                        const angle = getAngle(monthStartHeight, timeState.currentDateHeight);
+                        const orbitsInSpan = (monthHeight / 100) / earth.orbitalPeriod;
+                        const points = [];
+                        for (let i = 0; i <= 64; i++) {
+                            const t = i / 64;
+                            const a = angle - (t * orbitsInSpan * Math.PI * 2);
+                            const h = monthStartHeight + (t * monthHeight);
+                            points.push(Math.cos(a) * radii.outer, h, Math.sin(a) * radii.outer);
+                        }
+                        return points;
+                    })();
                 const curveGeometry = new THREE.BufferGeometry();
                 curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
                 const curveMaterial = new THREE.LineBasicMaterial({
@@ -1010,17 +1054,24 @@ const TimeMarkers = (function() {
                 weekEnd.setDate(weekSunday.getDate() + 7);
                 const weekStartHeight = calculateDateHeight(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate(), 0);
                 const weekEndHeight = calculateDateHeight(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate(), 0);
-                const weekHeightActual = weekEndHeight - weekStartHeight;
-                const angle = getAngle(weekStartHeight, timeState.currentDateHeight);
-                const orbitsInSpan = (weekHeightActual / 100) / earth.orbitalPeriod;
                 
-                const curvePoints = [];
-                for (let i = 0; i <= 64; i++) {
-                    const t = i / 64;
-                    const a = angle - (t * orbitsInSpan * Math.PI * 2);
-                    const h = weekStartHeight + (t * weekHeightActual);
-                    curvePoints.push(Math.cos(a) * outerRadius, h, Math.sin(a) * outerRadius);
-                }
+                // Use SceneGeometry for consistent curve generation
+                const curvePoints = SceneGeometry ?
+                    SceneGeometry.createEarthHelicalCurve(weekStartHeight, weekEndHeight, outerRadius, timeState.currentDateHeight, 64) :
+                    (() => {
+                        // Fallback if SceneGeometry not available
+                        const weekHeightActual = weekEndHeight - weekStartHeight;
+                        const angle = getAngle(weekStartHeight, timeState.currentDateHeight);
+                        const orbitsInSpan = (weekHeightActual / 100) / earth.orbitalPeriod;
+                        const points = [];
+                        for (let i = 0; i <= 64; i++) {
+                            const t = i / 64;
+                            const a = angle - (t * orbitsInSpan * Math.PI * 2);
+                            const h = weekStartHeight + (t * weekHeightActual);
+                            points.push(Math.cos(a) * outerRadius, h, Math.sin(a) * outerRadius);
+                        }
+                        return points;
+                    })();
                 const curveGeometry = new THREE.BufferGeometry();
                 curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
                 const curveMaterial = new THREE.LineBasicMaterial({
