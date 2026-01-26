@@ -101,8 +101,8 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
     const selectedHour = selectedDate.getHours();
     
     switch(targetZoomLevel) {
-        case 1: // Century view
-            currentYear = selectedYear - (selectedYear % 25); // Round to nearest 25-year boundary
+        case 1: // Century view - preserve exact selected year
+            currentYear = selectedYear;
             break;
             
         case 2: // Decade view
@@ -192,8 +192,8 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
             selectedMidnight.setHours(0, 0, 0, 0);
             
             const daysOffset = Math.floor((selectedMidnight - currentMidnight) / (1000 * 60 * 60 * 24));
-            const dayHeight = ZOOM_LEVELS[8].timeYears * 100;
-            selectedHourOffset = Math.floor((daysOffset * 24 * (100 / 365)) / (dayHeight / 100));
+            // selectedHourOffset represents days (not hours) - it's multiplied by dayHeight later
+            selectedHourOffset = daysOffset;
             
             // Hour within day
             currentHourInDay = selectedHour;
@@ -271,7 +271,7 @@ function getSelectedDateTime() {
     
     // Apply offsets based on current zoom level
     switch(currentZoom) {
-        case 1: // Century view - year changes by 25-year increments
+        case 1: // Century view - year changes by 10-year increments
             // currentYear is modified directly by navigateUnit
             selected.setFullYear(currentYear);
             break;
@@ -396,6 +396,8 @@ function initScene() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     // Limit pixel ratio on mobile for better performance (max 2)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Enable WebXR support
+    renderer.xr.enabled = true;
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
@@ -576,88 +578,36 @@ function createPlanets(zoomLevel) {
         currentDateHeight = getHeightForYear(currentYear, 1);
     }
     
-    // Calculate selected position offset based on zoom level
-    let selectedHeightOffset = 0;
-    if (zoomLevel === 2) { // Decade view
-        const yearHeight = 100; // 100 units per year
-        selectedHeightOffset = selectedDecadeOffset * (10 * yearHeight); // Full decade offset
-    } else if (zoomLevel === 3) { // Year view
-        const yearHeight = 100;
-        const monthHeight = yearHeight / 12;
-        // Get ACTUAL system month (not navigation-modified)
-        const nowP3 = new Date();
-        const actualMonthInYear = nowP3.getMonth();
-        // currentMonthInYear changes with A/D, actualMonthInYear is fixed
-        selectedHeightOffset = (selectedYearOffset * yearHeight) + (currentMonthInYear * monthHeight) - (actualMonthInYear * monthHeight);
-    } else if (zoomLevel === 4) { // Quarter view
-        const quarterHeight = config.timeYears * 100;
-        const monthHeight = quarterHeight / 3;
-        // Get ACTUAL current month within quarter from system time
-        const nowP4 = new Date();
-        const actualMonthInQuarter = nowP4.getMonth() % 3;
-        // currentMonth changes with A/D (0-2), actualMonthInQuarter is the actual system month in quarter
-        // When currentMonth === actualMonthInQuarter and selectedQuarterOffset === 0, offset should be 0
-        selectedHeightOffset = (selectedQuarterOffset * quarterHeight) + ((currentMonth - actualMonthInQuarter) * monthHeight);
-    } else if (zoomLevel === 5) { // Month view
-        const monthHeight = config.timeYears * 100;
-        const weekHeight = monthHeight / 4;
-        const dayHeight = weekHeight / 7;
-        // Get ACTUAL system week/day (not navigation-modified)
-        const nowP5 = new Date();
-        const actualWeekInMonth = Math.floor((nowP5.getDate() - 1) / 7);
-        const actualDayInWeek = nowP5.getDay();
-        // currentWeekInMonth/currentDayInWeek change with A/D, actual values are fixed
-        selectedHeightOffset = (selectedWeekOffset * monthHeight) + (currentWeekInMonth * weekHeight) + (currentDayInWeek * dayHeight) - (actualWeekInMonth * weekHeight) - (actualDayInWeek * dayHeight);
-    } else if (zoomLevel === 6) { // Lunar view
-        const lunarHeight = config.timeYears * 100;
-        const weekHeight = lunarHeight / 4; // 4 weeks per lunar cycle
-        const currentWeekInLunar = 1; // Assume week 1 of current cycle
-        selectedHeightOffset = (selectedLunarOffset * lunarHeight) + (currentWeekInMonth * weekHeight) - (currentWeekInLunar * weekHeight);
-    } else if (zoomLevel === 7) { // Week view
-        const weekHeight = config.timeYears * 100;
-        const dayHeight = weekHeight / 7;
-        const hourHeight = dayHeight / 24;
-        // Get ACTUAL system day/hour (not navigation-modified)
-        const nowP7 = new Date();
-        const actualDayInWeek = nowP7.getDay();
-        const actualHourInDay = nowP7.getHours();
-        // currentDayInWeek/currentHourInDay change with A/D, actual values are fixed
-        selectedHeightOffset = (selectedDayOffset * weekHeight) + (currentDayInWeek * dayHeight) + (currentHourInDay * hourHeight) - (actualDayInWeek * dayHeight) - (actualHourInDay * hourHeight);
-    } else if (zoomLevel === 8 || zoomLevel === 9) { // Day/Clock view
-        const dayHeight = config.timeYears * 100;
-        const hourHeight = dayHeight / 24;
-        // Offset from current day + position within selected day
-        selectedHeightOffset = (selectedHourOffset * dayHeight) + (currentHourInDay * hourHeight) - (14 * hourHeight); // 14 is current hour (2 PM)
-    }
+    // Calculate selected date height using the actual selected date for continuous movement
+    // This ensures smooth transitions when crossing day/hour boundaries
+    const selectedDate = getSelectedDateTime();
+    const selectedDateHeight = calculateDateHeight(
+        selectedDate.getFullYear(),
+        selectedDate.getMonth(),
+        selectedDate.getDate(),
+        selectedDate.getHours()
+    );
     
-    const selectedDateHeight = currentDateHeight + selectedHeightOffset;
+    // Also calculate the offset for other uses (but use exact height for Earth position)
+    const selectedHeightOffset = selectedDateHeight - currentDateHeight;
     
     // Update target focus point to follow selected position (will be smoothly interpolated)
     // For earth-focused zooms, focus on Earth's X,Z position at selected height
     // For sun-focused zooms, focus on Sun at selected height
     if (config.focusTarget === 'earth') {
-        // Calculate Earth's position at selected time
+        // Calculate Earth's position at selected time using exact date height
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
-        if (selectedHeightOffset !== 0) {
-            // Calculate Earth's angle at selected time
-            const yearsOffset = selectedHeightOffset / 100;
-            const orbitsOffset = yearsOffset / earth.orbitalPeriod;
-            const angleOffset = orbitsOffset * Math.PI * 2;
-            const earthAngle = earth.startAngle - angleOffset;
-            
-            targetFocusPoint.set(
-                Math.cos(earthAngle) * earth.distance,
-                selectedDateHeight,
-                Math.sin(earthAngle) * earth.distance
-            );
-        } else {
-            // Use current Earth position
-            targetFocusPoint.set(
-                Math.cos(earth.startAngle) * earth.distance,
-                selectedDateHeight,
-                Math.sin(earth.startAngle) * earth.distance
-            );
-        }
+        // Calculate Earth's angle at selected time using continuous height calculation
+        const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
+        const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / earth.orbitalPeriod;
+        const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
+        const earthAngle = earth.startAngle - angleFromCurrentToSelected; // Counter-clockwise
+        
+        targetFocusPoint.set(
+            Math.cos(earthAngle) * earth.distance,
+            selectedDateHeight,
+            Math.sin(earthAngle) * earth.distance
+        );
     } else {
         // Sun-focused: just update Y
         targetFocusPoint.y = selectedDateHeight;
@@ -999,11 +949,13 @@ function createTimeMarkers(zoomLevel) {
                 selectedWeekOffset,
                 selectedDayOffset,
                 selectedHourOffset,
+                currentYear, // Needed for Zoom 1 and 2 year highlighting
                 currentMonthInYear,
                 currentMonth,
                 currentWeekInMonth, // Needed for Zoom 5 week calculation
                 currentQuarter, // Needed for Zoom 3 quarter navigation
-                currentDayInWeek // Needed for Zoom 7 day calculation
+                currentDayInWeek, // Needed for Zoom 7 day calculation
+                currentHourInDay // Needed for Zoom 8/9 hour calculation
             });
         }
         TimeMarkers.createTimeMarkers(zoomLevel);
@@ -1184,6 +1136,42 @@ function initControls() {
     
     // Light mode toggle
     document.getElementById('light-mode-toggle').addEventListener('click', toggleLightMode);
+    
+    // WebXR toggle
+    const webxrToggle = document.getElementById('webxr-toggle');
+    if (webxrToggle) {
+        // Start hidden by default
+        webxrToggle.style.display = 'none';
+        
+        // Check if WebXR is supported
+        if ('xr' in navigator) {
+            // Check for immersive-vr support (primary for VR headsets)
+            navigator.xr.isSessionSupported('immersive-vr').then((vrSupported) => {
+                if (vrSupported) {
+                    webxrToggle.style.display = 'block';
+                    webxrToggle.addEventListener('click', toggleWebXR);
+                    console.log('WebXR: VR mode supported');
+                } else {
+                    // Also check for immersive-ar (AR headsets)
+                    return navigator.xr.isSessionSupported('immersive-ar').then((arSupported) => {
+                        if (arSupported) {
+                            webxrToggle.style.display = 'block';
+                            webxrToggle.addEventListener('click', toggleWebXR);
+                            console.log('WebXR: AR mode supported');
+                        } else {
+                            console.log('WebXR: Neither VR nor AR mode supported');
+                        }
+                    });
+                }
+            }).catch((error) => {
+                console.log('WebXR: Error checking support', error);
+                // Keep it hidden (already set above)
+            });
+        } else {
+            console.log('WebXR: navigator.xr not available');
+            // If WebXR not in navigator, keep it hidden (already set above)
+        }
+    }
 }
 
 function returnToPresent() {
@@ -1375,6 +1363,37 @@ function toggleLightMode() {
     createPlanets(currentZoom);
 }
 
+function toggleWebXR() {
+    const button = document.getElementById('webxr-toggle');
+    
+    if (renderer.xr.isPresenting) {
+        // Exit WebXR
+        renderer.xr.getSession().end();
+    } else {
+        // Enter WebXR
+        if ('xr' in navigator) {
+            navigator.xr.requestSession('immersive-vr', {
+                optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+            }).then((session) => {
+                renderer.xr.setSession(session);
+                button.classList.add('active');
+                button.textContent = 'EXIT VR';
+                
+                // Handle session end
+                session.addEventListener('end', () => {
+                    button.classList.remove('active');
+                    button.textContent = 'WEBXR';
+                    // Restore animation loop for non-XR mode
+                    renderer.setAnimationLoop(animate);
+                });
+            }).catch((error) => {
+                console.error('Failed to start WebXR session:', error);
+                alert('Failed to enter VR mode. Make sure your headset is connected and WebXR is supported.');
+            });
+        }
+    }
+}
+
 // Center on Sun and remove all visual elements (WASD keys)
 function centerOnSun() {
     // Clear all visual elements
@@ -1408,10 +1427,12 @@ function navigateUnit(direction) {
     console.log('BEFORE navigation - zoom:', currentZoom, 'direction:', direction);
     
     switch(currentZoom) {
-        case 1: // Century view - navigate by 25 years
+        case 1: // Century view - navigate by 10 years, snap to nearest decade
             console.log('  Century year before:', currentYear);
-            currentYear += direction * 25;
-            console.log('  Century year after:', currentYear);
+            currentYear += direction * 10;
+            // Snap to nearest decade (round to nearest 10)
+            currentYear = Math.round(currentYear / 10) * 10;
+            console.log('  Century year after (snapped to decade):', currentYear);
             break;
             
         case 2: // Decade view - navigate years
@@ -1522,12 +1543,12 @@ function navigateUnit(direction) {
         case 8: // Day view - navigate hours
         case 9: // Clock view - navigate hours
             console.log('  Hour before:', currentHourInDay, 'offset:', selectedHourOffset);
-            currentHourInDay += direction * 3; // Move in 3-hour increments to match markers
+            currentHourInDay += direction; // Move by 1 hour
             
             // Wrap to adjacent days if needed
             if (currentHourInDay < 0) {
                 selectedHourOffset--;
-                currentHourInDay = 21; // Go to 21:00 of previous day
+                currentHourInDay = 23; // Go to 23:00 of previous day
             } else if (currentHourInDay > 23) {
                 selectedHourOffset++;
                 currentHourInDay = 0; // Go to 00:00 of next day
@@ -1664,8 +1685,8 @@ function navigateToMarker(direction) {
     // This moves Earth to the next visible time marker
     // For simplicity, we'll move by one marker unit in each zoom level
     switch(currentZoom) {
-        case 1: // Century - move by 25 years (major markers)
-            currentYear += direction * 25;
+        case 1: // Century - move by 10 years (major markers)
+            currentYear += direction * 10;
             break;
         case 2: // Decade - move by year
             currentYear += direction * 1;
@@ -1805,6 +1826,7 @@ function setZoomLevel(level) {
             selectedWeekOffset,
             selectedDayOffset,
             selectedHourOffset,
+            currentYear, // Needed for Zoom 1 and 2 year highlighting
             currentMonthInYear,
             currentMonth,
             currentQuarter,
@@ -1846,8 +1868,6 @@ function getFocusPoint() {
 }
 
 function animate() {
-    requestAnimationFrame(animate);
-    
     time += 0.01;
     
     // Planets stay at rest at their accurate positions
@@ -1978,7 +1998,8 @@ document.addEventListener('DOMContentLoaded', () => {
         createPlanets(currentZoom);
         initControls();
         updateTimeDisplays(); // Initialize time displays
-        animate();
+        // Use renderer.setAnimationLoop for WebXR compatibility
+        renderer.setAnimationLoop(animate);
         
         setTimeout(() => {
             if (loadingElement) {

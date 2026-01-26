@@ -109,14 +109,14 @@ const HEIGHT_PER_YEAR = 100;
 // TIME MARKERS FOR EACH ZOOM LEVEL
 // ============================================
 const TIME_MARKERS = {
-    1: { // CENTURY - major markers every 25 years, minor every 10 years
-        major: [2000, 2025, 2050, 2075, 2100],
-        minor: [2010, 2020, 2030, 2040, 2060, 2070, 2080, 2090],
+    1: { // CENTURY - all years same size
+        major: [2000, 2010, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100],
+        minor: [],
         labelFormat: (year) => year.toString()
     },
-    2: { // DECADE - major markers at 2020, 2025, 2030 only
-        major: [2020, 2025, 2030],
-        minor: [2021, 2022, 2023, 2024, 2026, 2027, 2028, 2029],
+    2: { // DECADE - all years 2020-2030, same size
+        major: [2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030],
+        minor: [],
         labelFormat: (year) => year.toString()
     },
     3: { // YEAR - major markers every 3 months, minor every month
