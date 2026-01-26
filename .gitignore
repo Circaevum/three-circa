@@ -1,0 +1,17 @@
+# SSL certificates (generated locally)
+localhost.pem
+localhost-key.pem
+
+# Node modules
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
