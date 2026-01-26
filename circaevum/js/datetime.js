@@ -23,8 +23,6 @@ let currentYear = now.getFullYear();
 let currentMonthInYear = now.getMonth(); // 0-11
 let currentDayOfMonth = now.getDate(); // 1-31
 let currentHourInDay = now.getHours(); // 0-23
-let currentMinute = now.getMinutes(); // 0-59
-let currentSecond = now.getSeconds(); // 0-59
 
 // Derived date values
 let currentQuarter = Math.floor(currentMonthInYear / 3); // 0-3 for Q1-Q4
@@ -37,18 +35,6 @@ const firstOfMonth = new Date(currentYear, currentMonthInYear, 1);
 const firstSundayOffset = -firstOfMonth.getDay(); // Days to go back to get Sunday (0 if 1st is Sunday)
 let currentWeekInMonth = Math.floor((currentDayOfMonth - 1 - firstSundayOffset) / 7);
 
-// Log initialization
-console.log('Circaevum DateTime initialized:', now.toISOString());
-console.log('Date values:', {
-    year: currentYear,
-    monthInYear: currentMonthInYear,
-    dayOfMonth: currentDayOfMonth,
-    hourInDay: currentHourInDay,
-    quarter: currentQuarter,
-    monthInQuarter: currentMonth,
-    weekInMonth: currentWeekInMonth,
-    dayInWeek: currentDayInWeek
-});
 
 // ============================================
 // NAVIGATION OFFSET STATE
@@ -146,174 +132,13 @@ function calculateYearProgressForDate(year, month, day, hour = 0) {
  */
 function calculateActualCurrentDateHeight() {
     const nowActual = new Date();
-    const actualYear = nowActual.getFullYear();
-    const actualMonth = nowActual.getMonth();
-    const actualDay = nowActual.getDate();
-    const actualHour = nowActual.getHours();
-    
-    const yearProgress = calculateYearProgressForDate(actualYear, actualMonth, actualDay, actualHour);
-    return ((actualYear - 2000) * 100) + (yearProgress * 100);
+    return calculateDateHeight(
+        nowActual.getFullYear(),
+        nowActual.getMonth(),
+        nowActual.getDate(),
+        nowActual.getHours()
+    );
 }
 
-/**
- * Calculate progress through current year (0.0 to 1.0)
- * @returns {number} Fraction of year elapsed
- */
-function calculateYearProgress() {
-    const daysInCurrentMonth = getDaysInMonth(currentYear, currentMonthInYear);
-    
-    // Days elapsed this year
-    let daysElapsed = 0;
-    for (let m = 0; m < currentMonthInYear; m++) {
-        daysElapsed += getDaysInMonth(currentYear, m);
-    }
-    daysElapsed += currentDayOfMonth - 1;
-    daysElapsed += currentHourInDay / 24;
-    
-    const totalDays = getDaysInYear(currentYear);
-    return daysElapsed / totalDays;
-}
-
-/**
- * Calculate progress through current quarter (0.0 to 1.0)
- * @returns {number} Fraction of quarter elapsed
- */
-function calculateQuarterProgress() {
-    const quarterStartMonth = currentQuarter * 3;
-    const monthsIntoQuarter = currentMonthInYear - quarterStartMonth;
-    
-    // Calculate days in each month of this quarter
-    let totalDaysInQuarter = 0;
-    let daysElapsedInQuarter = 0;
-    
-    for (let m = 0; m < 3; m++) {
-        const monthIndex = quarterStartMonth + m;
-        const daysInThisMonth = getDaysInMonth(currentYear, monthIndex);
-        totalDaysInQuarter += daysInThisMonth;
-        
-        if (m < monthsIntoQuarter) {
-            daysElapsedInQuarter += daysInThisMonth;
-        } else if (m === monthsIntoQuarter) {
-            daysElapsedInQuarter += currentDayOfMonth - 1 + (currentHourInDay / 24);
-        }
-    }
-    
-    return daysElapsedInQuarter / totalDaysInQuarter;
-}
-
-/**
- * Calculate progress through current month (0.0 to 1.0)
- * @returns {number} Fraction of month elapsed
- */
-function calculateMonthProgress() {
-    const daysInMonth = getDaysInMonth(currentYear, currentMonthInYear);
-    const dayProgress = (currentDayOfMonth - 1 + currentHourInDay / 24) / daysInMonth;
-    return dayProgress;
-}
-
-/**
- * Calculate progress through current week (0.0 to 1.0)
- * Week starts on Sunday (day 0)
- * @returns {number} Fraction of week elapsed
- */
-function calculateWeekProgress() {
-    return (currentDayInWeek + currentHourInDay / 24) / 7;
-}
-
-/**
- * Calculate progress through current day (0.0 to 1.0)
- * @returns {number} Fraction of day elapsed
- */
-function calculateDayProgress() {
-    return (currentHourInDay + currentMinute / 60 + currentSecond / 3600) / 24;
-}
-
-// ============================================
-// DATE REFRESH FUNCTION
-// ============================================
-
-/**
- * Refresh all date values from system time
- * Call this to update the current time reference
- */
-function refreshCurrentDate() {
-    const refreshedNow = new Date();
-    
-    currentYear = refreshedNow.getFullYear();
-    currentMonthInYear = refreshedNow.getMonth();
-    currentDayOfMonth = refreshedNow.getDate();
-    currentHourInDay = refreshedNow.getHours();
-    currentMinute = refreshedNow.getMinutes();
-    currentSecond = refreshedNow.getSeconds();
-    
-    // Recalculate derived values
-    currentQuarter = Math.floor(currentMonthInYear / 3);
-    currentMonth = currentMonthInYear % 3;
-    currentDayInWeek = refreshedNow.getDay();
-    
-    // Calculate which calendar week of the month we're in (based on Sundays)
-    const refreshedFirstOfMonth = new Date(currentYear, currentMonthInYear, 1);
-    const refreshedFirstSundayOffset = -refreshedFirstOfMonth.getDay();
-    currentWeekInMonth = Math.floor((currentDayOfMonth - 1 - refreshedFirstSundayOffset) / 7);
-    
-    console.log('DateTime refreshed:', refreshedNow.toISOString());
-}
-
-/**
- * Reset all navigation offsets to zero (return to present)
- */
-function resetNavigationOffsets() {
-    selectedYearOffset = 0;
-    selectedQuarterOffset = 0;
-    selectedWeekOffset = 0;
-    selectedDayOffset = 0;
-    selectedHourOffset = 0;
-    selectedLunarOffset = 0;
-    selectedDecadeOffset = 0;
-}
-
-// ============================================
-// DATE FORMATTING HELPERS
-// ============================================
-
-/**
- * Get formatted date string
- * @param {number} year
- * @param {number} month - 0-indexed
- * @param {number} day
- * @returns {string} Formatted date like "December 9, 2025"
- */
-function formatDate(year, month, day) {
-    return `${MONTH_NAMES[month]} ${day}, ${year}`;
-}
-
-/**
- * Get short formatted date string
- * @param {number} year
- * @param {number} month - 0-indexed
- * @param {number} day
- * @returns {string} Formatted date like "Dec 9, 2025"
- */
-function formatDateShort(year, month, day) {
-    return `${MONTH_ABBREVIATIONS[month]} ${day}, ${year}`;
-}
-
-/**
- * Get quarter name for a month
- * @param {number} month - 0-indexed month (0-11)
- * @returns {string} Quarter name like "Q4"
- */
-function getQuarterName(month) {
-    const quarter = Math.floor(month / 3) + 1;
-    return `Q${quarter}`;
-}
-
-/**
- * Get current date as formatted string
- * @returns {string} Current date formatted
- */
-function getCurrentDateFormatted() {
-    return formatDate(currentYear, currentMonthInYear, currentDayOfMonth);
-}
 
 

@@ -39,51 +39,9 @@ let stars = null;
 let showTimeMarkers = true;
 let showMoonWorldline = false; // Toggle for moon worldline
 let moonWorldlines = []; // Store moon worldline meshes
-let selectionArcs = []; // Store selection arc meshes
 let sunMesh = null; // Store sun mesh for position updates
 let sunGlow = null; // Store sun glow for position updates
 let sunLight = null; // Store sun light for position updates
-
-// Function to get current selection offset in height units (universal across all zoom levels)
-function getCurrentSelectionOffset() {
-    const currentDateHeight = getHeightForYear(currentYear, 1);
-    let offset = 0;
-    
-    if (currentZoom === 2) { // Decade
-        offset = selectedDecadeOffset * (10 * 100);
-    } else if (currentZoom === 3) { // Year
-        offset = selectedYearOffset * 100;
-    } else if (currentZoom === 4) { // Quarter
-        const quarterHeight = ZOOM_LEVELS[4].timeYears * 100;
-        const monthHeight = quarterHeight / 3;
-        const daysInMonth = getDaysInMonth(currentYear, currentMonthInYear);
-        const dayHeight = monthHeight / daysInMonth;
-        const currentMonthInQuarter = currentMonth; // Use actual current month within quarter
-        // Include full precision: months within quarter + days within month
-        offset = (selectedQuarterOffset * quarterHeight) + (currentMonth * monthHeight) + (currentDayOfMonth * dayHeight) - (currentMonthInQuarter * monthHeight) - (currentDayOfMonth * dayHeight);
-    } else if (currentZoom === 5) { // Month
-        const monthHeight = ZOOM_LEVELS[5].timeYears * 100;
-        const weekHeight = monthHeight / 4;
-        const dayHeight = weekHeight / 7;
-        offset = (selectedWeekOffset * monthHeight) + (currentWeekInMonth * weekHeight) + (currentDayInWeek * dayHeight) - (currentWeekInMonth * weekHeight) - (currentDayInWeek * dayHeight);
-    } else if (currentZoom === 6) { // Lunar
-        const lunarHeight = ZOOM_LEVELS[6].timeYears * 100;
-        const weekHeight = lunarHeight / 4;
-        const currentWeekInLunar = 1;
-        offset = (selectedLunarOffset * lunarHeight) + (currentWeekInMonth * weekHeight) - (currentWeekInLunar * weekHeight);
-    } else if (currentZoom === 7) { // Week
-        const weekHeight = ZOOM_LEVELS[7].timeYears * 100;
-        const dayHeight = weekHeight / 7;
-        const hourHeight = dayHeight / 24;
-        offset = (selectedDayOffset * weekHeight) + (currentDayInWeek * dayHeight) + (currentHourInDay * hourHeight) - (currentDayInWeek * dayHeight) - (currentHourInDay * hourHeight);
-    } else if (currentZoom === 8 || currentZoom === 9) { // Day/Clock
-        const dayHeight = ZOOM_LEVELS[8].timeYears * 100;
-        const hourHeight = dayHeight / 24;
-        offset = (selectedHourOffset * dayHeight) + (currentHourInDay * hourHeight) - (14 * hourHeight);
-    }
-    
-    return offset;
-}
 
 // Function to convert a selected date to a specific zoom level's offset system
 // This maintains selected time when switching between zoom levels
@@ -199,54 +157,6 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
             currentHourInDay = selectedHour;
             break;
     }
-}
-
-// Function to apply a height offset to all zoom level variables
-// (Kept for backward compatibility, but prefer applySelectedDateToZoomLevel)
-function applyOffsetToAllZoomLevels(heightOffset) {
-    // Reset all navigation variables to match this height offset
-    // This is approximate - we're converting a single height to all the different unit systems
-    
-    // Decade (10 years = 1000 units)
-    selectedDecadeOffset = Math.round(heightOffset / 1000);
-    
-    // Year (1 year = 100 units)
-    selectedYearOffset = Math.round(heightOffset / 100);
-    
-    // Quarter (0.25 years = 25 units)
-    const quarterHeight = ZOOM_LEVELS[4].timeYears * 100;
-    const totalQuarterOffset = heightOffset / quarterHeight;
-    // Use Math.round for small values, Math.floor/ceil for larger values
-    // This prevents tiny floating point errors from causing -1 or +1 jumps
-    selectedQuarterOffset = Math.abs(totalQuarterOffset) < 0.5 ? 0 : Math.round(totalQuarterOffset);
-    
-    // Calculate month within the quarter (0-2)
-    // When offset is close to 0 (at current time), use actual system month
-    const now = new Date();
-    if (Math.abs(heightOffset) < 1) {
-        // At or near current time - use actual system month within quarter
-        currentMonth = now.getMonth() % 3;
-    } else {
-        const fractionalQuarter = totalQuarterOffset - selectedQuarterOffset;
-        const monthWithinQuarter = Math.floor(Math.abs(fractionalQuarter) * 3);
-        currentMonth = Math.max(0, Math.min(2, monthWithinQuarter));
-    }
-    
-    // Month
-    const monthHeight = ZOOM_LEVELS[5].timeYears * 100;
-    selectedWeekOffset = Math.round(heightOffset / monthHeight);
-    
-    // Lunar
-    const lunarHeight = ZOOM_LEVELS[6].timeYears * 100;
-    selectedLunarOffset = Math.round(heightOffset / lunarHeight);
-    
-    // Week
-    const weekHeight = ZOOM_LEVELS[7].timeYears * 100;
-    selectedDayOffset = Math.round(heightOffset / weekHeight);
-    
-    // Day/Hour
-    const dayHeight = ZOOM_LEVELS[8].timeYears * 100;
-    selectedHourOffset = Math.round(heightOffset / dayHeight);
 }
 
 // Format a date for display
@@ -367,7 +277,6 @@ function updateTimeDisplays() {
 
 let ghostEarth = null; // Ghost version of Earth at current/actual position
 let ghostOrbitLine = null; // Ghost version of orbit line
-let isRotated = false; // Track if system is rotated 90 degrees
 let targetCameraUp = null; // Target camera up vector - initialized in initScene
 let currentCameraUp = null; // Current camera up vector - initialized in initScene
 let targetCameraPosition = null; // Target camera position offset - initialized in initScene
@@ -613,8 +522,6 @@ function createPlanets(zoomLevel) {
         targetFocusPoint.y = selectedDateHeight;
     }
     
-    console.log('createPlanets - zoom:', zoomLevel, 'offset:', selectedHeightOffset, 'selectedHeight:', selectedDateHeight, 'currentHeight:', currentDateHeight);
-    
     // Update Sun position to match selected date height
     if (sunMesh) {
         sunMesh.position.y = selectedDateHeight;
@@ -756,6 +663,30 @@ function createPlanets(zoomLevel) {
         }
     });
 
+    // Create moon worldline for Zoom 6 (Lunar view)
+    if (zoomLevel === 6) {
+        // Remove existing moon worldlines first
+        moonWorldlines.forEach(mesh => {
+            scene.remove(mesh);
+        });
+        moonWorldlines = [];
+        
+        // Create moon worldline
+        if (typeof Worldlines !== 'undefined' && Worldlines.createMoonWorldline) {
+            const moonWorldline = Worldlines.createMoonWorldline(currentDateHeight, zoomLevel);
+            if (moonWorldline) {
+                scene.add(moonWorldline);
+                moonWorldlines.push(moonWorldline);
+            }
+        }
+    } else {
+        // Remove moon worldlines when not in Zoom 6
+        moonWorldlines.forEach(mesh => {
+            scene.remove(mesh);
+        });
+        moonWorldlines = [];
+    }
+
     // Create time markers for this zoom level
     createTimeMarkers(zoomLevel);
 }
@@ -774,25 +705,6 @@ function getSelectedTimeColor() {
 function getOrbitLineColor() {
     return isLightMode ? 0x0066CC : SCENE_CONFIG.orbitLineColor; // Darker blue in light mode
 }
-
-// Note: getHeightForYear is now in datetime.js
-
-// Note: Time marker creation functions have been moved to timemarkers.js module
-// The following functions were only used by the fallback implementation and have been removed:
-// - createSelectionArc
-// - createContextMarkers
-// - createSunCenteredMarkers
-// - createYearMarkers
-// - createQuarterMarkers
-// - createYearQuarterMarkers
-// - createMonthMarkers
-// - createLunarCycleMarkers
-// - createLunarLabel
-// - createWeekMarkers
-// - createWeekMarkersForMonthView
-// - createDayMarkers
-// - createDayLabel
-// - createRadialTick
 
 // Create 3D text label (using sprites for simplicity)
 // Note: This function is still needed as it's passed to TimeMarkers module
@@ -949,10 +861,11 @@ function createTimeMarkers(zoomLevel) {
                 selectedWeekOffset,
                 selectedDayOffset,
                 selectedHourOffset,
+                selectedLunarOffset, // Needed for Zoom 6 lunar calculation
                 currentYear, // Needed for Zoom 1 and 2 year highlighting
                 currentMonthInYear,
                 currentMonth,
-                currentWeekInMonth, // Needed for Zoom 5 week calculation
+                currentWeekInMonth, // Needed for Zoom 5 and 6 week calculation
                 currentQuarter, // Needed for Zoom 3 quarter navigation
                 currentDayInWeek, // Needed for Zoom 7 day calculation
                 currentHourInDay // Needed for Zoom 8/9 hour calculation
@@ -1331,28 +1244,7 @@ function toggleLightMode() {
     const button = document.getElementById('light-mode-toggle');
     button.classList.toggle('active', isLightMode);
     
-    // Update scene background based on current view mode
-    let bgColor;
-    if (isLightMode) {
-        // Light mode colors
-        if (viewMode === 0) {
-            bgColor = 0xe8f4f8; // Original light mode (neutral)
-        } else if (viewMode === 1) {
-            bgColor = 0xf8e8e8; // Slight red tinge (looking down from above)
-        } else {
-            bgColor = 0xe8e8f8; // Slight blue tinge (looking up from below)
-        }
-    } else {
-        // Dark mode colors
-        if (viewMode === 0) {
-            bgColor = 0x000814; // Original dark mode (neutral)
-        } else if (viewMode === 1) {
-            bgColor = 0x140808; // Slight red tinge (looking down from above)
-        } else {
-            bgColor = 0x080814; // Slight blue tinge (looking up from below)
-        }
-    }
-    scene.background = new THREE.Color(bgColor);
+    scene.background = new THREE.Color(getBackgroundColor(viewMode, isLightMode));
     // No fog for better visibility
     // scene.fog = new THREE.FogExp2(bgColor, SCENE_CONFIG.fogDensity);
     
@@ -1394,167 +1286,108 @@ function toggleWebXR() {
     }
 }
 
-// Center on Sun and remove all visual elements (WASD keys)
-function centerOnSun() {
-    // Clear all visual elements
-    planetMeshes.forEach(p => scene.remove(p));
-    planetMeshes.length = 0;
-    
-    orbitLines.forEach(o => scene.remove(o));
-    orbitLines.length = 0;
-    
-    worldlines.forEach(w => scene.remove(w));
-    worldlines.length = 0;
-    
-    timeMarkers.forEach(m => scene.remove(m));
-    timeMarkers.length = 0;
-    
-    if (stars) {
-        scene.remove(stars);
-        stars = null;
-    }
-    
-    // Center camera on Sun
-    targetFocusPoint.set(0, getHeightForYear(currentYear, 1), 0);
-    targetCameraDistance = 500;
-}
-
 // Toggle rotation between vertical and horizontal orientation (R key)
 function navigateUnit(direction) {
     // Navigate within the current zoom level's units
     // direction: -1 for previous (A key), +1 for next (D key)
     
-    console.log('BEFORE navigation - zoom:', currentZoom, 'direction:', direction);
-    
     switch(currentZoom) {
         case 1: // Century view - navigate by 10 years, snap to nearest decade
-            console.log('  Century year before:', currentYear);
             currentYear += direction * 10;
-            // Snap to nearest decade (round to nearest 10)
             currentYear = Math.round(currentYear / 10) * 10;
-            console.log('  Century year after (snapped to decade):', currentYear);
             break;
             
         case 2: // Decade view - navigate years
-            console.log('  Year before:', currentYear, 'offset:', selectedDecadeOffset);
-            // Years within current decade (2020-2029)
             const yearInDecade = currentYear % 10;
             const newYearInDecade = yearInDecade + direction;
             
             if (newYearInDecade < 0) {
                 selectedDecadeOffset--;
-                currentYear = currentYear - (yearInDecade + 1) + 9; // Go to last year of previous decade
+                currentYear = currentYear - (yearInDecade + 1) + 9;
             } else if (newYearInDecade > 9) {
                 selectedDecadeOffset++;
-                currentYear = currentYear - yearInDecade + 10; // Go to first year of next decade
+                currentYear = currentYear - yearInDecade + 10;
             } else {
                 currentYear += direction;
             }
-            
-            console.log('  Year after:', currentYear, 'offset:', selectedDecadeOffset);
             break;
             
         case 3: // Year view - navigate by quarters
-            console.log('  Quarter before:', currentQuarter, 'year:', currentYear, 'offset:', selectedYearOffset);
             currentQuarter += direction;
             
             if (currentQuarter < 0) {
                 selectedYearOffset--;
-                currentYear--; // Also update currentYear for calculateCurrentDateHeight()
-                currentQuarter = 3; // Go to Q4 of previous year
+                currentYear--;
+                currentQuarter = 3;
             } else if (currentQuarter > 3) {
                 selectedYearOffset++;
-                currentYear++; // Also update currentYear for calculateCurrentDateHeight()
-                currentQuarter = 0; // Go to Q1 of next year
+                currentYear++;
+                currentQuarter = 0;
             }
             
-            // Update currentMonthInYear to be the first month of the selected quarter
             currentMonthInYear = currentQuarter * 3;
-            // Keep currentMonth in sync for createQuarterMarkers highlighting
-            currentMonth = 0; // First month of quarter
-            
-            console.log('  Quarter after:', currentQuarter, 'year:', currentYear, 'offset:', selectedYearOffset, 'month:', currentMonthInYear);
+            currentMonth = 0;
             break;
             
         case 4: // Quarter view - navigate months
-            console.log('  Month before:', currentMonth, 'offset:', selectedQuarterOffset);
             currentMonth += direction;
             
-            // Wrap to adjacent quarters if needed (each quarter = 3 months)
             if (currentMonth < 0) {
                 selectedQuarterOffset--;
-                currentMonth = 2; // Go to last month of previous quarter
+                currentMonth = 2;
             } else if (currentMonth > 2) {
                 selectedQuarterOffset++;
-                currentMonth = 0; // Go to first month of next quarter
+                currentMonth = 0;
             }
-            
-            console.log('  Month after:', currentMonth, 'offset:', selectedQuarterOffset);
             break;
             
-        case 5: // Month view - navigate weeks (real calendar weeks, typically 4-5 per month)
-            console.log('  Week before:', currentWeekInMonth, 'offset:', selectedWeekOffset);
+        case 5: // Month view - navigate weeks
             currentWeekInMonth += direction;
             
-            // Wrap to adjacent months if needed (most months have 4-5 weeks)
             if (currentWeekInMonth < 0) {
                 selectedWeekOffset--;
-                currentWeekInMonth = 4; // Go to last week of previous month (could be week 4 or 5)
+                currentWeekInMonth = 4;
             } else if (currentWeekInMonth > 4) {
                 selectedWeekOffset++;
-                currentWeekInMonth = 0; // Go to first week of next month
+                currentWeekInMonth = 0;
             }
-            
-            console.log('  Week after:', currentWeekInMonth, 'offset:', selectedWeekOffset);
             break;
             
         case 6: // Lunar view - navigate weeks within lunar cycle
-            console.log('  Lunar week before:', currentWeekInMonth, 'offset:', selectedLunarOffset);
             currentWeekInMonth += direction;
             
-            // Wrap to adjacent lunar cycles if needed (4 weeks per cycle)
             if (currentWeekInMonth < 0) {
                 selectedLunarOffset--;
-                currentWeekInMonth = 3; // Go to last week of previous cycle
+                currentWeekInMonth = 3;
             } else if (currentWeekInMonth > 3) {
                 selectedLunarOffset++;
-                currentWeekInMonth = 0; // Go to first week of next cycle
+                currentWeekInMonth = 0;
             }
-            
-            console.log('  Lunar week after:', currentWeekInMonth, 'offset:', selectedLunarOffset);
             break;
             
         case 7: // Week view - navigate days
-            console.log('  Day before:', currentDayInWeek, 'offset:', selectedDayOffset);
             currentDayInWeek += direction;
             
-            // Wrap to adjacent weeks if needed
             if (currentDayInWeek < 0) {
                 selectedDayOffset--;
-                currentDayInWeek = 6; // Go to Saturday of previous week
+                currentDayInWeek = 6;
             } else if (currentDayInWeek > 6) {
                 selectedDayOffset++;
-                currentDayInWeek = 0; // Go to Sunday of next week
+                currentDayInWeek = 0;
             }
-            
-            console.log('  Day after:', currentDayInWeek, 'offset:', selectedDayOffset);
             break;
             
         case 8: // Day view - navigate hours
         case 9: // Clock view - navigate hours
-            console.log('  Hour before:', currentHourInDay, 'offset:', selectedHourOffset);
-            currentHourInDay += direction; // Move by 1 hour
+            currentHourInDay += direction;
             
-            // Wrap to adjacent days if needed
             if (currentHourInDay < 0) {
                 selectedHourOffset--;
-                currentHourInDay = 23; // Go to 23:00 of previous day
+                currentHourInDay = 23;
             } else if (currentHourInDay > 23) {
                 selectedHourOffset++;
-                currentHourInDay = 0; // Go to 00:00 of next day
+                currentHourInDay = 0;
             }
-            
-            console.log('  Hour after:', currentHourInDay, 'offset:', selectedHourOffset);
             break;
     }
     
@@ -1567,205 +1400,35 @@ function toggleTimeRotation() {
     // Cycle through view modes: angled -> top-down -> bottom-up -> angled
     viewMode = (viewMode + 1) % 3;
     
-    // Update background color based on view mode
-    let bgColor;
-    if (isLightMode) {
-        // Light mode colors
-        if (viewMode === 0) {
-            bgColor = 0xe8f4f8; // Original light mode (neutral)
-        } else if (viewMode === 1) {
-            bgColor = 0xf8e8e8; // Slight red tinge (looking down from above)
-        } else {
-            bgColor = 0xe8e8f8; // Slight blue tinge (looking up from below)
-        }
-    } else {
-        // Dark mode colors
-        if (viewMode === 0) {
-            bgColor = 0x000814; // Original dark mode (neutral)
-        } else if (viewMode === 1) {
-            bgColor = 0x140808; // Slight red tinge (looking down from above)
-        } else {
-            bgColor = 0x080814; // Slight blue tinge (looking up from below)
-        }
-    }
-    scene.background = new THREE.Color(bgColor);
+    scene.background = new THREE.Color(getBackgroundColor(viewMode, isLightMode));
     
     // Adjust camera rotation based on view mode
-    if (viewMode === 0) {
-        // Angled view (default)
-        cameraRotation.x = Math.PI / 6;
-    } else if (viewMode === 1) {
-        // Top-down view: looking down at system from above (into future)
-        cameraRotation.x = Math.PI / 2; // 90 degrees
-    } else {
-        // Bottom-up view: looking up at system from below (into past)
-        cameraRotation.x = -Math.PI / 2; // -90 degrees
-    }
+    const rotations = [Math.PI / 6, Math.PI / 2, -Math.PI / 2];
+    cameraRotation.x = rotations[viewMode];
 }
 
 function rotate90Right() {
-    // Rotate the entire scene 90 degrees clockwise around Z axis (viewing from front)
-    // This makes things pointing up now point to the right
-    scene.rotation.z -= Math.PI / 2; // Subtract 90 degrees (clockwise)
+    // Rotate the entire scene 90 degrees clockwise around Z axis
+    scene.rotation.z -= Math.PI / 2;
 }
 
-// Navigate forward/backward one time frame (W/S keys)
-function navigateTimeFrame(direction) {
-    const config = ZOOM_LEVELS[currentZoom];
-    
-    switch(currentZoom) {
-        case 1: // Century
-            currentYear += direction * 100;
-            break;
-        case 2: // Decade
-            currentYear += direction * 10;
-            break;
-        case 3: // Year
-            currentYear += direction * 1;
-            break;
-        case 4: // Quarter
-            currentQuarter += direction;
-            if (currentQuarter > 3) {
-                currentQuarter = 0;
-                currentYear += 1;
-            } else if (currentQuarter < 0) {
-                currentQuarter = 3;
-                currentYear -= 1;
-            }
-            break;
-        case 5: // Month
-            currentMonth += direction;
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear += 1;
-            } else if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear -= 1;
-            }
-            break;
-        case 6: // Lunar Cycle (~1 month)
-            currentMonth += direction;
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear += 1;
-            } else if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear -= 1;
-            }
-            break;
-        case 7: // Week
-            // Move by ~7 days
-            currentMonth += direction * 0.25; // Rough approximation
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear += 1;
-            } else if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear -= 1;
-            }
-            break;
-        case 8: // Day
-            currentMonth += direction * 0.033; // ~1/30th of month
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear += 1;
-            } else if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear -= 1;
-            }
-            break;
-    }
-    
-    // Update visualization
-    updateVisualization();
+// Helper function to get background color based on view mode and light mode
+function getBackgroundColor(viewMode, isLightMode) {
+    const colors = isLightMode 
+        ? [0xe8f4f8, 0xf8e8e8, 0xe8e8f8] // Light mode: neutral, red tinge, blue tinge
+        : [0x000814, 0x140808, 0x080814]; // Dark mode: neutral, red tinge, blue tinge
+    return colors[viewMode];
 }
 
-// Navigate to next/previous time marker (A/D keys)
-function navigateToMarker(direction) {
-    // This moves Earth to the next visible time marker
-    // For simplicity, we'll move by one marker unit in each zoom level
-    switch(currentZoom) {
-        case 1: // Century - move by 10 years (major markers)
-            currentYear += direction * 10;
-            break;
-        case 2: // Decade - move by year
-            currentYear += direction * 1;
-            break;
-        case 3: // Year - move by month
-            currentMonth += direction;
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear += 1;
-            } else if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear -= 1;
-            }
-            break;
-        case 4: // Quarter - move by month
-            currentMonth += direction;
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear += 1;
-            } else if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear -= 1;
-            }
-            currentQuarter = Math.floor(currentMonth / 3);
-            break;
-        case 5: // Month - move by week
-            currentMonth += direction * 0.25;
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear += 1;
-            } else if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear -= 1;
-            }
-            break;
-        case 6: // Lunar - move by phase
-            currentMonth += direction * 0.2;
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear += 1;
-            } else if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear -= 1;
-            }
-            break;
-        case 7: // Week - move by day
-            currentMonth += direction * 0.033;
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear += 1;
-            } else if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear -= 1;
-            }
-            break;
-        case 8: // Day - move by 3 hours
-            currentMonth += direction * 0.004; // ~3 hours
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear += 1;
-            } else if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear -= 1;
-            }
-            break;
-    }
+function toggleTimeRotation() {
+    // Cycle through view modes: angled -> top-down -> bottom-up -> angled
+    viewMode = (viewMode + 1) % 3;
     
-    updateVisualization();
-}
-
-// Update visualization after time navigation
-function updateVisualization() {
-    // Recreate all visual elements with new time
-    createPlanets();
-    createWorldlines(currentZoom);
-    createTimeMarkers(currentZoom);
+    scene.background = new THREE.Color(getBackgroundColor(viewMode, isLightMode));
     
-    // Update info panel
-    document.getElementById('current-zoom').textContent = ZOOM_LEVELS[currentZoom].name;
+    // Adjust camera rotation based on view mode
+    const rotations = [Math.PI / 6, Math.PI / 2, -Math.PI / 2];
+    cameraRotation.x = rotations[viewMode];
 }
 
 function setZoomLevel(level) {
@@ -1826,6 +1489,7 @@ function setZoomLevel(level) {
             selectedWeekOffset,
             selectedDayOffset,
             selectedHourOffset,
+            selectedLunarOffset, // Needed for Zoom 6 lunar calculation
             currentYear, // Needed for Zoom 1 and 2 year highlighting
             currentMonthInYear,
             currentMonth,

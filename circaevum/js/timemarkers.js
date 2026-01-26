@@ -15,7 +15,7 @@ const TimeMarkers = (function() {
     let scene, timeMarkers, getMarkerColor, createTextLabel;
     let PLANET_DATA, ZOOM_LEVELS, TIME_MARKERS, CENTURY_START;
     let currentYear, currentMonth, currentQuarter, currentWeekInMonth, currentDayInWeek;
-    let selectedYearOffset, selectedQuarterOffset, selectedWeekOffset, selectedDayOffset, selectedHourOffset;
+    let selectedYearOffset, selectedQuarterOffset, selectedWeekOffset, selectedDayOffset, selectedHourOffset, selectedLunarOffset;
     let currentHourInDay;
     let isLightMode, calculateDateHeight, getHeightForYear, calculateCurrentDateHeight;
     let planetMeshes;
@@ -40,6 +40,7 @@ const TimeMarkers = (function() {
         selectedWeekOffset = dependencies.selectedWeekOffset;
         selectedDayOffset = dependencies.selectedDayOffset;
         selectedHourOffset = dependencies.selectedHourOffset || 0;
+        selectedLunarOffset = dependencies.selectedLunarOffset || 0;
         currentHourInDay = dependencies.currentHourInDay;
         isLightMode = dependencies.isLightMode;
         calculateDateHeight = dependencies.calculateDateHeight;
@@ -91,14 +92,12 @@ const TimeMarkers = (function() {
             // Snap to nearest decade for proper highlighting
             selectedYear = (currentYear !== undefined && currentYear !== null) ? currentYear : actualYear;
             selectedYear = Math.round(selectedYear / 10) * 10; // Snap to nearest decade
-            console.log('[Zoom 1] currentYear:', currentYear, 'actualYear:', actualYear, 'selectedYear (snapped):', selectedYear);
             selectedMonth = actualMonth;
             selectedQuarter = Math.floor(actualMonth / 3);
             selectedDateHeight = getHeightForYear(selectedYear, 1);
         } else if (zoomLevel === 2) {
             // Decade view - use currentYear which is updated by navigation
             selectedYear = (currentYear !== undefined && currentYear !== null) ? currentYear : actualYear;
-            console.log('[Zoom 2] currentYear:', currentYear, 'actualYear:', actualYear, 'selectedYear:', selectedYear);
             selectedMonth = actualMonth;
             selectedQuarter = Math.floor(actualMonth / 3);
             selectedDateHeight = getHeightForYear(selectedYear, 1);
@@ -117,11 +116,17 @@ const TimeMarkers = (function() {
             selectedMonth = ((actualMonth + selectedWeekOffset) % 12 + 12) % 12;
             selectedQuarter = Math.floor(selectedMonth / 3);
         } else if (zoomLevel === 6) {
-            selectedYear = actualYear + Math.floor((actualMonth + selectedWeekOffset) / 12);
-            selectedMonth = ((actualMonth + selectedWeekOffset) % 12 + 12) % 12;
+            // Lunar view - use selectedLunarOffset (lunar cycles) and currentWeekInMonth (weeks within cycle)
+            // Calculate selected date from lunar offset
+            const lunarCycleLength = 29.53059; // days
+            const daysOffset = (selectedLunarOffset || 0) * lunarCycleLength;
+            const selectedDate = new Date(now);
+            selectedDate.setDate(now.getDate() + daysOffset);
+            selectedYear = selectedDate.getFullYear();
+            selectedMonth = selectedDate.getMonth();
             selectedQuarter = Math.floor(selectedMonth / 3);
             const config = ZOOM_LEVELS[6];
-            selectedDateHeight = currentDateHeight + (selectedWeekOffset * config.timeYears * 100);
+            selectedDateHeight = calculateDateHeight(selectedYear, selectedMonth, selectedDate.getDate(), 12);
         } else if (zoomLevel === 7) {
             const actualDayInWeek = now.getDay();
             const actualCurrentWeekSunday = new Date(now);
@@ -561,7 +566,6 @@ const TimeMarkers = (function() {
                     const labelColor = getLabelColor(isCurrent, isSelected, hasOffset);
                     // Debug logging for Zoom 8/9
                     if ((zoomLevel === 8 || zoomLevel === 9) && (unitType === 'quarter' || unitType === 'month' || unitType === 'week' || unitType === 'day')) {
-                        console.log(`[BLUE DEBUG] ${unitType} label "${labelText}": isCurrent=${isCurrent}, isSelected=${isSelected}, hasOffset=${hasOffset}, labelColor=${labelColor}, selectedHourOffset=${timeState.selectedHourOffset}`);
                     }
                     const textZoom = (unitType === 'quarter' || unitType === 'month') ? 4 : (unitType === 'week' ? 5 : zoomLevel);
                     createTextLabel(labelText, labelHeight, calcLabelRadius, textZoom, labelAngle, labelColor, false, 0.85);
@@ -613,7 +617,7 @@ const TimeMarkers = (function() {
                 const curveGeometry = new THREE.BufferGeometry();
                 curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
                 const curveMaterial = new THREE.LineBasicMaterial({
-                    color: 0xFFFFFF, // WHITE - Quarter parent curves Zoom 4+
+                    color: getMarkerColor(), // Adapts to light/dark mode
                     transparent: true,
                     opacity: 0.6,
                     linewidth: 2
@@ -688,7 +692,7 @@ const TimeMarkers = (function() {
                 const curveGeometry = new THREE.BufferGeometry();
                 curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
                 const curveMaterial = new THREE.LineBasicMaterial({
-                    color: 0xFFFFFF, // WHITE - Month parent curves Zoom 4+
+                    color: getMarkerColor(), // Adapts to light/dark mode
                     transparent: true,
                     opacity: 0.6,
                     linewidth: 2
@@ -933,7 +937,7 @@ const TimeMarkers = (function() {
                 const curveGeometry = new THREE.BufferGeometry();
                 curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
                 const curveMaterial = new THREE.LineBasicMaterial({
-                    color: 0xFFFFFF, // WHITE - Week curves Zoom 4+
+                    color: getMarkerColor(), // Adapts to light/dark mode
                     transparent: true,
                     opacity: 0.6,
                     linewidth: 2
@@ -1142,7 +1146,7 @@ const TimeMarkers = (function() {
                 const curveGeometry = new THREE.BufferGeometry();
                 curveGeometry.setAttribute('position', new THREE.Float32BufferAttribute(curvePoints, 3));
                 const curveMaterial = new THREE.LineBasicMaterial({
-                    color: 0xFFFFFF, // WHITE - Day curves Zoom 7+
+                    color: getMarkerColor(), // Adapts to light/dark mode
                     transparent: true,
                     opacity: 0.6,
                     linewidth: 2
@@ -1222,16 +1226,13 @@ const TimeMarkers = (function() {
     // ============================================
     
     function createMoonPhaseImages(earthDistance, timeState) {
-        console.log('[Moon Phases] createMoonPhaseImages called');
         const { selectedDateHeight, currentDateHeight, selectedDate } = timeState;
-        console.log('[Moon Phases] selectedDateHeight:', selectedDateHeight, 'currentDateHeight:', currentDateHeight);
         
         const moonPhaseRadius = earthDistance * (8/9);
         const config = ZOOM_LEVELS[6];
         const lunarHeight = config.timeYears * 100;
         const startHeight = selectedDateHeight - (lunarHeight / 2);
         const endHeight = selectedDateHeight + (lunarHeight / 2);
-        console.log('[Moon Phases] Height range:', startHeight, 'to', endHeight, 'lunarHeight:', lunarHeight);
         
         // Use selectedDate as the center point, or calculate from selectedDateHeight
         let centerDate;
@@ -1278,7 +1279,150 @@ const TimeMarkers = (function() {
             spriteCount++;
         }
         
-        console.log('[Moon Phases] Created', spriteCount, 'moon phase sprites');
+    }
+    
+    // ============================================
+    // LUNAR CYCLE MARKERS (New Moon Lines)
+    // ============================================
+    
+    function createLunarCycleMarkers(earthDistance, timeState) {
+        const { selectedDateHeight, currentDateHeight, selectedDate } = timeState;
+        const config = ZOOM_LEVELS[6];
+        const lunarHeight = config.timeYears * 100;
+        const startHeight = selectedDateHeight - (lunarHeight / 2);
+        const endHeight = selectedDateHeight + (lunarHeight / 2);
+        
+        // Lunar period in days
+        const lunarPeriod = 29.53059;
+        const knownNewMoon = new Date(2000, 0, 6, 18, 14, 0);
+        const knownNewMoonHeight = calculateDateHeight(2000, 0, 6, 18);
+        
+        // Calculate first new moon in range
+        const heightRange = endHeight - startHeight;
+        const daysInRange = (heightRange / 100) * 365.25;
+        const cyclesInRange = Math.ceil(daysInRange / lunarPeriod) + 2; // Add buffer
+        
+        // Find the new moon closest to startHeight
+        const daysFromKnownToStart = ((startHeight - knownNewMoonHeight) / 100) * 365.25;
+        const cyclesFromKnownToStart = Math.floor(daysFromKnownToStart / lunarPeriod);
+        const firstCycleOffset = cyclesFromKnownToStart - 1; // Start one cycle before to ensure we don't miss any
+        
+        // Create lines for each new moon in range
+        const earth = PLANET_DATA.find(p => p.name === 'Earth');
+        let newMoonCount = 0;
+        
+        for (let cycleOffset = firstCycleOffset; cycleOffset <= firstCycleOffset + cyclesInRange; cycleOffset++) {
+            // Calculate new moon date
+            const daysFromKnown = cycleOffset * lunarPeriod;
+            const newMoonDate = new Date(knownNewMoon);
+            newMoonDate.setTime(knownNewMoon.getTime() + (daysFromKnown * 24 * 60 * 60 * 1000));
+            
+            const newMoonHeight = calculateDateHeight(
+                newMoonDate.getFullYear(),
+                newMoonDate.getMonth(),
+                newMoonDate.getDate(),
+                newMoonDate.getHours()
+            );
+            
+            if (newMoonHeight >= startHeight && newMoonHeight <= endHeight) {
+                // Calculate Earth's position at this new moon
+                const earthAngle = getAngle(newMoonHeight, currentDateHeight);
+                const earthX = Math.cos(earthAngle) * earth.distance;
+                const earthZ = Math.sin(earthAngle) * earth.distance;
+                const earthY = newMoonHeight;
+                
+                // Calculate moon's position on its worldline at this new moon
+                // At new moon, moonPhaseProgress = 0, so moon is between Earth and Sun
+                const moonDistance = 15; // Moon distance from Earth
+                const lunarPeriod = 0.0767; // ~28 days in years
+                
+                // Calculate time span from start of moon worldline to this new moon
+                // The moon worldline uses the same calculation as in createMoonWorldline
+                const baseSpan = config.timeYears * 100;
+                const extensionFactor = 5;
+                const totalSpan = baseSpan * extensionFactor;
+                const moonWorldlineStartHeight = currentDateHeight - (totalSpan / 2);
+                
+                // Calculate Earth's angle at this height (same as moon worldline calculation)
+                const timeSpanYears = totalSpan / 100;
+                const earthOrbitsInSpan = timeSpanYears / earth.orbitalPeriod;
+                const yearsBeforeCurrent = (currentDateHeight - moonWorldlineStartHeight) / 100;
+                const earthOrbitsBeforeCurrent = yearsBeforeCurrent / earth.orbitalPeriod;
+                const earthAngleBeforeCurrent = earthOrbitsBeforeCurrent * Math.PI * 2;
+                const earthStartAngle = earth.startAngle + earthAngleBeforeCurrent;
+                
+                // Calculate t (0 to 1) for this height in the moon worldline
+                const t = (newMoonHeight - moonWorldlineStartHeight) / totalSpan;
+                
+                // Calculate Earth's angle at this point in the worldline
+                const earthAngleAtT = earthStartAngle - (t * earthOrbitsInSpan * Math.PI * 2);
+                
+                // Get Earth's position at this point
+                const earthPosAtT = SceneGeometry ? 
+                    SceneGeometry.getPosition3D(newMoonHeight, earthAngleAtT, earth.distance) :
+                    {
+                        x: Math.cos(earthAngleAtT) * earth.distance,
+                        y: newMoonHeight,
+                        z: Math.sin(earthAngleAtT) * earth.distance
+                    };
+                
+                // Sun to Earth direction
+                const sunToEarthAngle = Math.atan2(earthPosAtT.z, earthPosAtT.x);
+                
+                // At new moon, moonPhaseProgress = 0
+                // In the moon worldline code, new moon is at sunToEarthAngle + Math.PI
+                // But for a new moon, moon should be between Earth and Sun, so use sunToEarthAngle
+                const moonPhaseProgress = 0;
+                // For new moon: moon is between Earth and Sun, so angle is same as Sun direction
+                const moonAngleRelativeToSun = sunToEarthAngle;
+                
+                // Moon position relative to Earth
+                const moonPosRelative = SceneGeometry ?
+                    SceneGeometry.getPosition3D(0, moonAngleRelativeToSun, moonDistance) :
+                    {
+                        x: Math.cos(moonAngleRelativeToSun) * moonDistance,
+                        y: 0,
+                        z: Math.sin(moonAngleRelativeToSun) * moonDistance
+                    };
+                
+                // Moon's absolute position
+                const moonX = earthPosAtT.x + moonPosRelative.x;
+                const moonY = newMoonHeight;
+                const moonZ = earthPosAtT.z + moonPosRelative.z;
+                
+                // Create line from Earth's position to moon's position
+                const points = [
+                    earthX, earthY, earthZ,  // Earth's position on worldline
+                    moonX, moonY, moonZ      // Moon's position on worldline
+                ];
+                
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+                
+                // Check if this is the current or selected new moon
+                const now = timeState.currentDate;
+                const daysSinceNewMoon = (now - newMoonDate) / (1000 * 60 * 60 * 24);
+                const isCurrent = Math.abs(daysSinceNewMoon) < lunarPeriod / 2 && Math.abs(daysSinceNewMoon) < 15; // Within half cycle and 15 days
+                
+                const selectedDaysSinceNewMoon = selectedDate ? (selectedDate - newMoonDate) / (1000 * 60 * 60 * 24) : Infinity;
+                const isSelected = selectedDate && Math.abs(selectedDaysSinceNewMoon) < lunarPeriod / 2 && Math.abs(selectedDaysSinceNewMoon) < 15;
+                const hasOffset = timeState.selectedLunarOffset !== 0;
+                
+                const lineColor = getColor(isCurrent, isSelected && hasOffset, hasOffset);
+                const material = new THREE.LineBasicMaterial({
+                    color: lineColor,
+                    transparent: true,
+                    opacity: (isCurrent || isSelected) ? 0.9 : 0.5,
+                    linewidth: (isCurrent || isSelected) ? 3 : 2
+                });
+                
+                const line = new THREE.Line(geometry, material);
+                scene.add(line);
+                timeMarkers.push(line);
+                newMoonCount++;
+            }
+        }
+        
     }
     
     function createMoonPhaseSprite(phase, radius, angle, height) {
@@ -1369,7 +1513,6 @@ const TimeMarkers = (function() {
         const lineRadius = -100; // Distance from center (Sun) for vertical lines - negative for left side
         
         // Debug: log what years we're creating
-        console.log('[Century Markers] Years to create:', config.major);
         
         // Create all markers with same size - use only major array
         config.major.forEach(year => {
@@ -1377,7 +1520,6 @@ const TimeMarkers = (function() {
             const isCurrent = year === timeState.currentDate.getFullYear();
             const isSelected = year === timeState.selectedYear;
             if (year >= 2020 && year <= 2040) {
-                console.log(`[Century Marker ${year}] isCurrent:`, isCurrent, 'isSelected:', isSelected, 'selectedYear:', timeState.selectedYear, 'currentYear:', timeState.currentDate.getFullYear());
             }
             const color = isCurrent ? 0xFF0000 : (isSelected ? 0x00FFFF : getMarkerColor());
             
@@ -1416,7 +1558,6 @@ const TimeMarkers = (function() {
             const isCurrent = year === now.getFullYear();
             const isSelected = year === timeState.selectedYear;
             if (year >= 2020 && year <= 2030) {
-                console.log(`[Decade Marker ${year}] isCurrent:`, isCurrent, 'isSelected:', isSelected, 'selectedYear:', timeState.selectedYear, 'currentYear:', now.getFullYear());
             }
             const color = isCurrent ? 0xFF0000 : (isSelected ? 0x00FFFF : getMarkerColor());
             
@@ -1613,8 +1754,8 @@ const TimeMarkers = (function() {
             // Color logic
             const labelColor = isCurrent ? 'red' : (hasOffset && isSelected ? 'blue' : false);
             
-            // Create hour label
-            const hourLabel = hour.toString().padStart(2, '0');
+            // Create hour label (no leading zeros)
+            const hourLabel = hour.toString();
             
             // Reduce hour label size (use 0.6 multiplier for smaller labels)
             createTextLabel(hourLabel, y, labelRadius, zoomLevel, labelAngle, labelColor, false, 0.8);
@@ -1693,6 +1834,7 @@ const TimeMarkers = (function() {
         }
         if (zoomLevel === 6) {
             createMoonPhaseImages(earthDistance, timeState);
+            createLunarCycleMarkers(earthDistance, timeState);
         }
         if (zoomLevel === 8 || zoomLevel === 9) {
             createHourSystem(earthDistance, timeState, zoomLevel);
@@ -1709,6 +1851,7 @@ const TimeMarkers = (function() {
         selectedWeekOffset = newOffsets.selectedWeekOffset;
         selectedDayOffset = newOffsets.selectedDayOffset;
         selectedHourOffset = newOffsets.selectedHourOffset || 0;
+        selectedLunarOffset = newOffsets.selectedLunarOffset || 0; // Update selectedLunarOffset for Zoom 6
         currentYear = newOffsets.currentYear !== undefined ? newOffsets.currentYear : currentYear; // Update currentYear when A/D is pressed
         currentMonth = newOffsets.currentMonth;
         currentWeekInMonth = newOffsets.currentWeekInMonth;

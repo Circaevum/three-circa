@@ -9,7 +9,7 @@ const SceneGeometry = (function() {
     // Dependencies (will be injected)
     let PLANET_DATA, calculateDateHeight, getHeightForYear, calculateCurrentDateHeight;
     let CENTURY_START, ZOOM_LEVELS, currentYear;
-    let calculateActualCurrentDateHeight, calculateYearProgressForDate, getDaysInMonth, isLeapYear;
+    let calculateActualCurrentDateHeight, calculateYearProgressForDate, getDaysInMonth;
     
     // ============================================
     // INITIALIZATION
@@ -25,7 +25,6 @@ const SceneGeometry = (function() {
         calculateActualCurrentDateHeight = dependencies.calculateActualCurrentDateHeight;
         calculateYearProgressForDate = dependencies.calculateYearProgressForDate;
         getDaysInMonth = dependencies.getDaysInMonth;
-        isLeapYear = dependencies.isLeapYear;
     }
     
     // ============================================
@@ -178,23 +177,7 @@ const SceneGeometry = (function() {
     function getCurrentDateHeight(zoomLevel) {
         if (zoomLevel === 3 || zoomLevel === 4) {
             // Use actual system date for Zoom 3 and 4
-            if (calculateActualCurrentDateHeight) {
-                return calculateActualCurrentDateHeight();
-            }
-            // Fallback if not available
-            const nowActual = new Date();
-            const actualYear = nowActual.getFullYear();
-            const actualMonth = nowActual.getMonth();
-            const actualDay = nowActual.getDate();
-            const actualHour = nowActual.getHours();
-            if (calculateYearProgressForDate) {
-                const yearProgress = calculateYearProgressForDate(actualYear, actualMonth, actualDay, actualHour);
-                return ((actualYear - 2000) * 100) + (yearProgress * 100);
-            }
-            // Final fallback
-            const daysInMonth = getDaysInMonth ? getDaysInMonth(actualYear, actualMonth) : 30;
-            const yearProgress = (actualMonth + (actualDay - 1) / daysInMonth + actualHour / (24 * daysInMonth)) / 12;
-            return ((actualYear - 2000) * 100) + (yearProgress * 100);
+            return calculateActualCurrentDateHeight ? calculateActualCurrentDateHeight() : calculateCurrentDateHeight();
         } else if (zoomLevel >= 3) {
             return calculateCurrentDateHeight();
         } else {

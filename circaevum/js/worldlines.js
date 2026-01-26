@@ -7,9 +7,9 @@
 
 const Worldlines = (function() {
     // Dependencies (will be injected)
-    let scene, PLANET_DATA, ZOOM_LEVELS, SCENE_CONFIG;
+    let PLANET_DATA, ZOOM_LEVELS, SCENE_CONFIG;
     let calculateDateHeight, getHeightForYear, calculateCurrentDateHeight;
-    let CENTURY_START, currentYear, isLightMode, getSelectedTimeColor;
+    let currentYear, isLightMode, getSelectedTimeColor;
     let SceneGeometry;
     let calculateYearProgressForDate, getDaysInMonth;
     
@@ -17,14 +17,12 @@ const Worldlines = (function() {
     // INITIALIZATION
     // ============================================
     function init(dependencies) {
-        scene = dependencies.scene;
         PLANET_DATA = dependencies.PLANET_DATA;
         ZOOM_LEVELS = dependencies.ZOOM_LEVELS;
         SCENE_CONFIG = dependencies.SCENE_CONFIG;
         calculateDateHeight = dependencies.calculateDateHeight;
         getHeightForYear = dependencies.getHeightForYear;
         calculateCurrentDateHeight = dependencies.calculateCurrentDateHeight;
-        CENTURY_START = dependencies.CENTURY_START;
         currentYear = dependencies.currentYear;
         isLightMode = dependencies.isLightMode;
         getSelectedTimeColor = dependencies.getSelectedTimeColor;
@@ -39,7 +37,7 @@ const Worldlines = (function() {
                 calculateDateHeight,
                 getHeightForYear,
                 calculateCurrentDateHeight,
-                CENTURY_START,
+                CENTURY_START: dependencies.CENTURY_START,
                 ZOOM_LEVELS,
                 currentYear,
                 calculateActualCurrentDateHeight: dependencies.calculateActualCurrentDateHeight,
@@ -48,6 +46,34 @@ const Worldlines = (function() {
                 isLeapYear: dependencies.isLeapYear
             });
         }
+    }
+    
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+    
+    /**
+     * Adjust color for light mode visibility
+     * @param {number} color - Original color (hex)
+     * @param {boolean} isLightMode - Whether in light mode
+     * @returns {number} Adjusted color
+     */
+    function adjustColorForLightMode(color, isLightMode) {
+        if (!isLightMode) return color;
+        
+        const saturationBoost = 1.3;
+        const darkenFactor = 0.7;
+        let r = ((color >> 16) & 0xFF);
+        let g = ((color >> 8) & 0xFF);
+        let b = (color & 0xFF);
+        
+        const max = Math.max(r, g, b);
+        if (max > 0) {
+            r = Math.min(255, r * saturationBoost * darkenFactor);
+            g = Math.min(255, g * saturationBoost * darkenFactor);
+            b = Math.min(255, b * saturationBoost * darkenFactor);
+        }
+        return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
     }
     
     // ============================================
@@ -87,19 +113,10 @@ const Worldlines = (function() {
             endHeight = getHeightForYear(2030, 1);
         } else if (zoomLevel === 3) { // Year - show full year with current date
             const yearHeight = 100;
-            const nowWorldline = new Date();
-            const actualYear = nowWorldline.getFullYear();
-            const actualMonth = nowWorldline.getMonth();
-            const actualDay = nowWorldline.getDate();
-            // Use centralized year progress calculation if available
-            let yearProgress;
-            if (typeof calculateYearProgressForDate === 'function') {
-                yearProgress = calculateYearProgressForDate(actualYear, actualMonth, actualDay, 0);
-            } else {
-                // Fallback
-                const daysInMonth = getDaysInMonth ? getDaysInMonth(actualYear, actualMonth) : 30;
-                yearProgress = (actualMonth + (actualDay - 1) / daysInMonth) / 12;
-            }
+            const now = new Date();
+            const yearProgress = calculateYearProgressForDate 
+                ? calculateYearProgressForDate(now.getFullYear(), now.getMonth(), now.getDate(), 0)
+                : (now.getMonth() + (now.getDate() - 1) / (getDaysInMonth ? getDaysInMonth(now.getFullYear(), now.getMonth()) : 30)) / 12;
             startHeight = currentDateHeight - (yearProgress * yearHeight);
             endHeight = startHeight + yearHeight;
         } else { // Higher zooms - show time span around current date
@@ -131,22 +148,7 @@ const Worldlines = (function() {
         const lineWidth = (isEarth && zoomLevel >= 3) ? 3 : 2;
         
         // Adjust colors for light mode visibility
-        let worldlineColor = planetData.color;
-        if (isLightMode) {
-            const saturationBoost = 1.3;
-            const darkenFactor = 0.7;
-            let r = ((worldlineColor >> 16) & 0xFF);
-            let g = ((worldlineColor >> 8) & 0xFF);
-            let b = (worldlineColor & 0xFF);
-            
-            const max = Math.max(r, g, b);
-            if (max > 0) {
-                r = Math.min(255, r * saturationBoost * darkenFactor);
-                g = Math.min(255, g * saturationBoost * darkenFactor);
-                b = Math.min(255, b * saturationBoost * darkenFactor);
-            }
-            worldlineColor = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
-        }
+        const worldlineColor = adjustColorForLightMode(planetData.color, isLightMode);
         
         const material = new THREE.LineBasicMaterial({
             color: worldlineColor,
@@ -244,8 +246,10 @@ const Worldlines = (function() {
         const moonGeometry = new THREE.BufferGeometry();
         moonGeometry.setAttribute('position', new THREE.Float32BufferAttribute(moonPoints, 3));
         
+        // Moon worldline color adapts to light mode
+        const moonColor = isLightMode ? 0x666666 : 0x888888;
         const moonMaterial = new THREE.LineBasicMaterial({
-            color: 0x888888,
+            color: moonColor,
             transparent: true,
             opacity: 0.4,
             linewidth: 1

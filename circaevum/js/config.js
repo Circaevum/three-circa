@@ -118,41 +118,6 @@ const TIME_MARKERS = {
         major: [2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030],
         minor: [],
         labelFormat: (year) => year.toString()
-    },
-    3: { // YEAR - major markers every 3 months, minor every month
-        major: ['Jan', 'Apr', 'Jul', 'Oct'],
-        minor: ['Feb', 'Mar', 'May', 'Jun', 'Aug', 'Sep', 'Nov', 'Dec'],
-        labelFormat: (month) => month
-    },
-    4: { // QUARTER - major markers every month, minor every 2 weeks
-        major: ['Month 1', 'Month 2', 'Month 3'],
-        minor: ['Week 2', 'Week 4', 'Week 6', 'Week 8', 'Week 10', 'Week 12'],
-        labelFormat: (label) => label
-    },
-    5: { // MONTH - major markers every week, minor every day
-        major: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-        minor: [], // Too many days to show
-        labelFormat: (label) => label
-    },
-    6: { // LUNAR CYCLE - major markers every 7 days
-        major: ['Day 0', 'Day 7', 'Day 14', 'Day 21', 'Day 28'],
-        minor: [],
-        labelFormat: (label) => label
-    },
-    7: { // WEEK - major markers each day
-        major: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-        minor: [],
-        labelFormat: (day) => day
-    },
-    8: { // DAY - major markers every 6 hours
-        major: ['00:00', '06:00', '12:00', '18:00', '24:00'],
-        minor: ['03:00', '09:00', '15:00', '21:00'],
-        labelFormat: (time) => time
-    },
-    9: { // CLOCK - same as DAY, just different camera view
-        major: ['00:00', '06:00', '12:00', '18:00', '24:00'],
-        minor: ['03:00', '09:00', '15:00', '21:00'],
-        labelFormat: (time) => time
     }
 };
 
