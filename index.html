@@ -66,6 +66,22 @@
             <button class="toggle-btn" id="sound-toggle">SOUND OFF</button>
             <button class="toggle-btn" id="webxr-toggle">WEBXR</button>
         </div>
+        
+        <!-- Mobile Zoom Controls (hidden on desktop) -->
+        <div class="mobile-zoom-controls">
+            <button class="mobile-zoom-btn" id="zoom-out-btn" aria-label="Zoom Out">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <div class="mobile-zoom-label" id="mobile-zoom-label">DECADE</div>
+            <button class="mobile-zoom-btn" id="zoom-in-btn" aria-label="Zoom In">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+        </div>
     </div>
     
     <div class="info-panel">
@@ -223,12 +239,30 @@
     <!-- Circaevum Modules (load in dependency order) -->
     <script src="circaevum/js/config.js"></script>
     <script src="circaevum/js/datetime.js"></script>
-    <script src="circaevum/js/scene-geometry.js"></script>
-    <script src="circaevum/js/worldlines.js"></script>
-    <script src="circaevum/js/timemarkers.js"></script>
+    
+    <!-- Utils (geometry helpers) -->
+    <script src="circaevum/js/utils/geometry-helpers.js"></script>
+    
+    <!-- Core (scene initialization) -->
+    <script src="circaevum/js/core/scene-core.js"></script>
+    
+    <!-- Renderers (worldlines, timemarkers, planets) -->
+    <script src="circaevum/js/renderers/worldline-renderer.js"></script>
+    <script src="circaevum/js/renderers/timemarker-renderer.js"></script>
+    <script src="circaevum/js/renderers/planet-renderer.js"></script>
+    
+    <!-- Models (VEVENT format) -->
+    <script src="circaevum/js/models/vevent.js"></script>
+    
+    <!-- XR Adapters (load before main.js) -->
+    <script src="circaevum/js/adapters/xr/webxr-adapter.js"></script>
+    <script src="circaevum/js/adapters/input/xr-input.js"></script>
     
     <!-- Main Application Script -->
     <script src="circaevum/js/main.js"></script>
+    
+    <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
+    <script src="circaevum/js/api/circaevum-gl.js"></script>
     
     <!-- Audio Script -->
     <script>
