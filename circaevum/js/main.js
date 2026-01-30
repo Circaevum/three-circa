@@ -17,9 +17,21 @@
 // ============================================
 // Note: Date/time variables are now in datetime.js
 // Note: Configuration constants are now in config.js
+// Note: scene, camera, renderer, sceneContentGroup, sunMesh, sunGlow, sunLight, stars
+//       are now declared in core/scene-core.js and exported to window
 
+// Scene variables are declared in scene-core.js (loaded before this file)
+// They are available as globals: scene, camera, renderer, sceneContentGroup, etc.
+
+// Scene variables declared here (used by scene-core.js)
 let scene, camera, renderer;
-let sceneContentGroup = null; // Container group for all scene content (for WebXR positioning)
+let sceneContentGroup = null;
+let sunMesh = null;
+let sunGlow = null;
+let sunLight = null;
+let stars = null;
+
+// Other global variables
 let planetMeshes = [];
 let orbitLines = [];
 let worldlines = [];
@@ -36,21 +48,13 @@ let currentCameraDistance = 800;
 let cameraTransitionSpeed = 0.15; // Camera transition speed for zoom level changes
 let isLightMode = false;
 let viewMode = 0; // 0 = angled, 1 = top-down (looking into future), 2 = bottom-up (looking into past)
-let stars = null;
 let showTimeMarkers = true;
 let showMoonWorldline = false; // Toggle for moon worldline
 let moonWorldlines = []; // Store moon worldline meshes
-let sunMesh = null; // Store sun mesh for position updates
-let sunGlow = null; // Store sun glow for position updates
-let sunLight = null; // Store sun light for position updates
 
-// WebXR controls
-let xrSession = null;
-let xrControllers = [];
-let xrMoveSpeed = 2.0; // Movement speed in meters per second
-let xrRotationSpeed = 1.0; // Rotation speed in radians per second
-let xrPosition = new THREE.Vector3(0, 1.6, 3); // Initial position: 3 meters back, 1.6m eye height
-let xrRotation = 0; // Y-axis rotation in radians
+// WebXR controls (using adapter system)
+let xrAdapter = null;
+let xrInputAdapter = null;
 
 // Function to convert a selected date to a specific zoom level's offset system
 // This maintains selected time when switching between zoom levels
@@ -293,97 +297,111 @@ let isPolarView = false; // Track if in polar view mode
 
 // Initialize scene
 function initScene() {
-    // Initialize THREE.Vector3 objects now that THREE is loaded
-    focusPoint = new THREE.Vector3(0, 0, 0);
-    targetFocusPoint = new THREE.Vector3(0, 0, 0);
-    targetCameraUp = new THREE.Vector3(0, 1, 0);
-    currentCameraUp = new THREE.Vector3(0, 1, 0);
-    targetCameraPosition = new THREE.Vector3(0, 0, 0);
-    
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(SCENE_CONFIG.backgroundColor);
-    // Remove fog for better visibility at all distances
-    // scene.fog = new THREE.FogExp2(SCENE_CONFIG.backgroundColor, SCENE_CONFIG.fogDensity);
-
-    // Create container group for all scene content (for WebXR positioning)
-    sceneContentGroup = new THREE.Group();
-    scene.add(sceneContentGroup);
-
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
-    // Position camera to view current time (2025) - will adjust based on zoom
-    const currentYearHeight = getHeightForYear(currentYear, 1);
-    camera.position.set(0, currentYearHeight + 400, 800);
-
-    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    // Limit pixel ratio on mobile for better performance (max 2)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    // Enable WebXR support
-    renderer.xr.enabled = true;
-    document.getElementById('canvas-container').appendChild(renderer.domElement);
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
-    scene.add(ambientLight); // Keep ambient light in scene (not in group)
-
-    // Position sun light at current date height so it illuminates planets
-    const currentDateHeight = getHeightForYear(currentYear, 1);
-    sunLight = new THREE.PointLight(SCENE_CONFIG.sunColor, 3, 5000);
-    sunLight.position.set(0, currentDateHeight, 0);
-    sceneContentGroup.add(sunLight);
-
-    createStarField();
-
-    // Create Sun at origin (it extends vertically through all time)
-    const sunGeometry = new THREE.SphereGeometry(SCENE_CONFIG.sunSize, 32, 32);
-    const sunMaterial = new THREE.MeshBasicMaterial({
-        color: SCENE_CONFIG.sunColor
-    });
-    sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
-    sunMesh.position.set(0, currentDateHeight, 0); // Position at current date
-    sceneContentGroup.add(sunMesh);
-
-    // Add sun glow
-    const glowGeometry = new THREE.SphereGeometry(SCENE_CONFIG.sunGlowSize, 32, 32);
-    const glowMaterial = new THREE.MeshBasicMaterial({
-        color: SCENE_CONFIG.sunColor,
-        transparent: true,
-        opacity: 0.3
-    });
-    sunGlow = new THREE.Mesh(glowGeometry, glowMaterial);
-    sunGlow.position.set(0, currentDateHeight, 0); // Position at current date
-    sceneContentGroup.add(sunGlow);
-    
-    // Create Sun's worldline (vertical line through time)
-    createSunWorldline();
-
-    window.addEventListener('resize', () => {
-        if (camera && renderer) {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-    });
+    // Use SceneCore.initScene if available, otherwise fallback to local implementation
+    if (typeof SceneCore !== 'undefined' && SceneCore.initScene) {
+        // Initialize THREE.Vector3 objects now that THREE is loaded
+        focusPoint = new THREE.Vector3(0, 0, 0);
+        targetFocusPoint = new THREE.Vector3(0, 0, 0);
+        targetCameraUp = new THREE.Vector3(0, 1, 0);
+        currentCameraUp = new THREE.Vector3(0, 1, 0);
+        targetCameraPosition = new THREE.Vector3(0, 0, 0);
+        
+        // Call SceneCore.initScene which will set scene, camera, renderer, etc. on window
+        SceneCore.initScene({
+            THREE: THREE,
+            SCENE_CONFIG: SCENE_CONFIG,
+            getHeightForYear: getHeightForYear,
+            currentYear: currentYear
+        });
+        
+        // Variables are already set by SceneCore (assigned to window, which are our let variables)
+        // No need to reassign, they're the same references
+    } else {
+        // Fallback: original implementation (should not be needed if SceneCore is loaded)
+        console.warn('SceneCore not available, using fallback initScene');
+        focusPoint = new THREE.Vector3(0, 0, 0);
+        targetFocusPoint = new THREE.Vector3(0, 0, 0);
+        targetCameraUp = new THREE.Vector3(0, 1, 0);
+        currentCameraUp = new THREE.Vector3(0, 1, 0);
+        targetCameraPosition = new THREE.Vector3(0, 0, 0);
+        
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(SCENE_CONFIG.backgroundColor);
+        sceneContentGroup = new THREE.Group();
+        scene.add(sceneContentGroup);
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
+        const currentYearHeight = getHeightForYear(currentYear, 1);
+        camera.position.set(0, currentYearHeight + 400, 800);
+        renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.xr.enabled = true;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+        scene.add(ambientLight);
+        const currentDateHeight = getHeightForYear(currentYear, 1);
+        sunLight = new THREE.PointLight(SCENE_CONFIG.sunColor, 3, 5000);
+        sunLight.position.set(0, currentDateHeight, 0);
+        sceneContentGroup.add(sunLight);
+        createStarField();
+        const sunGeometry = new THREE.SphereGeometry(SCENE_CONFIG.sunSize, 32, 32);
+        const sunMaterial = new THREE.MeshBasicMaterial({ color: SCENE_CONFIG.sunColor });
+        sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+        sunMesh.position.set(0, currentDateHeight, 0);
+        sceneContentGroup.add(sunMesh);
+        const glowGeometry = new THREE.SphereGeometry(SCENE_CONFIG.sunGlowSize, 32, 32);
+        const glowMaterial = new THREE.MeshBasicMaterial({ color: SCENE_CONFIG.sunColor, transparent: true, opacity: 0.3 });
+        sunGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+        sunGlow.position.set(0, currentDateHeight, 0);
+        sceneContentGroup.add(sunGlow);
+        createSunWorldline();
+        window.addEventListener('resize', () => {
+            if (camera && renderer) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
+    }
 }
 
 // Create the Sun's worldline (vertical axis through time)
+// Note: This function is kept for backward compatibility but delegates to SceneCore
 function createSunWorldline() {
-    const points = [
-        0, getHeightForYear(2000, 1), 0,  // Start at 2000
-        0, getHeightForYear(2100, 1), 0   // End at 2100
-    ];
-    
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-    
-    const material = new THREE.LineBasicMaterial({
-        color: SCENE_CONFIG.sunColor,
-        transparent: true,
-        opacity: 0.4,
-        linewidth: 1
-    });
-    
-    const sunWorldline = new THREE.Line(geometry, material);
-    sceneContentGroup.add(sunWorldline);
+    if (typeof SceneCore !== 'undefined' && SceneCore.createSunWorldline) {
+        SceneCore.createSunWorldline({
+            THREE: THREE,
+            SCENE_CONFIG: SCENE_CONFIG,
+            getHeightForYear: getHeightForYear
+        });
+    } else {
+        // Fallback: validate before creating geometry
+        const startHeight = getHeightForYear(2000, 1);
+        const endHeight = getHeightForYear(2100, 1);
+        
+        if (isNaN(startHeight) || isNaN(endHeight)) {
+            console.warn('createSunWorldline: getHeightForYear returned NaN, skipping');
+            return;
+        }
+        
+        const points = [
+            0, startHeight, 0,
+            0, endHeight, 0
+        ];
+        
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+        
+        const material = new THREE.LineBasicMaterial({
+            color: SCENE_CONFIG.sunColor,
+            transparent: true,
+            opacity: 0.4,
+            linewidth: 1
+        });
+        
+        const sunWorldline = new THREE.Line(geometry, material);
+        sceneContentGroup.add(sunWorldline);
+    }
 }
 
 function createStarField() {
@@ -500,15 +518,32 @@ function createPlanets(zoomLevel) {
         currentDateHeight = getHeightForYear(currentYear, 1);
     }
     
+    // Validate currentDateHeight is not NaN
+    if (isNaN(currentDateHeight)) {
+        console.error('createPlanets: currentDateHeight is NaN, using fallback');
+        currentDateHeight = 2500; // Fallback to year 2025
+    }
+    
     // Calculate selected date height using the actual selected date for continuous movement
     // This ensures smooth transitions when crossing day/hour boundaries
     const selectedDate = getSelectedDateTime();
-    const selectedDateHeight = calculateDateHeight(
+    let selectedDateHeight = calculateDateHeight(
         selectedDate.getFullYear(),
         selectedDate.getMonth(),
         selectedDate.getDate(),
         selectedDate.getHours()
     );
+    
+    // Validate selectedDateHeight is not NaN
+    if (isNaN(selectedDateHeight)) {
+        console.error('createPlanets: selectedDateHeight is NaN, using currentDateHeight as fallback', {
+            year: selectedDate.getFullYear(),
+            month: selectedDate.getMonth(),
+            day: selectedDate.getDate(),
+            hour: selectedDate.getHours()
+        });
+        selectedDateHeight = currentDateHeight; // Use currentDateHeight as fallback
+    }
     
     // Also calculate the offset for other uses (but use exact height for Earth position)
     const selectedHeightOffset = selectedDateHeight - currentDateHeight;
@@ -607,51 +642,62 @@ function createPlanets(zoomLevel) {
         }
         
         // Create orbit line at selected date height
-        const orbitGeometry = new THREE.BufferGeometry();
-        const orbitPoints = [];
-        const segments = 128;
-        
-        for (let i = 0; i <= segments; i++) {
-            const angle = (i / segments) * Math.PI * 2;
-            orbitPoints.push(
-                Math.cos(angle) * planetData.distance,
-                selectedDateHeight,
-                Math.sin(angle) * planetData.distance
-            );
-        }
-        
-        orbitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(orbitPoints, 3));
-        const orbitMaterial = new THREE.LineBasicMaterial({
-            color: getOrbitLineColor(), // Darker blue in light mode
-            transparent: true,
-            opacity: SCENE_CONFIG.orbitLineOpacity
-        });
-        const orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
-        sceneContentGroup.add(orbitLine);
-        orbitLines.push(orbitLine);
-        
-        // Create ghost orbit line at actual current position if offset
-        if (planetData.name === 'Earth' && selectedHeightOffset !== 0) {
-            const ghostOrbitGeometry = new THREE.BufferGeometry();
-            const ghostOrbitPoints = [];
+        // Validate selectedDateHeight before creating geometry
+        if (!isNaN(selectedDateHeight)) {
+            const orbitGeometry = new THREE.BufferGeometry();
+            const orbitPoints = [];
+            const segments = 128;
             
             for (let i = 0; i <= segments; i++) {
                 const angle = (i / segments) * Math.PI * 2;
-                ghostOrbitPoints.push(
+                orbitPoints.push(
                     Math.cos(angle) * planetData.distance,
-                    currentDateHeight,
+                    selectedDateHeight,
                     Math.sin(angle) * planetData.distance
                 );
             }
             
-            ghostOrbitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(ghostOrbitPoints, 3));
-            const ghostOrbitMaterial = new THREE.LineBasicMaterial({
+            orbitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(orbitPoints, 3));
+            const orbitMaterial = new THREE.LineBasicMaterial({
                 color: getOrbitLineColor(), // Darker blue in light mode
                 transparent: true,
-                opacity: SCENE_CONFIG.orbitLineOpacity * 0.3
+                opacity: SCENE_CONFIG.orbitLineOpacity
             });
-            ghostOrbitLine = new THREE.Line(ghostOrbitGeometry, ghostOrbitMaterial);
-            sceneContentGroup.add(ghostOrbitLine);
+            const orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
+            sceneContentGroup.add(orbitLine);
+            orbitLines.push(orbitLine);
+        } else {
+            console.warn('createPlanets: selectedDateHeight is NaN, skipping orbit line for', planetData.name);
+        }
+        
+        // Create ghost orbit line at actual current position if offset
+        if (planetData.name === 'Earth' && selectedHeightOffset !== 0) {
+            // Validate currentDateHeight before creating geometry
+            if (isNaN(currentDateHeight)) {
+                console.warn('createPlanets: currentDateHeight is NaN, skipping ghost orbit line');
+            } else {
+                const ghostOrbitGeometry = new THREE.BufferGeometry();
+                const ghostOrbitPoints = [];
+                const segments = 128;
+                
+                for (let i = 0; i <= segments; i++) {
+                    const angle = (i / segments) * Math.PI * 2;
+                    ghostOrbitPoints.push(
+                        Math.cos(angle) * planetData.distance,
+                        currentDateHeight,
+                        Math.sin(angle) * planetData.distance
+                    );
+                }
+                
+                ghostOrbitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(ghostOrbitPoints, 3));
+                const ghostOrbitMaterial = new THREE.LineBasicMaterial({
+                    color: getOrbitLineColor(), // Darker blue in light mode
+                    transparent: true,
+                    opacity: SCENE_CONFIG.orbitLineOpacity * 0.3
+                });
+                ghostOrbitLine = new THREE.Line(ghostOrbitGeometry, ghostOrbitMaterial);
+                sceneContentGroup.add(ghostOrbitLine);
+            }
         }
         
         // Create worldline using Worldlines module
@@ -941,6 +987,49 @@ function initControls() {
         e.preventDefault();
     }, { passive: false });
     
+    // Mobile swipe gestures for zoom
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchStartTime = 0;
+    
+    renderer.domElement.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            touchStartTime = Date.now();
+        }
+    }, { passive: true });
+    
+    renderer.domElement.addEventListener('touchend', (e) => {
+        if (e.changedTouches.length === 1 && !isDragging) {
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            const touchEndTime = Date.now();
+            const deltaX = touchEndX - touchStartX;
+            const deltaY = touchEndY - touchStartY;
+            const deltaTime = touchEndTime - touchStartTime;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            
+            // Swipe detection: quick swipe (less than 300ms) and significant distance (more than 50px)
+            if (deltaTime < 300 && distance > 50) {
+                // Vertical swipe for zoom
+                if (Math.abs(deltaY) > Math.abs(deltaX)) {
+                    if (deltaY < 0 && currentZoom < 9) {
+                        // Swipe up = zoom in
+                        let nextZoom = currentZoom + 1;
+                        if (nextZoom === 6 && currentZoom !== 6) nextZoom = 7;
+                        setZoomLevel(nextZoom);
+                    } else if (deltaY > 0 && currentZoom > 1) {
+                        // Swipe down = zoom out
+                        let prevZoom = currentZoom - 1;
+                        if (prevZoom === 6 && currentZoom !== 6) prevZoom = 5;
+                        setZoomLevel(prevZoom);
+                    }
+                }
+            }
+        }
+    }, { passive: true });
+    
     renderer.domElement.addEventListener('touchmove', (e) => {
         if (e.touches.length === 1 && isDragging) {
             // Single touch drag - rotate camera
@@ -1048,6 +1137,51 @@ function initControls() {
         targetCameraDistance = Math.max(config.distance * 0.3, Math.min(config.distance * 3, targetCameraDistance));
     });
 
+    // Mobile zoom controls
+    const zoomInBtn = document.getElementById('zoom-in-btn');
+    const zoomOutBtn = document.getElementById('zoom-out-btn');
+    const mobileZoomLabel = document.getElementById('mobile-zoom-label');
+    
+    // Zoom in function
+    const handleZoomIn = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Zoom in (increase zoom level), skip Lunar view (6)
+        if (currentZoom < 9) {
+            let nextZoom = currentZoom + 1;
+            // Skip Lunar view (6) unless we're already at 6
+            if (nextZoom === 6 && currentZoom !== 6) {
+                nextZoom = 7;
+            }
+            setZoomLevel(nextZoom);
+        }
+    };
+    
+    // Zoom out function
+    const handleZoomOut = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Zoom out (decrease zoom level), skip Lunar view (6)
+        if (currentZoom > 1) {
+            let prevZoom = currentZoom - 1;
+            // Skip Lunar view (6) unless we're already at 6
+            if (prevZoom === 6 && currentZoom !== 6) {
+                prevZoom = 5;
+            }
+            setZoomLevel(prevZoom);
+        }
+    };
+    
+    if (zoomInBtn) {
+        zoomInBtn.addEventListener('click', handleZoomIn);
+        zoomInBtn.addEventListener('touchend', handleZoomIn);
+    }
+    
+    if (zoomOutBtn) {
+        zoomOutBtn.addEventListener('click', handleZoomOut);
+        zoomOutBtn.addEventListener('touchend', handleZoomOut);
+    }
+    
     document.querySelectorAll('.zoom-option').forEach(option => {
         option.addEventListener('click', () => {
             const zoom = parseInt(option.dataset.zoom);
@@ -1063,45 +1197,31 @@ function initControls() {
     // Light mode toggle
     document.getElementById('light-mode-toggle').addEventListener('click', toggleLightMode);
     
-    // WebXR toggle
+    // WebXR toggle (using adapter system)
     const webxrToggle = document.getElementById('webxr-toggle');
     if (webxrToggle) {
         // Start hidden by default
         webxrToggle.style.display = 'none';
         
-        // Check if WebXR is supported
-        if ('xr' in navigator) {
-            console.log('WebXR: navigator.xr is available');
-            // Check for immersive-vr support (primary for VR headsets)
-            navigator.xr.isSessionSupported('immersive-vr').then((vrSupported) => {
-                console.log('WebXR: immersive-vr support check:', vrSupported);
-                if (vrSupported) {
+        // Check if WebXR adapter is available
+        if (typeof WebXRAdapter !== 'undefined') {
+            // Initialize XR adapter
+            xrAdapter = new WebXRAdapter(scene, camera, renderer, sceneContentGroup);
+            
+            // Check if WebXR is supported
+            xrAdapter.isSupported().then((supported) => {
+                if (supported) {
                     webxrToggle.style.display = 'block';
                     webxrToggle.addEventListener('click', toggleWebXR);
-                    console.log('WebXR: VR mode supported - button enabled');
+                    console.log('WebXR: Supported - button enabled');
                 } else {
-                    // Also check for immersive-ar (AR headsets)
-                    return navigator.xr.isSessionSupported('immersive-ar').then((arSupported) => {
-                        console.log('WebXR: immersive-ar support check:', arSupported);
-                        if (arSupported) {
-                            webxrToggle.style.display = 'block';
-                            webxrToggle.addEventListener('click', toggleWebXR);
-                            console.log('WebXR: AR mode supported - button enabled');
-                        } else {
-                            console.warn('WebXR: Neither VR nor AR mode supported');
-                            console.warn('WebXR: Make sure you are using HTTPS or localhost');
-                        }
-                    });
+                    console.warn('WebXR: Not supported on this device/browser');
                 }
             }).catch((error) => {
                 console.error('WebXR: Error checking support', error);
-                console.error('WebXR: This usually means the page is not served over HTTPS');
-                // Keep it hidden (already set above)
             });
         } else {
-            console.warn('WebXR: navigator.xr not available');
-            console.warn('WebXR: This usually means the page is not served over HTTPS or WebXR is not supported');
-            // If WebXR not in navigator, keep it hidden (already set above)
+            console.warn('WebXR: WebXRAdapter not loaded');
         }
     }
 }
@@ -1277,59 +1397,53 @@ function toggleLightMode() {
 function toggleWebXR() {
     const button = document.getElementById('webxr-toggle');
     
-    if (renderer.xr.isPresenting) {
-        // Exit WebXR - reset scene position
-        if (sceneContentGroup) {
-            sceneContentGroup.position.set(0, 0, 0);
+    if (!xrAdapter) {
+        console.error('WebXR: XR adapter not initialized');
+        return;
+    }
+    
+    if (xrAdapter.isPresenting()) {
+        // Exit WebXR
+        xrAdapter.exitXR();
+        if (xrInputAdapter) {
+            xrInputAdapter.cleanup();
         }
-        cleanupXRControls();
-        renderer.xr.getSession().end();
+        button.classList.remove('active');
+        button.textContent = 'WEBXR';
     } else {
         // Enter WebXR
-        if ('xr' in navigator) {
-            navigator.xr.requestSession('immersive-vr', {
-                optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
-            }).then((session) => {
-                xrSession = session;
-                renderer.xr.setSession(session);
-                button.classList.add('active');
-                button.textContent = 'EXIT VR';
-                
-                // Position scene for comfortable viewing
-                // Instead of being at the center, position the scene so user views it from a distance
-                if (sceneContentGroup && typeof calculateCurrentDateHeight === 'function') {
-                    const currentTimeHeight = calculateCurrentDateHeight();
-                    const eyeLevel = 1.6; // Comfortable eye level in meters
-                    const viewingDistance = 5.0; // Start 5 meters back from the scene for better overview
-                    
-                    // Position scene: bring current time to eye level, and offset forward so it's in front
-                    // This positions the user looking at the scene from a comfortable distance
-                    sceneContentGroup.position.set(0, eyeLevel - currentTimeHeight, viewingDistance);
-                    xrPosition.set(0, 0, 0); // Reset player position
-                    xrRotation = 0; // Reset rotation
-                    console.log('WebXR: Positioned scene at comfortable viewing distance (5m back)');
-                }
-                
-                // Initialize XR controls
-                initXRControls(session);
-                
-                // Handle session end
-                session.addEventListener('end', () => {
-                    button.classList.remove('active');
-                    button.textContent = 'WEBXR';
-                    // Reset scene position when exiting VR
-                    if (sceneContentGroup) {
-                        sceneContentGroup.position.set(0, 0, 0);
-                    }
-                    cleanupXRControls();
-                    // Restore animation loop for non-XR mode
-                    renderer.setAnimationLoop(animate);
-                });
-            }).catch((error) => {
-                console.error('Failed to start WebXR session:', error);
-                alert('Failed to enter VR mode. Make sure your headset is connected and WebXR is supported.');
-            });
+        // Hide loading screen immediately when entering VR
+        const loadingElement = document.getElementById('loading');
+        if (loadingElement) {
+            loadingElement.style.display = 'none';
         }
+        
+        xrAdapter.enterXR('immersive-vr').then((session) => {
+            button.classList.add('active');
+            button.textContent = 'EXIT VR';
+            
+            // Initialize XR input adapter
+            if (!xrInputAdapter) {
+                xrInputAdapter = new XRInputAdapter(xrAdapter, {
+                    currentZoom: currentZoom,
+                    setZoomLevel: (zoom) => {
+                        currentZoom = zoom;
+                        createPlanets(currentZoom);
+                    },
+                    move: (x, z) => {
+                        // Movement handled by adapter
+                    },
+                    rotate: (y) => {
+                        // Rotation handled by adapter
+                    }
+                });
+            }
+            xrInputAdapter.init(session);
+            
+        }).catch((error) => {
+            console.error('Failed to enter XR:', error);
+            alert('Failed to enter VR mode. Make sure your headset is connected and WebXR is supported.');
+        });
     }
 }
 
@@ -1378,45 +1492,68 @@ function buildController(controller, hand) {
 }
 
 // Handle XR controller input (WASD-like movement)
-function handleXRInput() {
-    if (!xrSession || !sceneContentGroup) return;
+function handleXRInput(frame) {
+    if (!xrSession || !sceneContentGroup || !frame) return;
     
-    // Get input sources from the session
+    // Get input sources from the session (they're available on the session object)
     const inputSources = xrSession.inputSources || [];
     
     let moveForward = 0;
     let moveRight = 0;
     let rotate = 0;
     
+    // Debug: Log input sources
+    if (inputSources.length === 0) {
+        // Only log once per second to avoid spam
+        if (!handleXRInput.lastLogTime || (Date.now() - handleXRInput.lastLogTime) > 1000) {
+            console.log('WebXR: No input sources detected. Controllers may not be connected.');
+            handleXRInput.lastLogTime = Date.now();
+        }
+    }
+    
     // Process each controller
     for (let i = 0; i < inputSources.length; i++) {
         const inputSource = inputSources[i];
         const gamepad = inputSource.gamepad;
         
-        if (!gamepad) continue;
+        if (!gamepad) {
+            console.log(`WebXR: Controller ${i} has no gamepad`);
+            continue;
+        }
         
-        // Left controller (index 0): Movement (thumbstick)
-        // Right controller (index 1): Rotation (thumbstick)
-        if (i === 0 && gamepad.axes && gamepad.axes.length >= 2) {
+        // Determine which hand this controller is (left or right)
+        // Quest controllers: handedness can be 'left' or 'right'
+        const isLeft = inputSource.handedness === 'left' || (inputSource.handedness === 'none' && i === 0);
+        const isRight = inputSource.handedness === 'right' || (inputSource.handedness === 'none' && i === 1);
+        
+        // Left controller: Movement (thumbstick)
+        if (isLeft && gamepad.axes && gamepad.axes.length >= 2) {
             // Left thumbstick: Forward/Back and Left/Right movement
             moveForward = -gamepad.axes[1]; // Y-axis inverted
             moveRight = gamepad.axes[0]; // X-axis
-        } else if (i === 1 && gamepad.axes && gamepad.axes.length >= 2) {
+        }
+        
+        // Right controller: Rotation (thumbstick)
+        if (isRight && gamepad.axes && gamepad.axes.length >= 2) {
             // Right thumbstick: Rotation
             rotate = gamepad.axes[0]; // X-axis for rotation
         }
         
-        // Button presses for additional controls
-        // A button (index 0) or X button (index 2) - can be used for actions
+        // Debug: Log button presses
         if (gamepad.buttons && gamepad.buttons.length > 0) {
-            // Example: Button 0 (A/X) could trigger actions
-            // if (gamepad.buttons[0].pressed) { ... }
+            for (let j = 0; j < gamepad.buttons.length; j++) {
+                if (gamepad.buttons[j].pressed) {
+                    console.log(`WebXR: Button ${j} pressed on ${inputSource.handedness || 'unknown'} controller`);
+                }
+            }
         }
     }
     
     // Apply movement (WASD-like)
-    // Use a reasonable deltaTime - will be frame-rate independent
-    const deltaTime = 0.016; // Approximate 60fps
+    // Use frame's elapsed time for accurate deltaTime
+    const deltaTime = frame ? (frame.elapsedTime - (handleXRInput.lastTime || 0)) : 0.016;
+    handleXRInput.lastTime = frame ? frame.elapsedTime : 0;
+    const safeDeltaTime = Math.min(deltaTime, 0.1); // Cap at 100ms to prevent large jumps
     
     // Dead zone for thumbsticks (ignore small movements)
     const deadZone = 0.1;
@@ -1424,16 +1561,36 @@ function handleXRInput() {
     if (Math.abs(moveRight) < deadZone) moveRight = 0;
     if (Math.abs(rotate) < deadZone) rotate = 0;
     
-    // Calculate movement direction based on current rotation
-    const moveX = Math.sin(xrRotation) * moveForward + Math.cos(xrRotation) * moveRight;
-    const moveZ = Math.cos(xrRotation) * moveForward - Math.sin(xrRotation) * moveRight;
-    
-    // Update position
-    xrPosition.x += moveX * xrMoveSpeed * deltaTime;
-    xrPosition.z += moveZ * xrMoveSpeed * deltaTime;
+    // Calculate movement direction based on head rotation (where you're looking)
+    // Get head pose for forward direction
+    const referenceSpace = xrReferenceSpace || renderer.xr.getReferenceSpace();
+    if (referenceSpace && frame) {
+        const viewerPose = frame.getViewerPose(referenceSpace);
+        if (viewerPose) {
+            const headQuaternion = viewerPose.transform.orientation;
+            const headEuler = new THREE.Euler().setFromQuaternion(new THREE.Quaternion(
+                headQuaternion.x, headQuaternion.y, headQuaternion.z, headQuaternion.w
+            ));
+            const headYaw = headEuler.y; // Y rotation (left/right)
+            
+            // Move relative to head direction
+            const moveX = Math.sin(headYaw) * moveForward + Math.cos(headYaw) * moveRight;
+            const moveZ = Math.cos(headYaw) * moveForward - Math.sin(headYaw) * moveRight;
+            
+            // Update position
+            xrPosition.x += moveX * xrMoveSpeed * safeDeltaTime;
+            xrPosition.z += moveZ * xrMoveSpeed * safeDeltaTime;
+        }
+    } else {
+        // Fallback: simple movement without head tracking
+        const moveX = Math.sin(xrRotation) * moveForward + Math.cos(xrRotation) * moveRight;
+        const moveZ = Math.cos(xrRotation) * moveForward - Math.sin(xrRotation) * moveRight;
+        xrPosition.x += moveX * xrMoveSpeed * safeDeltaTime;
+        xrPosition.z += moveZ * xrMoveSpeed * safeDeltaTime;
+    }
     
     // Update rotation
-    xrRotation += rotate * xrRotationSpeed * deltaTime;
+    xrRotation += rotate * xrRotationSpeed * safeDeltaTime;
     
     // Apply position and rotation to scene content group
     // Movement is relative to the scene, so we move the scene opposite to the player
@@ -1460,8 +1617,12 @@ function handleXRInput() {
 function cleanupXRControls() {
     xrControllers = [];
     xrSession = null;
-    xrPosition.set(0, 1.6, 3);
+    xrReferenceSpace = null;
+    xrPosition.set(0, 0, 0);
     xrRotation = 0;
+    if (handleXRInput.lastTime !== undefined) {
+        handleXRInput.lastTime = undefined;
+    }
 }
 
 // Toggle rotation between vertical and horizontal orientation (R key)
@@ -1655,6 +1816,12 @@ function setZoomLevel(level) {
         }
     });
     
+    // Update mobile zoom label
+    const mobileZoomLabel = document.getElementById('mobile-zoom-label');
+    if (mobileZoomLabel) {
+        mobileZoomLabel.textContent = config.name;
+    }
+    
     // Preserve selected time across zoom levels by converting the selected date
     // to the new zoom level's offset system
     applySelectedDateToZoomLevel(selectedDate, level);
@@ -1709,12 +1876,14 @@ function getFocusPoint() {
     return new THREE.Vector3(0, verticalOffset, 0);
 }
 
-function animate() {
+function animate(time, frame) {
     time += 0.01;
     
-    // Handle XR controller input if in VR mode
-    if (renderer.xr.isPresenting && xrSession) {
-        handleXRInput();
+    // Handle XR input if in VR mode (using adapter system)
+    if (xrAdapter && xrAdapter.isPresenting() && frame) {
+        if (xrInputAdapter) {
+            xrInputAdapter.handleInput(frame);
+        }
     }
     
     // Planets stay at rest at their accurate positions
