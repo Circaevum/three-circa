@@ -26,6 +26,7 @@
 // Scene variables declared here (used by scene-core.js)
 let scene, camera, renderer;
 let sceneContentGroup = null;
+let flattenableGroup = null; // Worldlines and time markers only; scaled when flatten is on. Sun/planets stay in sceneContentGroup.
 let sunMesh = null;
 let sunGlow = null;
 let sunLight = null;
@@ -54,6 +55,8 @@ let showMoonWorldline = false; // Toggle for moon worldline
 let moonWorldlines = []; // Store moon worldline meshes
 let circadianWorldlines = []; // Circadian rhythm helix (hour-hand), shown at day/clock zoom
 let circadianState = 'off'; // 'off' | 'straightened' | 'wrapped' – toggled via scene icon
+let flattenOn = false; // Flatten view on/off (zoom >= 3). Smooth transition via currentFlattenAmount.
+let currentFlattenAmount = 0; // Lerps toward 1 when flattenOn, toward 0 when off (no camera jump).
 
 // WebXR controls (using adapter system)
 let xrAdapter = null;
@@ -318,7 +321,8 @@ function initScene() {
         });
         
         // Variables are already set by SceneCore (assigned to window, which are our let variables)
-        // No need to reassign, they're the same references
+        flattenableGroup = new THREE.Group();
+        sceneContentGroup.add(flattenableGroup);
     } else {
         // Fallback: original implementation (should not be needed if SceneCore is loaded)
         console.warn('SceneCore not available, using fallback initScene');
@@ -332,6 +336,8 @@ function initScene() {
         scene.background = new THREE.Color(SCENE_CONFIG.backgroundColor);
         sceneContentGroup = new THREE.Group();
         scene.add(sceneContentGroup);
+        flattenableGroup = new THREE.Group();
+        sceneContentGroup.add(flattenableGroup);
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
         const currentYearHeight = getHeightForYear(currentYear, 1);
         camera.position.set(0, currentYearHeight + 400, 800);
@@ -375,7 +381,8 @@ function createSunWorldline() {
         SceneCore.createSunWorldline({
             THREE: THREE,
             SCENE_CONFIG: SCENE_CONFIG,
-            getHeightForYear: getHeightForYear
+            getHeightForYear: getHeightForYear,
+            flattenableGroup: flattenableGroup
         });
     } else {
         // Fallback: validate before creating geometry
@@ -403,7 +410,7 @@ function createSunWorldline() {
         });
         
         const sunWorldline = new THREE.Line(geometry, material);
-        sceneContentGroup.add(sunWorldline);
+        (flattenableGroup || sceneContentGroup).add(sunWorldline);
     }
 }
 
@@ -476,16 +483,17 @@ function createPlanets(zoomLevel) {
     }
 
     planetMeshes.forEach(p => sceneContentGroup.remove(p));
-    orbitLines.forEach(o => sceneContentGroup.remove(o));
-    worldlines.forEach(w => sceneContentGroup.remove(w));
+    const flatGroup = flattenableGroup || sceneContentGroup;
+    orbitLines.forEach(o => flatGroup.remove(o));
+    worldlines.forEach(w => flatGroup.remove(w));
     
-    // Remove ghost elements
+    // Remove ghost elements (ghostEarth stays on sceneContentGroup, ghostOrbitLine on flattenable)
     if (typeof ghostEarth !== 'undefined' && ghostEarth) {
         sceneContentGroup.remove(ghostEarth);
         ghostEarth = null;
     }
     if (typeof ghostOrbitLine !== 'undefined' && ghostOrbitLine) {
-        sceneContentGroup.remove(ghostOrbitLine);
+        flatGroup.remove(ghostOrbitLine);
         ghostOrbitLine = null;
     }
     
@@ -493,7 +501,7 @@ function createPlanets(zoomLevel) {
     orbitLines.length = 0;
     worldlines.length = 0;
 
-    circadianWorldlines.forEach(obj => sceneContentGroup.remove(obj));
+    circadianWorldlines.forEach(obj => flatGroup.remove(obj));
     circadianWorldlines = [];
 
     const config = ZOOM_LEVELS[zoomLevel];
@@ -652,7 +660,7 @@ function createPlanets(zoomLevel) {
             ghostEarth.position.y = currentDateHeight;
             ghostEarth.position.z = Math.sin(planetData.startAngle) * planetData.distance;
             
-            sceneContentGroup.add(ghostEarth);
+            sceneContentGroup.add(ghostEarth); // Earth stays 3D (not flattened)
         }
         
         // Create orbit line at selected date height
@@ -678,7 +686,7 @@ function createPlanets(zoomLevel) {
                 opacity: SCENE_CONFIG.orbitLineOpacity
             });
             const orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
-            sceneContentGroup.add(orbitLine);
+            flatGroup.add(orbitLine);
             orbitLines.push(orbitLine);
         } else {
             console.warn('createPlanets: selectedDateHeight is NaN, skipping orbit line for', planetData.name);
@@ -710,7 +718,7 @@ function createPlanets(zoomLevel) {
                     opacity: SCENE_CONFIG.orbitLineOpacity * 0.3
                 });
                 ghostOrbitLine = new THREE.Line(ghostOrbitGeometry, ghostOrbitMaterial);
-                sceneContentGroup.add(ghostOrbitLine);
+                flatGroup.add(ghostOrbitLine);
             }
         }
         
@@ -718,7 +726,7 @@ function createPlanets(zoomLevel) {
         if (typeof Worldlines !== 'undefined' && Worldlines.createWorldline) {
             const worldline = Worldlines.createWorldline(planetData, config.timeYears, zoomLevel);
             if (worldline) { // Check if worldline was created successfully
-                sceneContentGroup.add(worldline);
+                flatGroup.add(worldline);
                 worldlines.push(worldline);
             }
             
@@ -726,7 +734,7 @@ function createPlanets(zoomLevel) {
             if (selectedHeightOffset !== 0) {
                 const connectorWorldline = Worldlines.createConnectorWorldline(planetData, currentDateHeight, selectedDateHeight);
                 if (connectorWorldline) {
-                    sceneContentGroup.add(connectorWorldline);
+                    flatGroup.add(connectorWorldline);
                     worldlines.push(connectorWorldline);
                 }
             }
@@ -740,7 +748,7 @@ function createPlanets(zoomLevel) {
     if (zoomLevel === 6) {
         // Remove existing moon worldlines first
         moonWorldlines.forEach(mesh => {
-            sceneContentGroup.remove(mesh);
+            flatGroup.remove(mesh);
         });
         moonWorldlines = [];
         
@@ -748,14 +756,14 @@ function createPlanets(zoomLevel) {
         if (typeof Worldlines !== 'undefined' && Worldlines.createMoonWorldline) {
             const moonWorldline = Worldlines.createMoonWorldline(currentDateHeight, zoomLevel);
             if (moonWorldline) {
-                sceneContentGroup.add(moonWorldline);
+                flatGroup.add(moonWorldline);
                 moonWorldlines.push(moonWorldline);
             }
         }
     } else {
         // Remove moon worldlines when not in Zoom 6
         moonWorldlines.forEach(mesh => {
-            sceneContentGroup.remove(mesh);
+            flatGroup.remove(mesh);
         });
         moonWorldlines = [];
     }
@@ -775,7 +783,7 @@ function createPlanets(zoomLevel) {
                 { color: 0xffaa44, opacity: 0.55, spanDays }
             );
             if (circadianLine) {
-                sceneContentGroup.add(circadianLine);
+                flatGroup.add(circadianLine);
                 circadianWorldlines.push(circadianLine);
             }
         }
@@ -871,9 +879,11 @@ function createTextLabel(text, height, radius, zoomLevel, angle = 0, colorType =
     // Apply size multiplier to scale
     scale = scale * sizeMultiplier;
     
-    sprite.scale.set(scale, scale * 0.25, 1);
+    const scaleY = scale * 0.25;
+    sprite.scale.set(scale, scaleY, 1);
+    sprite.userData.baseScale = { x: scale, y: scaleY, z: 1 };
     
-    sceneContentGroup.add(sprite);
+    (flattenableGroup || sceneContentGroup).add(sprite);
     timeMarkers.push(sprite);
 }
 
@@ -904,7 +914,7 @@ function initTimeMarkers() {
         }
         
         TimeMarkers.init({
-            scene: sceneContentGroup,
+            scene: flattenableGroup || sceneContentGroup,
             timeMarkers,
             getMarkerColor,
             createTextLabel,
@@ -1172,6 +1182,8 @@ function initControls() {
         } else if (e.code === 'Space' && !isLandingPage) {
             e.preventDefault(); // Prevent page scroll
             smoothReturnToPresent(); // Smoothly animate back to current time
+        } else if (e.key.toLowerCase() === 'f' && !isLandingPage) {
+            toggleFlattenWithKey();
         }
     });
     
@@ -1251,6 +1263,10 @@ function initControls() {
     // Circadian worldline toggle (cycle: off -> straightened -> wrapped -> off)
     const circadianToggleBtn = document.getElementById('circadian-toggle');
     if (circadianToggleBtn) circadianToggleBtn.addEventListener('click', toggleCircadianWorldline);
+
+    // Flatten view: icon toggles flatten on/off (smooth transition in animate)
+    const flattenToggleBtn = document.getElementById('flatten-toggle');
+    if (flattenToggleBtn) flattenToggleBtn.addEventListener('click', toggleFlatten);
     
     // WebXR toggle (using adapter system)
     const webxrToggle = document.getElementById('webxr-toggle');
@@ -1397,19 +1413,16 @@ function smoothReturnToPresent() {
 
 function toggleMoonWorldline() {
     showMoonWorldline = !showMoonWorldline;
-    
+    const flatGroup = flattenableGroup || sceneContentGroup;
     if (showMoonWorldline) {
         if (typeof Worldlines !== 'undefined' && Worldlines.createMoonWorldline) {
             const currentDateHeight = calculateCurrentDateHeight();
             const moonWorldline = Worldlines.createMoonWorldline(currentDateHeight, currentZoom);
-            sceneContentGroup.add(moonWorldline);
+            flatGroup.add(moonWorldline);
             moonWorldlines.push(moonWorldline);
         }
     } else {
-        // Remove all moon worldline meshes
-        moonWorldlines.forEach(mesh => {
-            sceneContentGroup.remove(mesh);
-        });
+        moonWorldlines.forEach(mesh => flatGroup.remove(mesh));
         moonWorldlines = [];
     }
 }
@@ -1428,6 +1441,32 @@ function toggleTimeMarkerText() {
     const button = document.getElementById('markers-text-toggle');
     if (button) button.classList.toggle('active', showTimeMarkerText);
     applyTimeMarkerVisibility();
+}
+
+function getFlattenedY(logicalY) {
+    const yScale = 1 - currentFlattenAmount * 0.95;
+    return logicalY * Math.max(0.05, yScale);
+}
+
+function updateFlattenIconVisibility() {
+    const btn = document.getElementById('flatten-toggle');
+    if (btn) btn.style.display = currentZoom >= 3 ? '' : 'none';
+}
+
+function toggleFlatten() {
+    if (currentZoom < 3) return;
+    flattenOn = !flattenOn;
+    const btn = document.getElementById('flatten-toggle');
+    if (btn) {
+        btn.classList.toggle('active', flattenOn);
+        btn.title = flattenOn ? 'Flatten view: on (F)' : 'Flatten view (F)';
+        btn.setAttribute('aria-label', flattenOn ? 'Flatten view: on' : 'Flatten view: off');
+    }
+}
+
+function toggleFlattenWithKey() {
+    if (currentZoom < 3) return;
+    toggleFlatten();
 }
 
 function toggleCircadianWorldline() {
@@ -1919,6 +1958,7 @@ function setZoomLevel(level, overrideDate) {
     createStarField(); // Update star visibility based on zoom level
     createPlanets(currentZoom);
     updateTimeDisplays(); // Update time displays after zoom change
+    updateFlattenIconVisibility();
 }
 
 function getFocusPoint() {
@@ -1953,6 +1993,32 @@ function animate(time, frame) {
     if (xrAdapter && xrAdapter.isPresenting() && frame) {
         if (xrInputAdapter) {
             xrInputAdapter.handleInput(frame);
+        }
+    }
+    
+    // Smooth flatten transition: scale only worldlines/markers (flattenableGroup), not Sun/planets.
+    // Flatten toward the SELECTED TIME (focus Y), not toward zero.
+    const flattenTarget = flattenOn ? 1 : 0;
+    currentFlattenAmount += (flattenTarget - currentFlattenAmount) * 0.08;
+    const yScale = Math.max(0.05, 1 - currentFlattenAmount * 0.95);
+    if (typeof flattenableGroup !== 'undefined' && flattenableGroup && typeof focusPoint !== 'undefined' && focusPoint) {
+        flattenableGroup.scale.set(1, yScale, 1);
+        flattenableGroup.position.y = focusPoint.y * (1 - yScale); // plane of flatten passes through selected time
+        // Keep text sprites from being squashed: counteract parent Y scale so they billboard at correct size
+        if (currentFlattenAmount > 0.01) {
+            flattenableGroup.traverse((obj) => {
+                if (obj.isSprite && obj.userData.baseScale) {
+                    const b = obj.userData.baseScale;
+                    obj.scale.set(b.x, b.y / yScale, b.z);
+                }
+            });
+        } else {
+            flattenableGroup.traverse((obj) => {
+                if (obj.isSprite && obj.userData.baseScale) {
+                    const b = obj.userData.baseScale;
+                    obj.scale.set(b.x, b.y, b.z);
+                }
+            });
         }
     }
     
@@ -2082,6 +2148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         targetFocusPoint.y = currentDateHeight;
         
         createPlanets(currentZoom);
+        updateFlattenIconVisibility();
         initControls();
         updateTimeDisplays(); // Initialize time displays
         // Use renderer.setAnimationLoop for WebXR compatibility

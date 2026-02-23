@@ -176,7 +176,8 @@ function createSunWorldline(dependencies = {}) {
     });
     
     const sunWorldline = new THREE.Line(geometry, material);
-    sceneContentGroup.add(sunWorldline);
+    const target = dependencies.flattenableGroup || sceneContentGroup;
+    target.add(sunWorldline);
 }
 
 /**

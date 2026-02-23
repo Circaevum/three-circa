@@ -1499,6 +1499,7 @@ const TimeMarkers = (function() {
         const z = Math.sin(angle) * radius;
         sprite.position.set(x, height, z);
         sprite.scale.set(12, 12, 1);
+        sprite.userData.baseScale = { x: 12, y: 12, z: 1 };
         return sprite;
     }
 

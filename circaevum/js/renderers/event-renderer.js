@@ -75,8 +75,10 @@
     const sprite = new global.THREE.Sprite(mat);
     sprite.position.set(x, y, z);
     const s = scale != null ? scale : 8;
-    // Scale sprite proportionally so wider canvas doesn't stretch; keep height ratio
-    sprite.scale.set(s * (width / minWidth), s * 0.3, 1);
+    const sx = s * (width / minWidth);
+    const sy = s * 0.3;
+    sprite.scale.set(sx, sy, 1);
+    sprite.userData.baseScale = { x: sx, y: sy, z: 1 };
     return sprite;
   }
 
