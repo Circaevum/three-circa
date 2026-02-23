@@ -1,18 +1,24 @@
 /**
  * Circaevum GL - Public API
- * 
+ *
  * This is the main entry point for using Circaevum as a graphics library.
  * Similar to Mapbox GL JS API design.
- * 
+ *
  * Usage:
  *   const gl = new CircaevumGL(containerElement, options);
  *   gl.addLayer('my-calendar', { color: '#ff0000' });
  *   gl.addEvents('my-calendar', events); // Events in RFC 5545 VEVENT format
- * 
+ *
+ * EventObjects (web): Each event is rendered as a scene object (mesh or line) with
+ * userData.vevent, userData.layerId, userData.type === 'EventObject'. For API
+ * consumption use getEventObjects(layerId). To push event data from an account-
+ * managed React page use ingestEvents(layerId, events, { sessionId: '26Q1W01' }).
+ *
  * Reference: spec/schemas/vevent-rfc5545.md
- * 
+ *
  * Dependencies:
  *   - VEvent class from js/models/vevent.js (must be loaded before this file)
+ *   - EventRenderer from js/renderers/event-renderer.js (for event visualization)
  */
 
 // Import core modules (will be bundled or loaded separately)
@@ -35,6 +41,8 @@ class CircaevumGL {
     // Internal state
     this.layers = new Map(); // layerId -> LayerConfig
     this.events = new Map(); // layerId -> Event[]
+    this.eventLines = new Map(); // layerId -> Array<{ start, end, label?, color? }>
+    this._eventLineColorIndex = 0; // cycle through palette when color not specified
     this.eventHandlers = new Map(); // eventType -> [callbacks]
     
     // Core scene components (will be initialized)
@@ -277,6 +285,80 @@ class CircaevumGL {
   }
 
   /**
+   * Add a single event to a layer (convenience for API callers).
+   * @param {string} layerId - Layer identifier (created if missing)
+   * @param {Object} event - One VEVENT-like or Google Calendar Event
+   */
+  addEvent(layerId, event) {
+    this.addEvents(layerId, [event]);
+  }
+
+  /** Default palette for event lines when color is not specified (each event gets its own color) */
+  static get EVENT_LINE_PALETTE() {
+    return [
+      '#00b4d8', '#ef476f', '#06d6a0', '#ffd166', '#9b5de5',
+      '#00f5d4', '#f15bb5', '#fee440', '#7b2cbf', '#2ec4b6'
+    ];
+  }
+
+  /**
+   * Add event lines (line segments on the helix). Each line is { start, end, label?, color? }.
+   * If color is omitted, a color from the palette is assigned so each event has its own color.
+   * @param {string} layerId - Layer identifier (created if missing)
+   * @param {Array<{ start: Date|string, end: Date|string, label?: string, color?: string }>} lines - Line segments to add
+   */
+  addEventLines(layerId, lines) {
+    if (!this.layers.has(layerId)) {
+      this.addLayer(layerId);
+    }
+    const palette = CircaevumGL.EVENT_LINE_PALETTE;
+    const existing = this.eventLines.get(layerId) || [];
+    const newLines = Array.isArray(lines) ? lines : [lines];
+    const normalized = newLines.map(ln => {
+      const start = ln.start instanceof Date ? ln.start : new Date(ln.start);
+      const end = ln.end instanceof Date ? ln.end : new Date(ln.end);
+      let color = ln.color != null ? ln.color : null;
+      if (color == null) {
+        color = palette[this._eventLineColorIndex % palette.length];
+        this._eventLineColorIndex += 1;
+      }
+      return {
+        start,
+        end,
+        label: ln.label != null ? ln.label : null,
+        color
+      };
+    }).filter(ln => !isNaN(ln.start.getTime()) && !isNaN(ln.end.getTime()) && ln.end > ln.start);
+    this.eventLines.set(layerId, existing.concat(normalized));
+    this._renderLayer(layerId);
+  }
+
+  /**
+   * Get event lines for a layer
+   * @param {string} layerId - Layer identifier
+   * @returns {Array<{ start: Date, end: Date, label?: string, color?: string }>}
+   */
+  getEventLines(layerId) {
+    return this.eventLines.get(layerId) || [];
+  }
+
+  /**
+   * Remove event lines from a layer
+   * @param {string} layerId - Layer identifier
+   * @param {Array<number>|undefined} indices - If provided, remove lines at these indices; otherwise remove all
+   */
+  removeEventLines(layerId, indices) {
+    if (indices === undefined || indices === null) {
+      this.eventLines.set(layerId, []);
+    } else {
+      const arr = this.eventLines.get(layerId) || [];
+      const toRemove = new Set(Array.isArray(indices) ? indices : [indices]);
+      this.eventLines.set(layerId, arr.filter((_, i) => !toRemove.has(i)));
+    }
+    this._renderLayer(layerId);
+  }
+
+  /**
    * Remove events from a layer
    * @param {string} layerId - Layer identifier
    * @param {Array|string} eventUids - Event UIDs to remove (RFC 5545 UID)
@@ -311,6 +393,66 @@ class CircaevumGL {
    */
   getEvents(layerId) {
     return this.events.get(layerId) || [];
+  }
+
+  /**
+   * Ingest event data from an external source (e.g. account-managed React page).
+   * Creates or updates the layer and replaces its events with the provided set.
+   * @param {string} layerId - Layer identifier (e.g. 'account', 'session-26Q1W01')
+   * @param {Array} events - Array of VEVENT-like or Google Calendar Event objects
+   * @param {Object} options - Optional: { sessionId?: string } e.g. { sessionId: '26Q1W01' }
+   */
+  ingestEvents(layerId, events, options = {}) {
+    if (!this.layers.has(layerId)) {
+      this.addLayer(layerId, {
+        name: options.sessionId ? `Session ${options.sessionId}` : layerId,
+        ...(options.sessionId && { sessionId: options.sessionId })
+      });
+    }
+    const layer = this.layers.get(layerId);
+    if (options.sessionId) {
+      layer.sessionId = options.sessionId;
+    }
+    this.updateEvents(layerId, Array.isArray(events) ? events : [events]);
+    this._emit('eventsIngested', { layerId, count: (Array.isArray(events) ? events : [events]).length, sessionId: options.sessionId });
+  }
+
+  /**
+   * Get EventObject descriptors for a layer (for API consumers; no Three.js refs).
+   * Each descriptor has: uid, summary, start, end, layerId.
+   * @param {string} layerId - Layer identifier
+   * @returns {Array<{ uid: string, summary: string|null, start: Date|null, end: Date|null, layerId: string }>}
+   */
+  getEventObjects(layerId) {
+    const events = this.events.get(layerId) || [];
+    const list = [];
+    for (const e of events) {
+      let start = null;
+      let end = null;
+      let uid = '';
+      let summary = null;
+      if (typeof VEvent !== 'undefined' && e instanceof VEvent) {
+        uid = e.uid || '';
+        summary = e.summary || null;
+        start = e.getStartDate();
+        end = e.getEndDate();
+      } else {
+        uid = e.uid || e.id || '';
+        summary = e.summary || e.title || null;
+        if (e.dtstart) {
+          start = e.dtstart.dateTime ? new Date(e.dtstart.dateTime) : (e.dtstart.date ? new Date(e.dtstart.date + 'T00:00:00Z') : null);
+        } else {
+          start = e.startTime || e.start || e.date ? (e.startTime || e.start || e.date instanceof Date ? e.startTime || e.start || e.date : new Date(e.startTime || e.start || e.date)) : null;
+        }
+        if (e.dtend) {
+          end = e.dtend.dateTime ? new Date(e.dtend.dateTime) : (e.dtend.date ? new Date(e.dtend.date + 'T00:00:00Z') : null);
+        } else {
+          end = e.endTime || e.end ? (e.endTime || e.end instanceof Date ? e.endTime || e.end : new Date(e.endTime || e.end)) : null;
+        }
+      }
+      list.push({ uid, summary, start, end, layerId });
+    }
+    return list;
   }
 
   // ============================================
@@ -513,8 +655,9 @@ class CircaevumGL {
     // Remove existing objects for this layer
     this._removeLayerObjects(layerId);
 
+    const allObjects = [];
+
     // Create event objects using event renderer
-    // This will be implemented when event-renderer.js is created
     if (typeof EventRenderer !== 'undefined' && EventRenderer.createEventObjects) {
       const objects = EventRenderer.createEventObjects(
         filteredEvents,
@@ -522,13 +665,27 @@ class CircaevumGL {
         this.sceneContentGroup,
         this.scene
       );
-      
-      // Store references for later removal
+      allObjects.push(...objects);
+    }
+
+    // Create event line objects (addEventLines API)
+    const lines = this.eventLines.get(layerId) || [];
+    if (lines.length > 0 && typeof EventRenderer !== 'undefined' && EventRenderer.createEventLineObjects) {
+      const lineObjects = EventRenderer.createEventLineObjects(
+        lines,
+        layer,
+        this.sceneContentGroup
+      );
+      allObjects.push(...lineObjects);
+    }
+
+    if (allObjects.length > 0 || lines.length > 0) {
       if (!this._layerObjects) {
         this._layerObjects = new Map();
       }
-      this._layerObjects.set(layerId, objects);
-    } else {
+      this._layerObjects.set(layerId, allObjects);
+    }
+    if (filteredEvents.length === 0 && lines.length === 0 && typeof EventRenderer === 'undefined') {
       console.warn('EventRenderer not available. Events will not be rendered.');
     }
   }

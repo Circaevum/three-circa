@@ -48,9 +48,12 @@ let currentCameraDistance = 800;
 let cameraTransitionSpeed = 0.15; // Camera transition speed for zoom level changes
 let isLightMode = false;
 let viewMode = 0; // 0 = angled, 1 = top-down (looking into future), 2 = bottom-up (looking into past)
-let showTimeMarkers = true;
+let showTimeMarkerLines = true;
+let showTimeMarkerText = true;
 let showMoonWorldline = false; // Toggle for moon worldline
 let moonWorldlines = []; // Store moon worldline meshes
+let circadianWorldlines = []; // Circadian rhythm helix (hour-hand), shown at day/clock zoom
+let circadianState = 'off'; // 'off' | 'straightened' | 'wrapped' – toggled via scene icon
 
 // WebXR controls (using adapter system)
 let xrAdapter = null;
@@ -463,7 +466,15 @@ function createPlanets(zoomLevel) {
             isLeapYear: typeof isLeapYear !== 'undefined' ? isLeapYear : null
         });
     }
-    
+    if (typeof CircadianRenderer !== 'undefined' && typeof CircadianRenderer.init === 'function') {
+        CircadianRenderer.init({
+            SceneGeometry: typeof SceneGeometry !== 'undefined' ? SceneGeometry : null,
+            calculateDateHeight,
+            calculateCurrentDateHeight,
+            PLANET_DATA
+        });
+    }
+
     planetMeshes.forEach(p => sceneContentGroup.remove(p));
     orbitLines.forEach(o => sceneContentGroup.remove(o));
     worldlines.forEach(w => sceneContentGroup.remove(w));
@@ -481,7 +492,10 @@ function createPlanets(zoomLevel) {
     planetMeshes.length = 0;
     orbitLines.length = 0;
     worldlines.length = 0;
-    
+
+    circadianWorldlines.forEach(obj => sceneContentGroup.remove(obj));
+    circadianWorldlines = [];
+
     const config = ZOOM_LEVELS[zoomLevel];
     const focusOnEarth = config.focusTarget === 'earth';
     
@@ -746,6 +760,27 @@ function createPlanets(zoomLevel) {
         moonWorldlines = [];
     }
 
+    // Circadian rhythm worldline (hour-hand helix) at day/clock zoom (8 or 9), when toggled on
+    if ((zoomLevel === 8 || zoomLevel === 9) && typeof circadianState !== 'undefined' && circadianState !== 'off') {
+        if (typeof CircadianRenderer !== 'undefined' && CircadianRenderer.create) {
+            const currentHeight = typeof selectedDateHeight !== 'undefined' && !isNaN(selectedDateHeight)
+                ? selectedDateHeight
+                : currentDateHeight;
+            const spanDays = zoomLevel === 9 ? 1 : 2;
+            const mode = circadianState === 'straightened' ? 1 : 2;
+            const circadianLine = CircadianRenderer.create(
+                zoomLevel,
+                currentHeight,
+                mode,
+                { color: 0xffaa44, opacity: 0.55, spanDays }
+            );
+            if (circadianLine) {
+                sceneContentGroup.add(circadianLine);
+                circadianWorldlines.push(circadianLine);
+            }
+        }
+    }
+
     // Create time markers for this zoom level
     createTimeMarkers(zoomLevel);
 }
@@ -871,7 +906,6 @@ function initTimeMarkers() {
         TimeMarkers.init({
             scene: sceneContentGroup,
             timeMarkers,
-            showTimeMarkers,
             getMarkerColor,
             createTextLabel,
             PLANET_DATA,
@@ -931,10 +965,22 @@ function createTimeMarkers(zoomLevel) {
             });
         }
         TimeMarkers.createTimeMarkers(zoomLevel);
+        applyTimeMarkerVisibility();
         return;
     }
     // If TimeMarkers module is not available, log a warning
     console.warn('TimeMarkers module not available');
+}
+
+function applyTimeMarkerVisibility() {
+    timeMarkers.forEach(marker => {
+        const isText = marker.type === 'Sprite';
+        if (isText) {
+            marker.visible = showTimeMarkerText;
+        } else {
+            marker.visible = showTimeMarkerLines;
+        }
+    });
 }
 
 // Helper function to create faint context markers for adjacent time periods
@@ -1111,8 +1157,10 @@ function initControls() {
             }
         } else if (e.key.toLowerCase() === 'a' && !isLandingPage) {
             navigateUnit(-1); // Navigate down one unit (previous week, day, hour, etc.)
+            if (typeof playTickSound === 'function') playTickSound(currentZoom);
         } else if (e.key.toLowerCase() === 'd' && !isLandingPage) {
             navigateUnit(1); // Navigate up one unit (next week, day, hour, etc.)
+            if (typeof playTickSound === 'function') playTickSound(currentZoom);
         } else if (e.key.toLowerCase() === 'n' && !isLandingPage) {
             returnToPresent(); // Return selection to current date/time
         } else if (e.key.toLowerCase() === 'm' && !isLandingPage) {
@@ -1191,11 +1239,18 @@ function initControls() {
         });
     });
     
-    // Time markers toggle
-    document.getElementById('markers-toggle').addEventListener('click', toggleTimeMarkers);
+    // Time marker lines and text toggles
+    const markersLinesBtn = document.getElementById('markers-lines-toggle');
+    const markersTextBtn = document.getElementById('markers-text-toggle');
+    if (markersLinesBtn) markersLinesBtn.addEventListener('click', toggleTimeMarkerLines);
+    if (markersTextBtn) markersTextBtn.addEventListener('click', toggleTimeMarkerText);
     
     // Light mode toggle
     document.getElementById('light-mode-toggle').addEventListener('click', toggleLightMode);
+
+    // Circadian worldline toggle (cycle: off -> straightened -> wrapped -> off)
+    const circadianToggleBtn = document.getElementById('circadian-toggle');
+    if (circadianToggleBtn) circadianToggleBtn.addEventListener('click', toggleCircadianWorldline);
     
     // WebXR toggle (using adapter system)
     const webxrToggle = document.getElementById('webxr-toggle');
@@ -1361,16 +1416,32 @@ function toggleMoonWorldline() {
 
 // createMoonWorldline moved to worldlines.js module
 
-function toggleTimeMarkers() {
-    showTimeMarkers = !showTimeMarkers;
-    
-    const button = document.getElementById('markers-toggle');
-    button.classList.toggle('active', showTimeMarkers);
-    
-    // Toggle visibility of all time markers
-    timeMarkers.forEach(marker => {
-        marker.visible = showTimeMarkers;
-    });
+function toggleTimeMarkerLines() {
+    showTimeMarkerLines = !showTimeMarkerLines;
+    const button = document.getElementById('markers-lines-toggle');
+    if (button) button.classList.toggle('active', showTimeMarkerLines);
+    applyTimeMarkerVisibility();
+}
+
+function toggleTimeMarkerText() {
+    showTimeMarkerText = !showTimeMarkerText;
+    const button = document.getElementById('markers-text-toggle');
+    if (button) button.classList.toggle('active', showTimeMarkerText);
+    applyTimeMarkerVisibility();
+}
+
+function toggleCircadianWorldline() {
+    const cycle = ['off', 'straightened', 'wrapped'];
+    const idx = cycle.indexOf(circadianState);
+    circadianState = cycle[(idx + 1) % cycle.length];
+    const btn = document.getElementById('circadian-toggle');
+    if (btn) {
+        btn.classList.toggle('active', circadianState !== 'off');
+        const titles = { off: 'Circadian worldline: off', straightened: 'Circadian worldline: straightened', wrapped: 'Circadian worldline: wrapped' };
+        btn.title = titles[circadianState];
+        btn.setAttribute('aria-label', titles[circadianState]);
+    }
+    createPlanets(currentZoom);
 }
 
 function toggleLightMode() {
@@ -1770,10 +1841,9 @@ function toggleTimeRotation() {
     cameraRotation.x = rotations[viewMode];
 }
 
-function setZoomLevel(level) {
-    // CRITICAL: Get selected date BEFORE changing currentZoom
-    // This ensures we use the OLD zoom level's logic to calculate the date
-    const selectedDate = getSelectedDateTime();
+function setZoomLevel(level, overrideDate) {
+    // CRITICAL: Get selected date BEFORE changing currentZoom (or use override when navigating to a specific event)
+    const selectedDate = overrideDate instanceof Date ? overrideDate : getSelectedDateTime();
     
     // Now change the zoom level
     currentZoom = level;
