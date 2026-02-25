@@ -1489,6 +1489,11 @@ function toggleLightMode() {
     // Toggle body class
     document.body.classList.toggle('light-mode', isLightMode);
     
+    // Notify wrapper (if embedded) so it can match light mode
+    if (typeof window.parent !== 'undefined' && window.parent !== window.self && window.parent.postMessage) {
+        try { window.parent.postMessage({ type: 'CIRCAEVUM_THEME', lightMode: isLightMode }, '*'); } catch (e) {}
+    }
+    
     // Update button state
     const button = document.getElementById('light-mode-toggle');
     button.classList.toggle('active', isLightMode);
@@ -1897,17 +1902,23 @@ function setZoomLevel(level, overrideDate) {
     const hud = document.getElementById('hud');
     const controls = document.querySelector('.controls');
     
+    // Keep zoom HUD (controls) visible even in Zoom 0; body class used for z-index in CSS
+    document.body.classList.toggle('zoom-level-0', level === 0);
+    
     // Show/hide landing page
     if (level === 0) {
         landingPage.classList.add('active');
-        // Move controls to top
-        controls.style.top = '30px';
-        controls.style.bottom = 'auto';
+        // Keep controls at bottom (same position as other zoom levels)
+        if (controls) {
+            controls.style.top = 'auto';
+            controls.style.bottom = '30px';
+        }
     } else {
         landingPage.classList.remove('active');
-        // Move controls back to bottom
-        controls.style.top = 'auto';
-        controls.style.bottom = '30px';
+        if (controls) {
+            controls.style.top = 'auto';
+            controls.style.bottom = '30px';
+        }
     }
     
     // Set target camera distance for smooth transition

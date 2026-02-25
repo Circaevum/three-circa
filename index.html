@@ -7,6 +7,23 @@
     <link rel="stylesheet" href="circaevum/css/styles.css">
 </head>
 <body>
+    <script>
+      (function() {
+        var params = new URLSearchParams(window.location.search);
+        var inIframe = window.self !== window.top;
+        var forceViewer = params.get('viewer') === '1';
+        var forceFull = params.get('viewer') === '0';
+        var isLocalhost = typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+        var useViewerMode = forceViewer || inIframe || (isLocalhost && !forceFull);
+        if (useViewerMode) {
+          document.documentElement.classList.add('viewer-no-nav');
+          document.body.classList.add('viewer-no-nav');
+          window.CIRCAEVUM_VIEWER_MODE = true;
+        }
+        // Optional: set to your wrapper URL for "Open full app" (same-tab navigate with state).
+        // E.g. window.CIRCAEVUM_FULL_APP_URL = 'https://app.circaevum.com';
+      })();
+    </script>
     <!-- Optional: enable real Nakama. Uncomment the block below and set your server. See docs/NAKAMA-CONNECT.md. -->
     
     <script>
@@ -22,7 +39,6 @@
         </div>
         <div class="nav-right">
             <button type="button" class="toggle-btn nav-toggle" id="webxr-toggle">WEBXR</button>
-            <button type="button" id="test-event-lines-btn" class="nav-menu-btn">Test event lines</button>
             <div class="nav-dropdown-wrap">
                 <button type="button" id="nav-account-btn" class="nav-icon-btn" title="Menu" aria-label="Open menu" aria-expanded="false" aria-haspopup="true">☰</button>
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
@@ -152,9 +168,14 @@
         </div>
         <div class="event-list-panel-header-actions">
             <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
+            <button type="button" id="test-event-lines-btn" class="strip-btn">Test event lines</button>
         </div>
         <div id="events-panel-list" class="event-list-panel-list"></div>
+        <div id="event-list-panel-footer" class="event-list-panel-footer" style="display: none;">
+            <a id="open-full-app-link" href="#" target="_self">Open full app</a> (keeps this view)
+        </div>
     </aside>
+    <button type="button" id="event-list-pull-tab" class="event-list-pull-tab" aria-label="Open Event List" title="Event List">Events</button>
 
     <div id="hud">
         <!-- Kepler-style floating icon overlay on the scene (bottom-right) -->
@@ -184,67 +205,6 @@
         <div class="title-block" aria-hidden="true">
             <h1>CIRCAEVUM</h1>
             <div class="subtitle">A Space for Time</div>
-        </div>
-        
-        <div class="controls">
-            <div class="zoom-slider">
-                <div class="zoom-option" data-zoom="1">
-                    <div class="zoom-number">1</div>
-                    <div class="zoom-desc">Century</div>
-                </div>
-                <div class="zoom-option active" data-zoom="2">
-                    <div class="zoom-number">2</div>
-                    <div class="zoom-desc">Decade</div>
-                </div>
-                <div class="zoom-option" data-zoom="3">
-                    <div class="zoom-number">3</div>
-                    <div class="zoom-desc">Year</div>
-                </div>
-                <div class="zoom-option" data-zoom="4">
-                    <div class="zoom-number">4</div>
-                    <div class="zoom-desc">Quarter</div>
-                </div>
-                <div class="zoom-option" data-zoom="5">
-                    <div class="zoom-number">5</div>
-                    <div class="zoom-desc">Month</div>
-                </div>
-                <div class="zoom-option" data-zoom="6">
-                    <div class="zoom-number">6</div>
-                    <div class="zoom-desc">Lunar</div>
-                </div>
-                <div class="zoom-option" data-zoom="7">
-                    <div class="zoom-number">7</div>
-                    <div class="zoom-desc">Week</div>
-                </div>
-                <div class="zoom-option" data-zoom="8">
-                    <div class="zoom-number">8</div>
-                    <div class="zoom-desc">Day</div>
-                </div>
-                <div class="zoom-option" data-zoom="9">
-                    <div class="zoom-number">9</div>
-                    <div class="zoom-desc">Clock</div>
-                </div>
-                <div class="zoom-option" data-zoom="0">
-                    <div class="zoom-number">0</div>
-                    <div class="zoom-desc">Info</div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Mobile Zoom Controls (hidden on desktop) -->
-        <div class="mobile-zoom-controls">
-            <button class="mobile-zoom-btn" id="zoom-out-btn" aria-label="Zoom Out">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-            </button>
-            <div class="mobile-zoom-label" id="mobile-zoom-label">DECADE</div>
-            <button class="mobile-zoom-btn" id="zoom-in-btn" aria-label="Zoom In">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-            </button>
         </div>
     </div>
     
@@ -397,6 +357,66 @@
         </div>
     </div>
 
+    <!-- Zoom level bar: after landing page in DOM so it paints on top in Zoom 0 -->
+    <div class="controls" id="zoom-controls">
+        <div class="zoom-slider">
+            <div class="zoom-option" data-zoom="1">
+                <div class="zoom-number">1</div>
+                <div class="zoom-desc">Century</div>
+            </div>
+            <div class="zoom-option active" data-zoom="2">
+                <div class="zoom-number">2</div>
+                <div class="zoom-desc">Decade</div>
+            </div>
+            <div class="zoom-option" data-zoom="3">
+                <div class="zoom-number">3</div>
+                <div class="zoom-desc">Year</div>
+            </div>
+            <div class="zoom-option" data-zoom="4">
+                <div class="zoom-number">4</div>
+                <div class="zoom-desc">Quarter</div>
+            </div>
+            <div class="zoom-option" data-zoom="5">
+                <div class="zoom-number">5</div>
+                <div class="zoom-desc">Month</div>
+            </div>
+            <div class="zoom-option" data-zoom="6">
+                <div class="zoom-number">6</div>
+                <div class="zoom-desc">Lunar</div>
+            </div>
+            <div class="zoom-option" data-zoom="7">
+                <div class="zoom-number">7</div>
+                <div class="zoom-desc">Week</div>
+            </div>
+            <div class="zoom-option" data-zoom="8">
+                <div class="zoom-number">8</div>
+                <div class="zoom-desc">Day</div>
+            </div>
+            <div class="zoom-option" data-zoom="9">
+                <div class="zoom-number">9</div>
+                <div class="zoom-desc">Clock</div>
+            </div>
+            <div class="zoom-option" data-zoom="0">
+                <div class="zoom-number">0</div>
+                <div class="zoom-desc">Info</div>
+            </div>
+        </div>
+    </div>
+    <div class="mobile-zoom-controls" id="mobile-zoom-controls">
+        <button class="mobile-zoom-btn" id="zoom-out-btn" aria-label="Zoom Out">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        </button>
+        <div class="mobile-zoom-label" id="mobile-zoom-label">DECADE</div>
+        <button class="mobile-zoom-btn" id="zoom-in-btn" aria-label="Zoom In">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        </button>
+    </div>
+
     <!-- External Dependencies -->
     <script src="circaevum/js/three.min.js"></script>
     
@@ -492,6 +512,31 @@
 
           var closeBtn = document.getElementById('event-list-close');
           if (closeBtn && panel) closeBtn.onclick = closeEventListPanel;
+
+          window.openEventListPanel = openEventListPanel;
+          var pullTab = document.getElementById('event-list-pull-tab');
+          if (pullTab && panel) pullTab.onclick = function() {
+            if (panel.classList.contains('open')) closeEventListPanel(); else openEventListPanel();
+          };
+
+          var fullAppUrl = window.CIRCAEVUM_FULL_APP_URL;
+          var footerEl = document.getElementById('event-list-panel-footer');
+          var fullAppLink = document.getElementById('open-full-app-link');
+          if (fullAppUrl && footerEl && fullAppLink) {
+            footerEl.style.display = 'block';
+            function updateFullAppLink() {
+              var state = typeof window.getShareState === 'function' ? window.getShareState() : null;
+              var qs = state && typeof window.stateToQueryString === 'function' ? window.stateToQueryString(state) : '';
+              fullAppLink.href = fullAppUrl + (qs ? '?' + qs : '');
+            }
+            updateFullAppLink();
+            fullAppLink.addEventListener('click', function(e) {
+              e.preventDefault();
+              window.location.href = fullAppLink.href;
+            });
+            var refreshBtn = document.getElementById('events-panel-refresh');
+            if (refreshBtn) refreshBtn.addEventListener('click', updateFullAppLink);
+          }
 
           var accountPanel = document.getElementById('account-panel');
           var accountPanelTitle = document.getElementById('account-panel-title');
@@ -635,6 +680,46 @@
             onDone(userId, deviceId);
           }
 
+          function loadUserStorageAndSync(session, account, onDone) {
+            var nc = window.NakamaCircaevum;
+            if (!nc || !session) { if (onDone) onDone(); return; }
+            var userId = session.user_id;
+            account.events = account.events || [];
+            account.tokens = account.tokens || [];
+            account.devices = account.devices || [];
+            function next() { syncUserEventsToGL(account); if (onDone) onDone(); }
+            nc.listStorageObjects(session, 'events', userId, 100, null).then(function(r) {
+              if (r.error) { accountLog('ERROR', 'List events: ' + r.error); } else if (r.objects && r.objects.length) {
+                accountLog('RESPONSE', 'Storage list (collection=events, userId=' + userId + ', count=' + r.objects.length + ')');
+                account.events = r.objects.map(function(o) {
+                  try { var v = typeof o.value === 'string' ? JSON.parse(o.value) : (o.value || {}); return v; } catch (e) { return null; }
+                }).filter(Boolean);
+              } else { accountLog('RESPONSE', 'Storage list (collection=events, userId=' + userId + ', count=0)'); }
+              return nc.listStorageObjects(session, 'tokens', userId, 100, null);
+            }).then(function(r) {
+              if (r && !r.error && r.objects && r.objects.length) {
+                accountLog('RESPONSE', 'Storage list (collection=tokens, userId=' + userId + ', count=' + r.objects.length + ')');
+                account.tokens = r.objects.map(function(o) { try { var v = typeof o.value === 'string' ? JSON.parse(o.value) : (o.value || {}); return v.key || v.id || JSON.stringify(v); } catch (e) { return ''; } });
+              }
+              return nc && nc.listStorageObjects(session, 'devices', userId, 100, null);
+            }).then(function(r) {
+              if (r && !r.error && r.objects && r.objects.length) {
+                accountLog('RESPONSE', 'Storage list (collection=devices, userId=' + userId + ', count=' + r.objects.length + ')');
+                account.devices = r.objects.map(function(o) {
+                  try {
+                    var v = typeof o.value === 'string' ? JSON.parse(o.value) : (o.value || {});
+                    return { deviceId: v.deviceId || v.id, name: v.deviceName || v.name || 'Device' };
+                  } catch (e) {
+                    return { deviceId: '', name: '-' };
+                  }
+                });
+              } else if (account.deviceId) {
+                account.devices = [{ deviceId: account.deviceId, name: 'This device' }];
+              }
+              next();
+            }).catch(function(e) { accountLog('ERROR', 'Load storage: ' + (e && e.message ? e.message : String(e))); next(); });
+          }
+
           function setAccountView(view) {
             if (!accountViewSelect) return;
             accountViewSelect.hidden = (view !== 'select');
@@ -721,18 +806,34 @@
           document.getElementById('account-new-back') && document.getElementById('account-new-back').addEventListener('click', function() { setAccountView('select'); });
           document.getElementById('account-established-back') && document.getElementById('account-established-back').addEventListener('click', function() { setAccountView('select'); });
 
-          /* Restore session on load when this device has an associated account and auto-login is on */
-          if (getPref(PREF_AUTO_LOGIN)) {
-            var restored = getAssociatedAccount();
-            if (restored) {
-              currentAccount = restored;
-              currentAccount.tokens = currentAccount.tokens || [];
-              currentAccount.devices = currentAccount.devices || (currentAccount.deviceId ? [{ deviceId: currentAccount.deviceId, name: 'This device' }] : []);
-              syncUserEventsToGL(currentAccount);
-              if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
-                accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
-              }
+          /* Restore session on load: only show logged-in when we have a real Nakama session.
+             Do not set currentAccount from localStorage (associated account) on load — that would
+             show "logged in" without a real session. Associated account is still shown on the
+             select screen as "Your account: email — Log in" so they can click to log in. */
+          function tryRestoreSession() {
+            var nc = window.NakamaCircaevum;
+            if (nc && nc.isConfigured() && nc.getClient()) {
+              nc.restoreOrRefreshSession().then(function(session) {
+                if (!session) return;
+                currentAccount = {
+                  email: session.email || session.username || '',
+                  username: session.username || '',
+                  userId: session.user_id,
+                  deviceId: getOrCreateDeviceId(),
+                  tokens: [],
+                  devices: []
+                };
+                if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
+                  accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
+                }
+                loadUserStorageAndSync(session, currentAccount, function() {});
+              }).catch(function() {});
             }
+          }
+          if (window.nakamaModuleLoaded) {
+            tryRestoreSession();
+          } else {
+            window.addEventListener('nakama-loaded', tryRestoreSession);
           }
 
           var accountAssociatedLoginBtn = document.getElementById('account-associated-login-btn');
@@ -773,6 +874,8 @@
               var email = document.getElementById('account-email').value.trim();
               var password = document.getElementById('account-password').value;
               var confirm = document.getElementById('account-password-confirm').value;
+              var usernameEl = document.getElementById('account-username');
+              var username = usernameEl ? usernameEl.value.trim() : '';
               if (password !== confirm) {
                 alert('Passwords do not match.');
                 return;
@@ -786,24 +889,46 @@
                 return;
               }
               accountLog('REQUEST', 'Account creation (email=' + email + ')');
-              /* Nakama: client.authenticateEmail(email, password, true); then link device only if PREF_ASSOCIATE_DEVICE */
-              setTimeout(function() {
-                runDeviceAndUserSessionFlow(email, true, function(userId, deviceId) {
+              var nc = window.NakamaCircaevum;
+              if (nc && nc.isConfigured() && nc.getClient()) {
+                nc.authenticateEmail(email, password, true, username || null).then(function(r) {
+                  if (r.error) {
+                    accountLog('ERROR', r.error);
+                    if (/failed to fetch/i.test(r.error) && window.location.hostname === 'localhost') {
+                      accountLog('HINT', 'From localhost this is usually CORS. Allow this origin on the Nakama server (see docs/NAKAMA-CONNECT.md).');
+                    }
+                    return;
+                  }
+                  var session = r.session;
+                  nc.storeSession(session);
                   currentAccount = {
                     email: email,
-                    userId: userId,
-                    deviceId: deviceId,
+                    username: session.username || username || email,
+                    userId: session.user_id,
+                    deviceId: getOrCreateDeviceId(),
                     tokens: [],
-                    devices: [{ deviceId: deviceId, name: 'This device' }]
+                    devices: []
                   };
                   if (getPref(PREF_ASSOCIATE_DEVICE)) setAssociatedAccount(currentAccount);
-                  syncUserEventsToGL(currentAccount);
                   if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
                     accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
                   }
-                  setAccountView('logged-in');
+                  accountLog('RESPONSE', 'Account created (userId=' + session.user_id + ')');
+                  loadUserStorageAndSync(session, currentAccount, function() { setAccountView('logged-in'); });
                 });
-              }, 400);
+              } else {
+                setTimeout(function() {
+                  runDeviceAndUserSessionFlow(email, true, function(userId, deviceId) {
+                    currentAccount = { email: email, userId: userId, deviceId: deviceId, tokens: [], devices: [{ deviceId: deviceId, name: 'This device' }] };
+                    if (getPref(PREF_ASSOCIATE_DEVICE)) setAssociatedAccount(currentAccount);
+                    syncUserEventsToGL(currentAccount);
+                    if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
+                      accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
+                    }
+                    setAccountView('logged-in');
+                  });
+                }, 400);
+              }
             });
           }
 
@@ -815,28 +940,51 @@
               var password = document.getElementById('account-login-password').value;
               if (!email || !password) return;
               accountLog('REQUEST', 'Login (email=' + email + ')');
-              /* Nakama: client.authenticateEmail(email, password); link device only if PREF_ASSOCIATE_DEVICE; then load storage */
-              setTimeout(function() {
-                runDeviceAndUserSessionFlow(email, false, function(userId, deviceId) {
+              var nc = window.NakamaCircaevum;
+              if (nc && nc.isConfigured() && nc.getClient()) {
+                nc.authenticateEmail(email, password, false).then(function(r) {
+                  if (r.error) {
+                    accountLog('ERROR', r.error);
+                    if (/failed to fetch/i.test(r.error) && window.location.hostname === 'localhost') {
+                      accountLog('HINT', 'From localhost this is usually CORS. Allow this origin on the Nakama server (see docs/NAKAMA-CONNECT.md).');
+                    }
+                    return;
+                  }
+                  var session = r.session;
+                  nc.storeSession(session);
                   currentAccount = {
                     email: email,
-                    userId: userId,
-                    deviceId: deviceId,
+                    username: session.username || email,
+                    userId: session.user_id,
+                    deviceId: getOrCreateDeviceId(),
                     tokens: [],
-                    devices: [{ deviceId: deviceId, name: 'This device' }]
+                    devices: []
                   };
                   if (getPref(PREF_ASSOCIATE_DEVICE)) setAssociatedAccount(currentAccount);
-                  syncUserEventsToGL(currentAccount);
                   if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
                     accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
                   }
-                  setAccountView('logged-in');
+                  accountLog('RESPONSE', 'Session established (userId=' + session.user_id + ')');
+                  loadUserStorageAndSync(session, currentAccount, function() { setAccountView('logged-in'); });
                 });
-              }, 400);
+              } else {
+                setTimeout(function() {
+                  runDeviceAndUserSessionFlow(email, false, function(userId, deviceId) {
+                    currentAccount = { email: email, userId: userId, deviceId: deviceId, tokens: [], devices: [{ deviceId: deviceId, name: 'This device' }] };
+                    if (getPref(PREF_ASSOCIATE_DEVICE)) setAssociatedAccount(currentAccount);
+                    syncUserEventsToGL(currentAccount);
+                    if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
+                      accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
+                    }
+                    setAccountView('logged-in');
+                  });
+                }, 400);
+              }
             });
           }
 
           document.getElementById('account-logout-btn') && document.getElementById('account-logout-btn').addEventListener('click', function() {
+            if (window.NakamaCircaevum) window.NakamaCircaevum.clearStoredSession();
             clearUserEventsFromGL();
             currentAccount = null;
             var body = accountPanel && accountPanel.querySelector('.account-panel-body');
@@ -968,6 +1116,141 @@
           var refreshBtn = document.getElementById('events-panel-refresh');
           if (refreshBtn) refreshBtn.onclick = refreshEventsList;
         });
+      })();
+    </script>
+    <!-- Share state: get/apply for "Open full app" (Option B – same-tab navigate with state in URL) -->
+    <script>
+      (function() {
+        var USER_EVENTS_LAYER = 'user-events';
+        var MAX_EVENTS_IN_STATE = 200;
+
+        function getShareState() {
+          var gl = window.getGL && window.getGL();
+          if (!gl) return { z: 2, rx: 0, ry: 0, focus: new Date().toISOString(), events: [] };
+          var events = (gl.getEventObjects && gl.getEventObjects(USER_EVENTS_LAYER)) || [];
+          var serialized = events.slice(0, MAX_EVENTS_IN_STATE).map(function(o) {
+            return {
+              uid: o.uid,
+              summary: o.summary,
+              start: o.start && o.start.toISOString ? o.start.toISOString() : null,
+              end: o.end && o.end.toISOString ? o.end.toISOString() : null
+            };
+          });
+          return {
+            z: typeof currentZoom !== 'undefined' ? currentZoom : 2,
+            rx: typeof cameraRotation !== 'undefined' ? cameraRotation.x : Math.PI / 6,
+            ry: typeof cameraRotation !== 'undefined' ? cameraRotation.y : 0,
+            focus: typeof getSelectedDateTime === 'function' ? getSelectedDateTime().toISOString() : new Date().toISOString(),
+            events: serialized
+          };
+        }
+
+        function applyShareState(state) {
+          if (!state || typeof state !== 'object') return;
+          var gl = window.getGL && window.getGL();
+          if (!gl) return;
+          var z = state.z;
+          if (typeof z === 'number' && z >= 1 && z <= 9) {
+            if (typeof gl.setZoomLevel === 'function') gl.setZoomLevel(z);
+            else if (typeof setZoomLevel === 'function') setZoomLevel(z);
+          }
+          if (typeof cameraRotation !== 'undefined') {
+            if (typeof state.rx === 'number') cameraRotation.x = state.rx;
+            if (typeof state.ry === 'number') cameraRotation.y = state.ry;
+          }
+          if (state.focus && typeof gl.navigateToTime === 'function') {
+            gl.navigateToTime(state.focus);
+          }
+          if (Array.isArray(state.events) && state.events.length > 0 && gl.ingestEvents) {
+            var restored = state.events.map(function(e) {
+              return {
+                uid: e.uid,
+                summary: e.summary,
+                start: e.start ? new Date(e.start) : null,
+                end: e.end ? new Date(e.end) : null
+              };
+            });
+            gl.ingestEvents(USER_EVENTS_LAYER, restored, {});
+          }
+        }
+
+        function stateToQueryString(state) {
+          var params = new URLSearchParams();
+          params.set('zoom', String(state.z));
+          params.set('rx', String(state.rx));
+          params.set('ry', String(state.ry));
+          params.set('focus', state.focus);
+          if (state.events && state.events.length > 0) {
+            try {
+              params.set('e', btoa(unescape(encodeURIComponent(JSON.stringify(state.events)))));
+            } catch (err) {}
+          }
+          return params.toString();
+        }
+
+        function queryStringToState() {
+          var params = new URLSearchParams(window.location.search);
+          var z = parseInt(params.get('zoom'), 10);
+          var rx = parseFloat(params.get('rx'));
+          var ry = parseFloat(params.get('ry'));
+          var focus = params.get('focus');
+          var e = params.get('e');
+          var events = [];
+          if (e) {
+            try {
+              events = JSON.parse(decodeURIComponent(escape(atob(e))));
+            } catch (err) {}
+          }
+          if (!(z >= 1 && z <= 9)) z = 2;
+          if (typeof rx !== 'number' || isNaN(rx)) rx = Math.PI / 6;
+          if (typeof ry !== 'number' || isNaN(ry)) ry = 0;
+          if (!focus) focus = new Date().toISOString();
+          return { z: z, rx: rx, ry: ry, focus: focus, events: events };
+        }
+
+        function hasStateInUrl() {
+          var params = new URLSearchParams(window.location.search);
+          return params.has('zoom') || params.has('focus') || params.has('e');
+        }
+
+        window.getShareState = getShareState;
+        window.applyShareState = applyShareState;
+        window.stateToQueryString = stateToQueryString;
+
+        document.addEventListener('DOMContentLoaded', function() {
+          if (!hasStateInUrl()) return;
+          var state = queryStringToState();
+          setTimeout(function() {
+            var gl = window.getGL && window.getGL();
+            if (gl) applyShareState(state);
+          }, 800);
+        });
+      })();
+    </script>
+    <!-- Embed API: when used as viewer (?viewer=1 or iframe), parent can send events via postMessage -->
+    <script>
+      (function() {
+        var USER_EVENTS_LAYER = 'user-events';
+        window.addEventListener('message', function(event) {
+          var gl = window.circaevumGL || (window.getGL && window.getGL());
+          if (!gl || typeof gl.ingestEvents !== 'function') return;
+          var data = event.data;
+          if (!data || typeof data !== 'object' || !data.type) return;
+          if (data.type === 'CIRCAEVUM_INGEST_EVENTS' && data.layerId && Array.isArray(data.events)) {
+            gl.ingestEvents(data.layerId, data.events, data.options || {});
+          } else if (data.type === 'CIRCAEVUM_CLEAR_EVENTS' && data.layerId) {
+            gl.updateEvents(data.layerId, []);
+          } else if (data.type === 'CIRCAEVUM_OPEN_EVENT_LIST' && typeof window.openEventListPanel === 'function') {
+            window.openEventListPanel();
+          }
+        });
+        if (window.self !== window.top && window.parent.postMessage) {
+          setTimeout(function() {
+            try {
+              window.parent.postMessage({ type: 'CIRCAEVUM_THEME', lightMode: document.body.classList.contains('light-mode') }, '*');
+            } catch (e) {}
+          }, 1200);
+        }
       })();
     </script>
     

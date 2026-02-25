@@ -131,6 +131,39 @@ The current account panel uses **placeholder** flows. Replace or branch on `wind
 - Nakama must allow the web app’s origin in CORS (server or reverse-proxy config).
 - For production (`https://nakama.circaevum.com`), serve the app over HTTPS and use `scheme: 'https'`, port `443` in `NAKAMA_CONFIG`.
 
+### "Failed to fetch" from localhost
+
+If you see **ERROR: Failed to fetch** in the account console when logging in or creating an account from `http://localhost:...`, the Nakama server is almost certainly only allowing the production origin (`https://circaevum.github.io`). The browser blocks the response because the server’s `Access-Control-Allow-Origin` does not match your origin.
+
+**Fix (server-side):** On the machine that serves `nakama.circaevum.com` (usually nginx in front of Nakama), allow your local origin in CORS.
+
+- **If using nginx:** Use a `map` to set the CORS origin so both production and localhost are allowed. In the server block for `nakama.circaevum.com`, add a map (e.g. in `http` or in the server block) and use it in `add_header`:
+
+```nginx
+# Allow production and any http://localhost (any port)
+map $http_origin $cors_origin {
+    "~^http://localhost(:\d+)?$" $http_origin;
+    "https://circaevum.github.io" $http_origin;
+    default "";
+}
+# In location /: keep proxy_hide_header for Nakama CORS, then:
+if ($request_method = 'OPTIONS') {
+    add_header 'Access-Control-Allow-Origin' $cors_origin;
+    add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS';
+    add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization';
+    add_header 'Access-Control-Allow-Credentials' 'true';
+    add_header 'Access-Control-Max-Age' 1728000;
+    add_header 'Content-Length' 0;
+    add_header 'Content-Type' 'text/plain; charset=utf-8';
+    return 204;
+}
+add_header 'Access-Control-Allow-Origin' $cors_origin always;
+add_header 'Access-Control-Allow-Credentials' 'true' always;
+```
+
+- Reload nginx after editing: `sudo nginx -t && sudo systemctl reload nginx`.
+- If the map’s `default` is `""`, omit the CORS headers when the origin is not allowed (safer). If you prefer to fall back to production, use `default "https://circaevum.github.io";` instead.
+
 ## 7. Session storage keys
 
 The adapter uses the same localStorage keys as circa-iss so behaviour is consistent:

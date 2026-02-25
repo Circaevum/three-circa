@@ -622,6 +622,67 @@ body.light-mode .account-panel-option:hover {
     transform: translateX(0);
 }
 
+.event-list-panel.open ~ .event-list-pull-tab {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Pull tab on right edge: open Event List (always visible, above nav/panels) */
+.event-list-pull-tab {
+    position: fixed;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    width: 36px;
+    min-height: 80px;
+    padding: 12px 8px;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    letter-spacing: 0.08em;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--orbit-silver);
+    background: rgba(0, 180, 216, 0.35);
+    border: 1px solid rgba(0, 180, 216, 0.6);
+    border-right: none;
+    border-radius: 8px 0 0 8px;
+    cursor: pointer;
+    z-index: 1005;
+    pointer-events: auto;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+.event-list-pull-tab:hover {
+    background: rgba(0, 180, 216, 0.35);
+    color: #fff;
+}
+
+/* Viewer mode (?viewer=1 or iframe): hide nav and account; full-bleed; show pull tab */
+body.viewer-no-nav #top-nav,
+body.viewer-no-nav #account-panel {
+    display: none !important;
+}
+body.viewer-no-nav #main-after-nav {
+    top: 0;
+}
+body.viewer-no-nav .event-list-panel {
+    top: 0;
+}
+body.viewer-no-nav .info-panel {
+    top: 12px;
+}
+body.viewer-no-nav #hud {
+    top: 0;
+}
+body.viewer-no-nav .landing-page {
+    top: 0;
+}
+body.viewer-no-nav .loading {
+    top: 0;
+}
+.event-list-pull-tab {
+    display: block;
+}
+
 .event-list-panel-header {
     display: flex;
     align-items: center;
@@ -674,6 +735,20 @@ body.light-mode .account-panel-option:hover {
     border-radius: 6px;
     cursor: pointer;
     font-family: inherit;
+}
+
+.event-list-panel-footer {
+    padding: 12px 16px;
+    border-top: 1px solid rgba(0, 180, 216, 0.2);
+    margin-top: auto;
+    font-size: 12px;
+}
+.event-list-panel-footer a {
+    color: var(--cosmic-cyan);
+    text-decoration: none;
+}
+.event-list-panel-footer a:hover {
+    text-decoration: underline;
 }
 
 .event-list-panel-list {
@@ -1514,6 +1589,25 @@ h1 {
 
 .landing-page.active {
     display: block;
+}
+
+/* Zoom 0: hide Events tab; keep zoom bar above all Zoom-0 overlays */
+body.zoom-level-0 .event-list-pull-tab {
+    display: none !important;
+}
+body.zoom-level-0 .controls,
+body.zoom-level-0 .mobile-zoom-controls {
+    z-index: 250;
+}
+/* Lower Zoom-0 overlays so they never occlude the zoom bar */
+body.zoom-level-0 .landing-page.active {
+    z-index: 180;
+}
+body.zoom-level-0 .loading {
+    z-index: 170;
+}
+body.zoom-level-0 .info-panel {
+    z-index: 160;
 }
 
 .landing-content {
