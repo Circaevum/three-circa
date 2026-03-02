@@ -21,6 +21,10 @@
           window.CIRCAEVUM_VIEWER_MODE = true;
         }
         // Optional: set to your wrapper URL for "Open full app" (same-tab navigate with state).
+        // On localhost, default to Yin-portal (wrapper) so the link works without config.
+        if (isLocalhost && !window.CIRCAEVUM_FULL_APP_URL) {
+          window.CIRCAEVUM_FULL_APP_URL = 'http://localhost:5173';
+        }
         // E.g. window.CIRCAEVUM_FULL_APP_URL = 'https://app.circaevum.com';
       })();
     </script>
