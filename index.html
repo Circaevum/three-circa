@@ -14,7 +14,8 @@
         var forceViewer = params.get('viewer') === '1';
         var forceFull = params.get('viewer') === '0';
         var isLocalhost = typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-        var useViewerMode = forceViewer || inIframe || (isLocalhost && !forceFull);
+        // Viewer mode (no navbar) only when ?viewer=1 or in iframe. On direct load (e.g. localhost or circaevum.com) show navbar so user can click Log in.
+        var useViewerMode = forceViewer || (inIframe && !forceFull);
         if (useViewerMode) {
           document.documentElement.classList.add('viewer-no-nav');
           document.body.classList.add('viewer-no-nav');
@@ -32,17 +33,17 @@
       })();
     </script>
     <!-- Nakama/login live in app.circaevum.com (account-wrapper). This build is viewer-only. -->
-    <!-- Top navbar: Circaevum left; Log in (→ app), WEBXR, Menu (Event List) right -->
+    <!-- Top navbar: Circaevum left; WEBXR, Menu (Log in, Event List) right -->
     <header id="top-nav" class="circaevum-nav">
         <div class="nav-left">
             <a href="#" class="nav-brand">Circaevum</a>
         </div>
         <div class="nav-right">
-            <a id="nav-login-link" href="#" class="nav-link">Log in</a>
             <button type="button" class="toggle-btn nav-toggle" id="webxr-toggle">WEBXR</button>
             <div class="nav-dropdown-wrap">
                 <button type="button" id="nav-account-btn" class="nav-icon-btn" title="Menu" aria-label="Open menu" aria-expanded="false" aria-haspopup="true">☰</button>
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="login">Log in</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
                 </div>
             </div>
@@ -431,21 +432,7 @@
             var refreshBtn = document.getElementById('events-panel-refresh');
             if (refreshBtn) refreshBtn.addEventListener('click', updateFullAppLink);
           }
-          var navLoginLink = document.getElementById('nav-login-link');
-          if (navLoginLink) {
-            if (fullAppUrl) {
-              navLoginLink.href = fullAppUrl;
-              navLoginLink.style.display = '';
-              navLoginLink.addEventListener('click', function(e) {
-                e.preventDefault();
-                window.location.href = fullAppUrl;
-              });
-            } else {
-              navLoginLink.style.display = 'none';
-            }
-          }
-
-          /* Hamburger: dropdown with Event List (Account lives in app.circaevum.com) */
+          /* Hamburger: Log in (→ app), Event List */
           if (navAccountBtn && navDropdown) {
             navAccountBtn.onclick = function(e) {
               e.stopPropagation();
@@ -455,11 +442,14 @@
             };
             navDropdown.addEventListener('click', function(e) { e.stopPropagation(); });
             navDropdown.querySelectorAll('.nav-dropdown-item').forEach(function(item) {
+              var action = item.getAttribute('data-action');
+              if (action === 'login' && !fullAppUrl) item.style.display = 'none';
               item.onclick = function() {
                 navDropdown.classList.remove('open');
                 navDropdown.setAttribute('aria-hidden', 'true');
                 navAccountBtn.setAttribute('aria-expanded', 'false');
-                if (item.getAttribute('data-action') === 'event-list') openEventListPanel();
+                if (action === 'event-list') openEventListPanel();
+                if (action === 'login' && fullAppUrl) window.location.href = fullAppUrl;
               };
             });
             document.addEventListener('click', function() {
