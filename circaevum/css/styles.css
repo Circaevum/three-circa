@@ -89,6 +89,16 @@ body {
     text-shadow: 0 0 12px rgba(255, 214, 10, 0.4);
 }
 
+.circaevum-nav .nav-link {
+    font-size: 0.95rem;
+    color: var(--orbit-silver);
+    text-decoration: none;
+    margin-right: 0.5em;
+}
+.circaevum-nav .nav-link:hover {
+    color: var(--cosmic-cyan);
+}
+
 .circaevum-nav .nav-icon-btn {
     width: 40px;
     height: 40px;
