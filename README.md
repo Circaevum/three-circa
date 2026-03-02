@@ -1,215 +1,39 @@
-# Circaevum Zhong (中)
+# Circaevum Graphics Library (Web)
 
-**The Center Contract** - Administrative hub for managing Circaevum
+3D time visualization for Circaevum—planetary orbits, worldlines, event rendering. This is the web/Three.js build. Use it standalone (e.g. [circaevum.com](https://circaevum.com)) or embed it via the wrapper (e.g. [app.circaevum.com](https://app.circaevum.com)).
 
-Zhong (中) is the center point where Yin and Yang meet. This repository coordinates all Circaevum projects, tracks contributions, manages DAO governance, and facilitates quarterly reviews.
+## How time becomes space
 
----
+The GL maps **timestamps to 3D coordinates** so you can see and navigate time as geometry:
 
-## Structure
+- **Height (Y) = time.** Time flows upward. One year = 100 scene units; the year 2000 is the reference. A date’s height is `(year − 2000) × 100` plus progress through the year (months, days, hours).
+- **Orbital angle (XZ plane).** From the same date we compute where Earth is in its orbit (e.g. vernal equinox = 0). Position in the horizontal plane is `x = cos(angle) × radius`, `z = sin(angle) × radius`.
+- So each moment has a unique **(x, y, z)**: horizontal position = place in the year’s orbit, vertical = place in multi-year time.
 
-```
-circaevum-zhong/
-├── yin/                    # Backend projects (Yin)
-│   ├── nakama/            # Nakama backend
-│   ├── timescale/         # TimescaleDB backend
-│   └── rest/              # REST API backend
-│
-├── yang/                   # Frontend projects (Yang)
-│   ├── web/               # Three.js web (yang-web)
-│   │   ├── circaevum/     # Main visualization
-│   │   │
-│   │   └── yin-seed/      # 阴种子 (Yin Seed - Backend in Frontend)
-│   │       ├── api.js     # Zhong (中) - The Center Contract
-│   │       ├── events.js  # Event data model
-│   │       └── adapters/  # Backend adapters
-│   │
-│   └── unity/              # Unity projects (yang-avp)
-│       ├── TimeBox/       # Apple Vision Pro
-│       └── Calendarium/  # Meta Quest
-│
-├── yin/                    # Backend projects (Yin)
-│   ├── nakama/            # Nakama backend (yin-nakama)
-│   ├── timescale/         # TimescaleDB backend (yin-timescale)
-│   ├── rest/              # REST API backend (yin-rest)
-│   │
-│   └── yang-seed/         # 阳种子 (Yang Seed - Frontend in Backend)
-│       ├── components/    # React UI components
-│       │   └── RingStationVisualization.tsx  # Backend structure visualization (Yang-Seed example)
-│       └── adapters/      # Frontend adapters
-│
-├── zhong/                  # Administration (Zhong - 中)
-│   ├── dao/               # DAO governance
-│   ├── tracking/          # Contribution tracking
-│   ├── problems/          # Problem tracking
-│   └── milestones/         # Investment milestones
-│
-└── docs/                   # Documentation
-    ├── architecture/       # Architecture docs
-    ├── philosophy/         # Taiji philosophy
-    └── guides/            # User/developer guides
+**Worldlines** are the paths bodies take through this space-time. Each planet follows a **helical worldline**—a spiral that combines (1) orbital motion around the Sun in the XZ plane and (2) motion upward along Y as time advances. Earth’s worldline is the reference; events are drawn as arcs at slightly larger radii, parallel to Earth’s path.
+
+**Circadian rhythm** is the ~24-hour biological cycle of day and night. The GL ties this to the same model: at day/clock zoom levels you can show a **circadian worldline**—the helix traced by a “hour hand” from Earth as it rotates while moving along its orbital path. So the daily cycle (noon/midnight, wake/sleep) appears as a spiral in the same space where years and orbits are already visible: one continuous, navigable space-time.
+
+## What’s here
+
+- **`index.html`** — Single entry: full GL, viewer mode with `?viewer=1` or in an iframe. Navbar has Log in (→ app) and Event List.
+- **`circaevum/`** — Core GL: styles, JS (main, renderers, adapters, pipeline). No account/Nakama in this repo; login lives in the wrapper.
+- **`docs/`** — [VIEWER-AND-WRAPPER.md](./docs/VIEWER-AND-WRAPPER.md), [NAKAMA-CONNECT.md](./docs/NAKAMA-CONNECT.md) (for backend wiring when needed).
+
+## Run locally
+
+Serve this folder (e.g. port 8080) so the wrapper can load it:
+
+```bash
+npx serve . -p 8080
 ```
 
----
+Open `http://localhost:8080` for the GL with navbar, or use the wrapper’s `npm run dev:all` from `yang/account-wrapper` to run GL + wrapper together.
 
-## Quick Links
+## Changelog
 
-- **[DAO Structure](./zhong/dao/phase-1/README.md)** - DAO governance and token structure
-- **[Changelog](./CHANGELOG.md)** - All changes tracked for quarterly reviews
-- **[Architecture](./docs/architecture/)** - System architecture documentation
-- **[Quarterly Reviews](./zhong/reviews/)** - Quarterly review records
-- **[Contribution Tracking](./zhong/tracking/)** - GitHub contribution analysis
+[CHANGELOG.md](./CHANGELOG.md) — version and feature history.
 
 ---
 
-## Philosophy
-
-**Zhong (中)** = The Center Contract
-- Coordinates between Yin (backend) and Yang (frontend)
-- Manages DAO governance and token structure
-- Tracks contributions across all projects
-- Facilitates quarterly reviews
-- Maintains balance (和谐 - Héxié)
-
-**Yin (阴)** = Backend projects
-- Receptive, foundational, data emergence
-- Platforms: `yin-nakama`, `yin-timescale`, `yin-rest`
-
-**Yang (阳)** = Frontend projects
-- Active, dynamic, user experience
-- Platforms: `yang-web`, `yang-avp`, `yang-quest`
-
----
-
-## Projects
-
-### Yang (Frontend)
-
-**yang-web** (Three.js / Web):
-- Location: `yang/web/`
-- Platform: Three.js, Web
-- Status: Active development
-
-**yang-avp** (Unity / Apple Vision Pro):
-- Location: `yang/unity/TimeBox/`
-- Platform: Unity, Apple Vision Pro
-- Status: Active development
-
-**yang-quest** (Unity / Meta Quest):
-- Location: `yang/unity/Calendarium/`
-- Platform: Unity, Meta Quest
-- Status: Active development
-
-### Yin (Backend)
-
-**yin-nakama** (Nakama Backend):
-- Location: `yin/nakama/`
-- Platform: Nakama, PostgreSQL
-- Status: Active (used by Unity projects)
-
-**yin-timescale** (TimescaleDB Backend):
-- Location: `yin/timescale/`
-- Platform: TimescaleDB, PostgreSQL
-- Status: Planned
-
-**yin-rest** (REST API Backend):
-- Location: `yin/rest/`
-- Platform: Next.js, REST API
-- Status: Planned
-
----
-
-## DAO Integration
-
-**DAO Repository**: [circaevum-dao-phase-1](https://github.com/Circaevum/circaevum-dao-phase-1)
-
-**Articles of Incorporation**: Points to this repository (`circaevum-zhong`) as the main administrative hub.
-
-**Quarterly Reviews**: 
-- Zhong-curated contribution tallying
-- Token awards based on problem completion
-- Investment milestone tracking
-- Yin-Yang rotation (90° counterclockwise)
-
----
-
-## Contribution Tracking
-
-**Repositories Watched**: See `zhong/tracking/repositories.json`
-
-**Current Projects**:
-- TimeBox (yang-avp)
-- Calendarium (yang-avp)
-- three-circa (yang-web)
-- circaevum-yin (yin-rest) - Planned
-
-**Tracking**:
-- Commits tagged with `PROBLEM-YIN-XXX`, `PROBLEM-YANG-XXX`, `PROBLEM-ZHONG-XXX`
-- Platform categories: `[yang-web]`, `[yang-avp]`, `[yin-nakama]`, etc.
-- Quarterly analysis via `zhong/tracking/commit-tracker.sh`
-
----
-
-## Investment Milestones
-
-**Current Tier**: Seed (WW-001 through WW-006)
-
-**Milestones**:
-- WW-001: $25,000
-- WW-002: $50,000
-- WW-003: $75,000
-- WW-004: $100,000
-- WW-005: $150,000
-- WW-006: $200,000
-
-See `zhong/milestones/current.json` for full details.
-
----
-
-## Getting Started
-
-### For Developers
-
-1. **Frontend Development**: See `yang/web/` or `yang/unity/`
-2. **Backend Development**: See `yin/nakama/`, `yin/timescale/`, or `yin/rest/`
-3. **Architecture**: See `docs/architecture/`
-4. **Philosophy**: See `docs/philosophy/TAIJI_PHILOSOPHY.md`
-
-### For Contributors
-
-1. **Problem Tracking**: Tag commits with `PROBLEM-YIN-XXX` or `PROBLEM-YANG-XXX`
-2. **Platform Tags**: Include platform category `[yang-web]`, `[yang-avp]`, etc.
-3. **Quarterly Reviews**: Contributions tracked automatically via `zhong/tracking/`
-
-### For Investors
-
-1. **Investment Milestones**: See `zhong/milestones/current.json`
-2. **DAO Structure**: See `zhong/dao/phase-1/README.md`
-3. **Token Information**: See `zhong/dao/phase-1/WU_WEI_INVESTMENT_STRUCTURE.md`
-
----
-
-## Documentation
-
-- **[Architecture](./docs/architecture/)** - System architecture and design
-- **[Taiji Philosophy](./docs/philosophy/TAIJI_PHILOSOPHY.md)** - Philosophical foundation
-- **[Adapter System](./docs/architecture/ADAPTER_ARCHITECTURE.md)** - Pluggable adapters
-- **[Git Commit Visualization](./docs/GIT_COMMIT_VISUALIZATION.md)** - Visualizing development sprints
-
----
-
-## License
-
-[To be determined based on open-source vs closed-source separation]
-
----
-
-## Contact
-
-**DAO**: [circaevum-dao-phase-1](https://github.com/Circaevum/circaevum-dao-phase-1)
-**Main Repository**: This repository (`circaevum-zhong`)
-
----
-
-**Last Updated**: March 2025 (Q1 2025)
-**Maintained By**: Circaevum Zhong (中) - The Center Contract
+For project structure, DAO, and coordination (Zhong), see the main Circaevum org and [circaevum-dao-phase-1](https://github.com/Circaevum/circaevum-dao-phase-1).
