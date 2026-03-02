@@ -1,13 +1,13 @@
 # Viewer mode and React wrapper
 
-The Circaevum web app can be split so the **graphics library (GL)** stays open-source and **login/account** lives in a separate wrapper (e.g. private repo).
+The Circaevum web app is split so the **graphics library (GL)** is viewer-only (no account/Nakama in the repo) and **login/account** lives in the wrapper (app.circaevum.com).
 
 ## Single entry: `index.html`
 
 There is one HTML file: **`yang/web/index.html`**.
 
-- **Normal load** (`index.html` or `index.html` without query): Full app with navbar, Account panel, Event List (from hamburger), and Nakama (if configured).
-- **Viewer mode** (`index.html?viewer=1` or when loaded in an iframe): No navbar, no account panel; full-bleed GL; Event List opens via the **right-edge pull tab** or via `postMessage` from the wrapper. Same postMessage API (ingest/clear events, open event list).
+- **GL (yang/web)** is **viewer-only**: no Nakama config, no account panel. Navbar has hamburger with **Event List** only; "Open full app" in the event list footer points to the wrapper (set `window.CIRCAEVUM_FULL_APP_URL = 'https://app.circaevum.com'` for production).
+- **Viewer mode** (`index.html?viewer=1` or when loaded in an iframe): No navbar; full-bleed GL; Event List via the **right-edge pull tab** or `postMessage` from the wrapper. Same postMessage API (ingest/clear events, open event list).
 
 Viewer mode is enabled automatically when the URL has `?viewer=1` or when the page is embedded (e.g. in the React wrapper's iframe). On **localhost**, viewer mode is also the default (unless you use `?viewer=0`), and "Open full app" in the event list panel points to `http://localhost:5173` (the wrapper) if not overridden.
 
