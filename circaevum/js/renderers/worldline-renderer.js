@@ -102,6 +102,12 @@ const Worldlines = (function() {
         
         const currentDateHeight = SceneGeometry.getCurrentDateHeight(zoomLevel);
         
+        // Validate currentDateHeight
+        if (isNaN(currentDateHeight)) {
+            console.error('Worldlines: currentDateHeight is NaN, skipping worldline for', planetData.name);
+            return null;
+        }
+        
         // Calculate worldline span based on zoom level
         let startHeight, endHeight;
         
@@ -114,16 +120,63 @@ const Worldlines = (function() {
         } else if (zoomLevel === 3) { // Year - show full year with current date
             const yearHeight = 100;
             const now = new Date();
-            const yearProgress = calculateYearProgressForDate 
-                ? calculateYearProgressForDate(now.getFullYear(), now.getMonth(), now.getDate(), 0)
-                : (now.getMonth() + (now.getDate() - 1) / (getDaysInMonth ? getDaysInMonth(now.getFullYear(), now.getMonth()) : 30)) / 12;
+            let yearProgress;
+            
+            if (typeof calculateYearProgressForDate === 'function') {
+                yearProgress = calculateYearProgressForDate(now.getFullYear(), now.getMonth(), now.getDate(), 0);
+            } else {
+                // Fallback calculation
+                const daysInMonth = (typeof getDaysInMonth === 'function') 
+                    ? getDaysInMonth(now.getFullYear(), now.getMonth()) 
+                    : 30;
+                yearProgress = (now.getMonth() + (now.getDate() - 1) / daysInMonth) / 12;
+            }
+            
+            // Validate yearProgress
+            if (isNaN(yearProgress)) {
+                console.error('Worldlines: yearProgress is NaN for Zoom 3', {
+                    year: now.getFullYear(),
+                    month: now.getMonth(),
+                    day: now.getDate(),
+                    calculateYearProgressForDate: typeof calculateYearProgressForDate,
+                    getDaysInMonth: typeof getDaysInMonth
+                });
+                // Use fallback: assume middle of year
+                yearProgress = 0.5;
+            }
+            
             startHeight = currentDateHeight - (yearProgress * yearHeight);
             endHeight = startHeight + yearHeight;
+            
+            // Validate calculated heights
+            if (isNaN(startHeight) || isNaN(endHeight)) {
+                console.error('Worldlines: Invalid heights for Zoom 3', {
+                    currentDateHeight,
+                    yearProgress,
+                    yearHeight,
+                    startHeight,
+                    endHeight
+                });
+                // Use fallback: full year around current date
+                startHeight = currentDateHeight - (yearHeight / 2);
+                endHeight = currentDateHeight + (yearHeight / 2);
+            }
         } else { // Higher zooms - show time span around current date
             const spanHeight = timeYears * 100;
             const extensionFactor = 2.5; // Show 2.5x the span
             startHeight = currentDateHeight - (spanHeight * extensionFactor / 2);
             endHeight = currentDateHeight + (spanHeight * extensionFactor / 2);
+        }
+        
+        // Validate heights before creating geometry
+        if (isNaN(startHeight) || isNaN(endHeight)) {
+            console.error('Worldlines: startHeight or endHeight is NaN', {
+                startHeight,
+                endHeight,
+                planet: planetData.name,
+                zoomLevel
+            });
+            return null;
         }
         
         // Generate curve points using SceneGeometry
@@ -137,6 +190,20 @@ const Worldlines = (function() {
             planetData.startAngle,
             segments
         );
+        
+        // Validate points array before creating geometry
+        if (!points || points.length === 0) {
+            console.error('Worldlines: createHelicalCurve returned empty points array');
+            return null;
+        }
+        
+        // Check for NaN in points array
+        for (let i = 0; i < points.length; i++) {
+            if (isNaN(points[i])) {
+                console.error('Worldlines: NaN detected in points array at index', i, 'for', planetData.name);
+                return null;
+            }
+        }
         
         // Create THREE.js geometry and material
         const geometry = new THREE.BufferGeometry();
@@ -168,6 +235,16 @@ const Worldlines = (function() {
      * @returns {THREE.Line} THREE.js Line object
      */
     function createConnectorWorldline(planetData, currentHeight, selectedHeight) {
+        // Validate inputs
+        if (isNaN(currentHeight) || isNaN(selectedHeight)) {
+            console.error('Worldlines: createConnectorWorldline received NaN heights', {
+                currentHeight,
+                selectedHeight,
+                planet: planetData.name
+            });
+            return null;
+        }
+        
         const startHeight = Math.min(currentHeight, selectedHeight);
         const endHeight = Math.max(currentHeight, selectedHeight);
         
@@ -182,6 +259,20 @@ const Worldlines = (function() {
             planetData.startAngle,
             segments
         );
+        
+        // Validate points before creating geometry
+        if (!points || points.length === 0) {
+            console.error('Worldlines: createHelicalCurve returned empty points for connector');
+            return null;
+        }
+        
+        // Check for NaN in points
+        for (let i = 0; i < points.length; i++) {
+            if (isNaN(points[i])) {
+                console.error('Worldlines: NaN in connector points at index', i);
+                return null;
+            }
+        }
         
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
@@ -203,16 +294,38 @@ const Worldlines = (function() {
      * @returns {THREE.Line} THREE.js Line object
      */
     function createMoonWorldline(currentDateHeight, zoomLevel) {
+        // Validate currentDateHeight
+        if (isNaN(currentDateHeight)) {
+            console.error('Worldlines: createMoonWorldline received NaN currentDateHeight');
+            return null;
+        }
+        
         const extensionFactor = 5; // Extend 5x beyond current view
         const baseSpan = ZOOM_LEVELS[zoomLevel].timeYears * 100;
         const totalSpan = baseSpan * extensionFactor;
         const startHeight = currentDateHeight - (totalSpan / 2);
+        
+        // Validate calculated values
+        if (isNaN(startHeight) || isNaN(totalSpan)) {
+            console.error('Worldlines: Invalid moon worldline calculation', {
+                currentDateHeight,
+                baseSpan,
+                totalSpan,
+                startHeight
+            });
+            return null;
+        }
         
         const moonDistance = 15; // Moon distance from Earth
         const lunarPeriod = 0.0767; // ~28 days in years
         const segments = 1000;
         
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
+        if (!earth) {
+            console.error('Worldlines: Earth not found in PLANET_DATA');
+            return null;
+        }
+        
         const timeSpanYears = totalSpan / 100;
         const earthOrbitsInSpan = timeSpanYears / earth.orbitalPeriod;
         const yearsBeforeCurrent = (currentDateHeight - startHeight) / 100;
@@ -228,8 +341,20 @@ const Worldlines = (function() {
             const earthAngle = earthStartAngle - (t * earthOrbitsInSpan * Math.PI * 2);
             const height = startHeight + (t * totalSpan);
             
+            // Validate height before proceeding
+            if (isNaN(height)) {
+                console.error('Worldlines: NaN height in moon worldline at segment', i);
+                return null;
+            }
+            
             // Earth position
             const earthPos = SceneGeometry.getPosition3D(height, earthAngle, earth.distance);
+            
+            // Validate earthPos
+            if (!earthPos || isNaN(earthPos.x) || isNaN(earthPos.y) || isNaN(earthPos.z)) {
+                console.error('Worldlines: Invalid earthPos in moon worldline at segment', i);
+                return null;
+            }
             
             // Sun to Earth direction
             const sunToEarthAngle = Math.atan2(earthPos.z, earthPos.x);
@@ -240,7 +365,22 @@ const Worldlines = (function() {
             
             // Moon position relative to Earth
             const moonPos = SceneGeometry.getPosition3D(0, moonAngleRelativeToSun, moonDistance);
+            
+            // Validate moonPos
+            if (!moonPos || isNaN(moonPos.x) || isNaN(moonPos.y) || isNaN(moonPos.z)) {
+                console.error('Worldlines: Invalid moonPos in moon worldline at segment', i);
+                return null;
+            }
+            
             moonPoints.push(earthPos.x + moonPos.x, height, earthPos.z + moonPos.z);
+        }
+        
+        // Validate moonPoints before creating geometry
+        for (let i = 0; i < moonPoints.length; i++) {
+            if (isNaN(moonPoints[i])) {
+                console.error('Worldlines: NaN in moonPoints at index', i);
+                return null;
+            }
         }
         
         const moonGeometry = new THREE.BufferGeometry();

@@ -327,15 +327,15 @@ const TimeMarkers = (function() {
             label: (dist) => dist * 3 / 8
         },
         week: {
-            outer: (dist) => dist * 3 / 4,
+            outer: (dist) => dist * 5 / 8,
             inner: (dist) => dist / 2,
-            label: (dist) => dist * 5 / 8
+            label: (dist) => dist * 9 / 16
         },
         day: {
-            outer: (dist) => dist * 7 / 8,
-            inner: (dist) => dist * 3 / 4,
-            label: (dist) => dist * 25 / 32,  // Day numbers - between inner and middle
-            dayName: (dist) => dist * 27 / 32  // Day names - between middle and outer
+            outer: (dist) => dist * 3 / 4,
+            inner: (dist) => dist * 5 / 8,
+            label: (dist) => dist * 21 / 32,  // Day numbers - between inner and middle
+            dayName: (dist) => dist * 23 / 32  // Day names - between middle and outer
         },
         hour: {
             spiral: (dist) => dist * 0.1 * 0.9  // 0.9x size for daily spiral and hours
@@ -1499,6 +1499,7 @@ const TimeMarkers = (function() {
         const z = Math.sin(angle) * radius;
         sprite.position.set(x, height, z);
         sprite.scale.set(12, 12, 1);
+        sprite.userData.baseScale = { x: 12, y: 12, z: 1 };
         return sprite;
     }
 

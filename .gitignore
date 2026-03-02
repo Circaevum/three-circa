@@ -1,0 +1,24 @@
+# SSL certificates (generated locally)
+localhost.pem
+localhost-key.pem
+
+# Node modules
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Ignore meta files for spec submodule (if auto-generated)
+circaevum/spec.meta
+**/spec.meta
+
+# Old projects directory
+vercel-dash/

@@ -7,64 +7,208 @@
     <link rel="stylesheet" href="circaevum/css/styles.css">
 </head>
 <body>
-    <div id="canvas-container"></div>
+    <script>
+      (function() {
+        var params = new URLSearchParams(window.location.search);
+        var inIframe = window.self !== window.top;
+        var forceViewer = params.get('viewer') === '1';
+        var forceFull = params.get('viewer') === '0';
+        var isLocalhost = typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+        var useViewerMode = forceViewer || inIframe || (isLocalhost && !forceFull);
+        if (useViewerMode) {
+          document.documentElement.classList.add('viewer-no-nav');
+          document.body.classList.add('viewer-no-nav');
+          window.CIRCAEVUM_VIEWER_MODE = true;
+        }
+        // Optional: set to your wrapper URL for "Open full app" (same-tab navigate with state).
+        // On localhost, default to Yin-portal (wrapper) so the link works without config.
+        if (isLocalhost && !window.CIRCAEVUM_FULL_APP_URL) {
+          window.CIRCAEVUM_FULL_APP_URL = 'http://localhost:5173';
+        }
+        // E.g. window.CIRCAEVUM_FULL_APP_URL = 'https://app.circaevum.com';
+      })();
+    </script>
+    <!-- Optional: enable real Nakama. Uncomment the block below and set your server. See docs/NAKAMA-CONNECT.md. -->
     
-    <div id="hud">
-        <div class="title-block">
-            <h1>CIRCAEVUM</h1>
-            <div class="subtitle">A Space for Time</div>
+    <script>
+      window.NAKAMA_CONFIG = { scheme: 'https', host: 'nakama.circaevum.com', port: 443, serverKey: 'defaultkey' };
+    </script>
+    <script type="module" src="circaevum/js/pipeline/nakama/nakama-load.js"></script>
+    <script src="circaevum/js/pipeline/nakama/nakama-circaevum.js"></script>
+   
+    <!-- Top navbar: Circaevum left; Event List, Account right -->
+    <header id="top-nav" class="circaevum-nav">
+        <div class="nav-left">
+            <a href="#" class="nav-brand">Circaevum</a>
         </div>
-        
-        <div class="controls">
-            <div class="zoom-slider">
-                <div class="zoom-option" data-zoom="1">
-                    <div class="zoom-number">1</div>
-                    <div class="zoom-desc">Century</div>
-                </div>
-                <div class="zoom-option active" data-zoom="2">
-                    <div class="zoom-number">2</div>
-                    <div class="zoom-desc">Decade</div>
-                </div>
-                <div class="zoom-option" data-zoom="3">
-                    <div class="zoom-number">3</div>
-                    <div class="zoom-desc">Year</div>
-                </div>
-                <div class="zoom-option" data-zoom="4">
-                    <div class="zoom-number">4</div>
-                    <div class="zoom-desc">Quarter</div>
-                </div>
-                <div class="zoom-option" data-zoom="5">
-                    <div class="zoom-number">5</div>
-                    <div class="zoom-desc">Month</div>
-                </div>
-                <div class="zoom-option" data-zoom="6">
-                    <div class="zoom-number">6</div>
-                    <div class="zoom-desc">Lunar</div>
-                </div>
-                <div class="zoom-option" data-zoom="7">
-                    <div class="zoom-number">7</div>
-                    <div class="zoom-desc">Week</div>
-                </div>
-                <div class="zoom-option" data-zoom="8">
-                    <div class="zoom-number">8</div>
-                    <div class="zoom-desc">Day</div>
-                </div>
-                <div class="zoom-option" data-zoom="9">
-                    <div class="zoom-number">9</div>
-                    <div class="zoom-desc">Clock</div>
-                </div>
-                <div class="zoom-option" data-zoom="0">
-                    <div class="zoom-number">0</div>
-                    <div class="zoom-desc">Info</div>
+        <div class="nav-right">
+            <button type="button" class="toggle-btn nav-toggle" id="webxr-toggle">WEBXR</button>
+            <div class="nav-dropdown-wrap">
+                <button type="button" id="nav-account-btn" class="nav-icon-btn" title="Menu" aria-label="Open menu" aria-expanded="false" aria-haspopup="true">☰</button>
+                <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="account">Account</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
                 </div>
             </div>
         </div>
-        
-        <div class="toggle-controls">
-            <button class="toggle-btn active" id="markers-toggle">TIME MARKERS</button>
-            <button class="toggle-btn" id="light-mode-toggle">LIGHT MODE</button>
-            <button class="toggle-btn" id="sound-toggle">SOUND OFF</button>
-            <button class="toggle-btn" id="webxr-toggle">WEBXR</button>
+    </header>
+
+    <!-- Main area: full-width canvas -->
+    <div id="main-after-nav">
+        <div id="canvas-container"></div>
+    </div>
+
+    <!-- Account: left-side overlay panel (Nakama-compatible login) -->
+    <aside id="account-panel" class="account-panel" aria-hidden="true">
+        <div class="account-panel-header">
+            <strong id="account-panel-title">SELECT ACCOUNT</strong>
+            <button type="button" id="account-panel-close" class="account-panel-close-btn" aria-label="Close">×</button>
+        </div>
+        <div class="account-panel-body">
+            <!-- View: select account (only the three options; no forms) -->
+            <div id="account-view-select" class="account-view account-view-select">
+                <div id="account-associated-block" class="account-associated-block" hidden>
+                    <p class="account-panel-label">Your account</p>
+                    <p class="account-associated-email" id="account-associated-email">—</p>
+                    <button type="button" class="account-panel-option" id="account-associated-login-btn">Log in</button>
+                </div>
+                <button type="button" class="account-panel-option" data-account="established">Established account</button>
+                <button type="button" class="account-panel-option" data-account="new">New account</button>
+                <button type="button" class="account-panel-option" data-account="demo">Demo account</button>
+            </div>
+            <!-- View: established account (login – Nakama AuthenticateEmailAsync) -->
+            <div id="account-view-established" class="account-view account-view-established" hidden>
+                <button type="button" class="account-form-back" id="account-established-back">← Back</button>
+                <form id="account-established-form" class="account-form" autocomplete="on">
+                    <label class="account-form-label">Email</label>
+                    <input type="email" id="account-login-email" class="account-form-input" placeholder="you@example.com" autocomplete="email" required>
+                    <label class="account-form-label">Password</label>
+                    <input type="password" id="account-login-password" class="account-form-input" placeholder="••••••••" autocomplete="current-password" required>
+                    <div class="account-form-prefs">
+                        <label class="account-form-checkbox-label">
+                            <input type="checkbox" id="account-pref-associate-device" name="associate-device">
+                            <span>Associate with device for faster logins</span>
+                        </label>
+                        <label class="account-form-checkbox-label">
+                            <input type="checkbox" id="account-pref-auto-login" name="auto-login">
+                            <span>Auto-login next time</span>
+                        </label>
+                    </div>
+                    <button type="submit" class="account-form-submit">Log in</button>
+                </form>
+            </div>
+            <!-- View: new account (only when they clicked "New account") -->
+            <div id="account-view-new" class="account-view account-view-new" hidden>
+                <button type="button" class="account-form-back" id="account-new-back">← Back</button>
+                <form id="account-new-form" class="account-form" autocomplete="on">
+                    <label class="account-form-label">Email</label>
+                    <input type="email" id="account-email" class="account-form-input" placeholder="you@example.com" autocomplete="email" required>
+                    <label class="account-form-label">Password</label>
+                    <input type="password" id="account-password" class="account-form-input" placeholder="••••••••" autocomplete="new-password" required minlength="8">
+                    <label class="account-form-label">Re-enter password</label>
+                    <input type="password" id="account-password-confirm" class="account-form-input" placeholder="••••••••" autocomplete="new-password" required minlength="8">
+                    <div class="account-form-ack">
+                        <label class="account-form-checkbox-label">
+                            <input type="checkbox" id="account-ack-terms" name="ack" required>
+                            <span>I agree to the Terms of Service</span>
+                        </label>
+                        <label class="account-form-checkbox-label">
+                            <input type="checkbox" id="account-ack-privacy" name="ack" required>
+                            <span>I agree to the Privacy Policy</span>
+                        </label>
+                    </div>
+                    <div class="account-form-prefs">
+                        <label class="account-form-checkbox-label">
+                            <input type="checkbox" id="account-pref-associate-device-new" name="associate-device">
+                            <span>Associate with device for faster logins</span>
+                        </label>
+                        <label class="account-form-checkbox-label">
+                            <input type="checkbox" id="account-pref-auto-login-new" name="auto-login">
+                            <span>Auto-login next time</span>
+                        </label>
+                    </div>
+                    <button type="submit" class="account-form-submit">Create account</button>
+                </form>
+            </div>
+            <!-- View: logged-in account (storage types, tokens, devices; no login UI) -->
+            <div id="account-view-logged-in" class="account-view account-view-logged-in" hidden>
+                <div class="account-logged-in-header">
+                    <p class="account-logged-in-email" id="account-display-email">—</p>
+                    <button type="button" class="account-form-back" id="account-logout-btn">Log out</button>
+                </div>
+                <p class="account-panel-label">Tokens</p>
+                <p id="account-tokens" class="account-data-text">—</p>
+                <p class="account-panel-label">Devices</p>
+                <ul id="account-devices-list" class="account-storage-list"></ul>
+                <p class="account-panel-label">Storage (Nakama)</p>
+                <ul id="account-storage-types" class="account-storage-list"></ul>
+                <p class="account-panel-label account-storage-hint">User-scoped storage collections for this account (queries run for logged-in user).</p>
+                <p class="account-panel-label account-storage-hint account-storage-scope-hint">Distinct user-scoped collections only (not device-scoped).</p>
+                <p class="account-panel-label">Preferences</p>
+                <div class="account-form-prefs account-prefs-loggedin">
+                    <label class="account-form-checkbox-label">
+                        <input type="checkbox" id="account-pref-associate-device-loggedin" name="associate-device">
+                        <span>Associate with device for faster logins</span>
+                    </label>
+                    <label class="account-form-checkbox-label">
+                        <input type="checkbox" id="account-pref-auto-login-loggedin" name="auto-login">
+                        <span>Auto-login</span>
+                    </label>
+                </div>
+            </div>
+            <!-- Console: login / account creation requests and device association (Nakama-style) -->
+            <div class="account-console-wrap">
+                <p class="account-console-title">Console</p>
+                <pre id="account-console" class="account-console" aria-live="polite"></pre>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Event List: right-side overlay panel (pops open on the right) -->
+    <aside id="event-list-panel" class="event-list-panel" aria-hidden="true">
+        <div class="event-list-panel-header">
+            <strong>Event List</strong>
+            <button type="button" id="event-list-close" class="event-list-close-btn" aria-label="Close">×</button>
+        </div>
+        <div class="event-list-panel-header-actions">
+            <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
+            <button type="button" id="test-event-lines-btn" class="strip-btn">Test event lines</button>
+        </div>
+        <div id="events-panel-list" class="event-list-panel-list"></div>
+        <div id="event-list-panel-footer" class="event-list-panel-footer" style="display: none;">
+            <a id="open-full-app-link" href="#" target="_self">Open full app</a> (keeps this view)
+        </div>
+    </aside>
+    <button type="button" id="event-list-pull-tab" class="event-list-pull-tab" aria-label="Open Event List" title="Event List">Events</button>
+
+    <div id="hud">
+        <!-- Kepler-style floating icon overlay on the scene (bottom-right) -->
+        <div class="scene-icon-overlay" role="group" aria-label="Scene controls">
+            <button type="button" class="scene-icon-btn active" id="markers-lines-toggle" title="Time marker lines" aria-label="Toggle time marker lines">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 18h20"/><path d="M4 18v3"/><path d="M8 18v2"/><path d="M12 18v3"/><path d="M16 18v2"/><path d="M20 18v3"/></svg>
+            </button>
+            <button type="button" class="scene-icon-btn active" id="markers-text-toggle" title="Time marker text" aria-label="Toggle time marker text">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><text x="12" y="16" font-size="12" font-weight="700" fill="currentColor" text-anchor="middle" font-family="system-ui,sans-serif">Tt</text></svg>
+            </button>
+            <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Toggle light mode" aria-label="Toggle light mode">
+                <span class="icon-moon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
+                <span class="icon-sun" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span>
+            </button>
+            <button type="button" class="scene-icon-btn" id="sound-toggle" title="Toggle sound" aria-label="Toggle sound">
+                <span class="icon-speaker" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></span>
+                <span class="icon-muted" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></span>
+            </button>
+            <button type="button" class="scene-icon-btn" id="circadian-toggle" title="Circadian worldline: off" aria-label="Circadian worldline (cycle: off, straightened, wrapped)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2"/><path d="M12 8a4 4 0 0 1 0 8"/><path d="M12 8a4 4 0 0 0 0 8"/></svg>
+            </button>
+            <button type="button" class="scene-icon-btn" id="flatten-toggle" style="display: none;" title="Flatten view (F)" aria-label="Flatten time axis – show circles">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="12" rx="10" ry="3"/><path d="M2 12h20"/></svg>
+            </button>
+        </div>
+
+        <div class="title-block" aria-hidden="true">
+            <h1>CIRCAEVUM</h1>
+            <div class="subtitle">A Space for Time</div>
         </div>
     </div>
     
@@ -217,18 +361,902 @@
         </div>
     </div>
 
+    <!-- Zoom level bar: after landing page in DOM so it paints on top in Zoom 0 -->
+    <div class="controls" id="zoom-controls">
+        <div class="zoom-slider">
+            <div class="zoom-option" data-zoom="1">
+                <div class="zoom-number">1</div>
+                <div class="zoom-desc">Century</div>
+            </div>
+            <div class="zoom-option active" data-zoom="2">
+                <div class="zoom-number">2</div>
+                <div class="zoom-desc">Decade</div>
+            </div>
+            <div class="zoom-option" data-zoom="3">
+                <div class="zoom-number">3</div>
+                <div class="zoom-desc">Year</div>
+            </div>
+            <div class="zoom-option" data-zoom="4">
+                <div class="zoom-number">4</div>
+                <div class="zoom-desc">Quarter</div>
+            </div>
+            <div class="zoom-option" data-zoom="5">
+                <div class="zoom-number">5</div>
+                <div class="zoom-desc">Month</div>
+            </div>
+            <div class="zoom-option" data-zoom="6">
+                <div class="zoom-number">6</div>
+                <div class="zoom-desc">Lunar</div>
+            </div>
+            <div class="zoom-option" data-zoom="7">
+                <div class="zoom-number">7</div>
+                <div class="zoom-desc">Week</div>
+            </div>
+            <div class="zoom-option" data-zoom="8">
+                <div class="zoom-number">8</div>
+                <div class="zoom-desc">Day</div>
+            </div>
+            <div class="zoom-option" data-zoom="9">
+                <div class="zoom-number">9</div>
+                <div class="zoom-desc">Clock</div>
+            </div>
+            <div class="zoom-option" data-zoom="0">
+                <div class="zoom-number">0</div>
+                <div class="zoom-desc">Info</div>
+            </div>
+        </div>
+    </div>
+    <div class="mobile-zoom-controls" id="mobile-zoom-controls">
+        <button class="mobile-zoom-btn" id="zoom-out-btn" aria-label="Zoom Out">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        </button>
+        <div class="mobile-zoom-label" id="mobile-zoom-label">DECADE</div>
+        <button class="mobile-zoom-btn" id="zoom-in-btn" aria-label="Zoom In">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        </button>
+    </div>
+
     <!-- External Dependencies -->
     <script src="circaevum/js/three.min.js"></script>
     
     <!-- Circaevum Modules (load in dependency order) -->
     <script src="circaevum/js/config.js"></script>
     <script src="circaevum/js/datetime.js"></script>
-    <script src="circaevum/js/scene-geometry.js"></script>
-    <script src="circaevum/js/worldlines.js"></script>
-    <script src="circaevum/js/timemarkers.js"></script>
+    
+    <!-- Utils (geometry helpers) -->
+    <script src="circaevum/js/utils/geometry-helpers.js"></script>
+    
+    <!-- Core (scene initialization) -->
+    <script src="circaevum/js/core/scene-core.js"></script>
+    
+    <!-- Renderers (worldlines, timemarkers, planets, events) -->
+    <script src="circaevum/js/renderers/worldline-renderer.js"></script>
+    <script src="circaevum/js/renderers/timemarker-renderer.js"></script>
+    <script src="circaevum/js/renderers/planet-renderer.js"></script>
+    <script src="circaevum/js/renderers/event-renderer.js"></script>
+    <script src="circaevum/js/renderers/circadian-renderer.js"></script>
+    
+    <!-- Models (VEVENT format) -->
+    <script src="circaevum/js/models/vevent.js"></script>
+    
+    <!-- XR Adapters (load before main.js) -->
+    <script src="circaevum/js/adapters/xr/webxr-adapter.js"></script>
+    <script src="circaevum/js/adapters/input/xr-input.js"></script>
     
     <!-- Main Application Script -->
     <script src="circaevum/js/main.js"></script>
+    
+    <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
+    <script src="circaevum/js/api/circaevum-gl.js"></script>
+    
+    <!-- Circaevum GL API helpers: use from console or scripts -->
+    <script>
+      (function() {
+        var container = document.getElementById('canvas-container');
+        window.circaevumGL = null;
+
+        function getGL() {
+          if (!window.CircaevumGL) { console.error('CircaevumGL not loaded.'); return null; }
+          if (!window.circaevumGL) window.circaevumGL = new window.CircaevumGL(container, { zoomLevel: 2 });
+          return window.circaevumGL;
+        }
+        window.getGL = getGL;
+
+        window.sendEvent = function(event, layerId, options) {
+          var gl = getGL(); if (!gl) return;
+          layerId = layerId || 'api';
+          options = options || {};
+          gl.addEvent(layerId, event);
+          var layer = gl.getLayer(layerId);
+          if (layer && options.sessionId) layer.sessionId = options.sessionId;
+        };
+
+        /** Add event lines (line segments on the helix). Usage: sendEventLines([{ start: new Date('2025-01-01'), end: new Date('2025-01-07') }], 'lines-layer') */
+        window.sendEventLines = function(lines, layerId) {
+          var gl = getGL(); if (!gl) return;
+          layerId = layerId || 'lines';
+          gl.addEventLines(layerId, Array.isArray(lines) ? lines : [lines]);
+        };
+
+        /** Navbar: Event List (right-side panel), hamburger dropdown (Account, Event List), Test event lines */
+        document.addEventListener('DOMContentLoaded', function() {
+          var panel = document.getElementById('event-list-panel');
+          var testBtn = document.getElementById('test-event-lines-btn');
+          var navDropdown = document.getElementById('nav-dropdown');
+          var navAccountBtn = document.getElementById('nav-account-btn');
+
+          if (testBtn) {
+            testBtn.onclick = function() {
+              window.sendEventLines([
+                { start: new Date('2025-01-01'), end: new Date('2025-01-31'), label: 'The January Run' },
+                { start: new Date('2025-06-01'), end: new Date('2025-06-15'), label: 'Midsummer Span' }
+              ], 'test-lines');
+              testBtn.textContent = 'Added!';
+              setTimeout(function() { testBtn.textContent = 'Test event lines'; }, 4000);
+            };
+          }
+
+          function openEventListPanel() {
+            if (!panel) return;
+            panel.classList.add('open');
+            panel.setAttribute('aria-hidden', 'false');
+            refreshEventsList();
+          }
+
+          function closeEventListPanel() {
+            if (!panel) return;
+            panel.classList.remove('open');
+            panel.setAttribute('aria-hidden', 'true');
+          }
+
+          var closeBtn = document.getElementById('event-list-close');
+          if (closeBtn && panel) closeBtn.onclick = closeEventListPanel;
+
+          window.openEventListPanel = openEventListPanel;
+          var pullTab = document.getElementById('event-list-pull-tab');
+          if (pullTab && panel) pullTab.onclick = function() {
+            if (panel.classList.contains('open')) closeEventListPanel(); else openEventListPanel();
+          };
+
+          var fullAppUrl = window.CIRCAEVUM_FULL_APP_URL;
+          var footerEl = document.getElementById('event-list-panel-footer');
+          var fullAppLink = document.getElementById('open-full-app-link');
+          if (fullAppUrl && footerEl && fullAppLink) {
+            footerEl.style.display = 'block';
+            function updateFullAppLink() {
+              var state = typeof window.getShareState === 'function' ? window.getShareState() : null;
+              var qs = state && typeof window.stateToQueryString === 'function' ? window.stateToQueryString(state) : '';
+              fullAppLink.href = fullAppUrl + (qs ? '?' + qs : '');
+            }
+            updateFullAppLink();
+            fullAppLink.addEventListener('click', function(e) {
+              e.preventDefault();
+              window.location.href = fullAppLink.href;
+            });
+            var refreshBtn = document.getElementById('events-panel-refresh');
+            if (refreshBtn) refreshBtn.addEventListener('click', updateFullAppLink);
+          }
+
+          var accountPanel = document.getElementById('account-panel');
+          var accountPanelTitle = document.getElementById('account-panel-title');
+          var accountViewSelect = document.getElementById('account-view-select');
+          var accountViewEstablished = document.getElementById('account-view-established');
+          var accountViewNew = document.getElementById('account-view-new');
+          var accountViewLoggedIn = document.getElementById('account-view-logged-in');
+          var accountConsoleEl = document.getElementById('account-console');
+          var accountDisplayEmail = document.getElementById('account-display-email');
+          var accountStorageTypesList = document.getElementById('account-storage-types');
+
+          var currentAccount = null; /* { email, username?, userId?, deviceId?, tokens?, devices?, events? } after login/create */
+
+          var USER_EVENTS_LAYER = 'user-events';
+          var PREF_ASSOCIATE_DEVICE = 'circaevum_associate_device';
+          var STORAGE_DEVICE_ID = 'circaevum_device_id';
+          var STORAGE_ASSOCIATED_ACCOUNT = 'circaevum_associated_account';
+          var requestIdCounter = 0;
+
+          function uniqueId(prefix) {
+            var t = Date.now().toString(36);
+            var r = Math.random().toString(36).slice(2, 8);
+            return (prefix ? prefix + '-' : '') + t + '-' + r;
+          }
+          function getOrCreateDeviceId() {
+            try {
+              var id = localStorage.getItem(STORAGE_DEVICE_ID);
+              if (!id) {
+                id = uniqueId('device');
+                localStorage.setItem(STORAGE_DEVICE_ID, id);
+              }
+              return id;
+            } catch (e) { return uniqueId('device'); }
+          }
+          var PREF_AUTO_LOGIN = 'circaevum_auto_login';
+          var PREF_IDS = {
+            associateDevice: ['account-pref-associate-device', 'account-pref-associate-device-new', 'account-pref-associate-device-loggedin'],
+            autoLogin: ['account-pref-auto-login', 'account-pref-auto-login-new', 'account-pref-auto-login-loggedin']
+          };
+
+          function getPref(key) {
+            try { return localStorage.getItem(key) === 'true'; } catch (e) { return false; }
+          }
+          function setPref(key, value) {
+            try { localStorage.setItem(key, value ? 'true' : 'false'); } catch (e) {}
+          }
+          function getAssociatedAccount() {
+            try {
+              var raw = localStorage.getItem(STORAGE_ASSOCIATED_ACCOUNT);
+              if (!raw) return null;
+              var o = JSON.parse(raw);
+              return o && o.email ? { email: o.email, userId: o.userId || null, deviceId: o.deviceId || null } : null;
+            } catch (e) { return null; }
+          }
+          function setAssociatedAccount(account) {
+            try {
+              localStorage.setItem(STORAGE_ASSOCIATED_ACCOUNT, JSON.stringify({
+                email: account.email,
+                userId: account.userId || null,
+                deviceId: account.deviceId || null
+              }));
+            } catch (e) {}
+          }
+          function syncPrefCheckboxes(prefKey, ids) {
+            var value = getPref(prefKey);
+            ids.forEach(function(id) {
+              var el = document.getElementById(id);
+              if (el) el.checked = value;
+            });
+          }
+          function bindPrefCheckboxes(prefKey, ids) {
+            ids.forEach(function(id) {
+              var el = document.getElementById(id);
+              if (!el) return;
+              el.checked = getPref(prefKey);
+              el.addEventListener('change', function() {
+                setPref(prefKey, el.checked);
+                ids.forEach(function(otherId) {
+                  var other = document.getElementById(otherId);
+                  if (other && other !== el) other.checked = el.checked;
+                });
+              });
+            });
+          }
+
+          function accountLog(level, msg) {
+            if (!accountConsoleEl) return;
+            requestIdCounter += 1;
+            var reqId = 'req-' + requestIdCounter;
+            var line = '[' + new Date().toLocaleTimeString() + '] [' + reqId + '] ' + level + ': ' + msg;
+            accountConsoleEl.textContent = (accountConsoleEl.textContent ? accountConsoleEl.textContent + '\n' : '') + line;
+            accountConsoleEl.scrollTop = accountConsoleEl.scrollHeight;
+          }
+
+          function logUserStorageQueries(userId) {
+            /* User-scoped collections only (exclude device-scoped "users") */
+            var collections = ['events', 'tokens', 'devices'];
+            collections.forEach(function(collection) {
+              accountLog('REQUEST', 'List storage (collection=' + collection + ', userId=' + userId + ')');
+              accountLog('RESPONSE', 'Storage list (collection=' + collection + ', userId=' + userId + ', count=0)');
+            });
+          }
+
+          function mockUserEvents(account) {
+            var base = new Date();
+            var y = base.getFullYear();
+            return [
+              { id: 'user-ev-1', summary: 'Account event', start: new Date(y, 0, 15), end: new Date(y, 0, 16) },
+              { id: 'user-ev-2', summary: 'User milestone', start: new Date(y, 5, 1), end: new Date(y, 5, 2) }
+            ];
+          }
+          function syncUserEventsToGL(account) {
+            var gl = typeof window.getGL === 'function' ? window.getGL() : window.circaevumGL;
+            if (!gl || typeof gl.ingestEvents !== 'function') return;
+            var events = (account && account.events && account.events.length) ? account.events : mockUserEvents(account);
+            gl.ingestEvents(USER_EVENTS_LAYER, events, { sessionId: account && account.userId ? account.userId : undefined });
+          }
+          function clearUserEventsFromGL() {
+            var gl = typeof window.getGL === 'function' ? window.getGL() : window.circaevumGL;
+            if (!gl || !gl.hasLayer(USER_EVENTS_LAYER)) return;
+            gl.updateEvents(USER_EVENTS_LAYER, []);
+          }
+
+          function runDeviceAndUserSessionFlow(email, isNewAccount, onDone) {
+            var deviceId = getOrCreateDeviceId();
+            accountLog('REQUEST', 'Create device session (deviceId=' + deviceId + ')');
+            accountLog('RESPONSE', 'Device session created (deviceSessionId=' + deviceId + ')');
+            accountLog('REQUEST', 'User session / Authenticate email (email=' + email + ')');
+            var userId = uniqueId('user');
+            accountLog('RESPONSE', 'User session created (userId=' + userId + ', email=' + email + ')');
+            if (getPref(PREF_ASSOCIATE_DEVICE)) {
+              accountLog('REQUEST', 'Link device to user (deviceId=' + deviceId + ', userId=' + userId + ')');
+              accountLog('SUCCESS', 'User linked to device');
+            }
+            if (isNewAccount) {
+              accountLog('RESPONSE', 'Account created');
+            } else {
+              accountLog('RESPONSE', 'Session established');
+            }
+            accountLog('SUCCESS', 'Logged in');
+            onDone(userId, deviceId);
+          }
+
+          function loadUserStorageAndSync(session, account, onDone) {
+            var nc = window.NakamaCircaevum;
+            if (!nc || !session) { if (onDone) onDone(); return; }
+            var userId = session.user_id;
+            account.events = account.events || [];
+            account.tokens = account.tokens || [];
+            account.devices = account.devices || [];
+            function next() { syncUserEventsToGL(account); if (onDone) onDone(); }
+            nc.listStorageObjects(session, 'events', userId, 100, null).then(function(r) {
+              if (r.error) { accountLog('ERROR', 'List events: ' + r.error); } else if (r.objects && r.objects.length) {
+                accountLog('RESPONSE', 'Storage list (collection=events, userId=' + userId + ', count=' + r.objects.length + ')');
+                account.events = r.objects.map(function(o) {
+                  try { var v = typeof o.value === 'string' ? JSON.parse(o.value) : (o.value || {}); return v; } catch (e) { return null; }
+                }).filter(Boolean);
+              } else { accountLog('RESPONSE', 'Storage list (collection=events, userId=' + userId + ', count=0)'); }
+              return nc.listStorageObjects(session, 'tokens', userId, 100, null);
+            }).then(function(r) {
+              if (r && !r.error && r.objects && r.objects.length) {
+                accountLog('RESPONSE', 'Storage list (collection=tokens, userId=' + userId + ', count=' + r.objects.length + ')');
+                account.tokens = r.objects.map(function(o) { try { var v = typeof o.value === 'string' ? JSON.parse(o.value) : (o.value || {}); return v.key || v.id || JSON.stringify(v); } catch (e) { return ''; } });
+              }
+              return nc && nc.listStorageObjects(session, 'devices', userId, 100, null);
+            }).then(function(r) {
+              if (r && !r.error && r.objects && r.objects.length) {
+                accountLog('RESPONSE', 'Storage list (collection=devices, userId=' + userId + ', count=' + r.objects.length + ')');
+                account.devices = r.objects.map(function(o) {
+                  try {
+                    var v = typeof o.value === 'string' ? JSON.parse(o.value) : (o.value || {});
+                    return { deviceId: v.deviceId || v.id, name: v.deviceName || v.name || 'Device' };
+                  } catch (e) {
+                    return { deviceId: '', name: '-' };
+                  }
+                });
+              } else if (account.deviceId) {
+                account.devices = [{ deviceId: account.deviceId, name: 'This device' }];
+              }
+              next();
+            }).catch(function(e) { accountLog('ERROR', 'Load storage: ' + (e && e.message ? e.message : String(e))); next(); });
+          }
+
+          function setAccountView(view) {
+            if (!accountViewSelect) return;
+            accountViewSelect.hidden = (view !== 'select');
+            if (accountViewEstablished) {
+              accountViewEstablished.hidden = (view !== 'established');
+              accountViewEstablished.classList.toggle('account-view--active', view === 'established');
+            }
+            if (accountViewNew) {
+              accountViewNew.hidden = (view !== 'new');
+              accountViewNew.classList.toggle('account-view--active', view === 'new');
+            }
+            if (accountViewLoggedIn) {
+              accountViewLoggedIn.hidden = (view !== 'logged-in');
+              accountViewLoggedIn.classList.toggle('account-view--active', view === 'logged-in');
+            }
+            if (accountPanelTitle) {
+              if (view === 'select') accountPanelTitle.textContent = 'SELECT ACCOUNT';
+              else if (view === 'established') accountPanelTitle.textContent = 'ESTABLISHED ACCOUNT';
+              else if (view === 'new') accountPanelTitle.textContent = 'NEW ACCOUNT';
+              else if (view === 'logged-in') accountPanelTitle.textContent = 'ACCOUNT';
+            }
+            if (view === 'logged-in' && accountStorageTypesList) {
+              /* Distinct fields associated with user only (not device-scoped "users" collection) */
+              var types = ['events', 'tokens', 'devices'];
+              accountStorageTypesList.innerHTML = types.map(function(t) { return '<li>' + t + '</li>'; }).join('');
+            }
+            if (view === 'logged-in' && accountDisplayEmail && currentAccount) {
+              accountDisplayEmail.textContent = currentAccount.email || currentAccount.username || '—';
+            }
+            if (view === 'logged-in' && currentAccount) {
+              var tokensEl = document.getElementById('account-tokens');
+              var devicesListEl = document.getElementById('account-devices-list');
+              if (tokensEl) {
+                var tokens = currentAccount.tokens && currentAccount.tokens.length ? currentAccount.tokens : [];
+                tokensEl.textContent = tokens.length ? tokens.join(', ') : '—';
+              }
+              if (devicesListEl) {
+                var devices = currentAccount.devices && currentAccount.devices.length ? currentAccount.devices : [];
+                devicesListEl.innerHTML = devices.length ? devices.map(function(d) {
+                  return '<li>' + (d.name || d.deviceId || d.id || '—') + '</li>';
+                }).join('') : '<li class="event-horizon-empty">No devices</li>';
+              }
+            }
+            if (view === 'logged-in' && currentAccount && currentAccount.userId) {
+              logUserStorageQueries(currentAccount.userId);
+            }
+            if (view === 'established' || view === 'new' || view === 'logged-in') {
+              syncPrefCheckboxes(PREF_ASSOCIATE_DEVICE, PREF_IDS.associateDevice);
+              syncPrefCheckboxes(PREF_AUTO_LOGIN, PREF_IDS.autoLogin);
+            }
+            if (view === 'select') {
+              var assocBlock = document.getElementById('account-associated-block');
+              var assocEmailEl = document.getElementById('account-associated-email');
+              if (assocBlock && assocEmailEl) {
+                var a = getAssociatedAccount();
+                if (a) {
+                  assocBlock.hidden = false;
+                  assocEmailEl.textContent = a.email;
+                } else {
+                  assocBlock.hidden = true;
+                }
+              }
+            }
+          }
+
+          function openAccountPanel() {
+            if (!accountPanel) return;
+            setAccountView(currentAccount ? 'logged-in' : 'select');
+            accountPanel.classList.add('open');
+            accountPanel.setAttribute('aria-hidden', 'false');
+          }
+          function closeAccountPanel() {
+            if (!accountPanel) return;
+            accountPanel.classList.remove('open');
+            accountPanel.setAttribute('aria-hidden', 'true');
+            setAccountView('select');
+          }
+          var accountCloseBtn = document.getElementById('account-panel-close');
+          if (accountCloseBtn && accountPanel) accountCloseBtn.onclick = closeAccountPanel;
+
+          bindPrefCheckboxes(PREF_ASSOCIATE_DEVICE, PREF_IDS.associateDevice);
+          bindPrefCheckboxes(PREF_AUTO_LOGIN, PREF_IDS.autoLogin);
+
+          document.getElementById('account-new-back') && document.getElementById('account-new-back').addEventListener('click', function() { setAccountView('select'); });
+          document.getElementById('account-established-back') && document.getElementById('account-established-back').addEventListener('click', function() { setAccountView('select'); });
+
+          /* Restore session on load: only show logged-in when we have a real Nakama session.
+             Do not set currentAccount from localStorage (associated account) on load — that would
+             show "logged in" without a real session. Associated account is still shown on the
+             select screen as "Your account: email — Log in" so they can click to log in. */
+          function tryRestoreSession() {
+            var nc = window.NakamaCircaevum;
+            if (nc && nc.isConfigured() && nc.getClient()) {
+              nc.restoreOrRefreshSession().then(function(session) {
+                if (!session) return;
+                currentAccount = {
+                  email: session.email || session.username || '',
+                  username: session.username || '',
+                  userId: session.user_id,
+                  deviceId: getOrCreateDeviceId(),
+                  tokens: [],
+                  devices: []
+                };
+                if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
+                  accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
+                }
+                loadUserStorageAndSync(session, currentAccount, function() {});
+              }).catch(function() {});
+            }
+          }
+          if (window.nakamaModuleLoaded) {
+            tryRestoreSession();
+          } else {
+            window.addEventListener('nakama-loaded', tryRestoreSession);
+          }
+
+          var accountAssociatedLoginBtn = document.getElementById('account-associated-login-btn');
+          if (accountAssociatedLoginBtn) {
+            accountAssociatedLoginBtn.addEventListener('click', function() {
+              var a = getAssociatedAccount();
+              if (!a) return;
+              if (getPref(PREF_AUTO_LOGIN)) {
+                currentAccount = a;
+                currentAccount.tokens = currentAccount.tokens || [];
+                currentAccount.devices = currentAccount.devices || (currentAccount.deviceId ? [{ deviceId: currentAccount.deviceId, name: 'This device' }] : []);
+                syncUserEventsToGL(currentAccount);
+                if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
+                  accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
+                }
+                setAccountView('logged-in');
+              } else {
+                var emailInput = document.getElementById('account-login-email');
+                if (emailInput) emailInput.value = a.email;
+                setAccountView('established');
+              }
+            });
+          }
+
+          accountPanel && accountPanel.querySelectorAll('.account-panel-option[data-account]').forEach(function(btn) {
+            btn.onclick = function() {
+              var account = btn.getAttribute('data-account');
+              if (account === 'demo') { /* switch to demo account (Nakama) */ }
+              if (account === 'new') { setAccountView('new'); }
+              if (account === 'established') { setAccountView('established'); }
+            };
+          });
+
+          var accountNewForm = document.getElementById('account-new-form');
+          if (accountNewForm) {
+            accountNewForm.addEventListener('submit', function(e) {
+              e.preventDefault();
+              var email = document.getElementById('account-email').value.trim();
+              var password = document.getElementById('account-password').value;
+              var confirm = document.getElementById('account-password-confirm').value;
+              var usernameEl = document.getElementById('account-username');
+              var username = usernameEl ? usernameEl.value.trim() : '';
+              if (password !== confirm) {
+                alert('Passwords do not match.');
+                return;
+              }
+              if (password.length < 8) {
+                alert('Password must be at least 8 characters.');
+                return;
+              }
+              if (!document.getElementById('account-ack-terms').checked || !document.getElementById('account-ack-privacy').checked) {
+                alert('Please accept the Terms of Service and Privacy Policy.');
+                return;
+              }
+              accountLog('REQUEST', 'Account creation (email=' + email + ')');
+              var nc = window.NakamaCircaevum;
+              if (nc && nc.isConfigured() && nc.getClient()) {
+                nc.authenticateEmail(email, password, true, username || null).then(function(r) {
+                  if (r.error) {
+                    accountLog('ERROR', r.error);
+                    if (/failed to fetch/i.test(r.error) && window.location.hostname === 'localhost') {
+                      accountLog('HINT', 'From localhost this is usually CORS. Allow this origin on the Nakama server (see docs/NAKAMA-CONNECT.md).');
+                    }
+                    return;
+                  }
+                  var session = r.session;
+                  nc.storeSession(session);
+                  currentAccount = {
+                    email: email,
+                    username: session.username || username || email,
+                    userId: session.user_id,
+                    deviceId: getOrCreateDeviceId(),
+                    tokens: [],
+                    devices: []
+                  };
+                  if (getPref(PREF_ASSOCIATE_DEVICE)) setAssociatedAccount(currentAccount);
+                  if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
+                    accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
+                  }
+                  accountLog('RESPONSE', 'Account created (userId=' + session.user_id + ')');
+                  loadUserStorageAndSync(session, currentAccount, function() { setAccountView('logged-in'); });
+                });
+              } else {
+                setTimeout(function() {
+                  runDeviceAndUserSessionFlow(email, true, function(userId, deviceId) {
+                    currentAccount = { email: email, userId: userId, deviceId: deviceId, tokens: [], devices: [{ deviceId: deviceId, name: 'This device' }] };
+                    if (getPref(PREF_ASSOCIATE_DEVICE)) setAssociatedAccount(currentAccount);
+                    syncUserEventsToGL(currentAccount);
+                    if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
+                      accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
+                    }
+                    setAccountView('logged-in');
+                  });
+                }, 400);
+              }
+            });
+          }
+
+          var accountEstablishedForm = document.getElementById('account-established-form');
+          if (accountEstablishedForm) {
+            accountEstablishedForm.addEventListener('submit', function(e) {
+              e.preventDefault();
+              var email = document.getElementById('account-login-email').value.trim();
+              var password = document.getElementById('account-login-password').value;
+              if (!email || !password) return;
+              accountLog('REQUEST', 'Login (email=' + email + ')');
+              var nc = window.NakamaCircaevum;
+              if (nc && nc.isConfigured() && nc.getClient()) {
+                nc.authenticateEmail(email, password, false).then(function(r) {
+                  if (r.error) {
+                    accountLog('ERROR', r.error);
+                    if (/failed to fetch/i.test(r.error) && window.location.hostname === 'localhost') {
+                      accountLog('HINT', 'From localhost this is usually CORS. Allow this origin on the Nakama server (see docs/NAKAMA-CONNECT.md).');
+                    }
+                    return;
+                  }
+                  var session = r.session;
+                  nc.storeSession(session);
+                  currentAccount = {
+                    email: email,
+                    username: session.username || email,
+                    userId: session.user_id,
+                    deviceId: getOrCreateDeviceId(),
+                    tokens: [],
+                    devices: []
+                  };
+                  if (getPref(PREF_ASSOCIATE_DEVICE)) setAssociatedAccount(currentAccount);
+                  if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
+                    accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
+                  }
+                  accountLog('RESPONSE', 'Session established (userId=' + session.user_id + ')');
+                  loadUserStorageAndSync(session, currentAccount, function() { setAccountView('logged-in'); });
+                });
+              } else {
+                setTimeout(function() {
+                  runDeviceAndUserSessionFlow(email, false, function(userId, deviceId) {
+                    currentAccount = { email: email, userId: userId, deviceId: deviceId, tokens: [], devices: [{ deviceId: deviceId, name: 'This device' }] };
+                    if (getPref(PREF_ASSOCIATE_DEVICE)) setAssociatedAccount(currentAccount);
+                    syncUserEventsToGL(currentAccount);
+                    if (accountPanel && accountPanel.querySelector('.account-panel-body')) {
+                      accountPanel.querySelector('.account-panel-body').classList.add('account-panel-body--logged-in');
+                    }
+                    setAccountView('logged-in');
+                  });
+                }, 400);
+              }
+            });
+          }
+
+          document.getElementById('account-logout-btn') && document.getElementById('account-logout-btn').addEventListener('click', function() {
+            if (window.NakamaCircaevum) window.NakamaCircaevum.clearStoredSession();
+            clearUserEventsFromGL();
+            currentAccount = null;
+            var body = accountPanel && accountPanel.querySelector('.account-panel-body');
+            if (body) body.classList.remove('account-panel-body--logged-in');
+            setAccountView('select');
+          });
+
+          /* Hamburger: dropdown with Account, Event List */
+          if (navAccountBtn && navDropdown) {
+            navAccountBtn.onclick = function(e) {
+              e.stopPropagation();
+              var open = navDropdown.classList.toggle('open');
+              navDropdown.setAttribute('aria-hidden', open ? 'false' : 'true');
+              navAccountBtn.setAttribute('aria-expanded', open);
+            };
+            navDropdown.addEventListener('click', function(e) { e.stopPropagation(); });
+            navDropdown.querySelectorAll('.nav-dropdown-item').forEach(function(item) {
+              item.onclick = function() {
+                navDropdown.classList.remove('open');
+                navDropdown.setAttribute('aria-hidden', 'true');
+                navAccountBtn.setAttribute('aria-expanded', 'false');
+                if (item.getAttribute('data-action') === 'event-list') openEventListPanel();
+                if (item.getAttribute('data-action') === 'account') openAccountPanel();
+              };
+            });
+            document.addEventListener('click', function() {
+              navDropdown.classList.remove('open');
+              navDropdown.setAttribute('aria-hidden', 'true');
+              navAccountBtn.setAttribute('aria-expanded', 'false');
+            });
+          }
+
+          function formatDate(d) {
+            if (!d || !(d instanceof Date)) return '—';
+            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+          }
+
+          function oneDayLater(d) {
+            var x = new Date(d.getTime());
+            x.setDate(x.getDate() + 1);
+            return x;
+          }
+
+          function zoomLevelForSpanDays(days) {
+            if (days <= 1) return 9;
+            if (days <= 7) return 8;
+            if (days <= 30) return 7;
+            if (days <= 90) return 5;
+            if (days <= 365) return 4;
+            if (days <= 3650) return 3;
+            return 2;
+          }
+
+          function navigateToEvent(start, end) {
+            var s = start instanceof Date ? start : new Date(start);
+            var e = end instanceof Date ? end : new Date(end);
+            var mid = new Date((s.getTime() + e.getTime()) / 2);
+            var days = (e.getTime() - s.getTime()) / (24 * 60 * 60 * 1000);
+            var zoom = zoomLevelForSpanDays(Math.max(0.001, days));
+            if (typeof setZoomLevel === 'function') setZoomLevel(zoom, mid);
+          }
+
+          function refreshEventsList() {
+            var listEl = document.getElementById('events-panel-list');
+            if (!listEl) return;
+            listEl.innerHTML = '';
+            var gl = window.circaevumGL;
+            if (!gl && window.CircaevumGL) {
+              var c = document.getElementById('canvas-container');
+              if (c) { window.circaevumGL = new window.CircaevumGL(c, { zoomLevel: 2 }); gl = window.circaevumGL; }
+            }
+            if (!gl || typeof gl.getLayerIds !== 'function') {
+              listEl.innerHTML = '<p class="event-horizon-empty">Circaevum GL not available. Reload the page and try again.</p>';
+              return;
+            }
+            var layerIds = gl.getLayerIds();
+            var events = [];
+            var lines = [];
+            layerIds.forEach(function(lid) {
+              (gl.getEventObjects(lid) || []).forEach(function(o) { events.push({ layerId: lid, ev: o }); });
+              (gl.getEventLines(lid) || []).forEach(function(ln) { lines.push({ layerId: lid, start: ln.start, end: ln.end, label: ln.label }); });
+            });
+            if (events.length === 0 && lines.length === 0) {
+              listEl.innerHTML = '<p class="event-horizon-empty">No events or lines yet. Click <strong>Test event lines</strong> in the nav to add sample lines, then Refresh.</p>';
+              return;
+            }
+            events.forEach(function(item) {
+              var ev = item.ev;
+              var start = ev.start;
+              var end = ev.end;
+              var endForLine = end && end > start ? end : oneDayLater(start);
+              var endForNav = end && end > start ? end : endForLine;
+              var name = ev.summary || ev.uid || 'Event';
+              var row = document.createElement('div');
+              row.className = 'event-row';
+              row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:6px;cursor:pointer;';
+              row.title = 'Click to focus on this event';
+              row.innerHTML = '<div class="event-title">' + name + '</div>' +
+                '<div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' +
+                '<button type="button" class="events-panel-draw-line draw-line-btn">Draw line</button>';
+              row.onclick = function() { navigateToEvent(start, endForNav); };
+              var btn = row.querySelector('.events-panel-draw-line');
+              btn.onclick = function(e) {
+                e.stopPropagation();
+                var lab = String(name).slice(0, 32);
+                gl.addEventLines('event-lines', [{ start: start, end: endForLine, label: lab }]);
+                this.textContent = 'Drawn';
+                this.disabled = true;
+                this.classList.add('drawn');
+              };
+              listEl.appendChild(row);
+            });
+            lines.forEach(function(item) {
+              var start = item.start;
+              var end = item.end;
+              var label = item.label;
+              var title = (label && String(label).trim()) ? String(label).trim() : (formatDate(start) + ' – ' + formatDate(end));
+              var row = document.createElement('div');
+              row.className = 'line-row';
+              row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:6px;cursor:pointer;';
+              row.title = 'Click to focus on this span';
+              row.innerHTML = '<div class="event-title">' + title + '</div>' +
+                '<div class="event-meta">' + formatDate(start) + ' → ' + formatDate(end) + '</div>';
+              row.onclick = function() { navigateToEvent(start, end); };
+              listEl.appendChild(row);
+            });
+          }
+
+          var refreshBtn = document.getElementById('events-panel-refresh');
+          if (refreshBtn) refreshBtn.onclick = refreshEventsList;
+        });
+      })();
+    </script>
+    <!-- Share state: get/apply for "Open full app" (Option B – same-tab navigate with state in URL) -->
+    <script>
+      (function() {
+        var USER_EVENTS_LAYER = 'user-events';
+        var MAX_EVENTS_IN_STATE = 200;
+
+        function getShareState() {
+          var gl = window.getGL && window.getGL();
+          if (!gl) return { z: 2, rx: 0, ry: 0, focus: new Date().toISOString(), events: [] };
+          var events = (gl.getEventObjects && gl.getEventObjects(USER_EVENTS_LAYER)) || [];
+          var serialized = events.slice(0, MAX_EVENTS_IN_STATE).map(function(o) {
+            return {
+              uid: o.uid,
+              summary: o.summary,
+              start: o.start && o.start.toISOString ? o.start.toISOString() : null,
+              end: o.end && o.end.toISOString ? o.end.toISOString() : null
+            };
+          });
+          return {
+            z: typeof currentZoom !== 'undefined' ? currentZoom : 2,
+            rx: typeof cameraRotation !== 'undefined' ? cameraRotation.x : Math.PI / 6,
+            ry: typeof cameraRotation !== 'undefined' ? cameraRotation.y : 0,
+            focus: typeof getSelectedDateTime === 'function' ? getSelectedDateTime().toISOString() : new Date().toISOString(),
+            events: serialized
+          };
+        }
+
+        function applyShareState(state) {
+          if (!state || typeof state !== 'object') return;
+          var gl = window.getGL && window.getGL();
+          if (!gl) return;
+          var z = state.z;
+          if (typeof z === 'number' && z >= 1 && z <= 9) {
+            if (typeof gl.setZoomLevel === 'function') gl.setZoomLevel(z);
+            else if (typeof setZoomLevel === 'function') setZoomLevel(z);
+          }
+          if (typeof cameraRotation !== 'undefined') {
+            if (typeof state.rx === 'number') cameraRotation.x = state.rx;
+            if (typeof state.ry === 'number') cameraRotation.y = state.ry;
+          }
+          if (state.focus && typeof gl.navigateToTime === 'function') {
+            gl.navigateToTime(state.focus);
+          }
+          if (Array.isArray(state.events) && state.events.length > 0 && gl.ingestEvents) {
+            var restored = state.events.map(function(e) {
+              return {
+                uid: e.uid,
+                summary: e.summary,
+                start: e.start ? new Date(e.start) : null,
+                end: e.end ? new Date(e.end) : null
+              };
+            });
+            gl.ingestEvents(USER_EVENTS_LAYER, restored, {});
+          }
+        }
+
+        function stateToQueryString(state) {
+          var params = new URLSearchParams();
+          params.set('zoom', String(state.z));
+          params.set('rx', String(state.rx));
+          params.set('ry', String(state.ry));
+          params.set('focus', state.focus);
+          if (state.events && state.events.length > 0) {
+            try {
+              params.set('e', btoa(unescape(encodeURIComponent(JSON.stringify(state.events)))));
+            } catch (err) {}
+          }
+          return params.toString();
+        }
+
+        function queryStringToState() {
+          var params = new URLSearchParams(window.location.search);
+          var z = parseInt(params.get('zoom'), 10);
+          var rx = parseFloat(params.get('rx'));
+          var ry = parseFloat(params.get('ry'));
+          var focus = params.get('focus');
+          var e = params.get('e');
+          var events = [];
+          if (e) {
+            try {
+              events = JSON.parse(decodeURIComponent(escape(atob(e))));
+            } catch (err) {}
+          }
+          if (!(z >= 1 && z <= 9)) z = 2;
+          if (typeof rx !== 'number' || isNaN(rx)) rx = Math.PI / 6;
+          if (typeof ry !== 'number' || isNaN(ry)) ry = 0;
+          if (!focus) focus = new Date().toISOString();
+          return { z: z, rx: rx, ry: ry, focus: focus, events: events };
+        }
+
+        function hasStateInUrl() {
+          var params = new URLSearchParams(window.location.search);
+          return params.has('zoom') || params.has('focus') || params.has('e');
+        }
+
+        window.getShareState = getShareState;
+        window.applyShareState = applyShareState;
+        window.stateToQueryString = stateToQueryString;
+
+        document.addEventListener('DOMContentLoaded', function() {
+          if (!hasStateInUrl()) return;
+          var state = queryStringToState();
+          setTimeout(function() {
+            var gl = window.getGL && window.getGL();
+            if (gl) applyShareState(state);
+          }, 800);
+        });
+      })();
+    </script>
+    <!-- Embed API: when used as viewer (?viewer=1 or iframe), parent can send events via postMessage -->
+    <script>
+      (function() {
+        var USER_EVENTS_LAYER = 'user-events';
+        window.addEventListener('message', function(event) {
+          var gl = window.circaevumGL || (window.getGL && window.getGL());
+          if (!gl || typeof gl.ingestEvents !== 'function') return;
+          var data = event.data;
+          if (!data || typeof data !== 'object' || !data.type) return;
+          if (data.type === 'CIRCAEVUM_INGEST_EVENTS' && data.layerId && Array.isArray(data.events)) {
+            gl.ingestEvents(data.layerId, data.events, data.options || {});
+          } else if (data.type === 'CIRCAEVUM_CLEAR_EVENTS' && data.layerId) {
+            gl.updateEvents(data.layerId, []);
+          } else if (data.type === 'CIRCAEVUM_OPEN_EVENT_LIST' && typeof window.openEventListPanel === 'function') {
+            window.openEventListPanel();
+          }
+        });
+        if (window.self !== window.top && window.parent.postMessage) {
+          setTimeout(function() {
+            try {
+              window.parent.postMessage({ type: 'CIRCAEVUM_THEME', lightMode: document.body.classList.contains('light-mode') }, '*');
+            } catch (e) {}
+          }, 1200);
+        }
+      })();
+    </script>
     
     <!-- Audio Script -->
     <script>
@@ -250,8 +1278,8 @@
             isMuted = !isMuted;
             const button = document.getElementById('sound-toggle');
             if (button) {
-                button.textContent = isMuted ? 'SOUND OFF' : 'SOUND ON';
                 button.classList.toggle('active', !isMuted);
+                button.setAttribute('aria-label', isMuted ? 'Unmute sound' : 'Mute sound');
             }
             // Initialize audio on first unmute (requires user interaction)
             if (!isMuted && !audioContext) {
@@ -294,6 +1322,29 @@
             oscillator.stop(endTime);
         }
         
+        // Short tick when moving selected time (A/D). Pitch varies by zoom level (1 = low, 9 = high).
+        function playTickSound(zoomLevel) {
+            if (isMuted) return;
+            if (!audioContext || audioContext.state === 'suspended') {
+                initAudio();
+            }
+            var level = Math.max(1, Math.min(9, Number(zoomLevel) || 5));
+            var frequency = 180 + (level - 1) * 95;
+            var oscillator = audioContext.createOscillator();
+            var tickGain = audioContext.createGain();
+            oscillator.connect(tickGain);
+            tickGain.connect(gainNode);
+            oscillator.frequency.value = frequency;
+            oscillator.type = 'sine';
+            var now = audioContext.currentTime;
+            var startTime = Math.max(0, now);
+            var endTime = startTime + 0.06;
+            tickGain.gain.setValueAtTime(0.25, startTime);
+            tickGain.gain.linearRampToValueAtTime(0, endTime);
+            oscillator.start(startTime);
+            oscillator.stop(endTime);
+        }
+
         // Subtle whoosh/transition sound
         function playTransitionSound() {
             if (isMuted) return; // Don't play if muted

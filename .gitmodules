@@ -1,0 +1,3 @@
+[submodule "circaevum/spec"]
+	path = circaevum/spec
+	url = git@github.com:Circaevum/circaevum-spec.git

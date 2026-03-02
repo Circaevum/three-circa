@@ -40,6 +40,11 @@ This changelog tracks all changes across Yin (backend), Yang (frontend), and Zho
 **✅ Completed** (from TimeBox):
 - **PROBLEM-YANG-001 [yang-avp]**: Zhong (中) UI - The Center Contract interface (v0.4.03-v0.4.04)
 
+**✅ Completed** (recent – yang-web GL):
+- **Viewer / wrapper localhost**: On localhost, GL defaults "Open full app" to `http://localhost:5173` (Yin-portal) when `CIRCAEVUM_FULL_APP_URL` is not set, so the event list link works without config.
+- **Viewer mode**: GL already uses viewer mode by default on localhost (or with `?viewer=1` / iframe); no change.
+- **Docs**: `docs/VIEWER-AND-WRAPPER.md` updated for Yin-portal (`account-wrapper`), local dev (GL on port 8080, wrapper on 5173), and CORS/deploy notes.
+
 **📋 Planned**:
 - **PROBLEM-YANG-002 [yang-avp]**: ISS Data Pod Visualization (Q2 2025)
 - **PROBLEM-YANG-003 [yang-avp]**: User Login Flow Enhancement (Q2 2025)
@@ -162,6 +167,6 @@ This changelog tracks all changes across Yin (backend), Yang (frontend), and Zho
 
 ---
 
-**Last Updated**: March 2025 (Q1 2025)
+**Last Updated**: March 2026 (Q1 2025 section; recent yang-web GL updates added)
 **Maintained By**: Circaevum Zhong (中) - The Center Contract
 

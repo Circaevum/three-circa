@@ -72,11 +72,23 @@ const SceneGeometry = (function() {
      * @returns {{x: number, y: number, z: number}}
      */
     function getPosition3D(height, angle, radius) {
-        return {
-            x: Math.cos(angle) * radius,
-            y: height,
-            z: Math.sin(angle) * radius
-        };
+        // Validate inputs
+        if (isNaN(height) || isNaN(angle) || isNaN(radius)) {
+            console.error('SceneGeometry.getPosition3D: Invalid inputs', { height, angle, radius });
+            return { x: 0, y: 0, z: 0 };
+        }
+        
+        const x = Math.cos(angle) * radius;
+        const y = height;
+        const z = Math.sin(angle) * radius;
+        
+        // Validate outputs
+        if (isNaN(x) || isNaN(y) || isNaN(z)) {
+            console.error('SceneGeometry.getPosition3D: NaN in calculation', { x, y, z, height, angle, radius });
+            return { x: 0, y: 0, z: 0 };
+        }
+        
+        return { x, y, z };
     }
     
     // ============================================
@@ -95,10 +107,33 @@ const SceneGeometry = (function() {
      * @returns {Array<number>} Flat array of [x, y, z, x, y, z, ...] points
      */
     function createHelicalCurve(startHeight, endHeight, radius, currentHeight, orbitalPeriod, startAngle, segments = 64) {
+        // Validate inputs
+        if (isNaN(startHeight) || isNaN(endHeight) || isNaN(radius) || isNaN(currentHeight) || isNaN(orbitalPeriod) || isNaN(startAngle)) {
+            console.error('SceneGeometry.createHelicalCurve: Invalid input parameters', {
+                startHeight,
+                endHeight,
+                radius,
+                currentHeight,
+                orbitalPeriod,
+                startAngle
+            });
+            return [];
+        }
+        
         const points = [];
         const totalHeight = endHeight - startHeight;
         const timeSpanYears = totalHeight / 100;
         const orbitsInSpan = timeSpanYears / orbitalPeriod;
+        
+        // Validate calculated values
+        if (isNaN(totalHeight) || isNaN(timeSpanYears) || isNaN(orbitsInSpan)) {
+            console.error('SceneGeometry.createHelicalCurve: Invalid calculated values', {
+                totalHeight,
+                timeSpanYears,
+                orbitsInSpan
+            });
+            return [];
+        }
         
         // Calculate starting angle based on how far back from current date
         const yearsBeforeCurrent = (currentHeight - startHeight) / 100;
@@ -106,11 +141,36 @@ const SceneGeometry = (function() {
         const angleBeforeCurrent = orbitsBeforeCurrent * Math.PI * 2;
         const curveStartAngle = startAngle + angleBeforeCurrent;
         
+        // Validate angle calculations
+        if (isNaN(curveStartAngle)) {
+            console.error('SceneGeometry.createHelicalCurve: Invalid curveStartAngle', {
+                yearsBeforeCurrent,
+                orbitsBeforeCurrent,
+                angleBeforeCurrent,
+                startAngle
+            });
+            return [];
+        }
+        
         for (let i = 0; i <= segments; i++) {
             const t = i / segments;
             const angle = curveStartAngle - (t * orbitsInSpan * Math.PI * 2);
             const height = startHeight + (t * totalHeight);
+            
+            // Validate height and angle before getting position
+            if (isNaN(height) || isNaN(angle)) {
+                console.error('SceneGeometry.createHelicalCurve: NaN at segment', i, { height, angle });
+                return [];
+            }
+            
             const pos = getPosition3D(height, angle, radius);
+            
+            // Validate position
+            if (!pos || isNaN(pos.x) || isNaN(pos.y) || isNaN(pos.z)) {
+                console.error('SceneGeometry.createHelicalCurve: Invalid position at segment', i, pos);
+                return [];
+            }
+            
             points.push(pos.x, pos.y, pos.z);
         }
         
@@ -175,14 +235,50 @@ const SceneGeometry = (function() {
      * @returns {number} Current date height
      */
     function getCurrentDateHeight(zoomLevel) {
+        let height;
+        
         if (zoomLevel === 3 || zoomLevel === 4) {
             // Use actual system date for Zoom 3 and 4
-            return calculateActualCurrentDateHeight ? calculateActualCurrentDateHeight() : calculateCurrentDateHeight();
+            if (typeof calculateActualCurrentDateHeight === 'function') {
+                height = calculateActualCurrentDateHeight();
+            } else if (typeof calculateCurrentDateHeight === 'function') {
+                height = calculateCurrentDateHeight();
+            } else {
+                console.error('SceneGeometry.getCurrentDateHeight: No date calculation function available for Zoom', zoomLevel);
+                // Fallback: use current year
+                const now = new Date();
+                height = getHeightForYear(now.getFullYear(), 1);
+            }
         } else if (zoomLevel >= 3) {
-            return calculateCurrentDateHeight();
+            if (typeof calculateCurrentDateHeight === 'function') {
+                height = calculateCurrentDateHeight();
+            } else {
+                console.error('SceneGeometry.getCurrentDateHeight: calculateCurrentDateHeight not available');
+                height = getHeightForYear(currentYear, 1);
+            }
         } else {
-            return getHeightForYear(currentYear, 1);
+            height = getHeightForYear(currentYear, 1);
         }
+        
+        // Validate result
+        if (isNaN(height)) {
+            console.error('SceneGeometry.getCurrentDateHeight: Result is NaN for Zoom', zoomLevel, {
+                calculateActualCurrentDateHeight: typeof calculateActualCurrentDateHeight,
+                calculateCurrentDateHeight: typeof calculateCurrentDateHeight,
+                currentYear,
+                height
+            });
+            // Fallback: assume year 2025
+            const fallbackYear = 2025;
+            height = getHeightForYear(fallbackYear, 1);
+            
+            // If still NaN, use hardcoded value
+            if (isNaN(height)) {
+                height = 2500; // Year 2025 = (2025 - 2000) * 100
+            }
+        }
+        
+        return height;
     }
     
     return {
