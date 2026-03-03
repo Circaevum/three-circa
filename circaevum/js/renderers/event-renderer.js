@@ -124,6 +124,10 @@
     if (event.dtstart) {
       if (event.dtstart.dateTime) return new Date(event.dtstart.dateTime);
       if (event.dtstart.date) return new Date(event.dtstart.date + 'T00:00:00Z');
+      if (typeof event.dtstart === 'string') {
+        const d = new Date(event.dtstart);
+        if (!isNaN(d.getTime())) return d;
+      }
     }
     const start = event.startTime || event.start || event.date;
     return start instanceof Date ? start : start ? new Date(start) : null;
@@ -141,6 +145,10 @@
     if (event.dtend) {
       if (event.dtend.dateTime) return new Date(event.dtend.dateTime);
       if (event.dtend.date) return new Date(event.dtend.date + 'T00:00:00Z');
+      if (typeof event.dtend === 'string') {
+        const d = new Date(event.dtend);
+        if (!isNaN(d.getTime())) return d;
+      }
     }
     const end = event.endTime || event.end;
     return end instanceof Date ? end : end ? new Date(end) : null;

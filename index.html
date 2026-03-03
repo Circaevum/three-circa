@@ -63,6 +63,7 @@
         </div>
         <div class="event-list-panel-header-actions">
             <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
+            <button type="button" id="events-panel-draw-all" class="strip-btn">Draw all</button>
             <button type="button" id="test-event-lines-btn" class="strip-btn">Test event lines</button>
         </div>
         <div id="events-panel-list" class="event-list-panel-list"></div>
@@ -415,9 +416,10 @@
           };
 
           var fullAppUrl = window.CIRCAEVUM_FULL_APP_URL;
+          var isEmbeddedViewer = !!window.CIRCAEVUM_VIEWER_MODE;
           var footerEl = document.getElementById('event-list-panel-footer');
           var fullAppLink = document.getElementById('open-full-app-link');
-          if (fullAppUrl && footerEl && fullAppLink) {
+          if (fullAppUrl && footerEl && fullAppLink && !isEmbeddedViewer) {
             footerEl.style.display = 'block';
             function updateFullAppLink() {
               var state = typeof window.getShareState === 'function' ? window.getShareState() : null;
@@ -431,6 +433,8 @@
             });
             var refreshBtn = document.getElementById('events-panel-refresh');
             if (refreshBtn) refreshBtn.addEventListener('click', updateFullAppLink);
+          } else if (footerEl) {
+            footerEl.style.display = 'none';
           }
           /* Hamburger: Log in (→ app), Event List */
           if (navAccountBtn && navDropdown) {
@@ -459,12 +463,15 @@
             });
           }
 
+          var USER_EVENTS_LAYER = 'user-events';
+
           function formatDate(d) {
-            if (!d || !(d instanceof Date)) return '—';
+            if (!d || !(d instanceof Date) || isNaN(d.getTime())) return '—';
             return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
           }
 
           function oneDayLater(d) {
+            if (!d || !(d instanceof Date) || isNaN(d.getTime())) return null;
             var x = new Date(d.getTime());
             x.setDate(x.getDate() + 1);
             return x;
@@ -483,13 +490,31 @@
           function navigateToEvent(start, end) {
             var s = start instanceof Date ? start : new Date(start);
             var e = end instanceof Date ? end : new Date(end);
+            if (!s || isNaN(s.getTime())) return;
+            if (!e || isNaN(e.getTime()) || e <= s) e = oneDayLater(s) || s;
             var mid = new Date((s.getTime() + e.getTime()) / 2);
             var days = (e.getTime() - s.getTime()) / (24 * 60 * 60 * 1000);
-            var zoom = zoomLevelForSpanDays(Math.max(0.001, days));
+            var spanDays = Math.max(0.001, days);
+            // Default: zoom into Day / Clock (8) for typical events; use span-based zoom only for long-term events.
+            var zoom = spanDays > 365 ? zoomLevelForSpanDays(spanDays) : 8;
             if (typeof setZoomLevel === 'function') setZoomLevel(zoom, mid);
           }
 
-          function refreshEventsList() {
+          var eventGroupState = { account: true, other: true };
+
+          function getCurrentQuarterBounds() {
+            var ref = (typeof getSelectedDateTime === 'function') ? getSelectedDateTime() : new Date();
+            if (!ref || !(ref instanceof Date) || isNaN(ref.getTime())) ref = new Date();
+            var year = ref.getFullYear();
+            var month = ref.getMonth();
+            var quarterIndex = Math.floor(month / 3); // 0,1,2,3
+            var startMonth = quarterIndex * 3;
+            var start = new Date(Date.UTC(year, startMonth, 1, 0, 0, 0));
+            var end = new Date(Date.UTC(year, startMonth + 3, 1, 0, 0, 0));
+            return { start: start, end: end };
+          }
+
+        function refreshEventsList(drawAll) {
             var listEl = document.getElementById('events-panel-list');
             if (!listEl) return;
             listEl.innerHTML = '';
@@ -513,10 +538,14 @@
               listEl.innerHTML = '<p class="event-horizon-empty">No events or lines yet. Click <strong>Test event lines</strong> in the nav to add sample lines, then Refresh.</p>';
               return;
             }
+
             events.forEach(function(item) {
               var ev = item.ev;
               var start = ev.start;
               var end = ev.end;
+              if (!start || !(start instanceof Date) || isNaN(start.getTime())) {
+                return;
+              }
               var endForLine = end && end > start ? end : oneDayLater(start);
               var endForNav = end && end > start ? end : endForLine;
               var name = ev.summary || ev.uid || 'Event';
@@ -529,16 +558,23 @@
                 '<button type="button" class="events-panel-draw-line draw-line-btn">Draw line</button>';
               row.onclick = function() { navigateToEvent(start, endForNav); };
               var btn = row.querySelector('.events-panel-draw-line');
-              btn.onclick = function(e) {
-                e.stopPropagation();
+              function drawLineOnce() {
                 var lab = String(name).slice(0, 32);
                 gl.addEventLines('event-lines', [{ start: start, end: endForLine, label: lab }]);
-                this.textContent = 'Drawn';
-                this.disabled = true;
-                this.classList.add('drawn');
+                btn.textContent = 'Drawn';
+                btn.disabled = true;
+                btn.classList.add('drawn');
+              }
+              btn.onclick = function(e) {
+                e.stopPropagation();
+                drawLineOnce();
               };
+              if (drawAll) {
+                drawLineOnce();
+              }
               listEl.appendChild(row);
             });
+
             lines.forEach(function(item) {
               var start = item.start;
               var end = item.end;
@@ -556,7 +592,10 @@
           }
 
           var refreshBtn = document.getElementById('events-panel-refresh');
-          if (refreshBtn) refreshBtn.onclick = refreshEventsList;
+          if (refreshBtn) refreshBtn.onclick = function() { refreshEventsList(false); };
+
+          var drawAllBtn = document.getElementById('events-panel-draw-all');
+          if (drawAllBtn) drawAllBtn.onclick = function() { refreshEventsList(true); };
         });
       })();
     </script>
@@ -679,11 +718,19 @@
           var data = event.data;
           if (!data || typeof data !== 'object' || !data.type) return;
           if (data.type === 'CIRCAEVUM_INGEST_EVENTS' && data.layerId && Array.isArray(data.events)) {
+            try {
+              console.log('[Circaevum GL] Ingesting events from wrapper:', data.layerId, 'count=', data.events.length);
+            } catch (e) {}
             gl.ingestEvents(data.layerId, data.events, data.options || {});
+            if (typeof gl.fitToLayer === 'function') {
+              try { gl.fitToLayer(data.layerId); } catch (e) {}
+            }
           } else if (data.type === 'CIRCAEVUM_CLEAR_EVENTS' && data.layerId) {
             gl.updateEvents(data.layerId, []);
           } else if (data.type === 'CIRCAEVUM_OPEN_EVENT_LIST' && typeof window.openEventListPanel === 'function') {
             window.openEventListPanel();
+          } else if (data.type === 'CIRCAEVUM_HIGHLIGHT_EVENT' && typeof gl.setEventHighlight === 'function') {
+            gl.setEventHighlight(data.layerId || 'user-events', data.uid != null ? data.uid : null);
           }
         });
         if (window.self !== window.top && window.parent.postMessage) {
@@ -692,6 +739,17 @@
               window.parent.postMessage({ type: 'CIRCAEVUM_THEME', lightMode: document.body.classList.contains('light-mode') }, '*');
             } catch (e) {}
           }, 1200);
+        }
+
+        // Monkey-patch setZoomLevel to notify parent wrapper about zoom changes.
+        if (window.self !== window.top && window.parent.postMessage && typeof window.setZoomLevel === 'function') {
+          var originalSetZoomLevel = window.setZoomLevel;
+          window.setZoomLevel = function(level) {
+            originalSetZoomLevel(level);
+            try {
+              window.parent.postMessage({ type: 'CIRCAEVUM_ZOOM', level: level }, '*');
+            } catch (e) {}
+          };
         }
       })();
     </script>

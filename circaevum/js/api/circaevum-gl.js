@@ -440,14 +440,42 @@ class CircaevumGL {
         uid = e.uid || e.id || '';
         summary = e.summary || e.title || null;
         if (e.dtstart) {
-          start = e.dtstart.dateTime ? new Date(e.dtstart.dateTime) : (e.dtstart.date ? new Date(e.dtstart.date + 'T00:00:00Z') : null);
+          if (e.dtstart.dateTime) {
+            start = new Date(e.dtstart.dateTime);
+          } else if (e.dtstart.date) {
+            start = new Date(e.dtstart.date + 'T00:00:00Z');
+          } else if (typeof e.dtstart === 'string') {
+            const d = new Date(e.dtstart);
+            start = !isNaN(d.getTime()) ? d : null;
+          }
         } else {
-          start = e.startTime || e.start || e.date ? (e.startTime || e.start || e.date instanceof Date ? e.startTime || e.start || e.date : new Date(e.startTime || e.start || e.date)) : null;
+          const rawStart = e.startTime || e.start || e.date;
+          if (rawStart instanceof Date) start = rawStart;
+          else if (rawStart) {
+            const d = new Date(rawStart);
+            start = !isNaN(d.getTime()) ? d : null;
+          } else {
+            start = null;
+          }
         }
         if (e.dtend) {
-          end = e.dtend.dateTime ? new Date(e.dtend.dateTime) : (e.dtend.date ? new Date(e.dtend.date + 'T00:00:00Z') : null);
+          if (e.dtend.dateTime) {
+            end = new Date(e.dtend.dateTime);
+          } else if (e.dtend.date) {
+            end = new Date(e.dtend.date + 'T00:00:00Z');
+          } else if (typeof e.dtend === 'string') {
+            const d = new Date(e.dtend);
+            end = !isNaN(d.getTime()) ? d : null;
+          }
         } else {
-          end = e.endTime || e.end ? (e.endTime || e.end instanceof Date ? e.endTime || e.end : new Date(e.endTime || e.end)) : null;
+          const rawEnd = e.endTime || e.end;
+          if (rawEnd instanceof Date) end = rawEnd;
+          else if (rawEnd) {
+            const d = new Date(rawEnd);
+            end = !isNaN(d.getTime()) ? d : null;
+          } else {
+            end = null;
+          }
         }
       }
       list.push({ uid, summary, start, end, layerId });
@@ -768,6 +796,28 @@ class CircaevumGL {
     
     // Fallback: return event as-is if VEvent not available
     return event;
+  }
+
+  /**
+   * Highlight one event in a layer (e.g. while editing). Pass uid or null to clear.
+   * @param {string} layerId - Layer id (e.g. 'user-events')
+   * @param {string|null} uid - Event uid to highlight, or null to clear highlight
+   */
+  setEventHighlight(layerId, uid) {
+    if (!this._layerObjects || !this._layerObjects.has(layerId)) return
+    const objects = this._layerObjects.get(layerId)
+    const highlight = uid != null && String(uid).trim() !== ''
+    objects.forEach((obj) => {
+      const match = obj.userData && obj.userData.eventUid === uid
+      if (obj.material) {
+        if (obj.material.emissiveIntensity !== undefined) {
+          obj.material.emissiveIntensity = match && highlight ? 1 : 0.4
+        }
+        if (obj.material.opacity !== undefined) {
+          obj.material.opacity = match && highlight ? 1 : (obj.userData._baseOpacity != null ? obj.userData._baseOpacity : 0.7)
+        }
+      }
+    })
   }
 
   /**
