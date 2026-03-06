@@ -523,16 +523,20 @@
               var c = document.getElementById('canvas-container');
               if (c) { window.circaevumGL = new window.CircaevumGL(c, { zoomLevel: 2 }); gl = window.circaevumGL; }
             }
-            if (!gl || typeof gl.getLayerIds !== 'function') {
+            if (!gl || typeof gl.getEventObjects !== 'function') {
               listEl.innerHTML = '<p class="event-horizon-empty">Circaevum GL not available. Reload the page and try again.</p>';
               return;
             }
-            var layerIds = gl.getLayerIds();
             var events = [];
             var lines = [];
-            layerIds.forEach(function(lid) {
-              (gl.getEventObjects(lid) || []).forEach(function(o) { events.push({ layerId: lid, ev: o }); });
-              (gl.getEventLines(lid) || []).forEach(function(ln) { lines.push({ layerId: lid, start: ln.start, end: ln.end, label: ln.label }); });
+            var EVENT_LAYER_ID = USER_EVENTS_LAYER || 'user-events';
+            (gl.getEventObjects(EVENT_LAYER_ID) || []).forEach(function(o) { events.push({ layerId: EVENT_LAYER_ID, ev: o }); });
+            // Always rebuild lines from GL state; clear any previously drawn lines on this helper layer.
+            if (typeof gl.removeEventLines === 'function') {
+              gl.removeEventLines('event-lines');
+            }
+            (gl.getEventLines('event-lines') || []).forEach(function(ln) {
+              lines.push({ layerId: 'event-lines', start: ln.start, end: ln.end, label: ln.label });
             });
             if (events.length === 0 && lines.length === 0) {
               listEl.innerHTML = '<p class="event-horizon-empty">No events or lines yet. Click <strong>Test event lines</strong> in the nav to add sample lines, then Refresh.</p>';
@@ -555,12 +559,33 @@
               row.title = 'Click to focus on this event';
               row.innerHTML = '<div class="event-title">' + name + '</div>' +
                 '<div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' +
-                '<button type="button" class="events-panel-draw-line draw-line-btn">Draw line</button>';
+                '<button type="button" class="events-panel-draw-line draw-line-btn">Draw line</button>' +
+                '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
               row.onclick = function() { navigateToEvent(start, endForNav); };
               var btn = row.querySelector('.events-panel-draw-line');
+              var editBtn = row.querySelector('.events-panel-edit-btn');
+              if (editBtn && window.self !== window.top && window.parent.postMessage) {
+                editBtn.onclick = function(e) {
+                  e.stopPropagation();
+                  var payload = {
+                    uid: ev.uid || ev.id,
+                    key: ev.key,
+                    summary: ev.summary || name,
+                    description: ev.description || null,
+                    location: ev.location || null,
+                    color: ev.color || ev.colorId || null,
+                    layerId: item.layerId || 'user-events',
+                    dtstart: ev.dtstart || { dateTime: start.toISOString() },
+                    dtend: ev.dtend || (end && end > start ? { dateTime: end.toISOString() } : { dateTime: new Date(start.getTime() + 86400000).toISOString() })
+                  };
+                  window.parent.postMessage({ type: 'CIRCAEVUM_EDIT_EVENT', event: payload }, '*');
+                };
+              } else if (editBtn) editBtn.style.display = 'none';
               function drawLineOnce() {
                 var lab = String(name).slice(0, 32);
-                gl.addEventLines('event-lines', [{ start: start, end: endForLine, label: lab }]);
+                var lineColor = ev.color || ev.colorId || undefined;
+                var cat = ev.category || 'Default';
+                gl.addEventLines('event-lines', [{ start: start, end: endForLine, label: lab, color: lineColor, category: cat }]);
                 btn.textContent = 'Drawn';
                 btn.disabled = true;
                 btn.classList.add('drawn');
@@ -596,6 +621,7 @@
 
           var drawAllBtn = document.getElementById('events-panel-draw-all');
           if (drawAllBtn) drawAllBtn.onclick = function() { refreshEventsList(true); };
+          window.refreshEventsList = refreshEventsList;
         });
       })();
     </script>
@@ -722,15 +748,18 @@
               console.log('[Circaevum GL] Ingesting events from wrapper:', data.layerId, 'count=', data.events.length);
             } catch (e) {}
             gl.ingestEvents(data.layerId, data.events, data.options || {});
-            if (typeof gl.fitToLayer === 'function') {
-              try { gl.fitToLayer(data.layerId); } catch (e) {}
-            }
+            // Do not auto fitToLayer here – it would jump selected time to earliest event (e.g. May 2025). Caller may send CIRCAEVUM_FIT_VIEW when focusing on a layer.
+          } else if (data.type === 'CIRCAEVUM_FIT_VIEW' && data.focus != null && typeof data.zoom === 'number') {
+            if (typeof gl.setZoomLevel === 'function') gl.setZoomLevel(data.zoom);
+            if (typeof gl.navigateToTime === 'function') gl.navigateToTime(data.focus);
           } else if (data.type === 'CIRCAEVUM_CLEAR_EVENTS' && data.layerId) {
             gl.updateEvents(data.layerId, []);
           } else if (data.type === 'CIRCAEVUM_OPEN_EVENT_LIST' && typeof window.openEventListPanel === 'function') {
             window.openEventListPanel();
           } else if (data.type === 'CIRCAEVUM_HIGHLIGHT_EVENT' && typeof gl.setEventHighlight === 'function') {
             gl.setEventHighlight(data.layerId || 'user-events', data.uid != null ? data.uid : null);
+          } else if (data.type === 'CIRCAEVUM_DRAW_ALL_EVENTS' && typeof window.refreshEventsList === 'function') {
+            window.refreshEventsList(true);
           }
         });
         if (window.self !== window.top && window.parent.postMessage) {

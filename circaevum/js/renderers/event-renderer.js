@@ -12,10 +12,44 @@
 
 (function (global) {
   const EARTH_RADIUS = 50;
-  // Event lines sit between Earth's worldline and the day-name outer boundary (timemarker dayName = 23/32).
-  // Use midpoint: (1 + 23/32) / 2 = 55/64 of earth distance.
+  // Radius bounds: inner = day-name boundary (Sun side / noon), outer = Earth ring side (midnight).
+  const EVENT_RADIUS_INNER_FRACTION = 23 / 32;
+  const EVENT_RADIUS_OUTER_FRACTION = 58 / 64;
   const EVENT_LINE_RADIUS_FRACTION = 55 / 64;
-  const EVENT_LINE_LABEL_RADIUS_FRACTION = 58 / 64; // Slightly outside arc so labels sit above it
+  const EVENT_LINE_LABEL_RADIUS_OFFSET = 2; // Labels this much farther out than the arc
+
+  /**
+   * Radius for an event based on time of day: noon -> closer to Sun (inner), midnight -> Earth (outer).
+   * @param {Date} date - used for time-of-day (hours/minutes)
+   * @param {number} earthDist - Earth orbit distance
+   * @param {number} indexOffset - optional small per-event offset (e.g. index % 3) to separate same-time events
+   * @returns {number} radius
+   */
+  function getRadiusForTimeOfDay(date, earthDist, indexOffset) {
+    const inner = earthDist * EVENT_RADIUS_INNER_FRACTION;
+    const outer = earthDist * EVENT_RADIUS_OUTER_FRACTION;
+    const hours = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+    const t = hours / 24;
+    const closenessToNoon = 1 - 2 * Math.abs(t - 0.5);
+    const r = outer - (outer - inner) * Math.max(0, Math.min(1, closenessToNoon));
+    const offset = (indexOffset != null ? indexOffset : 0) * 0.6;
+    return Math.max(inner, Math.min(outer, r + offset));
+  }
+
+  /**
+   * Radius for long-term events: proportional to event length with log scaling so very long events don't get too large.
+   * Longer event -> larger radius (further from Sun). Uses ln(durationDays + 1) / ln(365) capped at 1.
+   * @param {number} durationDays - event duration in days
+   * @param {number} earthDist - Earth orbit distance
+   * @returns {number} radius
+   */
+  function getRadiusForDuration(durationDays, earthDist) {
+    const inner = earthDist * EVENT_RADIUS_INNER_FRACTION;
+    const outer = earthDist * EVENT_RADIUS_OUTER_FRACTION;
+    const logNorm = Math.log(Math.max(0, durationDays) + 1) / Math.log(365);
+    const factor = Math.max(0, Math.min(1, logNorm));
+    return inner + (outer - inner) * factor;
+  }
 
   /**
    * Get Earth distance from PLANET_DATA if available
@@ -28,8 +62,19 @@
     return EARTH_RADIUS;
   }
 
+  /** Default label text color when event/layer color is too dark (neutral visible gray). */
+  const DEFAULT_LABEL_COLOR_HEX = 0x9ca3af;
+
+  function luminanceForHex(hex) {
+    const r = ((hex >> 16) & 0xff) / 255;
+    const g = ((hex >> 8) & 0xff) / 255;
+    const b = (hex & 0xff) / 255;
+    return 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+
   /**
    * Create a text sprite for event line labels (event name or MM/DD). Color in hex number.
+   * Uses neutral gray for text when the given color is too dark for readability.
    * For event names (isNameLabel true), canvas width is sized to fit the full text.
    * @param {string} text
    * @param {number} colorHex - e.g. 0x00b4d8
@@ -56,9 +101,10 @@
     canvas.width = width;
     canvas.height = height;
 
-    const r = (colorHex >> 16) & 0xff;
-    const g = (colorHex >> 8) & 0xff;
-    const b = colorHex & 0xff;
+    const textColorHex = (colorHex != null && luminanceForHex(colorHex) >= 0.35) ? colorHex : DEFAULT_LABEL_COLOR_HEX;
+    const r = (textColorHex >> 16) & 0xff;
+    const g = (textColorHex >> 8) & 0xff;
+    const b = textColorHex & 0xff;
     context.fillStyle = `rgba(${r}, ${g}, ${b}, 0.95)`;
     context.font = font;
     context.textAlign = 'center';
@@ -79,6 +125,7 @@
     const sy = s * 0.3;
     sprite.scale.set(sx, sy, 1);
     sprite.userData.baseScale = { x: sx, y: sy, z: 1 };
+    sprite.userData.immuneToFlatten = true;
     return sprite;
   }
 
@@ -210,18 +257,27 @@
   }
 
   /**
-   * Create a short worldline for a duration event
+   * Create a short worldline for a duration event. Supports layer style: plotType (lines | polygon2d | polygon3d),
+   * lineThickness, fillColor, borderStyle (event | layer | none).
    * @param {Object|VEvent} event
-   * @param {Object} layerConfig
+   * @param {Object} layerConfig - id, color, opacity, plotType?, lineThickness?, fillColor?, borderStyle?
    * @param {number} radius
-   * @returns {THREE.Line|null}
+   * @returns {THREE.Object3D|null} Line, Group (tube + outline), or flattened group
    */
   function createEventWorldline(event, layerConfig, radius) {
-    const r = radius != null ? radius : EARTH_RADIUS;
+    const earthDist = getEarthDistance();
     const start = getEventStart(event);
     const end = getEventEnd(event);
     if (!start || isNaN(start.getTime())) return null;
-    if (!end || end <= start) return createEventMarker(event, layerConfig, r);
+    if (!end || end <= start) {
+      const r = radius != null ? radius : getRadiusForTimeOfDay(start, earthDist, 0);
+      return createEventMarker(event, layerConfig, r);
+    }
+    const durationDays = (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000);
+    const midDate = new Date((start.getTime() + end.getTime()) / 2);
+    const r = radius != null ? radius : (durationDays > 7
+      ? getRadiusForDuration(durationDays, earthDist)
+      : getRadiusForTimeOfDay(midDate, earthDist, 0));
 
     const currentHeight = typeof calculateCurrentDateHeight === 'function'
       ? calculateCurrentDateHeight()
@@ -252,21 +308,95 @@
       points = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
     }
 
-    const geometry = new global.THREE.BufferGeometry();
-    geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
-    const color = parseColor(layerConfig.color || event.color || '#00b4d8');
-    const material = new global.THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity: layerConfig.opacity != null ? layerConfig.opacity : 0.7
-    });
-    const line = new global.THREE.Line(geometry, material);
-    line.userData = {
+    const plotType = layerConfig.plotType || 'lines';
+    const lineThickness = Math.max(0.2, (layerConfig.lineThickness != null ? layerConfig.lineThickness : 1));
+    const opacity = layerConfig.opacity != null ? layerConfig.opacity : 0.7;
+    const eventColorRaw = event.color ?? event.colorId ?? null;
+    const eventHex = parseColor(eventColorRaw || layerConfig.color || '#00b4d8');
+    const layerHex = parseColor(layerConfig.color || '#00b4d8');
+    const fillHex = parseColor(layerConfig.fillColor || layerConfig.color || eventColorRaw || '#00b4d8');
+    const borderStyle = layerConfig.borderStyle || 'event';
+
+    const userData = {
       vevent: event,
       layerId: layerConfig.id,
       type: 'EventObject',
       eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
     };
+
+    if (plotType === 'lines') {
+      // Lines mode: draw only a line (no tube), regardless of lineThickness
+      const tubeRadius = 0;
+      if (tubeRadius > 0 && points.length >= 9 && global.THREE.CatmullRomCurve3 && global.THREE.TubeGeometry) {
+        const vec3s = [];
+        for (let k = 0; k < points.length; k += 3) vec3s.push(new global.THREE.Vector3(points[k], points[k + 1], points[k + 2]));
+        const curve = new global.THREE.CatmullRomCurve3(vec3s);
+        const tubeGeometry = new global.THREE.TubeGeometry(curve, 16, tubeRadius, 6, false);
+        const tubeMaterial = new global.THREE.MeshBasicMaterial({
+          color: eventHex,
+          transparent: true,
+          opacity,
+          side: global.THREE.DoubleSide
+        });
+        const tube = new global.THREE.Mesh(tubeGeometry, tubeMaterial);
+        tube.userData = userData;
+        return tube;
+      }
+      const geometry = new global.THREE.BufferGeometry();
+      geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
+      const material = new global.THREE.LineBasicMaterial({
+        color: eventHex,
+        transparent: true,
+        opacity
+      });
+      const line = new global.THREE.Line(geometry, material);
+      line.userData = userData;
+      return line;
+    }
+
+    if ((plotType === 'polygon3d' || plotType === 'polygon2d') && points.length >= 9 && global.THREE.CatmullRomCurve3 && global.THREE.TubeGeometry) {
+      const vec3s = [];
+      for (let k = 0; k < points.length; k += 3) vec3s.push(new global.THREE.Vector3(points[k], points[k + 1], points[k + 2]));
+      const curve = new global.THREE.CatmullRomCurve3(vec3s);
+      const tubeRadius = Math.max(0.3, Math.min(2, 0.4 * lineThickness));
+      const tubeGeometry = new global.THREE.TubeGeometry(curve, Math.max(12, Math.min(32, Math.floor((endHeight - startHeight) / 100))), tubeRadius, 8, false);
+      const group = new global.THREE.Group();
+      group.userData = userData;
+
+      const fillMaterial = new global.THREE.MeshBasicMaterial({
+        color: fillHex,
+        transparent: true,
+        opacity: opacity * 0.6,
+        side: global.THREE.DoubleSide
+      });
+      const fillMesh = new global.THREE.Mesh(tubeGeometry.clone(), fillMaterial);
+      if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
+      group.add(fillMesh);
+
+      if (borderStyle !== 'none') {
+        const outlineColor = borderStyle === 'event' ? eventHex : layerHex;
+        const lineGeometry = new global.THREE.BufferGeometry();
+        lineGeometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
+        const lineMaterial = new global.THREE.LineBasicMaterial({
+          color: outlineColor,
+          transparent: true,
+          opacity: borderStyle === 'none' ? 0 : opacity
+        });
+        const lineObj = new global.THREE.Line(lineGeometry, lineMaterial);
+        group.add(lineObj);
+      }
+      return group;
+    }
+
+    const geometry = new global.THREE.BufferGeometry();
+    geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
+    const material = new global.THREE.LineBasicMaterial({
+      color: eventHex,
+      transparent: true,
+      opacity
+    });
+    const line = new global.THREE.Line(geometry, material);
+    line.userData = userData;
     return line;
   }
 
@@ -284,8 +414,6 @@
     const earthDist = typeof radiusOverride === 'number' && !isNaN(radiusOverride)
       ? radiusOverride
       : getEarthDistance();
-    const r = earthDist * EVENT_LINE_RADIUS_FRACTION;
-    const labelRadius = earthDist * EVENT_LINE_LABEL_RADIUS_FRACTION;
     const objects = [];
     if (!lines || !Array.isArray(lines) || !layerConfig) return objects;
     const group = sceneContentGroup || null;
@@ -322,14 +450,20 @@
         ? calculateDateHeight(end.getFullYear(), end.getMonth(), end.getDate(), end.getHours())
         : startHeight;
 
-      const colorHex = parseColor(line.color != null ? line.color : layerConfig.color || '#00b4d8');
-      const midHeight = (startHeight + endHeight) / 2;
-
       const durationMs = end.getTime() - start.getTime();
       const durationDays = durationMs / (24 * 60 * 60 * 1000);
       const sameDay = start.getFullYear() === end.getFullYear() &&
         start.getMonth() === end.getMonth() && start.getDate() === end.getDate();
       const isShortEvent = sameDay || durationDays <= 1;
+
+      const midDate = new Date((start.getTime() + end.getTime()) / 2);
+      const r = durationDays > 7
+        ? getRadiusForDuration(durationDays, earthDist)
+        : getRadiusForTimeOfDay(midDate, earthDist, i % 4);
+      const labelRadius = r + EVENT_LINE_LABEL_RADIUS_OFFSET;
+
+      const colorHex = parseColor(line.color != null ? line.color : layerConfig.color || '#00b4d8');
+      const midHeight = (startHeight + endHeight) / 2;
 
       if (isShortEvent) {
         // Single marker at midpoint, only event name label (no arc, no start/end MM/DD)
@@ -350,7 +484,7 @@
         const midLabel = (line.label && String(line.label).trim()) ? String(line.label).trim() : (formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end)));
         const labelPos = getPos(midHeight, labelRadius);
         const midSprite = createEventLineLabelSprite(midLabel, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true);
-        midSprite.userData = { type: 'EventLineLabel', kind: 'mid' };
+        Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
         if (group) group.add(midSprite);
         objects.push(midSprite);
         continue;
@@ -372,14 +506,59 @@
         points = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
       }
 
-      const geometry = new global.THREE.BufferGeometry();
-      geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
-      const material = new global.THREE.LineBasicMaterial({
-        color: colorHex,
+      const byCategory = layerConfig.layerStylesByCategory || {};
+      const firstStyle = Object.keys(byCategory).length > 0 ? byCategory[Object.keys(byCategory)[0]] : {};
+      const lineStyle = (line.category && byCategory[line.category]) ? byCategory[line.category] : firstStyle;
+      const plotType = lineStyle.plotType ?? layerConfig.plotType ?? firstStyle.plotType ?? 'polygon3d';
+      const lineThickness = (lineStyle.lineThickness != null ? lineStyle.lineThickness : layerConfig.lineThickness) ?? (firstStyle.lineThickness != null ? firstStyle.lineThickness : 1);
+      const fillColorFromStyle = lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
+      const borderStyle = lineStyle.borderStyle ?? layerConfig.borderStyle ?? firstStyle.borderStyle ?? 'event';
+
+      const layerColorHex = parseColor(layerConfig.color || '#00b4d8');
+      const eventColorHex = parseColor(line.color != null ? line.color : layerConfig.color || '#00b4d8');
+      const fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (line.color != null ? parseColor(line.color) : layerColorHex);
+      const opacity = (lineStyle.opacity != null ? lineStyle.opacity : layerConfig.opacity) ?? 0.7;
+      const isLongTerm = durationDays > 7;
+      const showTube = isLongTerm && plotType !== 'lines' && points.length >= 9 && global.THREE.CatmullRomCurve3 && global.THREE.TubeGeometry;
+
+      if (showTube) {
+        const vec3s = [];
+        for (let k = 0; k < points.length; k += 3) {
+          vec3s.push(new global.THREE.Vector3(points[k], points[k + 1], points[k + 2]));
+        }
+        const curve = new global.THREE.CatmullRomCurve3(vec3s);
+        const tubeRadius = Math.max(0.3, Math.min(2, 0.4 * lineThickness));
+        const tubeGeometry = new global.THREE.TubeGeometry(curve, Math.max(16, Math.min(48, Math.floor(durationDays))), tubeRadius, 8, false);
+        const tubeMaterial = new global.THREE.MeshBasicMaterial({
+          color: fillHex,
+          transparent: true,
+          opacity: opacity * 0.6,
+          side: global.THREE.DoubleSide
+        });
+        const tubeMesh = new global.THREE.Mesh(tubeGeometry, tubeMaterial);
+        if (plotType === 'polygon2d') tubeMesh.scale.y = 0.02;
+        tubeMesh.userData = {
+          layerId: layerConfig.id,
+          type: 'EventLine',
+          start,
+          end,
+          label: line.label || null,
+          index: i,
+          longTermFill: true
+        };
+        if (group) group.add(tubeMesh);
+        objects.push(tubeMesh);
+      }
+
+      const outlineColor = borderStyle === 'event' ? eventColorHex : (borderStyle === 'layer' ? layerColorHex : eventColorHex);
+      const lineGeometry = new global.THREE.BufferGeometry();
+      lineGeometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
+      const lineMaterial = new global.THREE.LineBasicMaterial({
+        color: outlineColor,
         transparent: true,
-        opacity: layerConfig.opacity != null ? layerConfig.opacity : 0.7
+        opacity: borderStyle === 'none' ? 0 : opacity
       });
-      const lineObj = new global.THREE.Line(geometry, material);
+      const lineObj = new global.THREE.Line(lineGeometry, lineMaterial);
       lineObj.userData = {
         layerId: layerConfig.id,
         type: 'EventLine',
@@ -396,18 +575,18 @@
       const midPos = getPos(midHeight, labelRadius);
 
       const startSprite = createEventLineLabelSprite(formatMMDD(start), colorHex, startPos.x, startPos.y, startPos.z, startEndScale, false);
-      startSprite.userData = { type: 'EventLineLabel', kind: 'start' };
+      Object.assign(startSprite.userData, { type: 'EventLineLabel', kind: 'start' });
       if (group) group.add(startSprite);
       objects.push(startSprite);
 
       const endSprite = createEventLineLabelSprite(formatMMDD(end), colorHex, endPos.x, endPos.y, endPos.z, startEndScale, false);
-      endSprite.userData = { type: 'EventLineLabel', kind: 'end' };
+      Object.assign(endSprite.userData, { type: 'EventLineLabel', kind: 'end' });
       if (group) group.add(endSprite);
       objects.push(endSprite);
 
       const midLabel = (line.label && String(line.label).trim()) ? String(line.label).trim() : (formatMMDD(start) + ' – ' + formatMMDD(end));
       const midSprite = createEventLineLabelSprite(midLabel, colorHex, midPos.x, midPos.y, midPos.z, nameScale, true);
-      midSprite.userData = { type: 'EventLineLabel', kind: 'mid' };
+      Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
       if (group) group.add(midSprite);
       objects.push(midSprite);
     }
@@ -422,15 +601,27 @@
    * @param {THREE.Scene|null} scene - Scene (unused for now, for API compatibility)
    * @returns {Array<THREE.Object3D>} Created objects (meshes/lines) with userData.type === 'EventObject'
    */
+  function getEventCategory(event) {
+    const c = event.category ?? (Array.isArray(event.categories) && event.categories[0]);
+    return (c != null && String(c).trim()) ? String(c).trim() : 'Default';
+  }
+
   function createEventObjects(events, layerConfig, sceneContentGroup, scene) {
     const objects = [];
     if (!events || !layerConfig) return objects;
     const group = sceneContentGroup || null;
+    const byCategory = layerConfig.layerStylesByCategory || {};
 
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
+      const category = getEventCategory(event);
+      const styleOverride = byCategory[category];
+      if (styleOverride && styleOverride.visible === false) continue;
+      const effectiveConfig = styleOverride
+        ? { ...layerConfig, ...styleOverride, layerStylesByCategory: undefined }
+        : { ...layerConfig, layerStylesByCategory: undefined };
       const hasEnd = !!getEventEnd(event);
-      const obj = hasEnd ? createEventWorldline(event, layerConfig) : createEventMarker(event, layerConfig);
+      const obj = hasEnd ? createEventWorldline(event, effectiveConfig) : createEventMarker(event, effectiveConfig);
       if (obj) {
         if (group) group.add(obj);
         objects.push(obj);

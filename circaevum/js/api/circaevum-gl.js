@@ -44,12 +44,14 @@ class CircaevumGL {
     this.eventLines = new Map(); // layerId -> Array<{ start, end, label?, color? }>
     this._eventLineColorIndex = 0; // cycle through palette when color not specified
     this.eventHandlers = new Map(); // eventType -> [callbacks]
+    this.layerStylesByCategory = {}; // from wrapper options.layerStyles; category name -> { color, plotType, ... }
     
     // Core scene components (will be initialized)
     this.scene = null;
     this.camera = null;
     this.renderer = null;
     this.sceneContentGroup = null;
+    this.flattenableGroup = null; // Group that is scaled when flatten view is on (from main.js)
     
     // Initialize the scene
     this._initialize();
@@ -77,6 +79,10 @@ class CircaevumGL {
       this.camera = camera;
       this.renderer = renderer;
       this.sceneContentGroup = sceneContentGroup || null;
+      // Prefer flattenableGroup for anything that should squash with the time axis
+      if (typeof flattenableGroup !== 'undefined' && flattenableGroup) {
+        this.flattenableGroup = flattenableGroup;
+      }
       this._setupEventListeners();
       return;
     }
@@ -326,7 +332,8 @@ class CircaevumGL {
         start,
         end,
         label: ln.label != null ? ln.label : null,
-        color
+        color,
+        category: ln.category != null ? ln.category : 'Default'
       };
     }).filter(ln => !isNaN(ln.start.getTime()) && !isNaN(ln.end.getTime()) && ln.end > ln.start);
     this.eventLines.set(layerId, existing.concat(normalized));
@@ -403,6 +410,9 @@ class CircaevumGL {
    * @param {Object} options - Optional: { sessionId?: string } e.g. { sessionId: '26Q1W01' }
    */
   ingestEvents(layerId, events, options = {}) {
+    if (options.layerStyles && typeof options.layerStyles === 'object') {
+      this.layerStylesByCategory = options.layerStyles;
+    }
     if (!this.layers.has(layerId)) {
       this.addLayer(layerId, {
         name: options.sessionId ? `Session ${options.sessionId}` : layerId,
@@ -419,9 +429,9 @@ class CircaevumGL {
 
   /**
    * Get EventObject descriptors for a layer (for API consumers; no Three.js refs).
-   * Each descriptor has: uid, summary, start, end, layerId.
+   * Each descriptor has: uid, summary, start, end, layerId, color?, key?, dtstart?, dtend?, etc.
    * @param {string} layerId - Layer identifier
-   * @returns {Array<{ uid: string, summary: string|null, start: Date|null, end: Date|null, layerId: string }>}
+   * @returns {Array<{ uid: string, summary: string|null, start: Date|null, end: Date|null, layerId: string, color?: string, key?: string }>}
    */
   getEventObjects(layerId) {
     const events = this.events.get(layerId) || [];
@@ -478,7 +488,22 @@ class CircaevumGL {
           }
         }
       }
-      list.push({ uid, summary, start, end, layerId });
+      const color = e.color ?? e.colorId ?? null;
+      const category = (e.category ?? (Array.isArray(e.categories) && e.categories[0]) ?? 'Default');
+      list.push({
+        uid,
+        summary,
+        start,
+        end,
+        layerId,
+        category: category || 'Default',
+        color: color || undefined,
+        key: e.key,
+        description: e.description,
+        location: e.location,
+        dtstart: e.dtstart,
+        dtend: e.dtend
+      });
     }
     return list;
   }
@@ -534,7 +559,8 @@ class CircaevumGL {
   }
 
   /**
-   * Auto-zoom to fit a layer's events
+   * Auto-zoom to fit a layer's events. Uses full span (min of all starts, max of all ends) so
+   * long-term events get zoom 2/3, and focuses on the midpoint of that span.
    * @param {string} layerId - Layer identifier
    */
   fitToLayer(layerId) {
@@ -544,45 +570,57 @@ class CircaevumGL {
       return;
     }
 
-    // Calculate time range from VEVENT format
-    const times = events
-      .map(e => {
-        // Handle VEVENT format
-        if (e instanceof VEvent) {
-          return e.getStartDate();
-        }
-        // Handle VEVENT JSON format
-        if (e.dtstart) {
-          if (e.dtstart.dateTime) return new Date(e.dtstart.dateTime);
-          if (e.dtstart.date) return new Date(e.dtstart.date + 'T00:00:00Z');
-        }
-        // Legacy format support
-        const start = e.startTime || e.start || e.date;
-        return start instanceof Date ? start : new Date(start);
-      })
-      .filter(d => d && !isNaN(d.getTime()))
-      .sort((a, b) => a - b);
+    const getStart = (e) => {
+      if (typeof VEvent !== 'undefined' && e instanceof VEvent) return e.getStartDate();
+      if (e.dtstart) {
+        if (e.dtstart.dateTime) return new Date(e.dtstart.dateTime);
+        if (e.dtstart.date) return new Date(e.dtstart.date + 'T00:00:00Z');
+      }
+      const s = e.startTime || e.start || e.date;
+      return s instanceof Date ? s : (s ? new Date(s) : null);
+    };
+    const getEnd = (e) => {
+      if (typeof VEvent !== 'undefined' && e instanceof VEvent) return e.getEndDate();
+      if (e.dtend) {
+        if (e.dtend.dateTime) return new Date(e.dtend.dateTime);
+        if (e.dtend.date) return new Date(e.dtend.date + 'T00:00:00Z');
+      }
+      const s = getStart(e);
+      if (e.endTime || e.end) {
+        const end = e.endTime || e.end;
+        return end instanceof Date ? end : new Date(end);
+      }
+      return s ? new Date(s.getTime() + 24 * 60 * 60 * 1000) : null;
+    };
 
-    if (times.length === 0) return;
+    let minStart = Infinity;
+    let maxEnd = -Infinity;
+    for (const e of events) {
+      const start = getStart(e);
+      const end = getEnd(e);
+      if (start && !isNaN(start.getTime())) minStart = Math.min(minStart, start.getTime());
+      if (end && !isNaN(end.getTime())) maxEnd = Math.max(maxEnd, end.getTime());
+    }
+    if (minStart === Infinity || maxEnd === -Infinity) return;
+    if (maxEnd < minStart) maxEnd = minStart + 24 * 60 * 60 * 1000;
 
-    const startTime = times[0];
-    const endTime = times[times.length - 1];
-    const duration = endTime - startTime;
-
-    // Determine appropriate zoom level based on duration
+    const startTime = new Date(minStart);
+    const endTime = new Date(maxEnd);
+    const duration = maxEnd - minStart;
     const days = duration / (1000 * 60 * 60 * 24);
-    let zoomLevel = 2; // Default to decade
-    
-    if (days <= 1) zoomLevel = 9; // Clock view
-    else if (days <= 7) zoomLevel = 8; // Day view
-    else if (days <= 30) zoomLevel = 7; // Week view
-    else if (days <= 90) zoomLevel = 5; // Month view
-    else if (days <= 365) zoomLevel = 4; // Quarter view
-    else if (days <= 365 * 10) zoomLevel = 3; // Year view
-    else zoomLevel = 2; // Decade view
 
+    let zoomLevel = 2;
+    if (days <= 1) zoomLevel = 9;
+    else if (days <= 7) zoomLevel = 8;
+    else if (days <= 30) zoomLevel = 7;
+    else if (days <= 90) zoomLevel = 5;
+    else if (days <= 365) zoomLevel = 4;
+    else if (days <= 365 * 10) zoomLevel = 3;
+    else zoomLevel = 2;
+
+    const midTime = new Date((minStart + maxEnd) / 2);
     this.setZoomLevel(zoomLevel);
-    this.navigateToTime(startTime);
+    this.navigateToTime(midTime);
   }
 
   /**
@@ -685,12 +723,21 @@ class CircaevumGL {
 
     const allObjects = [];
 
+    // Decide which scene group to attach to: flattenableGroup flattens with time markers, else fallback.
+    const targetGroup = this.flattenableGroup || this.sceneContentGroup;
+
+    // Per-category styles from wrapper (layer name -> style); apply when rendering each event
+    const layerConfigWithStyles = {
+      ...layer,
+      layerStylesByCategory: this.layerStylesByCategory || {}
+    };
+
     // Create event objects using event renderer
     if (typeof EventRenderer !== 'undefined' && EventRenderer.createEventObjects) {
       const objects = EventRenderer.createEventObjects(
         filteredEvents,
-        layer,
-        this.sceneContentGroup,
+        layerConfigWithStyles,
+        targetGroup,
         this.scene
       );
       allObjects.push(...objects);
@@ -701,8 +748,8 @@ class CircaevumGL {
     if (lines.length > 0 && typeof EventRenderer !== 'undefined' && EventRenderer.createEventLineObjects) {
       const lineObjects = EventRenderer.createEventLineObjects(
         lines,
-        layer,
-        this.sceneContentGroup
+        layerConfigWithStyles,
+        targetGroup
       );
       allObjects.push(...lineObjects);
     }
@@ -807,16 +854,20 @@ class CircaevumGL {
     if (!this._layerObjects || !this._layerObjects.has(layerId)) return
     const objects = this._layerObjects.get(layerId)
     const highlight = uid != null && String(uid).trim() !== ''
-    objects.forEach((obj) => {
-      const match = obj.userData && obj.userData.eventUid === uid
-      if (obj.material) {
-        if (obj.material.emissiveIntensity !== undefined) {
-          obj.material.emissiveIntensity = match && highlight ? 1 : 0.4
+    function setHighlight(o, match, highlight) {
+      if (o.material) {
+        if (o.material.emissiveIntensity !== undefined) {
+          o.material.emissiveIntensity = match && highlight ? 1 : 0.4
         }
-        if (obj.material.opacity !== undefined) {
-          obj.material.opacity = match && highlight ? 1 : (obj.userData._baseOpacity != null ? obj.userData._baseOpacity : 0.7)
+        if (o.material.opacity !== undefined) {
+          o.material.opacity = match && highlight ? 1 : (o.userData._baseOpacity != null ? o.userData._baseOpacity : 0.7)
         }
       }
+      if (o.children) o.children.forEach((c) => setHighlight(c, match, highlight))
+    }
+    objects.forEach((obj) => {
+      const match = obj.userData && obj.userData.eventUid === uid
+      setHighlight(obj, match, highlight)
     })
   }
 
@@ -830,19 +881,19 @@ class CircaevumGL {
     }
 
     const objects = this._layerObjects.get(layerId);
+    function disposeObject(o) {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+        else o.material.dispose();
+      }
+      if (o.children && o.children.length) o.children.slice().forEach(disposeObject);
+    }
     objects.forEach(obj => {
-      if (this.sceneContentGroup && obj.parent === this.sceneContentGroup) {
-        this.sceneContentGroup.remove(obj);
+      if (obj.parent && typeof obj.parent.remove === 'function') {
+        obj.parent.remove(obj);
       }
-      // Dispose geometry and materials if needed
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) {
-        if (Array.isArray(obj.material)) {
-          obj.material.forEach(m => m.dispose());
-        } else {
-          obj.material.dispose();
-        }
-      }
+      disposeObject(obj);
     });
 
     this._layerObjects.delete(layerId);
