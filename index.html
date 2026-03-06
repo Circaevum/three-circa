@@ -63,6 +63,7 @@
         </div>
         <div class="event-list-panel-header-actions">
             <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
+            <button type="button" id="events-panel-draw-all" class="strip-btn">Draw all</button>
             <button type="button" id="test-event-lines-btn" class="strip-btn">Test event lines</button>
         </div>
         <div id="events-panel-list" class="event-list-panel-list"></div>
@@ -415,9 +416,10 @@
           };
 
           var fullAppUrl = window.CIRCAEVUM_FULL_APP_URL;
+          var isEmbeddedViewer = !!window.CIRCAEVUM_VIEWER_MODE;
           var footerEl = document.getElementById('event-list-panel-footer');
           var fullAppLink = document.getElementById('open-full-app-link');
-          if (fullAppUrl && footerEl && fullAppLink) {
+          if (fullAppUrl && footerEl && fullAppLink && !isEmbeddedViewer) {
             footerEl.style.display = 'block';
             function updateFullAppLink() {
               var state = typeof window.getShareState === 'function' ? window.getShareState() : null;
@@ -431,6 +433,8 @@
             });
             var refreshBtn = document.getElementById('events-panel-refresh');
             if (refreshBtn) refreshBtn.addEventListener('click', updateFullAppLink);
+          } else if (footerEl) {
+            footerEl.style.display = 'none';
           }
           /* Hamburger: Log in (→ app), Event List */
           if (navAccountBtn && navDropdown) {
@@ -459,12 +463,15 @@
             });
           }
 
+          var USER_EVENTS_LAYER = 'user-events';
+
           function formatDate(d) {
-            if (!d || !(d instanceof Date)) return '—';
+            if (!d || !(d instanceof Date) || isNaN(d.getTime())) return '—';
             return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
           }
 
           function oneDayLater(d) {
+            if (!d || !(d instanceof Date) || isNaN(d.getTime())) return null;
             var x = new Date(d.getTime());
             x.setDate(x.getDate() + 1);
             return x;
@@ -483,13 +490,31 @@
           function navigateToEvent(start, end) {
             var s = start instanceof Date ? start : new Date(start);
             var e = end instanceof Date ? end : new Date(end);
+            if (!s || isNaN(s.getTime())) return;
+            if (!e || isNaN(e.getTime()) || e <= s) e = oneDayLater(s) || s;
             var mid = new Date((s.getTime() + e.getTime()) / 2);
             var days = (e.getTime() - s.getTime()) / (24 * 60 * 60 * 1000);
-            var zoom = zoomLevelForSpanDays(Math.max(0.001, days));
+            var spanDays = Math.max(0.001, days);
+            // Default: zoom into Day / Clock (8) for typical events; use span-based zoom only for long-term events.
+            var zoom = spanDays > 365 ? zoomLevelForSpanDays(spanDays) : 8;
             if (typeof setZoomLevel === 'function') setZoomLevel(zoom, mid);
           }
 
-          function refreshEventsList() {
+          var eventGroupState = { account: true, other: true };
+
+          function getCurrentQuarterBounds() {
+            var ref = (typeof getSelectedDateTime === 'function') ? getSelectedDateTime() : new Date();
+            if (!ref || !(ref instanceof Date) || isNaN(ref.getTime())) ref = new Date();
+            var year = ref.getFullYear();
+            var month = ref.getMonth();
+            var quarterIndex = Math.floor(month / 3); // 0,1,2,3
+            var startMonth = quarterIndex * 3;
+            var start = new Date(Date.UTC(year, startMonth, 1, 0, 0, 0));
+            var end = new Date(Date.UTC(year, startMonth + 3, 1, 0, 0, 0));
+            return { start: start, end: end };
+          }
+
+        function refreshEventsList(drawAll) {
             var listEl = document.getElementById('events-panel-list');
             if (!listEl) return;
             listEl.innerHTML = '';
@@ -498,25 +523,33 @@
               var c = document.getElementById('canvas-container');
               if (c) { window.circaevumGL = new window.CircaevumGL(c, { zoomLevel: 2 }); gl = window.circaevumGL; }
             }
-            if (!gl || typeof gl.getLayerIds !== 'function') {
+            if (!gl || typeof gl.getEventObjects !== 'function') {
               listEl.innerHTML = '<p class="event-horizon-empty">Circaevum GL not available. Reload the page and try again.</p>';
               return;
             }
-            var layerIds = gl.getLayerIds();
             var events = [];
             var lines = [];
-            layerIds.forEach(function(lid) {
-              (gl.getEventObjects(lid) || []).forEach(function(o) { events.push({ layerId: lid, ev: o }); });
-              (gl.getEventLines(lid) || []).forEach(function(ln) { lines.push({ layerId: lid, start: ln.start, end: ln.end, label: ln.label }); });
+            var EVENT_LAYER_ID = USER_EVENTS_LAYER || 'user-events';
+            (gl.getEventObjects(EVENT_LAYER_ID) || []).forEach(function(o) { events.push({ layerId: EVENT_LAYER_ID, ev: o }); });
+            // Always rebuild lines from GL state; clear any previously drawn lines on this helper layer.
+            if (typeof gl.removeEventLines === 'function') {
+              gl.removeEventLines('event-lines');
+            }
+            (gl.getEventLines('event-lines') || []).forEach(function(ln) {
+              lines.push({ layerId: 'event-lines', start: ln.start, end: ln.end, label: ln.label });
             });
             if (events.length === 0 && lines.length === 0) {
               listEl.innerHTML = '<p class="event-horizon-empty">No events or lines yet. Click <strong>Test event lines</strong> in the nav to add sample lines, then Refresh.</p>';
               return;
             }
+
             events.forEach(function(item) {
               var ev = item.ev;
               var start = ev.start;
               var end = ev.end;
+              if (!start || !(start instanceof Date) || isNaN(start.getTime())) {
+                return;
+              }
               var endForLine = end && end > start ? end : oneDayLater(start);
               var endForNav = end && end > start ? end : endForLine;
               var name = ev.summary || ev.uid || 'Event';
@@ -526,19 +559,47 @@
               row.title = 'Click to focus on this event';
               row.innerHTML = '<div class="event-title">' + name + '</div>' +
                 '<div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' +
-                '<button type="button" class="events-panel-draw-line draw-line-btn">Draw line</button>';
+                '<button type="button" class="events-panel-draw-line draw-line-btn">Draw line</button>' +
+                '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
               row.onclick = function() { navigateToEvent(start, endForNav); };
               var btn = row.querySelector('.events-panel-draw-line');
+              var editBtn = row.querySelector('.events-panel-edit-btn');
+              if (editBtn && window.self !== window.top && window.parent.postMessage) {
+                editBtn.onclick = function(e) {
+                  e.stopPropagation();
+                  var payload = {
+                    uid: ev.uid || ev.id,
+                    key: ev.key,
+                    summary: ev.summary || name,
+                    description: ev.description || null,
+                    location: ev.location || null,
+                    color: ev.color || ev.colorId || null,
+                    layerId: item.layerId || 'user-events',
+                    dtstart: ev.dtstart || { dateTime: start.toISOString() },
+                    dtend: ev.dtend || (end && end > start ? { dateTime: end.toISOString() } : { dateTime: new Date(start.getTime() + 86400000).toISOString() })
+                  };
+                  window.parent.postMessage({ type: 'CIRCAEVUM_EDIT_EVENT', event: payload }, '*');
+                };
+              } else if (editBtn) editBtn.style.display = 'none';
+              function drawLineOnce() {
+                var lab = String(name).slice(0, 32);
+                var lineColor = ev.color || ev.colorId || undefined;
+                var cat = ev.category || 'Default';
+                gl.addEventLines('event-lines', [{ start: start, end: endForLine, label: lab, color: lineColor, category: cat }]);
+                btn.textContent = 'Drawn';
+                btn.disabled = true;
+                btn.classList.add('drawn');
+              }
               btn.onclick = function(e) {
                 e.stopPropagation();
-                var lab = String(name).slice(0, 32);
-                gl.addEventLines('event-lines', [{ start: start, end: endForLine, label: lab }]);
-                this.textContent = 'Drawn';
-                this.disabled = true;
-                this.classList.add('drawn');
+                drawLineOnce();
               };
+              if (drawAll) {
+                drawLineOnce();
+              }
               listEl.appendChild(row);
             });
+
             lines.forEach(function(item) {
               var start = item.start;
               var end = item.end;
@@ -556,7 +617,11 @@
           }
 
           var refreshBtn = document.getElementById('events-panel-refresh');
-          if (refreshBtn) refreshBtn.onclick = refreshEventsList;
+          if (refreshBtn) refreshBtn.onclick = function() { refreshEventsList(false); };
+
+          var drawAllBtn = document.getElementById('events-panel-draw-all');
+          if (drawAllBtn) drawAllBtn.onclick = function() { refreshEventsList(true); };
+          window.refreshEventsList = refreshEventsList;
         });
       })();
     </script>
@@ -679,11 +744,22 @@
           var data = event.data;
           if (!data || typeof data !== 'object' || !data.type) return;
           if (data.type === 'CIRCAEVUM_INGEST_EVENTS' && data.layerId && Array.isArray(data.events)) {
+            try {
+              console.log('[Circaevum GL] Ingesting events from wrapper:', data.layerId, 'count=', data.events.length);
+            } catch (e) {}
             gl.ingestEvents(data.layerId, data.events, data.options || {});
+            // Do not auto fitToLayer here – it would jump selected time to earliest event (e.g. May 2025). Caller may send CIRCAEVUM_FIT_VIEW when focusing on a layer.
+          } else if (data.type === 'CIRCAEVUM_FIT_VIEW' && data.focus != null && typeof data.zoom === 'number') {
+            if (typeof gl.setZoomLevel === 'function') gl.setZoomLevel(data.zoom);
+            if (typeof gl.navigateToTime === 'function') gl.navigateToTime(data.focus);
           } else if (data.type === 'CIRCAEVUM_CLEAR_EVENTS' && data.layerId) {
             gl.updateEvents(data.layerId, []);
           } else if (data.type === 'CIRCAEVUM_OPEN_EVENT_LIST' && typeof window.openEventListPanel === 'function') {
             window.openEventListPanel();
+          } else if (data.type === 'CIRCAEVUM_HIGHLIGHT_EVENT' && typeof gl.setEventHighlight === 'function') {
+            gl.setEventHighlight(data.layerId || 'user-events', data.uid != null ? data.uid : null);
+          } else if (data.type === 'CIRCAEVUM_DRAW_ALL_EVENTS' && typeof window.refreshEventsList === 'function') {
+            window.refreshEventsList(true);
           }
         });
         if (window.self !== window.top && window.parent.postMessage) {
@@ -692,6 +768,17 @@
               window.parent.postMessage({ type: 'CIRCAEVUM_THEME', lightMode: document.body.classList.contains('light-mode') }, '*');
             } catch (e) {}
           }, 1200);
+        }
+
+        // Monkey-patch setZoomLevel to notify parent wrapper about zoom changes.
+        if (window.self !== window.top && window.parent.postMessage && typeof window.setZoomLevel === 'function') {
+          var originalSetZoomLevel = window.setZoomLevel;
+          window.setZoomLevel = function(level) {
+            originalSetZoomLevel(level);
+            try {
+              window.parent.postMessage({ type: 'CIRCAEVUM_ZOOM', level: level }, '*');
+            } catch (e) {}
+          };
         }
       })();
     </script>

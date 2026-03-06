@@ -2015,19 +2015,27 @@ function animate(time, frame) {
     if (typeof flattenableGroup !== 'undefined' && flattenableGroup && typeof focusPoint !== 'undefined' && focusPoint) {
         flattenableGroup.scale.set(1, yScale, 1);
         flattenableGroup.position.y = focusPoint.y * (1 - yScale); // plane of flatten passes through selected time
-        // Keep text sprites from being squashed: counteract parent Y scale so they billboard at correct size
+        // Counter-scale only labels and point markers so they stay visible; let event tubes/lines flatten with the scene.
         if (currentFlattenAmount > 0.01) {
             flattenableGroup.traverse((obj) => {
-                if (obj.isSprite && obj.userData.baseScale) {
+                const hasBaseScale = obj.userData && obj.userData.baseScale;
+                const isBillboard = obj.isSprite || obj.userData.type === 'EventLineLabel';
+                if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
                     const b = obj.userData.baseScale;
                     obj.scale.set(b.x, b.y / yScale, b.z);
+                } else if (obj.userData.immuneToFlatten || obj.userData.type === 'EventLineMarker') {
+                    obj.scale.set(1, 1 / yScale, 1);
                 }
             });
         } else {
             flattenableGroup.traverse((obj) => {
-                if (obj.isSprite && obj.userData.baseScale) {
+                const hasBaseScale = obj.userData && obj.userData.baseScale;
+                const isBillboard = obj.isSprite || obj.userData.type === 'EventLineLabel';
+                if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
                     const b = obj.userData.baseScale;
                     obj.scale.set(b.x, b.y, b.z);
+                } else if (obj.userData.immuneToFlatten || obj.userData.type === 'EventLineMarker') {
+                    obj.scale.set(1, 1, 1);
                 }
             });
         }
