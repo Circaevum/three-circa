@@ -213,7 +213,7 @@ function createStarField(dependencies = {}) {
     
     const starMaterial = new THREE.PointsMaterial({
         color: SCENE_CONFIG.starColor || 0xffffff,
-        size: 1,
+        size: 1.5,
         sizeAttenuation: false
     });
     

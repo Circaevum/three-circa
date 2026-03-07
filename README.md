@@ -32,10 +32,11 @@ Open `http://localhost:8080` for the GL with navbar, or use the wrapper’s `npm
 
 ## WebXR (VR / AR)
 
-The GL can run in **WebXR** as a “windowed” view: the 3D scene is drawn on a floating panel in front of you (render-to-texture). Zoom and time are controlled by the same 2D logic; the XR slider in the side panel adjusts zoom.
+The GL can run in **WebXR** (immersive VR): you’re placed in the scene with the solar system in front of you. Zoom is adjustable via the in-scene XR slider.
 
-- **Passthrough (see-through):** On devices that support **immersive-ar** (e.g. many Android AR browsers), the area around the window can be passthrough. On **Apple Vision Pro**, Safari currently only supports **immersive-vr** (opaque). The session’s `environmentBlendMode` is then `opaque`, so the background cannot be see-through; the app uses a dark room background instead of black.
-- **“Windowed app” on Vision Pro:** The system’s own “windowed” experience is the Safari window (the webpage) in your space. When you tap “Enter WebXR”, the app goes full VR and shows the GL on a floating quad inside that VR space. True passthrough would require Safari to support the WebXR AR module on visionOS (not yet available).
+- **Secure context required:** WebXR only runs on **HTTPS** (or `localhost`). If you see “WebXR needs a secure page”, load the app from an HTTPS URL (e.g. your deployed site) or use a tunnel for local testing (see below).
+- **Testing on a headset without deploying:** Run the app on your Mac, then expose it over HTTPS and open that URL in the headset’s browser. With [ngrok](https://ngrok.com): install once with `brew install ngrok` (or download from ngrok.com), then run `npx serve . -p 8080` in one terminal and `ngrok http 8080` in another—open the `https://` URL ngrok prints in Safari on the headset.
+- **Apple Vision Pro:** Safari on visionOS supports **immersive-vr** only (opaque). Open the page in **Safari on the headset** at an HTTPS URL; there is no “connect headset to Mac” step.
 
 **References:**
 

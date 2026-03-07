@@ -434,12 +434,11 @@ function createStarField() {
     }
     
     const starGeometry = new THREE.BufferGeometry();
-    const inXR = typeof xrAdapter !== 'undefined' && xrAdapter && xrAdapter.isPresenting();
-    // In XR, always use fixed size (no attenuation) so stars don't blow up with distance
+    // Fixed size (no distance attenuation) so stars stay consistent in 2D and XR and never blow up
     const starMaterial = new THREE.PointsMaterial({
         color: isLightMode ? 0x333333 : 0x8ecae6,
-        size: inXR ? 1.5 : 2,
-        sizeAttenuation: !inXR,
+        size: 1.5,
+        sizeAttenuation: false,
         transparent: true,
         opacity: isLightMode ? 0.3 : 0.8
     });
@@ -1279,30 +1278,24 @@ function initControls() {
     const flattenToggleBtn = document.getElementById('flatten-toggle');
     if (flattenToggleBtn) flattenToggleBtn.addEventListener('click', toggleFlatten);
     
-    // WebXR toggle (using adapter system)
+    // WebXR toggle (using adapter system) – show whenever adapter loads so user can try (e.g. on headset over HTTP)
     const webxrToggle = document.getElementById('webxr-toggle');
     if (webxrToggle) {
-        const inViewerMode = !!(window.CIRCAEVUM_VIEWER_MODE || document.body.classList.contains('viewer-no-nav'));
-        webxrToggle.style.display = 'none';
-        
         if (typeof WebXRAdapter !== 'undefined') {
             xrAdapter = new WebXRAdapter(scene, camera, renderer, sceneContentGroup);
             webxrToggle.addEventListener('click', toggleWebXR);
-            
+            webxrToggle.style.display = 'inline-flex';
             xrAdapter.isSupported().then((supported) => {
                 if (supported) {
-                    webxrToggle.style.display = 'inline-flex';
                     console.log('WebXR: Supported - button enabled');
-                } else if (!inViewerMode) {
-                    console.warn('WebXR: Not supported on this device/browser');
+                } else {
+                    console.warn('WebXR: Not supported on this device/browser (e.g. needs HTTPS or no headset)');
                 }
             }).catch((error) => {
                 console.error('WebXR: Error checking support', error);
             });
-            if (inViewerMode) {
-                webxrToggle.style.display = 'inline-flex';
-            }
         } else {
+            webxrToggle.style.display = 'none';
             console.warn('WebXR: WebXRAdapter not loaded');
         }
     }
@@ -1530,10 +1523,7 @@ function toggleWebXR() {
     
     if (xrAdapter.isPresenting()) {
         // Exit WebXR
-        if (stars && stars.material) {
-            stars.material.sizeAttenuation = true;
-            stars.material.size = 2;
-        }
+        // Stars stay fixed-size (no change on XR exit)
         if (xrUI) {
             xrUI.hide();
         }
@@ -1601,23 +1591,27 @@ function toggleWebXR() {
                 contentCamera.lookAt(focusPoint);
             }
             
-            // Prevent stars from blowing up in immersive XR (windowed mode uses 2D view on texture, no fix needed)
-            if (stars && stars.material && !xrAdapter.windowedMode) {
-                stars.material.sizeAttenuation = false;
-                stars.material.size = 1.5;
-            }
+            // Stars are always fixed-size (no XR override needed)
             
         });
+        function onXRError(error) {
+            console.error('Failed to enter XR:', error);
+            const msg = (error && error.message) ? String(error.message) : '';
+            const needSecure = typeof window !== 'undefined' && !window.isSecureContext;
+            let userMsg = 'Could not start VR. ';
+            if (needSecure || /secure|https|insecure/i.test(msg)) {
+                userMsg += 'WebXR needs a secure page: use https:// or open from the headset’s browser (e.g. Safari on Vision Pro) at an HTTPS URL.';
+            } else if (msg) {
+                userMsg += msg;
+            } else {
+                userMsg += 'Use Safari on the headset (Vision Pro) or ensure the headset is connected and WebXR is enabled in browser settings.';
+            }
+            alert(userMsg);
+        }
         if (xrAdapter.windowedMode) {
-            tryEnterXR('immersive-ar').catch(() => tryEnterXR('immersive-vr')).catch((error) => {
-                console.error('Failed to enter XR:', error);
-                alert('Failed to enter VR mode. Make sure your headset is connected and WebXR is supported.');
-            });
+            tryEnterXR('immersive-ar').catch(() => tryEnterXR('immersive-vr')).catch(onXRError);
         } else {
-            tryEnterXR('immersive-vr').catch((error) => {
-                console.error('Failed to enter XR:', error);
-                alert('Failed to enter VR mode. Make sure your headset is connected and WebXR is supported.');
-            });
+            tryEnterXR('immersive-vr').catch(onXRError);
         }
     }
 }
@@ -2183,13 +2177,10 @@ function animate(time, frame) {
     if (inXRWindowed && contentCamera && xrAdapter._roomScene) {
         xrAdapter.renderWindowed(renderer, scene, contentCamera, camera);
     } else {
+        if (xrAdapter && xrAdapter.isPresenting() && !xrAdapter.windowedMode && typeof xrAdapter.applyScenePlacement === 'function') {
+            xrAdapter.applyScenePlacement();
+        }
         renderer.render(scene, camera);
-    }
-    // Keep stars from blowing up in XR: force fixed size every frame (covers recreation/timing)
-    const inXR = xrAdapter && xrAdapter.isPresenting();
-    if (inXR && stars && stars.material) {
-        stars.material.sizeAttenuation = false;
-        stars.material.size = 1.5;
     }
 }
 

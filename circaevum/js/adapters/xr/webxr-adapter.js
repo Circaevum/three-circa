@@ -30,12 +30,15 @@ class WebXRAdapter {
     this._windowHeight = 1080;
 
     // XR scene configuration (used only for immersive mode)
+    // Viewer at origin; scene is placed in front and scaled. Mars orbit radius in scene units = 76.
     this.config = {
-      scaleFactor: 0.002,
+      scaleFactor: 0.012,
       eyeLevel: 1.6,
-      viewingDistance: -6.0,
+      viewingDistance: -2.2,
+      planeBelowViewer: 0.12,
+      viewOffsetX: -(76 * 0.012),
       minScale: 0.0005,
-      maxScale: 0.01
+      maxScale: 0.02
     };
   }
 
@@ -295,15 +298,18 @@ class WebXRAdapter {
     const scaleFactor = this.calculateOptimalScale(currentTimeHeight);
     this.sceneContentGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-    // Position scene for comfortable viewing
+    // Position scene: orbital plane slightly below viewer; offset X so we're at Mars orbit looking in
     const scaledCurrentHeight = currentTimeHeight * scaleFactor;
-    const heightOffset = this.config.eyeLevel - scaledCurrentHeight;
+    const planeBelow = typeof this.config.planeBelowViewer === 'number' ? this.config.planeBelowViewer : 0.12;
+    const heightOffset = -planeBelow - scaledCurrentHeight;
+    const offsetX = typeof this.config.viewOffsetX === 'number' ? this.config.viewOffsetX : 0;
 
-    this.sceneContentGroup.position.set(0, heightOffset, this.config.viewingDistance);
+    this.sceneContentGroup.position.set(offsetX, heightOffset, this.config.viewingDistance);
+    this._placement = { x: offsetX, y: heightOffset, z: this.config.viewingDistance, scale: scaleFactor };
 
     console.log('WebXR: Scene setup complete');
     console.log(`  Scale: ${scaleFactor.toFixed(4)}`);
-    console.log(`  Position: (0, ${heightOffset.toFixed(2)}, ${this.config.viewingDistance})`);
+    console.log(`  Position: (${offsetX.toFixed(2)}, ${heightOffset.toFixed(2)}, ${this.config.viewingDistance})`);
     console.log(`  Current time height (scaled): ${scaledCurrentHeight.toFixed(2)}m`);
 
     // Ensure all content is visible
@@ -339,9 +345,20 @@ class WebXRAdapter {
   }
 
   /**
+   * Re-apply cached scene placement (call each frame in XR so nothing overwrites it).
+   */
+  applyScenePlacement() {
+    if (!this.sceneContentGroup || !this._placement) return;
+    const p = this._placement;
+    this.sceneContentGroup.position.set(p.x, p.y, p.z);
+    this.sceneContentGroup.scale.setScalar(p.scale);
+  }
+
+  /**
    * Cleanup scene when exiting XR
    */
   cleanupScene() {
+    this._placement = null;
     if (this.sceneContentGroup) {
       this.sceneContentGroup.position.set(0, 0, 0);
       this.sceneContentGroup.scale.set(1, 1, 1);
