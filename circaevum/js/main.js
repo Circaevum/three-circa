@@ -1636,7 +1636,7 @@ function toggleWebXR() {
             }
             xrInputAdapter.init(session);
             
-            // XR UI panel (zoom slider) for hand tracking / AVP; in windowed mode add to room scene
+            // XR UI panel (zoom slider + icon buttons) for hand tracking / AVP; in windowed mode add to room scene
             if (typeof XRUI !== 'undefined') {
                 if (!xrUI) {
                     xrUI = new XRUI(scene, xrAdapter, {
@@ -1644,7 +1644,33 @@ function toggleWebXR() {
                             currentZoom = zoom;
                             createPlanets(currentZoom);
                         },
-                        getZoomLevel: () => currentZoom
+                        getZoomLevel: () => currentZoom,
+                        iconActions: {
+                            markersLines: toggleTimeMarkerLines,
+                            markersText: toggleTimeMarkerText,
+                            lightMode: toggleLightMode,
+                            circadian: toggleCircadianWorldline,
+                            flatten: toggleFlatten
+                        },
+                        getLayerState: {
+                            markersLines: () => showTimeMarkerLines,
+                            markersText: () => showTimeMarkerText,
+                            lightMode: () => isLightMode,
+                            circadian: () => circadianState !== 'off',
+                            flatten: () => flattenOn
+                        },
+                        getEventLayers: () => {
+                            const gl = typeof window !== 'undefined' && (window.circaevumGL || (window.getGL && window.getGL()));
+                            if (!gl || typeof gl.getLayerIds !== 'function') return [];
+                            return gl.getLayerIds().map((id) => {
+                                const l = gl.getLayer(id);
+                                return { id, name: (l && l.name) || id, visible: l ? l.visible !== false : true };
+                            });
+                        },
+                        setEventLayerVisibility: (layerId, visible) => {
+                            const gl = typeof window !== 'undefined' && (window.circaevumGL || (window.getGL && window.getGL()));
+                            if (gl && typeof gl.setLayerVisibility === 'function') gl.setLayerVisibility(layerId, visible);
+                        }
                     });
                 }
                 const roomScene = xrAdapter.windowedMode ? xrAdapter.getRoomScene() : null;

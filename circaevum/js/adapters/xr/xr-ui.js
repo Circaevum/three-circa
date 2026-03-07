@@ -15,30 +15,146 @@
 
   const ZOOM_MIN = 1;
   const ZOOM_MAX = 9;
-  const PANEL_WIDTH = 0.5;
-  const PANEL_HEIGHT = 0.18;
-  const TRACK_WIDTH = 0.38;
-  const TRACK_HEIGHT = 0.012;
-  const THUMB_SIZE = 0.04;
-  const SLIDER_Y = 0;
+  const PANEL_WIDTH = 0.72;
+  const PANEL_HEIGHT = 0.62;
+  const TRACK_WIDTH = 0.5;
+  const TRACK_HEIGHT = 0.014;
+  const THUMB_SIZE = 0.05;
+  const ICON_Y = 0.24;
+  const SLIDER_Y = 0.14;
+  const ICON_WIDTH = 0.1;
+  const ICON_HEIGHT = 0.1;
+  const ICON_GAP = 0.03;
+  const LABEL_HEIGHT_PX = 32;
+  const CANVAS_DPI = 2;
+  const LAYER_ROW_HEIGHT = 0.055;
+  const LAYER_ROW_WIDTH = 0.64;
+  const LAYER_ROW_GAP = 0.01;
+  const LAYERS_HEADER_HEIGHT = 0.04;
+
+  function makeButtonTexture(label, bgColorHex) {
+    var w = 128 * CANVAS_DPI;
+    var h = 128 * CANVAS_DPI;
+    var canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    var r = 12;
+    ctx.fillStyle = '#0a0e17';
+    ctx.strokeStyle = bgColorHex ? ('#' + bgColorHex.toString(16).padStart(6, '0')) : '#334155';
+    ctx.lineWidth = 3;
+    roundRect(ctx, 4, 4, w - 8, h - 8, r);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold ' + LABEL_HEIGHT_PX + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, w / 2, h / 2);
+    var tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  function makeSliderLabelTexture() {
+    var w = 256;
+    var h = 64;
+    var canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 28px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Zoom', w / 2, h / 2);
+    var tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  function makeLayerRowTexture(label, isOn) {
+    var w = 256;
+    var h = 64;
+    var canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = isOn ? '#1e3a5f' : '#0f172a';
+    ctx.strokeStyle = isOn ? '#0ea5e9' : '#475569';
+    ctx.lineWidth = 2;
+    roundRect(ctx, 2, 2, w - 4, h - 4, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 22px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 16, h / 2);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = isOn ? '#22c55e' : '#64748b';
+    ctx.fillText(isOn ? 'ON' : 'OFF', w - 16, h / 2);
+    var tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  function makeEventLayersHeaderTexture() {
+    var w = 256;
+    var h = 48;
+    var canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 24px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Event layers', 0, h / 2);
+    var tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  }
 
   /**
    * @param {THREE.Scene} scene
    * @param {object} xrAdapter - WebXRAdapter instance (session, referenceSpace)
-   * @param {object} callbacks - { setZoomLevel: (number) => void, getZoomLevel: () => number }
+   * @param {object} callbacks - { setZoomLevel, getZoomLevel, iconActions?, getLayerState?, getEventLayers?, setEventLayerVisibility? }
    */
   function XRUI(scene, xrAdapter, callbacks) {
     this.scene = scene;
     this.xrAdapter = xrAdapter;
     this.setZoomLevel = callbacks.setZoomLevel || (function () {});
     this.getZoomLevel = callbacks.getZoomLevel || (function () { return 2; });
+    this.iconActions = callbacks.iconActions || {};
+    this.getLayerState = callbacks.getLayerState || {};
+    this.getEventLayers = typeof callbacks.getEventLayers === 'function' ? callbacks.getEventLayers : function () { return []; };
+    this.setEventLayerVisibility = typeof callbacks.setEventLayerVisibility === 'function' ? callbacks.setEventLayerVisibility : function () {};
 
     this.group = null;
     this.trackMesh = null;
     this.thumbMesh = null;
+    this.buttonMeshes = [];
+    this.layerRows = [];
     this.trackHalfWidth = TRACK_WIDTH / 2;
     this.dragging = false;
     this.draggingSource = null;
+    this._sliderUsed = false;
+    this._pressedButton = null;
     this._selectStart = this._selectStart.bind(this);
     this._selectEnd = this._selectEnd.bind(this);
     this._tempOrigin = new THREE.Vector3();
@@ -56,6 +172,33 @@
     g.position.set(0.65, 1.5, -1.4);
     g.rotation.set(0, 0, 0);
 
+    var self = this;
+    var actionOrder = ['markersLines', 'markersText', 'lightMode', 'circadian', 'flatten'];
+    var iconLabels = { markersLines: 'Lines', markersText: 'Text', lightMode: 'Light', circadian: 'Cycle', flatten: 'Flat' };
+    var iconColors = { markersLines: 0x4a90e2, markersText: 0x94a3b8, lightMode: 0xfbbf24, circadian: 0x8b5cf6, flatten: 0x6ee7b7 };
+    var actions = actionOrder.filter(function (a) { return self.iconActions[a]; });
+    var numIcons = actions.length;
+    var totalIconWidth = numIcons * ICON_WIDTH + (numIcons - 1) * ICON_GAP;
+    var startX = -totalIconWidth / 2 + ICON_WIDTH / 2;
+
+    actions.forEach(function (action, i) {
+      var tex = makeButtonTexture(iconLabels[action] || action, iconColors[action]);
+      var geom = new THREE.PlaneGeometry(ICON_WIDTH, ICON_HEIGHT);
+      var mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        opacity: 0.95,
+        side: THREE.DoubleSide
+      });
+      var btn = new THREE.Mesh(geom, mat);
+      btn.position.set(startX + i * (ICON_WIDTH + ICON_GAP), ICON_Y, 0.002);
+      btn.userData.hitTarget = true;
+      btn.userData.xrButton = true;
+      btn.userData.action = action;
+      g.add(btn);
+      self.buttonMeshes.push(btn);
+    });
+
     const panelGeom = new THREE.PlaneGeometry(PANEL_WIDTH, PANEL_HEIGHT);
     const panelMat = new THREE.MeshBasicMaterial({
       color: 0x0a0e17,
@@ -65,7 +208,6 @@
     });
     const panel = new THREE.Mesh(panelGeom, panelMat);
     panel.position.set(0, 0, 0);
-    panel.rotation.x = -Math.PI / 2;
     panel.userData.hitTarget = true;
     g.add(panel);
 
@@ -73,7 +215,6 @@
     const trackMat = new THREE.MeshBasicMaterial({ color: 0x1e3a5f });
     this.trackMesh = new THREE.Mesh(trackGeom, trackMat);
     this.trackMesh.position.set(0, SLIDER_Y, 0.002);
-    this.trackMesh.rotation.x = -Math.PI / 2;
     this.trackMesh.userData.hitTarget = true;
     this.trackMesh.userData.sliderTrack = true;
     g.add(this.trackMesh);
@@ -82,26 +223,78 @@
     const thumbMat = new THREE.MeshBasicMaterial({ color: 0x0ea5e9 });
     this.thumbMesh = new THREE.Mesh(thumbGeom, thumbMat);
     this.thumbMesh.position.set(0, SLIDER_Y, 0.006);
-    this.thumbMesh.rotation.x = -Math.PI / 2;
     this.thumbMesh.userData.hitTarget = true;
     this.thumbMesh.userData.sliderThumb = true;
     g.add(this.thumbMesh);
 
-    const labelGeom = new THREE.PlaneGeometry(0.4, 0.04);
+    const labelGeom = new THREE.PlaneGeometry(0.2, 0.04);
     const labelMat = new THREE.MeshBasicMaterial({
-      color: 0x94a3b8,
+      map: makeSliderLabelTexture(),
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.95,
       side: THREE.DoubleSide
     });
     const label = new THREE.Mesh(labelGeom, labelMat);
-    label.position.set(0, 0.055, 0.001);
-    label.rotation.x = -Math.PI / 2;
+    label.position.set(0, SLIDER_Y + 0.04, 0.001);
     g.add(label);
+
+    var layersHeaderGeom = new THREE.PlaneGeometry(LAYER_ROW_WIDTH, LAYERS_HEADER_HEIGHT);
+    var layersHeaderMat = new THREE.MeshBasicMaterial({
+      map: makeEventLayersHeaderTexture(),
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide
+    });
+    var layersHeader = new THREE.Mesh(layersHeaderGeom, layersHeaderMat);
+    layersHeader.position.set(0, 0.07, 0.001);
+    g.add(layersHeader);
+
+    this.layerRows.length = 0;
+    var eventLayers = self.getEventLayers();
+    eventLayers.forEach(function (layer, i) {
+      var layerId = layer.id;
+      var rowLabel = layer.name || layerId;
+      var isOn = layer.visible !== false;
+      var tex = makeLayerRowTexture(rowLabel, isOn);
+      var rowGeom = new THREE.PlaneGeometry(LAYER_ROW_WIDTH, LAYER_ROW_HEIGHT);
+      var rowMat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        opacity: 0.95,
+        side: THREE.DoubleSide
+      });
+      var rowMesh = new THREE.Mesh(rowGeom, rowMat);
+      var rowY = 0.03 - i * (LAYER_ROW_HEIGHT + LAYER_ROW_GAP);
+      rowMesh.position.set(0, rowY, 0.002);
+      rowMesh.userData.hitTarget = true;
+      rowMesh.userData.xrLayerRow = true;
+      rowMesh.userData.eventLayerId = layerId;
+      g.add(rowMesh);
+      self.layerRows.push({
+        key: layerId,
+        mesh: rowMesh,
+        getState: function () {
+          var list = self.getEventLayers();
+          var l = list.find(function (x) { return x.id === layerId; });
+          return l ? l.visible !== false : false;
+        },
+        label: rowLabel
+      });
+    });
 
     this.group = g;
     this.updateThumbFromZoom(this.getZoomLevel());
     return g;
+  };
+
+  XRUI.prototype.updateLayerDisplay = function () {
+    this.layerRows.forEach(function (row) {
+      var isOn = row.getState ? row.getState() : false;
+      var oldTex = row.mesh.material.map;
+      if (oldTex) oldTex.dispose();
+      row.mesh.material.map = makeLayerRowTexture(row.label, isOn);
+      row.mesh.material.needsUpdate = true;
+    });
   };
 
   XRUI.prototype.updateThumbFromZoom = function (zoom) {
@@ -121,13 +314,27 @@
     if (this.dragging) return;
     this.draggingSource = e.inputSource;
     this.dragging = true;
+    this._sliderUsed = false;
+    this._pressedButton = null;
   };
 
   XRUI.prototype._selectEnd = function (e) {
-    if (e.inputSource === this.draggingSource) {
-      this.dragging = false;
-      this.draggingSource = null;
+    if (e.inputSource !== this.draggingSource) return;
+    if (this._pressedButton && !this._sliderUsed) {
+      if (this._pressedButton.userData.eventLayerId) {
+        var layerId = this._pressedButton.userData.eventLayerId;
+        var row = this.layerRows.find(function (r) { return r.key === layerId; });
+        var visible = row && row.getState ? !row.getState() : true;
+        this.setEventLayerVisibility(layerId, visible);
+        this.updateLayerDisplay();
+      } else if (this._pressedButton.userData.action && this.iconActions[this._pressedButton.userData.action]) {
+        try { this.iconActions[this._pressedButton.userData.action](); } catch (err) { console.warn('XR button action error', err); }
+      }
     }
+    this._pressedButton = null;
+    this._sliderUsed = false;
+    this.dragging = false;
+    this.draggingSource = null;
   };
 
   XRUI.prototype.show = function (session, parentScene) {
@@ -141,6 +348,7 @@
       session.addEventListener('selectend', this._selectEnd);
     }
     this.updateThumbFromZoom(this.getZoomLevel());
+    if (this.layerRows.length) this.updateLayerDisplay();
   };
 
   XRUI.prototype.hide = function () {
@@ -151,6 +359,8 @@
   XRUI.prototype.cleanup = function () {
     this.dragging = false;
     this.draggingSource = null;
+    this._sliderUsed = false;
+    this._pressedButton = null;
     if (this._session) {
       this._session.removeEventListener('selectstart', this._selectStart);
       this._session.removeEventListener('selectend', this._selectEnd);
@@ -191,16 +401,20 @@
 
     if (this.dragging && this._intersect.length > 0) {
       const hit = this._intersect[0];
-      const pt = hit.point.clone();
-      this.trackMesh.worldToLocal(pt);
-      const localX = pt.x;
-      const zoom = this.zoomFromTrackX(localX);
-      const current = this.getZoomLevel();
-      if (zoom !== current) this.setZoomLevel(zoom);
-      this.updateThumbFromZoom(zoom);
-      return;
+      const obj = hit.object;
+      if (obj.userData.sliderTrack || obj.userData.sliderThumb) {
+        this._sliderUsed = true;
+        const pt = hit.point.clone();
+        this.trackMesh.worldToLocal(pt);
+        const localX = pt.x;
+        const zoom = this.zoomFromTrackX(localX);
+        const current = this.getZoomLevel();
+        if (zoom !== current) this.setZoomLevel(zoom);
+        this.updateThumbFromZoom(zoom);
+      } else if ((obj.userData.xrButton && obj.userData.action) || obj.userData.xrLayerRow) {
+        this._pressedButton = obj;
+      }
     }
-
   };
 
   if (typeof module !== 'undefined' && module.exports) {
