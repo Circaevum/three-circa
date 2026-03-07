@@ -1547,7 +1547,8 @@ function toggleWebXR() {
             loadingElement.style.display = 'none';
         }
         
-        const tryEnterXR = (mode) => xrAdapter.enterXR(mode).then((session) => {
+        const overlayRoot = document.getElementById('xr-ui-layer') || undefined;
+        const tryEnterXR = (mode) => xrAdapter.enterXR(mode, { domOverlayRoot: overlayRoot }).then((session) => {
             button.classList.add('active');
             button.title = 'Exit VR';
             button.setAttribute('aria-label', 'Exit VR');

@@ -47,6 +47,19 @@ body {
 }
 
 /* ============================================
+   XR UI LAYER - wrapper for WebXR DOM overlay (and 2D overlay)
+   ============================================ */
+#xr-ui-layer {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+#xr-ui-layer * {
+    pointer-events: auto;
+}
+
+/* ============================================
    TOP NAVBAR
    ============================================ */
 #top-nav.circaevum-nav {

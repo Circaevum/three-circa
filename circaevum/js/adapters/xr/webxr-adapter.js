@@ -62,21 +62,31 @@ class WebXRAdapter {
   /**
    * Enter XR mode
    * @param {string} mode - 'immersive-vr' or 'immersive-ar'
+   * @param {{ domOverlayRoot?: HTMLElement }} options - optional; domOverlayRoot = element to show as 2D UI in XR (WebXR DOM Overlay)
    * @returns {Promise<XRSession>}
    */
-  async enterXR(mode = 'immersive-vr') {
+  async enterXR(mode = 'immersive-vr', options = {}) {
     if (!('xr' in navigator)) {
       throw new Error('WebXR not available');
     }
 
+    const optionalFeatures = ['local-floor', 'bounded-floor', 'hand-tracking'];
+    const sessionOptions = { optionalFeatures };
+    if (options.domOverlayRoot && typeof options.domOverlayRoot === 'object') {
+      sessionOptions.domOverlay = { root: options.domOverlayRoot };
+      optionalFeatures.push('dom-overlay');
+    }
+
     try {
-      const session = await navigator.xr.requestSession(mode, {
-        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
-      });
+      const session = await navigator.xr.requestSession(mode, sessionOptions);
 
       this.session = session;
       this.renderer.xr.setSession(session);
       this.isActive = true;
+
+      if (session.domOverlayState) {
+        console.log('WebXR: DOM overlay active, type:', session.domOverlayState.type);
+      }
 
       // Get reference space
       try {
