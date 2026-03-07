@@ -62,6 +62,7 @@ let currentFlattenAmount = 0; // Lerps toward 1 when flattenOn, toward 0 when of
 // WebXR controls (using adapter system)
 let xrAdapter = null;
 let xrInputAdapter = null;
+let xrUI = null;
 
 // Function to convert a selected date to a specific zoom level's offset system
 // This maintains selected time when switching between zoom levels
@@ -427,9 +428,11 @@ function createStarField() {
     }
     
     const starGeometry = new THREE.BufferGeometry();
+    const inXR = typeof xrAdapter !== 'undefined' && xrAdapter && xrAdapter.isPresenting();
     const starMaterial = new THREE.PointsMaterial({
         color: isLightMode ? 0x333333 : 0x8ecae6,
-        size: 2,
+        size: inXR ? 1.5 : 2,
+        sizeAttenuation: !inXR,
         transparent: true,
         opacity: isLightMode ? 0.3 : 0.8
     });
@@ -1520,6 +1523,13 @@ function toggleWebXR() {
     
     if (xrAdapter.isPresenting()) {
         // Exit WebXR
+        if (stars && stars.material) {
+            stars.material.sizeAttenuation = true;
+            stars.material.size = 2;
+        }
+        if (xrUI) {
+            xrUI.hide();
+        }
         xrAdapter.exitXR();
         if (xrInputAdapter) {
             xrInputAdapter.cleanup();
@@ -1538,7 +1548,7 @@ function toggleWebXR() {
             button.classList.add('active');
             button.textContent = 'EXIT VR';
             
-            // Initialize XR input adapter
+            // Initialize XR input adapter (controllers/gamepad)
             if (!xrInputAdapter) {
                 xrInputAdapter = new XRInputAdapter(xrAdapter, {
                     currentZoom: currentZoom,
@@ -1555,6 +1565,26 @@ function toggleWebXR() {
                 });
             }
             xrInputAdapter.init(session);
+            
+            // XR UI panel (zoom slider) for hand tracking / AVP
+            if (typeof XRUI !== 'undefined') {
+                if (!xrUI) {
+                    xrUI = new XRUI(scene, xrAdapter, {
+                        setZoomLevel: (zoom) => {
+                            currentZoom = zoom;
+                            createPlanets(currentZoom);
+                        },
+                        getZoomLevel: () => currentZoom
+                    });
+                }
+                xrUI.show(session);
+            }
+            
+            // Prevent stars from blowing up in XR (sizeAttenuation causes huge points in VR/AVP)
+            if (stars && stars.material) {
+                stars.material.sizeAttenuation = false;
+                stars.material.size = 1.5;
+            }
             
         }).catch((error) => {
             console.error('Failed to enter XR:', error);
@@ -2005,6 +2035,9 @@ function animate(time, frame) {
     if (xrAdapter && xrAdapter.isPresenting() && frame) {
         if (xrInputAdapter) {
             xrInputAdapter.handleInput(frame);
+        }
+        if (xrUI) {
+            xrUI.update(frame);
         }
     }
     
