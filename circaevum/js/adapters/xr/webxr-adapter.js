@@ -30,13 +30,13 @@ class WebXRAdapter {
     this._windowHeight = 1080;
 
     // XR scene configuration (used only for immersive mode)
-    // Viewer at origin; scene is placed in front and scaled. Mars orbit radius in scene units = 76.
+    // Viewer at origin. Place scene so we're at Earth orbit (50 * 0.012 = 0.6m from Sun), low above plane.
     this.config = {
       scaleFactor: 0.012,
       eyeLevel: 1.6,
-      viewingDistance: -2.2,
-      planeBelowViewer: 0.12,
-      viewOffsetX: -(76 * 0.012),
+      viewingDistance: -0.55,
+      planeBelowViewer: -0.5,
+      viewOffsetX: -0.24,
       minScale: 0.0005,
       maxScale: 0.02
     };

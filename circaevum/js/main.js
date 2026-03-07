@@ -63,6 +63,9 @@ let currentFlattenAmount = 0; // Lerps toward 1 when flattenOn, toward 0 when of
 let xrAdapter = null;
 let xrInputAdapter = null;
 let xrUI = null;
+let xrDomQuad = null;
+let xrDomQuadTexture = null;
+let xrDomQuadRefreshId = null;
 /** Camera used to render the solar system to the window texture in XR windowed mode (same logic as 2D view). */
 let contentCamera = null;
 
@@ -1513,6 +1516,72 @@ function toggleLightMode() {
     createPlanets(currentZoom);
 }
 
+function removeXRDomQuad() {
+    if (xrDomQuadRefreshId != null) {
+        cancelAnimationFrame(xrDomQuadRefreshId);
+        xrDomQuadRefreshId = null;
+    }
+    if (xrDomQuad && scene) {
+        scene.remove(xrDomQuad);
+        if (xrDomQuad.geometry) xrDomQuad.geometry.dispose();
+        if (xrDomQuad.material) {
+            if (xrDomQuad.material.map) xrDomQuad.material.map.dispose();
+            xrDomQuad.material.dispose();
+        }
+        xrDomQuad = null;
+    }
+    xrDomQuadTexture = null;
+}
+
+function createXRDomQuad() {
+    var el = document.getElementById('xr-ui-layer');
+    if (!el || !scene || typeof html2canvas === 'undefined') return;
+    html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, logging: false }).then(function (canvas) {
+        if (!scene || xrAdapter && !xrAdapter.isPresenting()) return;
+        var width = 1.6;
+        var height = 0.9;
+        if (xrDomQuad) {
+            scene.remove(xrDomQuad);
+            if (xrDomQuad.material && xrDomQuad.material.map) xrDomQuad.material.map.dispose();
+            if (xrDomQuad.material) xrDomQuad.material.dispose();
+            if (xrDomQuad.geometry) xrDomQuad.geometry.dispose();
+        }
+        if (xrDomQuadTexture) xrDomQuadTexture.dispose();
+        xrDomQuadTexture = new THREE.CanvasTexture(canvas);
+        xrDomQuadTexture.minFilter = THREE.LinearFilter;
+        xrDomQuadTexture.magFilter = THREE.LinearFilter;
+        var mat = new THREE.MeshBasicMaterial({
+            map: xrDomQuadTexture,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.95
+        });
+        var geom = new THREE.PlaneGeometry(width, height);
+        xrDomQuad = new THREE.Mesh(geom, mat);
+        xrDomQuad.position.set(0, 1.4, -1.2);
+        xrDomQuad.renderOrder = 1000;
+        scene.add(xrDomQuad);
+        console.log('XR: UI panel placed at (0, 1.4, -1.2) in scene');
+        var lastRefresh = 0;
+        function refreshQuad() {
+            if (!xrAdapter || !xrAdapter.isPresenting() || !xrDomQuad) return;
+            xrDomQuadRefreshId = requestAnimationFrame(refreshQuad);
+            var now = Date.now();
+            if (now - lastRefresh < 2000) return;
+            lastRefresh = now;
+            html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, logging: false }).then(function (c) {
+                if (xrDomQuad && xrDomQuad.material && xrDomQuad.material.map) {
+                    xrDomQuad.material.map.image = c;
+                    xrDomQuad.material.map.needsUpdate = true;
+                }
+            });
+        }
+        xrDomQuadRefreshId = requestAnimationFrame(refreshQuad);
+    }).catch(function (err) {
+        console.warn('XR: Could not capture UI for in-scene panel', err);
+    });
+}
+
 function toggleWebXR() {
     const button = document.getElementById('webxr-toggle');
     
@@ -1527,6 +1596,7 @@ function toggleWebXR() {
         if (xrUI) {
             xrUI.hide();
         }
+        removeXRDomQuad();
         xrAdapter.exitXR();
         if (xrInputAdapter) {
             xrInputAdapter.cleanup();
@@ -1592,7 +1662,9 @@ function toggleWebXR() {
             }
             
             // Stars are always fixed-size (no XR override needed)
-            
+            if (!xrAdapter.windowedMode) {
+                createXRDomQuad();
+            }
         });
         function onXRError(error) {
             console.error('Failed to enter XR:', error);
