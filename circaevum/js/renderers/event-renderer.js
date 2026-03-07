@@ -12,9 +12,11 @@
 
 (function (global) {
   const EARTH_RADIUS = 50;
-  // Radius bounds: inner = day-name boundary (Sun side / noon), outer = Earth ring side (midnight).
-  const EVENT_RADIUS_INNER_FRACTION = 23 / 32;
-  const EVENT_RADIUS_OUTER_FRACTION = 58 / 64;
+  // Radius bounds: keep events outside the time-marker text zone (day names, week labels, etc.)
+  // so event fill doesn't sit under markers and render as outline-only. Time markers use
+  // day.dayName = 23/32, day.outer = 3/4; we start events at 3/4 so they sit outside that band.
+  const EVENT_RADIUS_INNER_FRACTION = 3 / 4;   // 24/32 — outside day.outer (time marker zone)
+  const EVENT_RADIUS_OUTER_FRACTION = 58 / 64; // outer bound toward Earth
   const EVENT_LINE_RADIUS_FRACTION = 55 / 64;
   const EVENT_LINE_LABEL_RADIUS_OFFSET = 2; // Labels this much farther out than the arc
 

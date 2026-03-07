@@ -419,16 +419,21 @@
           var isEmbeddedViewer = !!window.CIRCAEVUM_VIEWER_MODE;
           var footerEl = document.getElementById('event-list-panel-footer');
           var fullAppLink = document.getElementById('open-full-app-link');
+          function buildFullAppUrl(withOpenLogin) {
+            var state = typeof window.getShareState === 'function' ? window.getShareState() : null;
+            var qs = state && typeof window.stateToQueryString === 'function' ? window.stateToQueryString(state) : '';
+            if (withOpenLogin) qs = qs ? qs + '&open=login' : 'open=login';
+            return fullAppUrl + (qs ? '?' + qs : '');
+          }
           if (fullAppUrl && footerEl && fullAppLink && !isEmbeddedViewer) {
             footerEl.style.display = 'block';
             function updateFullAppLink() {
-              var state = typeof window.getShareState === 'function' ? window.getShareState() : null;
-              var qs = state && typeof window.stateToQueryString === 'function' ? window.stateToQueryString(state) : '';
-              fullAppLink.href = fullAppUrl + (qs ? '?' + qs : '');
+              fullAppLink.href = buildFullAppUrl(false);
             }
             updateFullAppLink();
             fullAppLink.addEventListener('click', function(e) {
               e.preventDefault();
+              updateFullAppLink();
               window.location.href = fullAppLink.href;
             });
             var refreshBtn = document.getElementById('events-panel-refresh');
@@ -436,7 +441,7 @@
           } else if (footerEl) {
             footerEl.style.display = 'none';
           }
-          /* Hamburger: Log in (→ app), Event List */
+          /* Hamburger: Log in (→ app with state + open=login), Event List */
           if (navAccountBtn && navDropdown) {
             navAccountBtn.onclick = function(e) {
               e.stopPropagation();
@@ -453,7 +458,7 @@
                 navDropdown.setAttribute('aria-hidden', 'true');
                 navAccountBtn.setAttribute('aria-expanded', 'false');
                 if (action === 'event-list') openEventListPanel();
-                if (action === 'login' && fullAppUrl) window.location.href = fullAppUrl;
+                if (action === 'login' && fullAppUrl) window.location.href = buildFullAppUrl(true);
               };
             });
             document.addEventListener('click', function() {
@@ -752,6 +757,15 @@
           } else if (data.type === 'CIRCAEVUM_FIT_VIEW' && data.focus != null && typeof data.zoom === 'number') {
             if (typeof gl.setZoomLevel === 'function') gl.setZoomLevel(data.zoom);
             if (typeof gl.navigateToTime === 'function') gl.navigateToTime(data.focus);
+            var cam = typeof window !== 'undefined' && window.cameraRotation;
+            if (cam) {
+              if (typeof data.rx === 'number' && !isNaN(data.rx)) {
+                cam.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, data.rx));
+              }
+              if (typeof data.ry === 'number' && !isNaN(data.ry)) {
+                cam.y = data.ry;
+              }
+            }
           } else if (data.type === 'CIRCAEVUM_CLEAR_EVENTS' && data.layerId) {
             gl.updateEvents(data.layerId, []);
           } else if (data.type === 'CIRCAEVUM_OPEN_EVENT_LIST' && typeof window.openEventListPanel === 'function') {
@@ -768,6 +782,22 @@
               window.parent.postMessage({ type: 'CIRCAEVUM_THEME', lightMode: document.body.classList.contains('light-mode') }, '*');
             } catch (e) {}
           }, 1200);
+          // Notify parent when GL is ready so wrapper can send FIT_VIEW (restore zoom/focus from URL)
+          var readySent = false;
+          function trySendReady() {
+            if (readySent) return;
+            var gl = window.circaevumGL || (window.getGL && window.getGL());
+            if (!gl || typeof gl.setZoomLevel !== 'function' || typeof gl.navigateToTime !== 'function') return;
+            readySent = true;
+            try {
+              window.parent.postMessage({ type: 'CIRCAEVUM_READY' }, '*');
+            } catch (e) {}
+          }
+          var t0 = setInterval(function() {
+            trySendReady();
+            if (readySent) clearInterval(t0);
+          }, 100);
+          setTimeout(function() { clearInterval(t0); }, 8000);
         }
 
         // Monkey-patch setZoomLevel to notify parent wrapper about zoom changes.

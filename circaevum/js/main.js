@@ -41,6 +41,7 @@ let currentZoom = 2;
 let isDragging = false;
 let previousMousePosition = { x: 0, y: 0 };
 let cameraRotation = { x: Math.PI / 6, y: 0 };
+if (typeof window !== 'undefined') window.cameraRotation = cameraRotation;
 let time = 0;
 let focusPoint = null; // Initialized in initScene after THREE is loaded
 let targetFocusPoint = null; // Initialized in initScene after THREE is loaded
