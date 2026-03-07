@@ -324,7 +324,8 @@ function initScene() {
             currentYear: currentYear
         });
         
-        // Variables are already set by SceneCore (assigned to window, which are our let variables)
+        // Sync our stars reference with SceneCore's (so we remove the right one when recreating)
+        if (typeof window.stars !== 'undefined') stars = window.stars;
         flattenableGroup = new THREE.Group();
         sceneContentGroup.add(flattenableGroup);
     } else {
@@ -419,10 +420,13 @@ function createSunWorldline() {
 }
 
 function createStarField() {
-    // Remove existing stars if any
+    // Remove any existing star field (ours or SceneCore's) so we never have duplicates or huge XR stars
     if (stars) {
         sceneContentGroup.remove(stars);
+        stars = null;
     }
+    const toRemove = sceneContentGroup.children.filter(function (c) { return c.type === 'Points'; });
+    toRemove.forEach(function (p) { sceneContentGroup.remove(p); });
     
     // Don't show stars in Century view (too far out)
     if (currentZoom === 1) {
@@ -431,6 +435,7 @@ function createStarField() {
     
     const starGeometry = new THREE.BufferGeometry();
     const inXR = typeof xrAdapter !== 'undefined' && xrAdapter && xrAdapter.isPresenting();
+    // In XR, always use fixed size (no attenuation) so stars don't blow up with distance
     const starMaterial = new THREE.PointsMaterial({
         color: isLightMode ? 0x333333 : 0x8ecae6,
         size: inXR ? 1.5 : 2,
@@ -2179,6 +2184,12 @@ function animate(time, frame) {
         xrAdapter.renderWindowed(renderer, scene, contentCamera, camera);
     } else {
         renderer.render(scene, camera);
+    }
+    // Keep stars from blowing up in XR: force fixed size every frame (covers recreation/timing)
+    const inXR = xrAdapter && xrAdapter.isPresenting();
+    if (inXR && stars && stars.material) {
+        stars.material.sizeAttenuation = false;
+        stars.material.size = 1.5;
     }
 }
 
