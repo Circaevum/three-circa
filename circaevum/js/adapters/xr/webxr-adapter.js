@@ -19,8 +19,8 @@ class WebXRAdapter {
     this.isActive = false;
     this.inputSources = [];
 
-    /** When true, XR shows the 2D view on a floating window (render-to-texture) instead of immersive. */
-    this.windowedMode = true;
+    /** When true, XR shows the 2D view on a floating window (render-to-texture). Disabled: AVP has no passthrough, so we use full immersive VR (scene around you) instead. */
+    this.windowedMode = false;
 
     // Windowed mode: room scene, render target, window quad
     this._roomScene = null;
