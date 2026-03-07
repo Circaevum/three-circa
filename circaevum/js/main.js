@@ -1662,9 +1662,7 @@ function toggleWebXR() {
             }
             
             // Stars are always fixed-size (no XR override needed)
-            if (!xrAdapter.windowedMode) {
-                createXRDomQuad();
-            }
+            // if (!xrAdapter.windowedMode) createXRDomQuad(); // hidden for now
         });
         function onXRError(error) {
             console.error('Failed to enter XR:', error);

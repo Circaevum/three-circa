@@ -35,7 +35,7 @@ class WebXRAdapter {
       scaleFactor: 0.012,
       eyeLevel: 1.6,
       viewingDistance: -0.55,
-      planeBelowViewer: -0.5,
+      planeBelowViewer: -0.9,
       viewOffsetX: -0.24,
       minScale: 0.0005,
       maxScale: 0.02
