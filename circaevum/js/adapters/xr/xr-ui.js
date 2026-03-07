@@ -130,9 +130,11 @@
     }
   };
 
-  XRUI.prototype.show = function (session) {
+  XRUI.prototype.show = function (session, parentScene) {
     if (!this.group) this.build();
-    if (!this.group.parent) this.scene.add(this.group);
+    if (this.group.parent) this.group.parent.remove(this.group);
+    if (parentScene) parentScene.add(this.group);
+    else this.scene.add(this.group);
     this._session = session;
     if (session) {
       session.addEventListener('selectstart', this._selectStart);
@@ -142,7 +144,7 @@
   };
 
   XRUI.prototype.hide = function () {
-    if (this.group && this.group.parent) this.scene.remove(this.group);
+    if (this.group && this.group.parent) this.group.parent.remove(this.group);
     this.cleanup();
   };
 

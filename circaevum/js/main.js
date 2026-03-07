@@ -63,6 +63,8 @@ let currentFlattenAmount = 0; // Lerps toward 1 when flattenOn, toward 0 when of
 let xrAdapter = null;
 let xrInputAdapter = null;
 let xrUI = null;
+/** Camera used to render the solar system to the window texture in XR windowed mode (same logic as 2D view). */
+let contentCamera = null;
 
 // Function to convert a selected date to a specific zoom level's offset system
 // This maintains selected time when switching between zoom levels
@@ -1566,7 +1568,7 @@ function toggleWebXR() {
             }
             xrInputAdapter.init(session);
             
-            // XR UI panel (zoom slider) for hand tracking / AVP
+            // XR UI panel (zoom slider) for hand tracking / AVP; in windowed mode add to room scene
             if (typeof XRUI !== 'undefined') {
                 if (!xrUI) {
                     xrUI = new XRUI(scene, xrAdapter, {
@@ -1577,11 +1579,17 @@ function toggleWebXR() {
                         getZoomLevel: () => currentZoom
                     });
                 }
-                xrUI.show(session);
+                const roomScene = xrAdapter.windowedMode ? xrAdapter.getRoomScene() : null;
+                xrUI.show(session, roomScene);
             }
             
-            // Prevent stars from blowing up in XR (sizeAttenuation causes huge points in VR/AVP)
-            if (stars && stars.material) {
+            if (xrAdapter.windowedMode && contentCamera && camera) {
+                contentCamera.position.copy(camera.position);
+                contentCamera.up.copy(camera.up);
+            }
+            
+            // Prevent stars from blowing up in immersive XR (windowed mode uses 2D view on texture, no fix needed)
+            if (stars && stars.material && !xrAdapter.windowedMode) {
                 stars.material.sizeAttenuation = false;
                 stars.material.size = 1.5;
             }
@@ -2129,28 +2137,33 @@ function animate(time, frame) {
         targetCameraUp.set(0, 1, 0);
     }
     
-    // Smoothly interpolate camera position
+    const inXRWindowed = xrAdapter && xrAdapter.isPresenting() && xrAdapter.windowedMode;
+    const camForPos = (inXRWindowed && contentCamera) ? contentCamera : camera;
     const currentPos = new THREE.Vector3(
-        camera.position.x - focusPoint.x,
-        camera.position.y - focusPoint.y,
-        camera.position.z - focusPoint.z
+        camForPos.position.x - focusPoint.x,
+        camForPos.position.y - focusPoint.y,
+        camForPos.position.z - focusPoint.z
     );
     
     currentPos.lerp(targetCameraPosition, cameraTransitionSpeed);
     
-    camera.position.set(
-        focusPoint.x + currentPos.x,
-        focusPoint.y + currentPos.y,
-        focusPoint.z + currentPos.z
-    );
+    const cam = (inXRWindowed && contentCamera) ? contentCamera : camera;
+    if (cam) {
+        cam.position.set(
+            focusPoint.x + currentPos.x,
+            focusPoint.y + currentPos.y,
+            focusPoint.z + currentPos.z
+        );
+        currentCameraUp.lerp(targetCameraUp, cameraTransitionSpeed);
+        cam.up.copy(currentCameraUp);
+        cam.lookAt(focusPoint);
+    }
     
-    // Smoothly interpolate camera up vector
-    currentCameraUp.lerp(targetCameraUp, cameraTransitionSpeed);
-    camera.up.copy(currentCameraUp);
-    
-    camera.lookAt(focusPoint);
-    
-    renderer.render(scene, camera);
+    if (inXRWindowed && contentCamera && xrAdapter._roomScene) {
+        xrAdapter.renderWindowed(renderer, scene, contentCamera, camera);
+    } else {
+        renderer.render(scene, camera);
+    }
 }
 
 // Check for WebGL support
@@ -2189,6 +2202,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     try {
         initScene();
+        
+        if (camera && typeof THREE !== 'undefined') {
+            contentCamera = new THREE.PerspectiveCamera(camera.fov, camera.aspect, camera.near, camera.far);
+            contentCamera.position.copy(camera.position);
+            contentCamera.up.copy(camera.up);
+        }
         
         // Initialize camera distance
         const config = ZOOM_LEVELS[currentZoom];

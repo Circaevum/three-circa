@@ -13,19 +13,29 @@ class WebXRAdapter {
     this.camera = camera;
     this.renderer = renderer;
     this.sceneContentGroup = sceneContentGroup;
-    
+
     this.session = null;
     this.referenceSpace = null;
     this.isActive = false;
     this.inputSources = [];
-    
-    // XR scene configuration
+
+    /** When true, XR shows the 2D view on a floating window (render-to-texture) instead of immersive. */
+    this.windowedMode = true;
+
+    // Windowed mode: room scene, render target, window quad
+    this._roomScene = null;
+    this._renderTarget = null;
+    this._windowQuad = null;
+    this._windowWidth = 1920;
+    this._windowHeight = 1080;
+
+    // XR scene configuration (used only for immersive mode)
     this.config = {
-      scaleFactor: 0.002,        // Scale scene to fit VR (slightly larger than before)
-      eyeLevel: 1.6,              // Comfortable eye level in meters
-      viewingDistance: -6.0,      // Distance from scene in meters
-      minScale: 0.0005,           // Minimum scale for very large scenes
-      maxScale: 0.01              // Maximum scale for very small scenes
+      scaleFactor: 0.002,
+      eyeLevel: 1.6,
+      viewingDistance: -6.0,
+      minScale: 0.0005,
+      maxScale: 0.01
     };
   }
 
@@ -77,8 +87,12 @@ class WebXRAdapter {
         this.referenceSpace = await session.requestReferenceSpace('local');
       }
 
-      // Setup scene for XR
-      this.setupScene();
+      // Setup for XR: windowed = floating window with 2D view; else immersive
+      if (this.windowedMode) {
+        this.setupWindowedMode();
+      } else {
+        this.setupScene();
+      }
 
       // Listen for input sources
       session.addEventListener('inputsourceschange', (e) => {
@@ -114,7 +128,99 @@ class WebXRAdapter {
   }
 
   /**
-   * Setup scene for XR viewing
+   * Windowed mode: create room scene with a quad that will show the 2D view (render target).
+   * Does not scale or move the main scene.
+   */
+  setupWindowedMode() {
+    const THREE = typeof globalThis !== 'undefined' && globalThis.THREE ? globalThis.THREE : (typeof window !== 'undefined' && window.THREE);
+    if (!THREE) {
+      console.warn('WebXR: THREE not available for windowed mode');
+      return;
+    }
+    const w = this._windowWidth;
+    const h = this._windowHeight;
+    this._renderTarget = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.UnsignedByteType,
+      stencilBuffer: false,
+      depthBuffer: true
+    });
+    this._roomScene = new THREE.Scene();
+    this._roomScene.background = new THREE.Color(0x0a0e17);
+    const aspect = w / h;
+    const quadWidth = 1.6;
+    const quadHeight = quadWidth / aspect;
+    const geometry = new THREE.PlaneGeometry(quadWidth, quadHeight);
+    const material = new THREE.MeshBasicMaterial({
+      map: this._renderTarget.texture,
+      side: THREE.DoubleSide,
+      toneMapped: false
+    });
+    this._windowQuad = new THREE.Mesh(geometry, material);
+    this._windowQuad.position.set(0, 1.6, -1.5);
+    this._windowQuad.rotation.x = 0;
+    this._roomScene.add(this._windowQuad);
+    console.log('WebXR: Windowed mode – floating window', quadWidth.toFixed(1) + 'm x ' + quadHeight.toFixed(1) + 'm at 1.5m');
+  }
+
+  /**
+   * Cleanup windowed mode (dispose RT and room).
+   */
+  cleanupWindowedMode() {
+    if (this._windowQuad && this._windowQuad.geometry) this._windowQuad.geometry.dispose();
+    if (this._windowQuad && this._windowQuad.material) {
+      if (this._windowQuad.material.map) this._windowQuad.material.map.dispose();
+      this._windowQuad.material.dispose();
+    }
+    if (this._renderTarget) {
+      this._renderTarget.dispose();
+      this._renderTarget = null;
+    }
+    this._roomScene = null;
+    this._windowQuad = null;
+    console.log('WebXR: Windowed mode cleaned up');
+  }
+
+  /**
+   * Get the room scene (for adding XR UI, etc.) when in windowed mode.
+   * @returns {THREE.Scene|null}
+   */
+  getRoomScene() {
+    return this._roomScene;
+  }
+
+  /**
+   * Get the render target used for the window texture (for aspect ratio, etc.).
+   * @returns {{ width: number, height: number }|null}
+   */
+  getWindowSize() {
+    if (!this._renderTarget) return null;
+    return { width: this._renderTarget.width, height: this._renderTarget.height };
+  }
+
+  /**
+   * Render: content scene with contentCamera to texture, then room with viewer camera.
+   * @param {THREE.WebGLRenderer} renderer
+   * @param {THREE.Scene} contentScene - Main solar system scene
+   * @param {THREE.PerspectiveCamera} contentCamera - Camera that views the content (2D logic)
+   * @param {THREE.PerspectiveCamera} viewerCamera - XR viewer camera (do not modify)
+   */
+  renderWindowed(renderer, contentScene, contentCamera, viewerCamera) {
+    if (!this._renderTarget || !this._roomScene || !this._windowQuad) return;
+    const rt = this._renderTarget;
+    contentCamera.aspect = rt.width / rt.height;
+    contentCamera.updateProjectionMatrix();
+    renderer.setRenderTarget(rt);
+    renderer.clear();
+    renderer.render(contentScene, contentCamera);
+    renderer.setRenderTarget(null);
+    renderer.render(this._roomScene, viewerCamera);
+  }
+
+  /**
+   * Setup scene for XR viewing (immersive mode)
    * Scales and positions the scene content group appropriately
    */
   setupScene() {
@@ -203,7 +309,11 @@ class WebXRAdapter {
     this.session = null;
     this.referenceSpace = null;
     this.inputSources = [];
-    this.cleanupScene();
+    if (this.windowedMode) {
+      this.cleanupWindowedMode();
+    } else {
+      this.cleanupScene();
+    }
     console.log('WebXR: Session ended');
   }
 
