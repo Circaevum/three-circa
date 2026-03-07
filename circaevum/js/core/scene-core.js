@@ -61,7 +61,7 @@ function initScene(dependencies = {}) {
         camera.position.set(0, currentYearHeight + 400, 800);
     }
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     // Limit pixel ratio on mobile for better performance (max 2)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));

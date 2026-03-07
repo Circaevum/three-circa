@@ -1547,7 +1547,7 @@ function toggleWebXR() {
             loadingElement.style.display = 'none';
         }
         
-        xrAdapter.enterXR('immersive-vr').then((session) => {
+        const tryEnterXR = (mode) => xrAdapter.enterXR(mode).then((session) => {
             button.classList.add('active');
             button.title = 'Exit VR';
             button.setAttribute('aria-label', 'Exit VR');
@@ -1601,10 +1601,18 @@ function toggleWebXR() {
                 stars.material.size = 1.5;
             }
             
-        }).catch((error) => {
-            console.error('Failed to enter XR:', error);
-            alert('Failed to enter VR mode. Make sure your headset is connected and WebXR is supported.');
         });
+        if (xrAdapter.windowedMode) {
+            tryEnterXR('immersive-ar').catch(() => tryEnterXR('immersive-vr')).catch((error) => {
+                console.error('Failed to enter XR:', error);
+                alert('Failed to enter VR mode. Make sure your headset is connected and WebXR is supported.');
+            });
+        } else {
+            tryEnterXR('immersive-vr').catch((error) => {
+                console.error('Failed to enter XR:', error);
+                alert('Failed to enter VR mode. Make sure your headset is connected and WebXR is supported.');
+            });
+        }
     }
 }
 
