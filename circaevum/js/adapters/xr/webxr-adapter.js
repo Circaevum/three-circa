@@ -90,6 +90,12 @@ class WebXRAdapter {
       // Setup for XR: windowed = floating window with 2D view; else immersive
       if (this.windowedMode) {
         this.setupWindowedMode();
+        // On opaque VR (e.g. Apple Vision Pro), passthrough isn't available; use a dark room background instead of black.
+        const THREE = typeof globalThis !== 'undefined' && globalThis.THREE ? globalThis.THREE : (typeof window !== 'undefined' && window.THREE);
+        if (this._roomScene && session.environmentBlendMode === 'opaque' && THREE) {
+          this._roomScene.background = new THREE.Color(0x0f0f14);
+          console.log('WebXR: Opaque session (no passthrough); using dark room background.');
+        }
       } else {
         this.setupScene();
       }
