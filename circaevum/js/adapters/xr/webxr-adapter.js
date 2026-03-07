@@ -148,7 +148,7 @@ class WebXRAdapter {
       depthBuffer: true
     });
     this._roomScene = new THREE.Scene();
-    this._roomScene.background = new THREE.Color(0x0a0e17);
+    this._roomScene.background = null;
     const aspect = w / h;
     const quadWidth = 1.6;
     const quadHeight = quadWidth / aspect;
@@ -209,6 +209,7 @@ class WebXRAdapter {
    */
   renderWindowed(renderer, contentScene, contentCamera, viewerCamera) {
     if (!this._renderTarget || !this._roomScene || !this._windowQuad) return;
+    const THREE = typeof globalThis !== 'undefined' && globalThis.THREE ? globalThis.THREE : (typeof window !== 'undefined' && window.THREE);
     const rt = this._renderTarget;
     contentCamera.aspect = rt.width / rt.height;
     contentCamera.updateProjectionMatrix();
@@ -216,7 +217,17 @@ class WebXRAdapter {
     renderer.clear();
     renderer.render(contentScene, contentCamera);
     renderer.setRenderTarget(null);
-    renderer.render(this._roomScene, viewerCamera);
+    if (THREE && renderer.getClearColor && renderer.getClearAlpha) {
+      const oldClear = new THREE.Color();
+      const oldAlpha = renderer.getClearAlpha();
+      renderer.getClearColor(oldClear);
+      renderer.setClearColor(0x000000, 0);
+      renderer.clear();
+      renderer.render(this._roomScene, viewerCamera);
+      renderer.setClearColor(oldClear, oldAlpha);
+    } else {
+      renderer.render(this._roomScene, viewerCamera);
+    }
   }
 
   /**

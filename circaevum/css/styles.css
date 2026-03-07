@@ -1486,6 +1486,12 @@ h1 {
     display: none;
 }
 
+#webxr-toggle.active {
+    background: var(--cosmic-cyan);
+    color: var(--deep-space);
+    box-shadow: 0 0 30px rgba(0, 180, 216, 0.5);
+}
+
 .toggle-btn:hover {
     background: rgba(0, 180, 216, 0.2);
     box-shadow: 0 0 20px rgba(0, 180, 216, 0.3);

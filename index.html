@@ -33,13 +33,15 @@
       })();
     </script>
     <!-- Nakama/login live in app.circaevum.com (account-wrapper). This build is viewer-only. -->
-    <!-- Top navbar: Circaevum left; WEBXR, Menu (Log in, Event List) right -->
+    <!-- Top navbar: Circaevum left; WebXR icon, Menu (Log in, Event List) right -->
     <header id="top-nav" class="circaevum-nav">
         <div class="nav-left">
             <a href="#" class="nav-brand">Circaevum</a>
         </div>
         <div class="nav-right">
-            <button type="button" class="toggle-btn nav-toggle" id="webxr-toggle">WEBXR</button>
+            <button type="button" class="nav-icon-btn" id="webxr-toggle" title="WebXR" aria-label="Enter WebXR / VR" style="display: none;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 12h2M19 12h2M3 10v4M19 10v4M6 8v8M18 8v8M6 8a4 4 0 0 1 6 0M12 8a4 4 0 0 1 6 0M6 16a4 4 0 0 0 6 0M12 16a4 4 0 0 0 6 0"/></svg>
+            </button>
             <div class="nav-dropdown-wrap">
                 <button type="button" id="nav-account-btn" class="nav-icon-btn" title="Menu" aria-label="Open menu" aria-expanded="false" aria-haspopup="true">☰</button>
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">

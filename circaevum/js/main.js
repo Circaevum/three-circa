@@ -1288,7 +1288,7 @@ function initControls() {
             // Check if WebXR is supported
             xrAdapter.isSupported().then((supported) => {
                 if (supported) {
-                    webxrToggle.style.display = 'block';
+                    webxrToggle.style.display = 'inline-flex';
                     webxrToggle.addEventListener('click', toggleWebXR);
                     console.log('WebXR: Supported - button enabled');
                 } else {
@@ -1537,7 +1537,8 @@ function toggleWebXR() {
             xrInputAdapter.cleanup();
         }
         button.classList.remove('active');
-        button.textContent = 'WEBXR';
+        button.title = 'WebXR';
+        button.setAttribute('aria-label', 'Enter WebXR / VR');
     } else {
         // Enter WebXR
         // Hide loading screen immediately when entering VR
@@ -1548,7 +1549,8 @@ function toggleWebXR() {
         
         xrAdapter.enterXR('immersive-vr').then((session) => {
             button.classList.add('active');
-            button.textContent = 'EXIT VR';
+            button.title = 'Exit VR';
+            button.setAttribute('aria-label', 'Exit VR');
             
             // Initialize XR input adapter (controllers/gamepad)
             if (!xrInputAdapter) {
@@ -1583,9 +1585,14 @@ function toggleWebXR() {
                 xrUI.show(session, roomScene);
             }
             
-            if (xrAdapter.windowedMode && contentCamera && camera) {
-                contentCamera.position.copy(camera.position);
-                contentCamera.up.copy(camera.up);
+            if (xrAdapter.windowedMode && contentCamera && focusPoint && targetCameraPosition) {
+                contentCamera.position.set(
+                    focusPoint.x + targetCameraPosition.x,
+                    focusPoint.y + targetCameraPosition.y,
+                    focusPoint.z + targetCameraPosition.z
+                );
+                contentCamera.up.copy(targetCameraUp || currentCameraUp);
+                contentCamera.lookAt(focusPoint);
             }
             
             // Prevent stars from blowing up in immersive XR (windowed mode uses 2D view on texture, no fix needed)
