@@ -14,8 +14,8 @@
   const EARTH_RADIUS = 50;
   // Radius bounds: keep events outside the time-marker text zone (day names, week labels, etc.)
   // so event fill doesn't sit under markers and render as outline-only. Time markers use
-  // day.dayName = 23/32, day.outer = 3/4; we start events at 3/4 so they sit outside that band.
-  const EVENT_RADIUS_INNER_FRACTION = 3 / 4;   // 24/32 — outside day.outer (time marker zone)
+  // day.outer = 3/4; we start events just outside that (25/32) for a clear gap.
+  const EVENT_RADIUS_INNER_FRACTION = 25 / 32;  // ~0.78 — clear of day.outer (3/4)
   const EVENT_RADIUS_OUTER_FRACTION = 58 / 64; // outer bound toward Earth
   const EVENT_LINE_RADIUS_FRACTION = 55 / 64;
   const EVENT_LINE_LABEL_RADIUS_OFFSET = 2; // Labels this much farther out than the arc
@@ -310,7 +310,7 @@
       points = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
     }
 
-    const plotType = layerConfig.plotType || 'lines';
+    const plotType = layerConfig.plotType ?? 'polygon3d'; // default filled; use 'lines' in layer style for outline-only
     const lineThickness = Math.max(0.2, (layerConfig.lineThickness != null ? layerConfig.lineThickness : 1));
     const opacity = layerConfig.opacity != null ? layerConfig.opacity : 0.7;
     const eventColorRaw = event.color ?? event.colorId ?? null;
@@ -373,6 +373,7 @@
       });
       const fillMesh = new global.THREE.Mesh(tubeGeometry.clone(), fillMaterial);
       if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
+      fillMesh.renderOrder = 10; // Draw after time marker lines so fill is visible where they overlap
       group.add(fillMesh);
 
       if (borderStyle !== 'none') {
@@ -385,6 +386,7 @@
           opacity: borderStyle === 'none' ? 0 : opacity
         });
         const lineObj = new global.THREE.Line(lineGeometry, lineMaterial);
+        lineObj.renderOrder = 11;
         group.add(lineObj);
       }
       return group;
@@ -539,6 +541,7 @@
         });
         const tubeMesh = new global.THREE.Mesh(tubeGeometry, tubeMaterial);
         if (plotType === 'polygon2d') tubeMesh.scale.y = 0.02;
+        tubeMesh.renderOrder = 10; // Draw after time marker lines so fill is visible where they overlap
         tubeMesh.userData = {
           layerId: layerConfig.id,
           type: 'EventLine',
@@ -561,6 +564,7 @@
         opacity: borderStyle === 'none' ? 0 : opacity
       });
       const lineObj = new global.THREE.Line(lineGeometry, lineMaterial);
+      lineObj.renderOrder = 11;
       lineObj.userData = {
         layerId: layerConfig.id,
         type: 'EventLine',
