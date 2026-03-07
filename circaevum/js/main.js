@@ -1277,26 +1277,26 @@ function initControls() {
     // WebXR toggle (using adapter system)
     const webxrToggle = document.getElementById('webxr-toggle');
     if (webxrToggle) {
-        // Start hidden by default
+        const inViewerMode = !!(window.CIRCAEVUM_VIEWER_MODE || document.body.classList.contains('viewer-no-nav'));
         webxrToggle.style.display = 'none';
         
-        // Check if WebXR adapter is available
         if (typeof WebXRAdapter !== 'undefined') {
-            // Initialize XR adapter
             xrAdapter = new WebXRAdapter(scene, camera, renderer, sceneContentGroup);
+            webxrToggle.addEventListener('click', toggleWebXR);
             
-            // Check if WebXR is supported
             xrAdapter.isSupported().then((supported) => {
                 if (supported) {
                     webxrToggle.style.display = 'inline-flex';
-                    webxrToggle.addEventListener('click', toggleWebXR);
                     console.log('WebXR: Supported - button enabled');
-                } else {
+                } else if (!inViewerMode) {
                     console.warn('WebXR: Not supported on this device/browser');
                 }
             }).catch((error) => {
                 console.error('WebXR: Error checking support', error);
             });
+            if (inViewerMode) {
+                webxrToggle.style.display = 'inline-flex';
+            }
         } else {
             console.warn('WebXR: WebXRAdapter not loaded');
         }

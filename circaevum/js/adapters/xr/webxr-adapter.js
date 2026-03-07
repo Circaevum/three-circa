@@ -162,6 +162,23 @@ class WebXRAdapter {
     this._windowQuad.position.set(0, 1.6, -1.5);
     this._windowQuad.rotation.x = 0;
     this._roomScene.add(this._windowQuad);
+    const frameThickness = 0.04;
+    const frameDepth = 0.02;
+    const fw = quadWidth + frameThickness * 2;
+    const fh = quadHeight + frameThickness * 2;
+    const frameGeom = new THREE.PlaneGeometry(fw, fh);
+    const frameMat = new THREE.MeshBasicMaterial({
+      color: 0x1e3a5f,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.95
+    });
+    this._windowFrame = new THREE.Mesh(frameGeom, frameMat);
+    this._windowFrame.position.set(0, 1.6, -1.5 - frameDepth * 0.5);
+    this._windowFrame.rotation.x = 0;
+    this._roomScene.add(this._windowFrame);
+    this._windowQuad.renderOrder = 1;
+    this._windowFrame.renderOrder = 0;
     console.log('WebXR: Windowed mode – floating window', quadWidth.toFixed(1) + 'm x ' + quadHeight.toFixed(1) + 'm at 1.5m');
   }
 
@@ -169,6 +186,11 @@ class WebXRAdapter {
    * Cleanup windowed mode (dispose RT and room).
    */
   cleanupWindowedMode() {
+    if (this._windowFrame) {
+      if (this._windowFrame.geometry) this._windowFrame.geometry.dispose();
+      if (this._windowFrame.material) this._windowFrame.material.dispose();
+      this._windowFrame = null;
+    }
     if (this._windowQuad && this._windowQuad.geometry) this._windowQuad.geometry.dispose();
     if (this._windowQuad && this._windowQuad.material) {
       if (this._windowQuad.material.map) this._windowQuad.material.map.dispose();
