@@ -14,6 +14,9 @@ const TimeMarkers = (function() {
     // ============================================
     let scene, timeMarkers, getMarkerColor, createTextLabel;
     let PLANET_DATA, ZOOM_LEVELS, TIME_MARKERS, CENTURY_START;
+    /** When true, quarter/month/week/day systems show all units for the full year (_fullYearYear). */
+    let _fullYearScope = false;
+    let _fullYearYear = null;
     let currentYear, currentMonth, currentQuarter, currentWeekInMonth, currentDayInWeek;
     let selectedYearOffset, selectedQuarterOffset, selectedWeekOffset, selectedDayOffset, selectedHourOffset, selectedLunarOffset;
     let currentHourInDay;
@@ -353,6 +356,7 @@ const TimeMarkers = (function() {
                 ? { outer: RADII_CONFIG.quarter.outer(dist), inner: RADII_CONFIG.quarter.inner(), label: RADII_CONFIG.quarter.label(dist) }
                 : { outer: dist*0.5, inner: null, label: dist*0.25 },
             getUnits: (zoom, state) => {
+                if (_fullYearScope && _fullYearYear != null) return Array.from({ length: 4 }, (_, i) => ({ index: i, year: _fullYearYear }));
                 if (zoom === 3) return Array.from({length: 4}, (_, i) => ({index: i, year: state.selectedYear}));
                 const units = [{index: state.selectedQuarter, year: state.selectedYear}];
                 const now = state.currentDate;
@@ -376,6 +380,7 @@ const TimeMarkers = (function() {
                 ? { outer: RADII_CONFIG.month.outer(dist), inner: RADII_CONFIG.month.inner(dist), label: RADII_CONFIG.month.label(dist) }
                 : { outer: dist*0.75, inner: dist*0.5, label: dist*0.75 },
             getUnits: (zoom, state) => {
+                if (_fullYearScope && _fullYearYear != null) return Array.from({ length: 12 }, (_, i) => ({ index: i, year: _fullYearYear }));
                 const units = [];
                 const selectedQ = Math.floor(state.selectedMonth / 3);
                 // Include all months in the selected quarter
@@ -730,6 +735,23 @@ const TimeMarkers = (function() {
         const labelRadius = RADII_CONFIG.week.label(earthDistance);
         
         function getWeeksToShow(zoomLevel, timeState) {
+            if (_fullYearScope && _fullYearYear != null) {
+                const year = _fullYearYear;
+                const weeksToShow = [];
+                const firstOfYear = new Date(year, 0, 1);
+                const lastOfYear = new Date(year, 11, 31);
+                const firstSundayOffset = -firstOfYear.getDay();
+                let currentSunday = new Date(year, 0, 1 + firstSundayOffset);
+                currentSunday.setHours(0, 0, 0, 0);
+                while (currentSunday <= lastOfYear || currentSunday.getFullYear() === year) {
+                    if (currentSunday.getFullYear() === year || new Date(currentSunday.getTime() + 6 * 24 * 60 * 60 * 1000).getFullYear() === year) {
+                        weeksToShow.push(new Date(currentSunday));
+                    }
+                    currentSunday.setDate(currentSunday.getDate() + 7);
+                }
+                weeksToShow.sort((a, b) => a.getTime() - b.getTime());
+                return weeksToShow;
+            }
             const { selectedYear, selectedMonth } = timeState;
             let weeksToShow = [];
             
@@ -976,6 +998,18 @@ const TimeMarkers = (function() {
         const dayNameRadius = RADII_CONFIG.day.dayName(earthDistance);  // Day names
         
         function getDaysToShow(zoomLevel, timeState) {
+            if (_fullYearScope && _fullYearYear != null) {
+                const year = _fullYearYear;
+                const daysToShow = [];
+                const isLeap = (y) => (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
+                const daysInYear = isLeap(year) ? 366 : 365;
+                for (let d = 0; d < daysInYear; d++) {
+                    const date = new Date(year, 0, 1 + d);
+                    date.setHours(0, 0, 0, 0);
+                    daysToShow.push(date);
+                }
+                return daysToShow;
+            }
             const { selectedYear, selectedMonth } = timeState;
             let daysToShow = [];
             
@@ -1805,40 +1839,52 @@ const TimeMarkers = (function() {
     // MAIN ENTRY POINT
     // ============================================
     
-    function createTimeMarkers(zoomLevel) {
+    function createTimeMarkers(zoomLevel, options) {
         timeMarkers.forEach(m => scene.remove(m));
         timeMarkers.length = 0;
         
-        if (!ZOOM_LEVELS[zoomLevel]) return;
-        
-        const earthPlanet = planetMeshes.find(p => p.userData.name === 'Earth');
-        const earthDistance = earthPlanet ? earthPlanet.userData.distance : 50;
-        const timeState = getTimeState(zoomLevel);
-        
-        if (zoomLevel === 1) {
-            createCenturyMarkers(timeState);
-            // Don't add createYearMarker - century markers already show the year
-        } else if (zoomLevel === 2) {
-            createDecadeMarkers(timeState);
-            // Don't add createYearMarker here - decade markers already show the year
-        } else if (zoomLevel >= 3) {
-            // Show year marker for all zoom levels 3 and above
-            createYearMarker(timeState, zoomLevel);
-            createQuarterSystem(earthDistance, timeState, zoomLevel);
-            createMonthSystem(earthDistance, timeState, zoomLevel);
+        const fullYearScope = options && options.fullYearScope === true;
+        if (fullYearScope) {
+            _fullYearYear = currentYear != null ? currentYear : getTimeState(zoomLevel).selectedYear;
+            _fullYearScope = true;
         }
-        if (zoomLevel >= 4) {
-            createWeekSystem(earthDistance, timeState, zoomLevel);
-        }
-        if (zoomLevel >= 6) {
-            createDaySystem(earthDistance, timeState, zoomLevel);
-        }
-        if (zoomLevel === 6) {
-            createMoonPhaseImages(earthDistance, timeState);
-            createLunarCycleMarkers(earthDistance, timeState);
-        }
-        if (zoomLevel === 8 || zoomLevel === 9) {
-            createHourSystem(earthDistance, timeState, zoomLevel);
+        try {
+            if (!ZOOM_LEVELS[zoomLevel] && !fullYearScope) return;
+            if (fullYearScope) zoomLevel = 3; // Base zoom for full-year (year/quarter/month); week/day use their own logic below
+            const earthPlanet = planetMeshes.find(p => p.userData.name === 'Earth');
+            const earthDistance = earthPlanet ? earthPlanet.userData.distance : 50;
+            const timeState = getTimeState(zoomLevel);
+            if (fullYearScope) timeState.selectedYear = _fullYearYear;
+            if (fullYearScope) timeState.selectedMonth = 0;
+            if (fullYearScope) timeState.selectedQuarter = 0;
+
+            if (zoomLevel === 1) {
+                createCenturyMarkers(timeState);
+            } else if (zoomLevel === 2) {
+                createDecadeMarkers(timeState);
+            } else if (zoomLevel >= 3) {
+                createYearMarker(timeState, zoomLevel);
+                createQuarterSystem(earthDistance, timeState, zoomLevel);
+                createMonthSystem(earthDistance, timeState, zoomLevel);
+            }
+            if (zoomLevel >= 4 || fullYearScope) {
+                createWeekSystem(earthDistance, timeState, fullYearScope ? 7 : zoomLevel);
+            }
+            if (zoomLevel >= 6 || fullYearScope) {
+                createDaySystem(earthDistance, timeState, fullYearScope ? 7 : zoomLevel);
+            }
+            if (zoomLevel === 6 && !fullYearScope) {
+                createMoonPhaseImages(earthDistance, timeState);
+                createLunarCycleMarkers(earthDistance, timeState);
+            }
+            if ((zoomLevel === 8 || zoomLevel === 9) && !fullYearScope) {
+                createHourSystem(earthDistance, timeState, zoomLevel);
+            }
+        } finally {
+            if (fullYearScope) {
+                _fullYearScope = false;
+                _fullYearYear = null;
+            }
         }
     }
 

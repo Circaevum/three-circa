@@ -80,24 +80,40 @@
             <button type="button" class="scene-icon-btn active" id="markers-lines-toggle" title="Time marker lines" aria-label="Toggle time marker lines">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 18h20"/><path d="M4 18v3"/><path d="M8 18v2"/><path d="M12 18v3"/><path d="M16 18v2"/><path d="M20 18v3"/></svg>
             </button>
-            <button type="button" class="scene-icon-btn active" id="markers-text-toggle" title="Time marker text" aria-label="Toggle time marker text">
+            <button type="button" class="scene-icon-btn active" id="markers-text-toggle" title="Time marker text (T)" aria-label="Toggle time marker text (T)">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><text x="12" y="16" font-size="12" font-weight="700" fill="currentColor" text-anchor="middle" font-family="system-ui,sans-serif">Tt</text></svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Toggle light mode" aria-label="Toggle light mode">
+            <button type="button" class="scene-icon-btn" id="markers-year-toggle" title="Show Year, Month, Week & Day markers for full year" aria-label="Toggle full-year time markers (Year, Month, Week, Day)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                    <circle cx="12" cy="12" r="8"/>
+                    <path d="M12 4v2M12 18v2M4 12h2M18 12h2"/>
+                </svg>
+            </button>
+            <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Light mode (L)" aria-label="Toggle light mode (L)">
                 <span class="icon-moon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
                 <span class="icon-sun" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span>
             </button>
-            <button type="button" class="scene-icon-btn" id="sound-toggle" title="Toggle sound" aria-label="Toggle sound">
+            <button type="button" class="scene-icon-btn" id="sound-toggle" title="Mute / Sound (M)" aria-label="Toggle sound (M)">
                 <span class="icon-speaker" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></span>
                 <span class="icon-muted" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></span>
             </button>
             <button type="button" class="scene-icon-btn" id="circadian-toggle" title="Circadian worldline: off" aria-label="Circadian worldline (cycle: off, straightened, wrapped)">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2"/><path d="M12 8a4 4 0 0 1 0 8"/><path d="M12 8a4 4 0 0 0 0 8"/></svg>
             </button>
+            <button type="button" class="scene-icon-btn" id="focus-toggle" title="Camera focus: SUN (C)" aria-label="Toggle camera focus between Sun and Earth (C)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="7"/><!-- lens -->
+                    <rect x="4" y="5" width="16" height="14" rx="2" ry="2"/><!-- body -->
+                    <path d="M9 3l2 2h2l2-2"/><!-- top hump -->
+                </svg>
+            </button>
             <button type="button" class="scene-icon-btn" id="flatten-toggle" style="display: none;" title="Flatten view (F)" aria-label="Flatten time axis – show circles">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="12" rx="10" ry="3"/><path d="M2 12h20"/></svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="webxr-toggle" title="WebXR" aria-label="Enter WebXR / VR" style="display: none;">
+            <div class="scene-slider-wrap" id="flatten-slider-wrap" style="display: none;" aria-label="Flatten height">
+                <input type="range" id="flatten-height-slider" min="0" max="1" step="0.05" value="1" aria-label="Adjust flatten height">
+            </div>
+            <button type="button" class="scene-icon-btn" id="webxr-toggle" title="XR mode (X)" aria-label="Enter WebXR / VR (X)" style="display: none;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 12h2M19 12h2M3 10v4M19 10v4M6 8v8M18 8v8M6 8a4 4 0 0 1 6 0M12 8a4 4 0 0 1 6 0M6 16a4 4 0 0 0 6 0M12 16a4 4 0 0 0 6 0"/></svg>
             </button>
         </div>
@@ -153,7 +169,7 @@
                     A 3D calendar modeled on Earth's natural rhythms.
                 </p>
                 <div class="balance-accent">◐ ◑</div>
-                <button class="explore-btn" onclick="setZoomLevel(2)">EXPLORE THE PROTOTYPE</button>
+                <button class="explore-btn" onclick="setZoomLevel(5)">EXPLORE THE PROTOTYPE</button>
             </div>
             
             <div class="landing-section">
