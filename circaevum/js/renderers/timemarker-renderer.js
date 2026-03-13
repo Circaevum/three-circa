@@ -17,7 +17,7 @@ const TimeMarkers = (function() {
     /** When true, quarter/month/week/day systems show all units for the full year (_fullYearYear). */
     let _fullYearScope = false;
     let _fullYearYear = null;
-    let currentYear, currentMonth, currentQuarter, currentWeekInMonth, currentDayInWeek;
+    let currentYear, currentMonth, currentMonthInYear, currentQuarter, currentWeekInMonth, currentDayInWeek;
     let selectedYearOffset, selectedQuarterOffset, selectedWeekOffset, selectedDayOffset, selectedHourOffset, selectedLunarOffset;
     let currentHourInDay;
     let isLightMode, calculateDateHeight, getHeightForYear, calculateCurrentDateHeight;
@@ -35,6 +35,7 @@ const TimeMarkers = (function() {
         CENTURY_START = dependencies.CENTURY_START;
         currentYear = dependencies.currentYear;
         currentMonth = dependencies.currentMonth;
+        currentMonthInYear = dependencies.currentMonthInYear;
         currentQuarter = dependencies.currentQuarter;
         currentWeekInMonth = dependencies.currentWeekInMonth;
         currentDayInWeek = dependencies.currentDayInWeek;
@@ -201,13 +202,14 @@ const TimeMarkers = (function() {
 
     function getColor(isCurrent, isSelected, hasOffset) {
         if (isCurrent) return 0xFF0000;
-        if (hasOffset && isSelected) return isLightMode ? 0x0066CC : 0x00FFFF;
+        // In full-year scope, show selected (blue) whenever the unit matches selected time, even without A/D offset
+        if (isSelected && (_fullYearScope ? true : hasOffset)) return isLightMode ? 0x0066CC : 0x00FFFF;
         return getMarkerColor();
     }
 
     function getLabelColor(isCurrent, isSelected, hasOffset) {
         if (isCurrent) return 'red';
-        if (hasOffset && isSelected) return 'blue';
+        if (isSelected && (_fullYearScope ? true : hasOffset)) return 'blue';
         return false;
     }
 
@@ -355,14 +357,17 @@ const TimeMarkers = (function() {
             getRadii: (zoom, dist) => zoom >= 3 
                 ? { outer: RADII_CONFIG.quarter.outer(dist), inner: RADII_CONFIG.quarter.inner(), label: RADII_CONFIG.quarter.label(dist) }
                 : { outer: dist*0.5, inner: null, label: dist*0.25 },
+            // For zoom 3+ always show all 4 quarters of the selected year
             getUnits: (zoom, state) => {
-                if (_fullYearScope && _fullYearYear != null) return Array.from({ length: 4 }, (_, i) => ({ index: i, year: _fullYearYear }));
-                if (zoom === 3) return Array.from({length: 4}, (_, i) => ({index: i, year: state.selectedYear}));
-                const units = [{index: state.selectedQuarter, year: state.selectedYear}];
+                const year = state.selectedYear;
+                if (zoom >= 3) {
+                    return Array.from({ length: 4 }, (_, i) => ({ index: i, year }));
+                }
+                const units = [{ index: state.selectedQuarter, year }];
                 const now = state.currentDate;
                 const actual = Math.floor(now.getMonth() / 3);
-                if (actual !== state.selectedQuarter || now.getFullYear() !== state.selectedYear) {
-                    units.push({index: actual, year: now.getFullYear()});
+                if (actual !== state.selectedQuarter || now.getFullYear() !== year) {
+                    units.push({ index: actual, year: now.getFullYear() });
                 }
                 return units;
             },
@@ -379,34 +384,37 @@ const TimeMarkers = (function() {
             getRadii: (zoom, dist) => zoom >= 3
                 ? { outer: RADII_CONFIG.month.outer(dist), inner: RADII_CONFIG.month.inner(dist), label: RADII_CONFIG.month.label(dist) }
                 : { outer: dist*0.75, inner: dist*0.5, label: dist*0.75 },
+            // For zoom 3+ always show all 12 months of the selected year
             getUnits: (zoom, state) => {
-                if (_fullYearScope && _fullYearYear != null) return Array.from({ length: 12 }, (_, i) => ({ index: i, year: _fullYearYear }));
+                const year = state.selectedYear;
+                if (zoom >= 3) {
+                    const months = Array.from({ length: 12 }, (_, i) => ({ index: i, year }));
+                    // Add a boundary marker at the start of the next year for continuous curves
+                    months.push({ index: 12, year });
+                    return months;
+                }
                 const units = [];
                 const selectedQ = Math.floor(state.selectedMonth / 3);
-                // Include all months in the selected quarter
                 for (let m = selectedQ * 3; m < (selectedQ + 1) * 3; m++) {
-                    units.push({index: m, year: state.selectedYear});
+                    units.push({ index: m, year });
                 }
-                // Include the first month of the next quarter for boundary line (if not Q4)
                 if (selectedQ < 3) {
                     const boundaryMonth = (selectedQ + 1) * 3;
-                    units.push({index: boundaryMonth, year: state.selectedYear});
+                    units.push({ index: boundaryMonth, year });
                 }
                 const now = state.currentDate;
                 const actualQ = Math.floor(now.getMonth() / 3);
-                if (actualQ !== selectedQ || now.getFullYear() !== state.selectedYear) {
-                    // Include all months in the current quarter
+                if (actualQ !== selectedQ || now.getFullYear() !== year) {
                     for (let m = actualQ * 3; m < (actualQ + 1) * 3; m++) {
-                        units.push({index: m, year: now.getFullYear()});
+                        units.push({ index: m, year: now.getFullYear() });
                     }
-                    // Include the first month of the next quarter for boundary line (if not Q4)
                     if (actualQ < 3) {
                         const boundaryMonth = (actualQ + 1) * 3;
-                        units.push({index: boundaryMonth, year: now.getFullYear()});
+                        units.push({ index: boundaryMonth, year: now.getFullYear() });
                     }
                 }
-                const exists = units.some(u => u.index === state.selectedMonth && u.year === state.selectedYear);
-                if (!exists) units.push({index: state.selectedMonth, year: state.selectedYear});
+                const exists = units.some(u => u.index === state.selectedMonth && u.year === year);
+                if (!exists) units.push({ index: state.selectedMonth, year });
                 return units.sort((a, b) => a.year !== b.year ? a.year - b.year : a.index - b.index);
             },
             getDate: (unitInfo, index, year) => {
@@ -436,10 +444,14 @@ const TimeMarkers = (function() {
                 unitNames, getUnitsToShow, getUnitDate, isCurrentUnit, isSelectedUnit, 
                 skipLabels = false, labelRadius = null, getUnitCenterDate } = config;
         
-        const showText = !skipLabels && ((unitType === 'quarter' && zoomLevel >= 3) ||
-                                        (unitType === 'month' && zoomLevel >= 4) ||
-                                        (unitType === 'week' && zoomLevel >= 5) ||
-                                        (unitType === 'day' && zoomLevel >= 7));
+        // Label visibility is controlled purely by zoom level; the full-year toggle
+        // only affects which days are generated, not which labels are allowed.
+        const showText = !skipLabels && (
+            (unitType === 'quarter' && zoomLevel >= 3) ||
+            (unitType === 'month' && zoomLevel >= 4) ||
+            (unitType === 'week' && zoomLevel >= 5) ||
+            (unitType === 'day' && zoomLevel >= 7)
+        );
         
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
         const unitsToShow = getUnitsToShow(zoomLevel, timeState);
@@ -535,16 +547,9 @@ const TimeMarkers = (function() {
                 }
                 
                 if (labelText) {
-                    // Month label filtering for Zoom 4+
-                    if (unitType === 'month' && zoomLevel >= 4) {
-                        const quarterStart = timeState.selectedQuarter * 3;
-                        const isInSelectedQ = (unitIndex >= quarterStart && unitIndex < quarterStart + 3) && (unitYear === timeState.selectedYear);
-                        const now = timeState.currentDate;
-                        const actualQ = Math.floor(now.getMonth() / 3);
-                        const isInCurrentQ = (actualQ !== timeState.selectedQuarter || now.getFullYear() !== timeState.selectedYear) &&
-                                           (unitIndex >= (actualQ * 3) && unitIndex < (actualQ * 3) + 3) && (unitYear === now.getFullYear());
-                        if (!isInSelectedQ && !isInCurrentQ) return;
-                    }
+                    // Previously, month labels were filtered to only the selected/current quarter.
+                    // With the new design we want month labels available for the whole year,
+                    // so no additional quarter-based filtering is applied here.
                     
                     let centerDate = unitStartDate;
                     if (getUnitCenterDate) {
@@ -735,125 +740,21 @@ const TimeMarkers = (function() {
         const labelRadius = RADII_CONFIG.week.label(earthDistance);
         
         function getWeeksToShow(zoomLevel, timeState) {
-            if (_fullYearScope && _fullYearYear != null) {
-                const year = _fullYearYear;
-                const weeksToShow = [];
-                const firstOfYear = new Date(year, 0, 1);
-                const lastOfYear = new Date(year, 11, 31);
-                const firstSundayOffset = -firstOfYear.getDay();
-                let currentSunday = new Date(year, 0, 1 + firstSundayOffset);
-                currentSunday.setHours(0, 0, 0, 0);
-                while (currentSunday <= lastOfYear || currentSunday.getFullYear() === year) {
-                    if (currentSunday.getFullYear() === year || new Date(currentSunday.getTime() + 6 * 24 * 60 * 60 * 1000).getFullYear() === year) {
-                        weeksToShow.push(new Date(currentSunday));
-                    }
-                    currentSunday.setDate(currentSunday.getDate() + 7);
+            // New behavior: for zoom 4+ we always show all weeks in the selected year.
+            const year = timeState.selectedYear;
+            const weeksToShow = [];
+            const firstOfYear = new Date(year, 0, 1);
+            const lastOfYear = new Date(year, 11, 31);
+            const firstSundayOffset = -firstOfYear.getDay();
+            let currentSunday = new Date(year, 0, 1 + firstSundayOffset);
+            currentSunday.setHours(0, 0, 0, 0);
+            while (currentSunday <= lastOfYear || currentSunday.getFullYear() === year) {
+                if (currentSunday.getFullYear() === year || new Date(currentSunday.getTime() + 6 * 24 * 60 * 60 * 1000).getFullYear() === year) {
+                    weeksToShow.push(new Date(currentSunday));
                 }
-                weeksToShow.sort((a, b) => a.getTime() - b.getTime());
-                return weeksToShow;
+                currentSunday.setDate(currentSunday.getDate() + 7);
             }
-            const { selectedYear, selectedMonth } = timeState;
-            let weeksToShow = [];
-            
-            if (zoomLevel >= 4) {
-                const selectedQuarterFromMonth = Math.floor(selectedMonth / 3);
-                let monthsForWeeks = [];
-                
-                const selectedQuarterStartMonth = selectedQuarterFromMonth * 3;
-                for (let m = selectedQuarterStartMonth; m < selectedQuarterStartMonth + 3; m++) {
-                    monthsForWeeks.push({ month: m % 12, year: selectedYear + Math.floor(m / 12) });
-                }
-                
-                const now = timeState.currentDate;
-                const actualYear = now.getFullYear();
-                const actualMonthInYear = now.getMonth();
-                const actualQuarter = Math.floor(actualMonthInYear / 3);
-                if (actualQuarter !== selectedQuarterFromMonth || actualYear !== selectedYear) {
-                    const currentQuarterStartMonth = actualQuarter * 3;
-                    for (let m = currentQuarterStartMonth; m < currentQuarterStartMonth + 3; m++) {
-                        const monthYear = actualYear + Math.floor(m / 12);
-                        const monthIndex = m % 12;
-                        if (!monthsForWeeks.some(mo => mo.month === monthIndex && mo.year === monthYear)) {
-                            monthsForWeeks.push({ month: monthIndex, year: monthYear });
-                        }
-                    }
-                }
-                
-                if (!monthsForWeeks.some(mo => mo.month === selectedMonth && mo.year === selectedYear)) {
-                    monthsForWeeks.push({ month: selectedMonth, year: selectedYear });
-                }
-                
-                monthsForWeeks.forEach(({ month, year }) => {
-                    const daysInMonth = new Date(year, month + 1, 0).getDate();
-                    const firstOfMonth = new Date(year, month, 1);
-                    const lastOfMonth = new Date(year, month, daysInMonth);
-                    const firstSundayOffset = -firstOfMonth.getDay();
-                    const firstSunday = new Date(year, month, 1 + firstSundayOffset);
-                    firstSunday.setHours(0, 0, 0, 0);
-                    
-                    let currentSunday = new Date(firstSunday);
-                    while (currentSunday <= lastOfMonth || (currentSunday.getMonth() === month)) {
-                        const weekEnd = new Date(currentSunday);
-                        weekEnd.setDate(currentSunday.getDate() + 6);
-                        
-                        if ((currentSunday.getMonth() === month && currentSunday.getDate() <= daysInMonth) ||
-                            (weekEnd.getMonth() === month && weekEnd.getDate() >= 1) ||
-                            (currentSunday < firstOfMonth && weekEnd >= firstOfMonth)) {
-                            weeksToShow.push(new Date(currentSunday));
-                        }
-                        
-                        currentSunday.setDate(currentSunday.getDate() + 7);
-                        if (currentSunday > lastOfMonth && currentSunday.getMonth() !== month) break;
-                    }
-                });
-                
-                const actualDayInWeek = now.getDay();
-                const actualCurrentWeekSunday = new Date(now);
-                actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
-                actualCurrentWeekSunday.setHours(0, 0, 0, 0);
-                
-                let selectedWeekSunday;
-                if (zoomLevel === 5) {
-                    const selectedMonthStart = new Date(selectedYear, selectedMonth, 1);
-                    const firstSundayOffset = -selectedMonthStart.getDay();
-                    const firstSunday = new Date(selectedYear, selectedMonth, 1 + firstSundayOffset);
-                    firstSunday.setHours(0, 0, 0, 0);
-                    selectedWeekSunday = new Date(firstSunday);
-                    selectedWeekSunday.setDate(firstSunday.getDate() + (currentWeekInMonth * 7));
-                    selectedWeekSunday.setHours(0, 0, 0, 0);
-                } else if (zoomLevel === 7) {
-                    const selectedDayOffset = timeState.selectedDayOffset || 0;
-                    selectedWeekSunday = new Date(actualCurrentWeekSunday);
-                    selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
-                    selectedWeekSunday.setHours(0, 0, 0, 0);
-                } else if (zoomLevel === 8 || zoomLevel === 9) {
-                    // In Zoom 8/9, selectedHourOffset represents days
-                    const selectedHourOffset = timeState.selectedHourOffset || 0;
-                    const selectedMidnight = new Date(now);
-                    selectedMidnight.setDate(now.getDate() + selectedHourOffset);
-                    selectedMidnight.setHours(0, 0, 0, 0);
-                    const selectedDayOfWeek = selectedMidnight.getDay();
-                    selectedWeekSunday = new Date(selectedMidnight);
-                    selectedWeekSunday.setDate(selectedMidnight.getDate() - selectedDayOfWeek);
-                    selectedWeekSunday.setHours(0, 0, 0, 0);
-                } else {
-                    const selectedWeekOffset = timeState.selectedWeekOffset || 0;
-                    selectedWeekSunday = new Date(actualCurrentWeekSunday);
-                    selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedWeekOffset * 7));
-                    selectedWeekSunday.setHours(0, 0, 0, 0);
-                }
-                
-                if (!weeksToShow.some(w => {
-                    const wDate = new Date(w);
-                    wDate.setHours(0, 0, 0, 0);
-                    return wDate.getTime() === selectedWeekSunday.getTime();
-                })) {
-                    weeksToShow.push(new Date(selectedWeekSunday));
-                }
-                
-                weeksToShow.sort((a, b) => a.getTime() - b.getTime());
-            }
-            
+            weeksToShow.sort((a, b) => a.getTime() - b.getTime());
             return weeksToShow;
         }
         
@@ -1104,6 +1005,15 @@ const TimeMarkers = (function() {
             const now = state.currentDate;
             const normalizedDay = new Date(unit.index);
             normalizedDay.setHours(0, 0, 0, 0);
+            
+            // In full-year scope, tie the blue selected day directly to the global Selected Time
+            // so it follows navigation at any zoom level.
+            if (_fullYearScope && typeof getSelectedDateTime === 'function') {
+                const selectedDate = getSelectedDateTime();
+                const selectedMidnight = new Date(selectedDate);
+                selectedMidnight.setHours(0, 0, 0, 0);
+                return normalizedDay.getTime() === selectedMidnight.getTime();
+            }
             
             // For Zoom 8/9, use selectedHourOffset (which represents days) and currentHourInDay
             if (zoomLevel === 8 || zoomLevel === 9) {
@@ -1845,18 +1755,20 @@ const TimeMarkers = (function() {
         
         const fullYearScope = options && options.fullYearScope === true;
         if (fullYearScope) {
+            // When full-year scope is enabled we only change how days are generated;
+            // all other units (year/quarter/month/week) are driven purely by zoom.
             _fullYearYear = currentYear != null ? currentYear : getTimeState(zoomLevel).selectedYear;
             _fullYearScope = true;
         }
         try {
-            if (!ZOOM_LEVELS[zoomLevel] && !fullYearScope) return;
-            if (fullYearScope) zoomLevel = 3; // Base zoom for full-year (year/quarter/month); week/day use their own logic below
+            if (!ZOOM_LEVELS[zoomLevel]) return;
             const earthPlanet = planetMeshes.find(p => p.userData.name === 'Earth');
             const earthDistance = earthPlanet ? earthPlanet.userData.distance : 50;
             const timeState = getTimeState(zoomLevel);
-            if (fullYearScope) timeState.selectedYear = _fullYearYear;
-            if (fullYearScope) timeState.selectedMonth = 0;
-            if (fullYearScope) timeState.selectedQuarter = 0;
+            if (fullYearScope) {
+                // Keep the selected year in sync with the year used for full-year day markers.
+                timeState.selectedYear = _fullYearYear;
+            }
 
             if (zoomLevel === 1) {
                 createCenturyMarkers(timeState);
@@ -1867,17 +1779,18 @@ const TimeMarkers = (function() {
                 createQuarterSystem(earthDistance, timeState, zoomLevel);
                 createMonthSystem(earthDistance, timeState, zoomLevel);
             }
-            if (zoomLevel >= 4 || fullYearScope) {
-                createWeekSystem(earthDistance, timeState, fullYearScope ? 7 : zoomLevel);
+            if (zoomLevel >= 4) {
+                createWeekSystem(earthDistance, timeState, zoomLevel);
             }
+            // Full-year scope only affects the day system (whole-year days vs quarter/month scope).
             if (zoomLevel >= 6 || fullYearScope) {
                 createDaySystem(earthDistance, timeState, fullYearScope ? 7 : zoomLevel);
             }
-            if (zoomLevel === 6 && !fullYearScope) {
+            if (zoomLevel === 6) {
                 createMoonPhaseImages(earthDistance, timeState);
                 createLunarCycleMarkers(earthDistance, timeState);
             }
-            if ((zoomLevel === 8 || zoomLevel === 9) && !fullYearScope) {
+            if (zoomLevel === 8 || zoomLevel === 9) {
                 createHourSystem(earthDistance, timeState, zoomLevel);
             }
         } finally {
@@ -1901,6 +1814,7 @@ const TimeMarkers = (function() {
         selectedLunarOffset = newOffsets.selectedLunarOffset || 0; // Update selectedLunarOffset for Zoom 6
         currentYear = newOffsets.currentYear !== undefined ? newOffsets.currentYear : currentYear; // Update currentYear when A/D is pressed
         currentMonth = newOffsets.currentMonth;
+        currentMonthInYear = newOffsets.currentMonthInYear !== undefined ? newOffsets.currentMonthInYear : currentMonthInYear;
         currentWeekInMonth = newOffsets.currentWeekInMonth;
         currentQuarter = newOffsets.currentQuarter;
         currentDayInWeek = newOffsets.currentDayInWeek;

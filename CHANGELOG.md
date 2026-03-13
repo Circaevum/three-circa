@@ -44,6 +44,12 @@ This changelog tracks all changes across Yin (backend), Yang (frontend), and Zho
 - **Viewer / wrapper localhost**: On localhost, GL defaults "Open full app" to `http://localhost:5173` (Yin-portal) when `CIRCAEVUM_FULL_APP_URL` is not set, so the event list link works without config.
 - **Viewer mode**: GL already uses viewer mode by default on localhost (or with `?viewer=1` / iframe); no change.
 - **Docs**: `docs/VIEWER-AND-WRAPPER.md` updated for Yin-portal (`account-wrapper`), local dev (GL on port 8080, wrapper on 5173), and CORS/deploy notes.
+- **Time marker / flattening UX**:
+  - Added full-year time marker mode (Year, Month, Week, Day) with HUD toggle and wiring through `TimeMarkers` for an entire selected year.
+  - Added flatten-height slider tied to the existing `F` flatten toggle, with intuitive “height” mapping.
+  - Default zoom set to 5 (Month), with zoom HUD kept in sync.
+  - Added camera focus toggle (Sun/Earth) with HUD icon and keyboard shortcut, and updated camera focus math so the scene truly centers on the selected body.
+  - Standardized scene keyboard shortcuts: C (camera focus), L (light mode), T (time marker text), M (mute/sound), X (XR mode).
 
 **📋 Planned**:
 - **PROBLEM-YANG-002 [yang-avp]**: ISS Data Pod Visualization (Q2 2025)

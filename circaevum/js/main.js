@@ -60,7 +60,8 @@ let circadianState = 'off'; // 'off' | 'straightened' | 'wrapped' – toggled vi
 let flattenOn = false; // Flatten view on/off (zoom >= 3). Smooth transition via currentFlattenAmount.
 let currentFlattenAmount = 0; // Lerps toward 1 when flattenOn, toward 0 when off (no camera jump).
 // flattenIntensity: 0–1 where 0 = no flatten, 1 = maximum flatten.
-let flattenIntensity = 0.5;
+// Default to maximum flatten so the slider (0 = flattest, 1 = tallest) starts at the far left.
+let flattenIntensity = 1;
 let focusTargetOverride = null; // 'sun' | 'earth' | null – null = use ZOOM_LEVELS default
 
 // WebXR controls (using adapter system)
@@ -992,9 +993,9 @@ function createTimeMarkers(zoomLevel) {
                 currentHourInDay // Needed for Zoom 8/9 hour calculation
             });
         }
-        const effectiveZoomLevel = showFullYearTimeMarkers ? 3 : zoomLevel;
+        // Full-year toggle now only controls whether day markers span the entire year.
         const options = showFullYearTimeMarkers ? { fullYearScope: true } : undefined;
-        TimeMarkers.createTimeMarkers(effectiveZoomLevel, options);
+        TimeMarkers.createTimeMarkers(zoomLevel, options);
         applyTimeMarkerVisibility();
         return;
     }
