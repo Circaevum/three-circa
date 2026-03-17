@@ -316,7 +316,8 @@
     const eventColorRaw = event.color ?? event.colorId ?? null;
     const eventHex = parseColor(eventColorRaw || layerConfig.color || '#00b4d8');
     const layerHex = parseColor(layerConfig.color || '#00b4d8');
-    const fillHex = parseColor(layerConfig.fillColor || layerConfig.color || eventColorRaw || '#00b4d8');
+    // Prefer explicit fillColor, then per-event color, then layer color.
+    const fillHex = parseColor(layerConfig.fillColor || eventColorRaw || layerConfig.color || '#00b4d8');
     const borderStyle = layerConfig.borderStyle || 'event';
 
     const userData = {

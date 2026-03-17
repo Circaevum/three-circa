@@ -2184,6 +2184,45 @@ function setZoomLevel(level, overrideDate) {
     updateFlattenIconVisibility();
 }
 
+// Set the selected date/time without changing the current zoom level.
+// Used by external consumers (e.g. CircaevumGL.navigateToTime) so that
+// the Orbital Data panel, Earth position, and time markers all snap to
+// a specific date.
+function setSelectedDateTime(date) {
+    const targetDate = date instanceof Date ? date : new Date(date);
+    if (!targetDate || isNaN(targetDate.getTime())) return;
+
+    if (typeof applySelectedDateToZoomLevel === 'function') {
+        applySelectedDateToZoomLevel(targetDate, currentZoom);
+    }
+
+    if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
+        TimeMarkers.updateOffsets({
+            selectedYearOffset,
+            selectedQuarterOffset,
+            selectedWeekOffset,
+            selectedDayOffset,
+            selectedHourOffset,
+            selectedLunarOffset,
+            currentYear,
+            currentMonthInYear,
+            currentMonth,
+            currentQuarter,
+            currentWeekInMonth,
+            currentDayInWeek,
+            currentDayOfMonth,
+            currentHourInDay
+        });
+    }
+
+    if (typeof createPlanets === 'function') {
+        createPlanets(currentZoom);
+    }
+    if (typeof updateTimeDisplays === 'function') {
+        updateTimeDisplays();
+    }
+}
+
 function getFocusPoint() {
     const config = ZOOM_LEVELS[currentZoom];
     const effectiveFocusTarget = focusTargetOverride || config.focusTarget;

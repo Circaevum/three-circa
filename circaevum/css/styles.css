@@ -747,6 +747,17 @@ body.viewer-no-nav .loading {
     padding: 8px 16px;
     border-bottom: 1px solid rgba(0, 180, 216, 0.2);
     flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.event-list-panel-header-actions .event-list-hint {
+    flex: 1 1 100%;
+    font-size: 10px;
+    color: rgba(142, 202, 230, 0.75);
+    text-align: left;
 }
 
 .event-list-panel .strip-btn {
@@ -904,6 +915,18 @@ body.light-mode .event-list-panel-list .draw-line-btn.drawn {
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
     pointer-events: auto;
     z-index: 50;
+}
+
+.scene-icon-overlay.collapsed {
+    padding: 4px;
+}
+
+.scene-icon-overlay.collapsed .scene-icon-btn:not(.scene-icon-toggle) {
+    display: none;
+}
+
+.scene-icon-toggle {
+    align-self: flex-end;
 }
 
 .scene-icon-btn {
@@ -1273,6 +1296,32 @@ body.light-mode .harmony-symbol {
     bottom: 0;
     pointer-events: none;
     z-index: 10;
+}
+
+.scene-slider-wrap {
+    position: fixed;
+    bottom: 24px;
+    right: 80px;
+    width: 140px;
+    padding: 6px 10px;
+    background: rgba(0, 8, 20, 0.82);
+    border-radius: 10px;
+    border: 1px solid rgba(0, 180, 216, 0.3);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    pointer-events: auto;
+    z-index: 9;
+}
+
+.scene-slider-wrap input[type="range"] {
+    width: 100%;
+}
+
+@media (max-width: 768px) {
+    .scene-slider-wrap {
+        right: 16px;
+        bottom: 80px;
+        width: 120px;
+    }
 }
 
 /* Ensure mobile zoom controls can receive pointer events */

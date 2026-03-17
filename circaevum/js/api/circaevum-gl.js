@@ -547,8 +547,10 @@ class CircaevumGL {
   navigateToTime(date) {
     const targetDate = date instanceof Date ? date : new Date(date);
     
-    // Use existing navigation system
-    if (typeof applySelectedDateToZoomLevel === 'function') {
+    // Prefer host app helper so Selected Time + Earth position are updated consistently.
+    if (typeof setSelectedDateTime === 'function') {
+      setSelectedDateTime(targetDate);
+    } else if (typeof applySelectedDateToZoomLevel === 'function') {
       applySelectedDateToZoomLevel(targetDate, this.options.zoomLevel);
       if (typeof createPlanets === 'function') {
         createPlanets(this.options.zoomLevel);
