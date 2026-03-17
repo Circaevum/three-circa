@@ -63,6 +63,7 @@
             <button type="button" id="event-list-close" class="event-list-close-btn" aria-label="Close">×</button>
         </div>
         <div class="event-list-panel-header-actions">
+            <span class="event-list-hint" aria-hidden="true">W/A/S/D to move • Scroll to zoom</span>
             <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
             <button type="button" id="events-panel-draw-all" class="strip-btn">Draw all</button>
             <button type="button" id="test-event-lines-btn" class="strip-btn">Test event lines</button>
@@ -110,12 +111,18 @@
             <button type="button" class="scene-icon-btn" id="flatten-toggle" style="display: none;" title="Flatten view (F)" aria-label="Flatten time axis – show circles">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="12" rx="10" ry="3"/><path d="M2 12h20"/></svg>
             </button>
-            <div class="scene-slider-wrap" id="flatten-slider-wrap" style="display: none;" aria-label="Flatten height">
-                <input type="range" id="flatten-height-slider" min="0" max="1" step="0.05" value="1" aria-label="Adjust flatten height">
-            </div>
             <button type="button" class="scene-icon-btn" id="webxr-toggle" title="XR mode (X)" aria-label="Enter WebXR / VR (X)" style="display: none;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 12h2M19 12h2M3 10v4M19 10v4M6 8v8M18 8v8M6 8a4 4 0 0 1 6 0M12 8a4 4 0 0 1 6 0M6 16a4 4 0 0 0 6 0M12 16a4 4 0 0 0 6 0"/></svg>
             </button>
+            <button type="button" class="scene-icon-btn scene-icon-toggle" id="scene-icon-toggle" title="Toggle scene controls" aria-label="Toggle scene controls">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 12h14"/><path d="M12 5l7 7-7 7"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="scene-slider-wrap" id="flatten-slider-wrap" style="display: none;" aria-label="Flatten height">
+            <input type="range" id="flatten-height-slider" min="0" max="1" step="0.05" value="1" aria-label="Adjust flatten height">
         </div>
 
         <div class="title-block" aria-hidden="true">
@@ -493,6 +500,16 @@
             });
           }
 
+          // Scene icon overlay: allow collapsing/expanding (especially useful on mobile).
+          var sceneIconOverlay = document.querySelector('.scene-icon-overlay');
+          var sceneIconToggle = document.getElementById('scene-icon-toggle');
+          if (sceneIconOverlay && sceneIconToggle) {
+            sceneIconToggle.onclick = function(e) {
+              e.stopPropagation();
+              sceneIconOverlay.classList.toggle('collapsed');
+            };
+          }
+
           var USER_EVENTS_LAYER = 'user-events';
 
           function formatDate(d) {
@@ -527,7 +544,15 @@
             var spanDays = Math.max(0.001, days);
             // Default: zoom into Day / Clock (8) for typical events; use span-based zoom only for long-term events.
             var zoom = spanDays > 365 ? zoomLevelForSpanDays(spanDays) : 8;
-            if (typeof setZoomLevel === 'function') setZoomLevel(zoom, mid);
+            // Update zoom (camera) based on span.
+            if (typeof setZoomLevel === 'function') setZoomLevel(zoom);
+            // Then snap Selected Time / Earth position to the event midpoint.
+            try {
+              var gl = window.circaevumGL || (window.getGL && window.getGL());
+              if (gl && typeof gl.navigateToTime === 'function') {
+                gl.navigateToTime(mid);
+              }
+            } catch (e) {}
           }
 
           var eventGroupState = { account: true, other: true };
@@ -573,6 +598,18 @@
               return;
             }
 
+            // Sort events and lines chronologically by their start time.
+            events.sort(function(a, b) {
+              var as = a.ev && a.ev.start instanceof Date ? a.ev.start.getTime() : 0;
+              var bs = b.ev && b.ev.start instanceof Date ? b.ev.start.getTime() : 0;
+              return as - bs;
+            });
+            lines.sort(function(a, b) {
+              var as = a.start instanceof Date ? a.start.getTime() : 0;
+              var bs = b.start instanceof Date ? b.start.getTime() : 0;
+              return as - bs;
+            });
+
             events.forEach(function(item) {
               var ev = item.ev;
               var start = ev.start;
@@ -585,14 +622,16 @@
               var name = ev.summary || ev.uid || 'Event';
               var row = document.createElement('div');
               row.className = 'event-row';
-              row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:6px;cursor:pointer;';
+              var color = ev.color || ev.colorId || null;
+              var borderColor = color || 'rgba(0, 180, 216, 0.5)';
+              var bgColor = color ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 180, 216, 0.08)';
+              row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:6px;cursor:pointer;' +
+                'border-left:3px solid ' + borderColor + ';background:' + bgColor + ';';
               row.title = 'Click to focus on this event';
               row.innerHTML = '<div class="event-title">' + name + '</div>' +
                 '<div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' +
-                '<button type="button" class="events-panel-draw-line draw-line-btn">Draw line</button>' +
                 '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
               row.onclick = function() { navigateToEvent(start, endForNav); };
-              var btn = row.querySelector('.events-panel-draw-line');
               var editBtn = row.querySelector('.events-panel-edit-btn');
               if (editBtn && window.self !== window.top && window.parent.postMessage) {
                 editBtn.onclick = function(e) {
@@ -611,22 +650,6 @@
                   window.parent.postMessage({ type: 'CIRCAEVUM_EDIT_EVENT', event: payload }, '*');
                 };
               } else if (editBtn) editBtn.style.display = 'none';
-              function drawLineOnce() {
-                var lab = String(name).slice(0, 32);
-                var lineColor = ev.color || ev.colorId || undefined;
-                var cat = ev.category || 'Default';
-                gl.addEventLines('event-lines', [{ start: start, end: endForLine, label: lab, color: lineColor, category: cat }]);
-                btn.textContent = 'Drawn';
-                btn.disabled = true;
-                btn.classList.add('drawn');
-              }
-              btn.onclick = function(e) {
-                e.stopPropagation();
-                drawLineOnce();
-              };
-              if (drawAll) {
-                drawLineOnce();
-              }
               listEl.appendChild(row);
             });
 
