@@ -37,7 +37,7 @@ let planetMeshes = [];
 let orbitLines = [];
 let worldlines = [];
 let timeMarkers = [];
-let currentZoom = 2;
+let currentZoom = 5;
 let isDragging = false;
 let previousMousePosition = { x: 0, y: 0 };
 let cameraRotation = { x: Math.PI / 6, y: 0 };
@@ -52,12 +52,17 @@ let isLightMode = false;
 let viewMode = 0; // 0 = angled, 1 = top-down (looking into future), 2 = bottom-up (looking into past)
 let showTimeMarkerLines = true;
 let showTimeMarkerText = true;
+let showFullYearTimeMarkers = false; // When true, show time markers for the full selected year
 let showMoonWorldline = false; // Toggle for moon worldline
 let moonWorldlines = []; // Store moon worldline meshes
 let circadianWorldlines = []; // Circadian rhythm helix (hour-hand), shown at day/clock zoom
 let circadianState = 'off'; // 'off' | 'straightened' | 'wrapped' – toggled via scene icon
 let flattenOn = false; // Flatten view on/off (zoom >= 3). Smooth transition via currentFlattenAmount.
 let currentFlattenAmount = 0; // Lerps toward 1 when flattenOn, toward 0 when off (no camera jump).
+// flattenIntensity: 0–1 where 0 = no flatten, 1 = maximum flatten.
+// Default to maximum flatten so the slider (0 = flattest, 1 = tallest) starts at the far left.
+let flattenIntensity = 1;
+let focusTargetOverride = null; // 'sun' | 'earth' | null – null = use ZOOM_LEVELS default
 
 // WebXR controls (using adapter system)
 let xrAdapter = null;
@@ -518,7 +523,8 @@ function createPlanets(zoomLevel) {
     circadianWorldlines = [];
 
     const config = ZOOM_LEVELS[zoomLevel];
-    const focusOnEarth = config.focusTarget === 'earth';
+    const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
+    const focusOnEarth = effectiveFocusTarget === 'earth';
     
     // The orbital plane is at the current date
     // For zoom levels 3+ (Year, Quarter, etc.), use precise date; for 1-2 use year start
@@ -585,8 +591,8 @@ function createPlanets(zoomLevel) {
     
     // Update target focus point to follow selected position (will be smoothly interpolated)
     // For earth-focused zooms, focus on Earth's X,Z position at selected height
-    // For sun-focused zooms, focus on Sun at selected height
-    if (config.focusTarget === 'earth') {
+    // For sun-focused zooms, focus on the Sun at selected height (x=z=0)
+    if (effectiveFocusTarget === 'earth') {
         // Calculate Earth's position at selected time using exact date height
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
         // Calculate Earth's angle at selected time using continuous height calculation
@@ -601,8 +607,8 @@ function createPlanets(zoomLevel) {
             Math.sin(earthAngle) * earth.distance
         );
     } else {
-        // Sun-focused: just update Y
-        targetFocusPoint.y = selectedDateHeight;
+        // Sun-focused: point camera at the Sun's position in space-time (origin in X/Z at selected height)
+        targetFocusPoint.set(0, selectedDateHeight, 0);
     }
     
     // Update Sun position to match selected date height
@@ -987,7 +993,9 @@ function createTimeMarkers(zoomLevel) {
                 currentHourInDay // Needed for Zoom 8/9 hour calculation
             });
         }
-        TimeMarkers.createTimeMarkers(zoomLevel);
+        // Full-year toggle now only controls whether day markers span the entire year.
+        const options = showFullYearTimeMarkers ? { fullYearScope: true } : undefined;
+        TimeMarkers.createTimeMarkers(zoomLevel, options);
         applyTimeMarkerVisibility();
         return;
     }
@@ -1186,10 +1194,17 @@ function initControls() {
             if (typeof playTickSound === 'function') playTickSound(currentZoom);
         } else if (e.key.toLowerCase() === 'n' && !isLandingPage) {
             returnToPresent(); // Return selection to current date/time
-        } else if (e.key.toLowerCase() === 'm' && !isLandingPage) {
-            toggleMoonWorldline(); // Toggle moon worldline visibility
+        } else if (e.key.toLowerCase() === 'c' && !isLandingPage) {
+            toggleFocusTarget(); // Camera: toggle focus Sun/Earth
+        } else if (e.key.toLowerCase() === 'l' && !isLandingPage) {
+            toggleLightMode(); // Light mode
         } else if (e.key.toLowerCase() === 't' && !isLandingPage) {
-            toggleTimeRotation(); // Toggle time axis rotation (horizontal view)
+            toggleTimeMarkerText(); // Time marker text
+        } else if (e.key.toLowerCase() === 'm' && !isLandingPage) {
+            const soundBtn = document.getElementById('sound-toggle');
+            if (soundBtn) soundBtn.click(); // Mute/Sound
+        } else if (e.key.toLowerCase() === 'x' && !isLandingPage) {
+            toggleWebXR(); // XR mode
         } else if (e.key.toLowerCase() === 'r' && !isLandingPage) {
             rotate90Right(); // Rotate system 90 degrees clockwise
         } else if (e.code === 'Space' && !isLandingPage) {
@@ -1267,8 +1282,10 @@ function initControls() {
     // Time marker lines and text toggles
     const markersLinesBtn = document.getElementById('markers-lines-toggle');
     const markersTextBtn = document.getElementById('markers-text-toggle');
+    const markersYearBtn = document.getElementById('markers-year-toggle');
     if (markersLinesBtn) markersLinesBtn.addEventListener('click', toggleTimeMarkerLines);
     if (markersTextBtn) markersTextBtn.addEventListener('click', toggleTimeMarkerText);
+    if (markersYearBtn) markersYearBtn.addEventListener('click', toggleTimeMarkerYearMode);
     
     // Light mode toggle
     document.getElementById('light-mode-toggle').addEventListener('click', toggleLightMode);
@@ -1277,9 +1294,26 @@ function initControls() {
     const circadianToggleBtn = document.getElementById('circadian-toggle');
     if (circadianToggleBtn) circadianToggleBtn.addEventListener('click', toggleCircadianWorldline);
 
+    // Camera focus toggle (Sun <-> Earth)
+    const focusToggleBtn = document.getElementById('focus-toggle');
+    if (focusToggleBtn) focusToggleBtn.addEventListener('click', toggleFocusTarget);
+
     // Flatten view: icon toggles flatten on/off (smooth transition in animate)
     const flattenToggleBtn = document.getElementById('flatten-toggle');
     if (flattenToggleBtn) flattenToggleBtn.addEventListener('click', toggleFlatten);
+    const flattenHeightSlider = document.getElementById('flatten-height-slider');
+    if (flattenHeightSlider) {
+        // Slider value represents height (0 = flattest, 1 = tallest).
+        // Internally, flattenIntensity is how strong the flatten is (0 = none, 1 = max).
+        flattenHeightSlider.value = String(1 - flattenIntensity);
+        flattenHeightSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            if (!isNaN(value)) {
+                // Higher slider value = taller view (less flatten).
+                flattenIntensity = 1 - Math.min(1, Math.max(0, value));
+            }
+        });
+    }
     
     // WebXR toggle (using adapter system) – show whenever adapter loads so user can try (e.g. on headset over HTTP)
     const webxrToggle = document.getElementById('webxr-toggle');
@@ -1450,6 +1484,14 @@ function toggleTimeMarkerText() {
     applyTimeMarkerVisibility();
 }
 
+function toggleTimeMarkerYearMode() {
+    showFullYearTimeMarkers = !showFullYearTimeMarkers;
+    const button = document.getElementById('markers-year-toggle');
+    if (button) button.classList.toggle('active', showFullYearTimeMarkers);
+    // Recreate markers with the new mode applied
+    createTimeMarkers(currentZoom);
+}
+
 function getFlattenedY(logicalY) {
     const yScale = 1 - currentFlattenAmount * 0.95;
     return logicalY * Math.max(0.05, yScale);
@@ -1457,7 +1499,10 @@ function getFlattenedY(logicalY) {
 
 function updateFlattenIconVisibility() {
     const btn = document.getElementById('flatten-toggle');
-    if (btn) btn.style.display = currentZoom >= 3 ? '' : 'none';
+    const sliderWrap = document.getElementById('flatten-slider-wrap');
+    const shouldShow = currentZoom >= 3;
+    if (btn) btn.style.display = shouldShow ? '' : 'none';
+    if (sliderWrap) sliderWrap.style.display = shouldShow ? '' : 'none';
 }
 
 function toggleFlatten() {
@@ -1486,6 +1531,22 @@ function toggleCircadianWorldline() {
         const titles = { off: 'Circadian worldline: off', straightened: 'Circadian worldline: straightened', wrapped: 'Circadian worldline: wrapped' };
         btn.title = titles[circadianState];
         btn.setAttribute('aria-label', titles[circadianState]);
+    }
+    createPlanets(currentZoom);
+}
+
+function toggleFocusTarget() {
+    const config = ZOOM_LEVELS[currentZoom];
+    const current = focusTargetOverride || config.focusTarget || 'sun';
+    const next = current === 'sun' ? 'earth' : 'sun';
+    focusTargetOverride = next;
+    const focusLabel = document.getElementById('focus-target');
+    if (focusLabel) focusLabel.textContent = next.toUpperCase();
+    const btn = document.getElementById('focus-toggle');
+    if (btn) {
+        btn.classList.toggle('active', next === 'earth');
+        btn.title = `Camera focus: ${next.toUpperCase()} (C)`;
+        btn.setAttribute('aria-label', `Toggle camera focus between Sun and Earth (currently ${next.toUpperCase()})`);
     }
     createPlanets(currentZoom);
 }
@@ -2074,9 +2135,10 @@ function setZoomLevel(level, overrideDate) {
     // Set target camera distance for smooth transition
     targetCameraDistance = config.distance;
     
+    const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
     document.getElementById('current-zoom').textContent = config.name;
     document.getElementById('time-span').textContent = config.span;
-    document.getElementById('focus-target').textContent = config.focusTarget.toUpperCase();
+    document.getElementById('focus-target').textContent = effectiveFocusTarget.toUpperCase();
     document.getElementById('worldline-height').textContent = (config.timeYears * 100).toFixed(1) + ' AU';
     
     document.querySelectorAll('.zoom-option').forEach(opt => {
@@ -2124,6 +2186,7 @@ function setZoomLevel(level, overrideDate) {
 
 function getFocusPoint() {
     const config = ZOOM_LEVELS[currentZoom];
+    const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
     
     // Set vertical offset based on zoom level
     let verticalOffset = 0;
@@ -2135,7 +2198,7 @@ function getFocusPoint() {
         verticalOffset = getHeightForYear(currentYear, 1);
     }
     
-    if (config.focusTarget === 'earth') {
+    if (effectiveFocusTarget === 'earth') {
         const earthPlanet = planetMeshes.find(p => p.userData.name === 'Earth');
         if (earthPlanet) {
             const earthPos = earthPlanet.position.clone();
@@ -2162,7 +2225,7 @@ function animate(time, frame) {
     
     // Smooth flatten transition: scale only worldlines/markers (flattenableGroup), not Sun/planets.
     // Flatten toward the SELECTED TIME (focus Y), not toward zero.
-    const flattenTarget = flattenOn ? 1 : 0;
+    const flattenTarget = flattenOn ? flattenIntensity : 0;
     currentFlattenAmount += (flattenTarget - currentFlattenAmount) * 0.08;
     const yScale = Math.max(0.05, 1 - currentFlattenAmount * 0.95);
     if (typeof flattenableGroup !== 'undefined' && flattenableGroup && typeof focusPoint !== 'undefined' && focusPoint) {
@@ -2316,27 +2379,14 @@ document.addEventListener('DOMContentLoaded', () => {
     
     try {
         initScene();
-        
+        // Initialize zoom, camera, and UI using the standard zoom pipeline
         if (camera && typeof THREE !== 'undefined') {
             contentCamera = new THREE.PerspectiveCamera(camera.fov, camera.aspect, camera.near, camera.far);
             contentCamera.position.copy(camera.position);
             contentCamera.up.copy(camera.up);
         }
-        
-        // Initialize camera distance
-        const config = ZOOM_LEVELS[currentZoom];
-        targetCameraDistance = config.distance;
-        currentCameraDistance = config.distance;
-        
-        // Initialize focus point to current date
-        const currentDateHeight = getHeightForYear(currentYear, 1);
-        focusPoint.y = currentDateHeight;
-        targetFocusPoint.y = currentDateHeight;
-        
-        createPlanets(currentZoom);
-        updateFlattenIconVisibility();
         initControls();
-        updateTimeDisplays(); // Initialize time displays
+        setZoomLevel(currentZoom);
         // Use renderer.setAnimationLoop for WebXR compatibility
         renderer.setAnimationLoop(animate);
         
