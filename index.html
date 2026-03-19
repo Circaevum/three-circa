@@ -46,6 +46,8 @@
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="login">Log in</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="keyboard-controls">Keyboard Controls</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="about">About</button>
                 </div>
             </div>
         </div>
@@ -63,7 +65,6 @@
             <button type="button" id="event-list-close" class="event-list-close-btn" aria-label="Close">×</button>
         </div>
         <div class="event-list-panel-header-actions">
-            <span class="event-list-hint" aria-hidden="true">W/A/S/D to move • Scroll to zoom</span>
             <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
             <button type="button" id="events-panel-draw-all" class="strip-btn">Draw all</button>
             <button type="button" id="test-event-lines-btn" class="strip-btn">Test event lines</button>
@@ -71,6 +72,34 @@
         <div id="events-panel-list" class="event-list-panel-list"></div>
         <div id="event-list-panel-footer" class="event-list-panel-footer" style="display: none;">
             <a id="open-full-app-link" href="#" target="_self">Open full app</a> (keeps this view)
+        </div>
+    </aside>
+    <!-- Keyboard Controls: right-side overlay panel (pops open on the right) -->
+    <aside id="keyboard-controls-panel" class="keyboard-controls-panel" aria-hidden="true">
+        <div class="keyboard-controls-panel-header">
+            <strong>Keyboard Controls</strong>
+            <button type="button" id="keyboard-controls-close" class="keyboard-controls-close-btn" aria-label="Close">×</button>
+        </div>
+        <div class="keyboard-controls-panel-body">
+            <div class="keyboard-controls-grid" role="list">
+                <div class="keyboard-controls-item" role="listitem"><kbd>0-9</kbd> Set zoom level</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>W</kbd> Zoom in</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>S</kbd> Zoom out</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>A</kbd> Move selected time backward</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>D</kbd> Move selected time forward</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>N</kbd> Return to present</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>C</kbd> Focus target (Sun/Earth)</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>L</kbd> Light mode</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>T</kbd> Time marker text</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>M</kbd> Mute / Sound</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>X</kbd> WebXR</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>R</kbd> Rotate 90° right</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>Space</kbd> Smooth return to present</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>F</kbd> Flatten view</div>
+            </div>
+            <div class="keyboard-controls-footer">
+                <strong>Mouse / touch:</strong> Wheel zoom within zoom level • Pinch to zoom
+            </div>
         </div>
     </aside>
     <button type="button" id="event-list-pull-tab" class="event-list-pull-tab" aria-label="Open Event List" title="Event List">Events</button>
@@ -410,9 +439,11 @@
         /** Navbar: Event List (right-side panel), hamburger dropdown (Account, Event List), Test event lines */
         document.addEventListener('DOMContentLoaded', function() {
           var panel = document.getElementById('event-list-panel');
+          var keyboardPanel = document.getElementById('keyboard-controls-panel');
           var testBtn = document.getElementById('test-event-lines-btn');
           var navDropdown = document.getElementById('nav-dropdown');
           var navAccountBtn = document.getElementById('nav-account-btn');
+          var landingPage = document.getElementById('landing-page');
 
           if (testBtn) {
             testBtn.onclick = function() {
@@ -438,8 +469,31 @@
             panel.setAttribute('aria-hidden', 'true');
           }
 
+          function openKeyboardControlsPanel() {
+            if (!keyboardPanel) return;
+            closeEventListPanel();
+            keyboardPanel.classList.add('open');
+            keyboardPanel.setAttribute('aria-hidden', 'false');
+          }
+
+          function closeKeyboardControlsPanel() {
+            if (!keyboardPanel) return;
+            keyboardPanel.classList.remove('open');
+            keyboardPanel.setAttribute('aria-hidden', 'true');
+          }
+
+          function toggleAboutPanel() {
+            if (!landingPage) return;
+            var shouldOpen = !landingPage.classList.contains('active');
+            // Keep zoom at 0 while viewing About.
+            if (typeof setZoomLevel === 'function') setZoomLevel(0);
+            landingPage.classList.toggle('active', shouldOpen);
+          }
+
           var closeBtn = document.getElementById('event-list-close');
           if (closeBtn && panel) closeBtn.onclick = closeEventListPanel;
+          var keyboardCloseBtn = document.getElementById('keyboard-controls-close');
+          if (keyboardCloseBtn && keyboardPanel) keyboardCloseBtn.onclick = closeKeyboardControlsPanel;
 
           window.openEventListPanel = openEventListPanel;
           var pullTab = document.getElementById('event-list-pull-tab');
@@ -491,6 +545,8 @@
                 navAccountBtn.setAttribute('aria-expanded', 'false');
                 if (action === 'event-list') openEventListPanel();
                 if (action === 'login' && fullAppUrl) window.location.href = buildFullAppUrl(true);
+                if (action === 'keyboard-controls') openKeyboardControlsPanel();
+                if (action === 'about') toggleAboutPanel();
               };
             });
             document.addEventListener('click', function() {
@@ -515,6 +571,25 @@
           function formatDate(d) {
             if (!d || !(d instanceof Date) || isNaN(d.getTime())) return '—';
             return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+          }
+
+          function escapeHtml(s) {
+            return String(s == null ? '' : s)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
+          }
+
+          function linkifyText(s) {
+            var text = String(s == null ? '' : s);
+            if (!text) return '';
+            var escaped = escapeHtml(text);
+            // Convert plain URLs into clickable anchors.
+            return escaped.replace(/(https?:\/\/[^\s<]+)/gi, function(url) {
+              return '<a class="event-link" href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+            });
           }
 
           function oneDayLater(d) {
@@ -628,10 +703,18 @@
               row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:6px;cursor:pointer;' +
                 'border-left:3px solid ' + borderColor + ';background:' + bgColor + ';';
               row.title = 'Click to focus on this event';
-              row.innerHTML = '<div class="event-title">' + name + '</div>' +
+              var details = [];
+              if (ev.location) details.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
+              if (ev.description) details.push('<div class="event-detail event-description">' + linkifyText(ev.description) + '</div>');
+              if (ev.url) details.push('<div class="event-detail event-url"><a class="event-link" href="' + escapeHtml(ev.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(ev.url) + '</a></div>');
+              row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div>' +
                 '<div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' +
+                details.join('') +
                 '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
               row.onclick = function() { navigateToEvent(start, endForNav); };
+              row.querySelectorAll('a').forEach(function(a) {
+                a.onclick = function(e) { e.stopPropagation(); };
+              });
               var editBtn = row.querySelector('.events-panel-edit-btn');
               if (editBtn && window.self !== window.top && window.parent.postMessage) {
                 editBtn.onclick = function(e) {
@@ -642,6 +725,7 @@
                     summary: ev.summary || name,
                     description: ev.description || null,
                     location: ev.location || null,
+                    url: ev.url || null,
                     color: ev.color || ev.colorId || null,
                     layerId: item.layerId || 'user-events',
                     dtstart: ev.dtstart || { dateTime: start.toISOString() },
@@ -792,10 +876,16 @@
       (function() {
         var USER_EVENTS_LAYER = 'user-events';
         window.addEventListener('message', function(event) {
-          var gl = window.circaevumGL || (window.getGL && window.getGL());
-          if (!gl || typeof gl.ingestEvents !== 'function') return;
           var data = event.data;
           if (!data || typeof data !== 'object' || !data.type) return;
+          if (data.type === 'CIRCAEVUM_SET_FLATTEN') {
+            if (typeof window.applyFlattenFromEmbed === 'function') {
+              window.applyFlattenFromEmbed(!!data.flatten, typeof data.intensity === 'number' ? data.intensity : undefined);
+            }
+            return;
+          }
+          var gl = window.circaevumGL || (window.getGL && window.getGL());
+          if (!gl || typeof gl.ingestEvents !== 'function') return;
           if (data.type === 'CIRCAEVUM_INGEST_EVENTS' && data.layerId && Array.isArray(data.events)) {
             try {
               console.log('[Circaevum GL] Ingesting events from wrapper:', data.layerId, 'count=', data.events.length);

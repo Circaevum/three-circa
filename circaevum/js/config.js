@@ -65,7 +65,7 @@ const PLANET_DATA = [
 // ZOOM LEVEL CONFIGURATIONS
 // ============================================
 const ZOOM_LEVELS = {
-    0: { name: 'LANDING', span: 'Welcome', distance: 0, height: 0, timeYears: 0, focusTarget: 'none', centerYear: 2025 },
+    0: { name: 'LANDING', span: 'Welcome', distance: 25, height: 160, timeYears: 0.00274, focusTarget: 'none', centerYear: 2025 },
     1: { name: 'CENTURY', span: '100 years', distance: 10000, height: 5000, timeYears: 100, focusTarget: 'sun', centerYear: 2050 },
     2: { name: 'DECADE', span: '10 years', distance: 800, height: 1600, timeYears: 10, focusTarget: 'sun', centerYear: 2025 },
     3: { name: 'YEAR', span: '1 year', distance: 350, height: 800, timeYears: 1, focusTarget: 'sun', centerYear: 2025 },

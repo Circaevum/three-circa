@@ -215,6 +215,60 @@
     return parseInt(s.length === 6 ? s : s.slice(0, 6), 16);
   }
 
+  function clamp01(v) {
+    return Math.max(0, Math.min(1, v));
+  }
+
+  function lerpHexColor(hexA, hexB, t) {
+    const tt = clamp01(t);
+    const ar = (hexA >> 16) & 0xff;
+    const ag = (hexA >> 8) & 0xff;
+    const ab = hexA & 0xff;
+    const br = (hexB >> 16) & 0xff;
+    const bg = (hexB >> 8) & 0xff;
+    const bb = hexB & 0xff;
+    const rr = Math.round(ar + (br - ar) * tt);
+    const rg = Math.round(ag + (bg - ag) * tt);
+    const rb = Math.round(ab + (bb - ab) * tt);
+    return (rr << 16) | (rg << 8) | rb;
+  }
+
+  // Earlier events -> warmer red, later events -> cooler blue.
+  function getTimeGradientHex(normalizedTime) {
+    const EARLY_RED = 0xef4444;
+    const LATE_BLUE = 0x3b82f6;
+    return lerpHexColor(EARLY_RED, LATE_BLUE, normalizedTime);
+  }
+
+  function hasExplicitEventColor(eventOrLine) {
+    const raw = eventOrLine?.color ?? eventOrLine?.colorId ?? null;
+    return raw != null && String(raw).trim() !== '';
+  }
+
+  function getTimeRange(items) {
+    let minMs = Infinity;
+    let maxMs = -Infinity;
+    for (let i = 0; i < items.length; i++) {
+      const d = getEventStart(items[i]);
+      if (!d || isNaN(d.getTime())) continue;
+      const ms = d.getTime();
+      if (ms < minMs) minMs = ms;
+      if (ms > maxMs) maxMs = ms;
+    }
+    if (!isFinite(minMs) || !isFinite(maxMs)) return null;
+    return { minMs, maxMs };
+  }
+
+  function getNormalizedTimeForDate(date, range) {
+    if (!date || isNaN(date.getTime())) return 0.5;
+    if (range && isFinite(range.minMs) && isFinite(range.maxMs) && range.maxMs > range.minMs) {
+      return clamp01((date.getTime() - range.minMs) / (range.maxMs - range.minMs));
+    }
+    const startOfYear = Date.UTC(date.getUTCFullYear(), 0, 1, 0, 0, 0, 0);
+    const startOfNextYear = Date.UTC(date.getUTCFullYear() + 1, 0, 1, 0, 0, 0, 0);
+    return clamp01((date.getTime() - startOfYear) / Math.max(1, (startOfNextYear - startOfYear)));
+  }
+
   /**
    * Create a single event marker (point event or start of duration event)
    * @param {Object|VEvent} event
@@ -240,7 +294,9 @@
       ? SceneGeometry.getPosition3D(height, angle, r)
       : { x: Math.cos(angle) * r, y: height, z: Math.sin(angle) * r };
 
-    const color = parseColor(layerConfig.color || event.color || '#00b4d8');
+    const explicitColor = hasExplicitEventColor(event);
+    const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
+    const color = parseColor(explicitColor ? (event.color ?? event.colorId) : fallbackGradient);
     const geometry = new global.THREE.SphereGeometry(0.8, 12, 12);
     const material = new global.THREE.MeshStandardMaterial({
       color,
@@ -314,10 +370,12 @@
     const lineThickness = Math.max(0.2, (layerConfig.lineThickness != null ? layerConfig.lineThickness : 1));
     const opacity = layerConfig.opacity != null ? layerConfig.opacity : 0.7;
     const eventColorRaw = event.color ?? event.colorId ?? null;
-    const eventHex = parseColor(eventColorRaw || layerConfig.color || '#00b4d8');
+    const explicitEventColor = hasExplicitEventColor(event);
+    const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
+    const eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
     const layerHex = parseColor(layerConfig.color || '#00b4d8');
     // Prefer explicit fillColor, then per-event color, then layer color.
-    const fillHex = parseColor(layerConfig.fillColor || eventColorRaw || layerConfig.color || '#00b4d8');
+    const fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
     const borderStyle = layerConfig.borderStyle || 'event';
 
     const userData = {
@@ -416,6 +474,7 @@
    * @returns {Array<THREE.Object3D>} Created line and label objects (EventLine + sprites)
    */
   function createEventLineObjects(lines, layerConfig, sceneContentGroup, radiusOverride) {
+    const lineTimeRange = getTimeRange(lines);
     const earthDist = typeof radiusOverride === 'number' && !isNaN(radiusOverride)
       ? radiusOverride
       : getEarthDistance();
@@ -467,7 +526,9 @@
         : getRadiusForTimeOfDay(midDate, earthDist, i % 4);
       const labelRadius = r + EVENT_LINE_LABEL_RADIUS_OFFSET;
 
-      const colorHex = parseColor(line.color != null ? line.color : layerConfig.color || '#00b4d8');
+      const lineHasExplicitColor = hasExplicitEventColor(line);
+      const lineGradient = getTimeGradientHex(getNormalizedTimeForDate(start, lineTimeRange));
+      const colorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
       const midHeight = (startHeight + endHeight) / 2;
 
       if (isShortEvent) {
@@ -520,8 +581,8 @@
       const borderStyle = lineStyle.borderStyle ?? layerConfig.borderStyle ?? firstStyle.borderStyle ?? 'event';
 
       const layerColorHex = parseColor(layerConfig.color || '#00b4d8');
-      const eventColorHex = parseColor(line.color != null ? line.color : layerConfig.color || '#00b4d8');
-      const fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (line.color != null ? parseColor(line.color) : layerColorHex);
+      const eventColorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
+      const fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color) : eventColorHex);
       const opacity = (lineStyle.opacity != null ? lineStyle.opacity : layerConfig.opacity) ?? 0.7;
       const isLongTerm = durationDays > 7;
       const showTube = isLongTerm && plotType !== 'lines' && points.length >= 9 && global.THREE.CatmullRomCurve3 && global.THREE.TubeGeometry;
@@ -618,6 +679,7 @@
     if (!events || !layerConfig) return objects;
     const group = sceneContentGroup || null;
     const byCategory = layerConfig.layerStylesByCategory || {};
+    const eventTimeRange = getTimeRange(events);
 
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
@@ -625,8 +687,8 @@
       const styleOverride = byCategory[category];
       if (styleOverride && styleOverride.visible === false) continue;
       const effectiveConfig = styleOverride
-        ? { ...layerConfig, ...styleOverride, layerStylesByCategory: undefined }
-        : { ...layerConfig, layerStylesByCategory: undefined };
+        ? { ...layerConfig, ...styleOverride, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange }
+        : { ...layerConfig, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange };
       const hasEnd = !!getEventEnd(event);
       const obj = hasEnd ? createEventWorldline(event, effectiveConfig) : createEventMarker(event, effectiveConfig);
       if (obj) {
