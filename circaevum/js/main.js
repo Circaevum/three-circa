@@ -172,6 +172,7 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
             currentHourInDay = selectedHour;
             break;
             
+        case 0: // Landing camera view (shares day/hour selection model)
         case 8: // Day view
         case 9: // Clock view
             // Calculate day offset
@@ -275,6 +276,7 @@ function getSelectedDateTime() {
             selected.setDate(selectedDay7);
             break;
             
+        case 0: // Landing camera view (shares day/hour selection model)
         case 8: // Day view
         case 9: // Clock view
             const hourDiff = currentHourInDay - actualHour;
@@ -592,7 +594,59 @@ function createPlanets(zoomLevel) {
     // Update target focus point to follow selected position (will be smoothly interpolated)
     // For earth-focused zooms, focus on Earth's X,Z position at selected height
     // For sun-focused zooms, focus on the Sun at selected height (x=z=0)
-    if (effectiveFocusTarget === 'earth') {
+    if (zoomLevel === 0 && !focusTargetOverride) {
+        // Zoom 0 (Landing): focus halfway along the "red hour hand" direction
+        // from Earth toward the current hour, so the camera includes the local
+        // Earth region and the circadian/hour view near now.
+        const now = new Date();
+        const hourToDisplay = now.getHours();
+
+        const earth = PLANET_DATA.find(p => p.name === 'Earth');
+        if (earth) {
+            // Earth position at the selected height (matches how planets are placed below)
+            const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
+            const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / earth.orbitalPeriod;
+            const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
+            const earthAngle = earth.startAngle - angleFromCurrentToSelected; // Counter-clockwise
+
+            const earthX = Math.cos(earthAngle) * earth.distance;
+            const earthY = selectedDateHeight;
+            const earthZ = Math.sin(earthAngle) * earth.distance;
+
+            // Noon points toward the Sun (Sun at origin); match timemarker-renderer math.
+            const sunToEarthAngle = Math.atan2(earthZ, earthX);
+
+            // Matches TimeMarkers RADII_CONFIG.hour.spiral(dist) = dist * 0.1 * 0.9
+            const spiralRadius = earth.distance * 0.1 * 0.9;
+
+            // Use the "hour spiral" day-height scaling from zoom 8 (24h = one day).
+            const hourZoom = (ZOOM_LEVELS[8] && ZOOM_LEVELS[8].timeYears != null) ? 8 : 9;
+            const dayHeight = (ZOOM_LEVELS[hourZoom].timeYears || 0.00274) * 100;
+            const spiralHeight = dayHeight;
+
+            const currentT = hourToDisplay / 24;
+            const currentHourRadians = currentT * Math.PI * 2;
+            const currentAngleFromEarth = sunToEarthAngle - currentHourRadians;
+
+            const currentOffsetX = Math.cos(currentAngleFromEarth) * spiralRadius;
+            const currentOffsetZ = Math.sin(currentAngleFromEarth) * spiralRadius;
+
+            // Current hour tip height uses: centerY + (t * spiralHeight) - (spiralHeight/2)
+            const currentHourY = earthY + (currentT * spiralHeight) - (spiralHeight / 2);
+
+            const hourTipX = earthX + currentOffsetX;
+            const hourTipZ = earthZ + currentOffsetZ;
+
+            // Midpoint between Earth center and the hour-tip end of the red hand.
+            targetFocusPoint.set(
+                (earthX + hourTipX) / 2,
+                (earthY + currentHourY) / 2,
+                (earthZ + hourTipZ) / 2
+            );
+        } else {
+            targetFocusPoint.set(0, selectedDateHeight, 0);
+        }
+    } else if (effectiveFocusTarget === 'earth') {
         // Calculate Earth's position at selected time using exact date height
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
         // Calculate Earth's angle at selected time using continuous height calculation
@@ -808,8 +862,10 @@ function createPlanets(zoomLevel) {
         }
     }
 
-    // Create time markers for this zoom level
-    createTimeMarkers(zoomLevel);
+    // Create time markers for this zoom level.
+    // Zoom 0 is a landing camera mode; keep day/clock markers visible so selected-time
+    // context does not disappear when toggling between 9 and 0.
+    createTimeMarkers(zoomLevel === 0 ? 9 : zoomLevel);
 }
 
 // Get marker color based on light mode
@@ -1160,31 +1216,43 @@ function initControls() {
             return;
         }
         
-        // Disable WASD navigation on landing page (Zoom 0)
-        const isLandingPage = currentZoom === 0;
+    // Landing zoom (Zoom 0) is a camera/scene perspective; only disable A/D navigation on it.
+    const isLandingPage = currentZoom === 0;
         
         const key = parseInt(e.key);
         if (key >= 0 && key <= 9) {
             setZoomLevel(key);
-        } else if (e.key.toLowerCase() === 'w' && !isLandingPage) {
-            // Zoom in (increase zoom level), skip Lunar view (6)
-            if (currentZoom < 9) {
-                let nextZoom = currentZoom + 1;
-                // Skip Lunar view (6) unless we're already at 6
-                if (nextZoom === 6 && currentZoom !== 6) {
-                    nextZoom = 7;
+        } else if (e.key.toLowerCase() === 'w') {
+            // Zoom in (increase zoom level). Wrap between 9 <-> 0.
+            if (isLandingPage) {
+                setZoomLevel(9);
+            } else if (currentZoom === 9) {
+                setZoomLevel(0);
+            } else {
+                // Zoom in (increase zoom level), skip Lunar view (6)
+                if (currentZoom < 9) {
+                    let nextZoom = currentZoom + 1;
+                    // Skip Lunar view (6) unless we're already at 6
+                    if (nextZoom === 6 && currentZoom !== 6) {
+                        nextZoom = 7;
+                    }
+                    setZoomLevel(nextZoom);
                 }
-                setZoomLevel(nextZoom);
             }
-        } else if (e.key.toLowerCase() === 's' && !isLandingPage) {
-            // Zoom out (decrease zoom level), skip Lunar view (6)
-            if (currentZoom > 1) {
-                let prevZoom = currentZoom - 1;
-                // Skip Lunar view (6) unless we're already at 6
-                if (prevZoom === 6 && currentZoom !== 6) {
-                    prevZoom = 5;
+        } else if (e.key.toLowerCase() === 's') {
+            // Zoom out (decrease zoom level). Wrap between 0 <-> 9.
+            if (isLandingPage) {
+                setZoomLevel(9);
+            } else {
+                // Zoom out (decrease zoom level), skip Lunar view (6)
+                if (currentZoom > 1) {
+                    let prevZoom = currentZoom - 1;
+                    // Skip Lunar view (6) unless we're already at 6
+                    if (prevZoom === 6 && currentZoom !== 6) {
+                        prevZoom = 5;
+                    }
+                    setZoomLevel(prevZoom);
                 }
-                setZoomLevel(prevZoom);
             }
         } else if (e.key.toLowerCase() === 'a' && !isLandingPage) {
             navigateUnit(-1); // Navigate down one unit (previous week, day, hour, etc.)
@@ -1519,6 +1587,37 @@ function toggleFlatten() {
 function toggleFlattenWithKey() {
     if (currentZoom < 3) return;
     toggleFlatten();
+}
+
+/**
+ * Parent embed (yin-portal) can enable flatten for public share views.
+ * @param {boolean} enabled - turn flatten on or off
+ * @param {number} [internalIntensity] - 0 = no flatten, 1 = max flatten (matches flattenIntensity in this file)
+ */
+function applyFlattenFromEmbed(enabled, internalIntensity) {
+    flattenOn = !!enabled;
+    if (typeof internalIntensity === 'number' && !isNaN(internalIntensity)) {
+        flattenIntensity = Math.min(1, Math.max(0, internalIntensity));
+    } else if (flattenOn) {
+        flattenIntensity = 1;
+    }
+    const btn = document.getElementById('flatten-toggle');
+    if (btn) {
+        btn.classList.toggle('active', flattenOn);
+        btn.title = flattenOn ? 'Flatten view: on (F)' : 'Flatten view (F)';
+        btn.setAttribute('aria-label', flattenOn ? 'Flatten view: on' : 'Flatten view: off');
+    }
+    const slider = document.getElementById('flatten-height-slider');
+    if (slider) {
+        slider.value = String(1 - flattenIntensity);
+    }
+    if (typeof updateFlattenIconVisibility === 'function') {
+        updateFlattenIconVisibility();
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.applyFlattenFromEmbed = applyFlattenFromEmbed;
 }
 
 function toggleCircadianWorldline() {
@@ -2116,10 +2215,13 @@ function setZoomLevel(level, overrideDate) {
     // Keep zoom HUD (controls) visible even in Zoom 0; body class used for z-index in CSS
     document.body.classList.toggle('zoom-level-0', level === 0);
     
-    // Show/hide landing page
+    // Landing/About overlay:
+    // - Zoom 0 should NOT automatically open the About/landing overlay.
+    // - The overlay is toggled explicitly via the hamburger menu ("About").
+    // - Any non-zero zoom closes the overlay.
     if (level === 0) {
-        landingPage.classList.add('active');
-        // Keep controls at bottom (same position as other zoom levels)
+        // Ensure about/landing overlay is not kept open when zoom is controlled by camera.
+        landingPage.classList.remove('active');
         if (controls) {
             controls.style.top = 'auto';
             controls.style.bottom = '30px';
@@ -2311,7 +2413,7 @@ function animate(time, frame) {
     const distance = currentCameraDistance;
     
     // Set target camera orientation based on zoom level
-    if (currentZoom === 9) {
+    if (currentZoom === 9 || currentZoom === 0) {
         isPolarView = true;
         
         // Get Earth's position

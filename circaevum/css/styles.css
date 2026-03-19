@@ -641,6 +641,121 @@ body.light-mode .account-panel-option:hover {
     pointer-events: auto;
 }
 
+/* Keyboard Controls: right-side overlay panel (opened from hamburger menu) */
+.keyboard-controls-panel {
+    position: fixed;
+    top: var(--nav-height);
+    right: 0;
+    bottom: 0;
+    width: 420px;
+    max-width: 90vw;
+    display: flex;
+    flex-direction: column;
+    background: rgba(10, 10, 18, 0.96);
+    border-left: 1px solid rgba(0, 180, 216, 0.4);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    overflow: hidden;
+    pointer-events: auto;
+}
+
+.keyboard-controls-panel.open {
+    transform: translateX(0);
+}
+
+.keyboard-controls-panel.open ~ .event-list-pull-tab {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.keyboard-controls-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: rgba(0, 180, 216, 0.12);
+    border-bottom: 1px solid rgba(0, 180, 216, 0.35);
+    flex-shrink: 0;
+}
+
+.keyboard-controls-panel-header strong {
+    color: var(--orbit-silver);
+    font-size: 14px;
+    letter-spacing: 0.05em;
+}
+
+.keyboard-controls-close-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    line-height: 1;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--orbit-silver);
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.keyboard-controls-close-btn:hover {
+    background: rgba(0, 180, 216, 0.25);
+}
+
+.keyboard-controls-panel-body {
+    padding: 16px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.keyboard-controls-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.keyboard-controls-item {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(0, 180, 216, 0.08);
+    border: 1px solid rgba(0, 180, 216, 0.18);
+    color: var(--orbit-silver);
+    font-size: 13px;
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+}
+
+.keyboard-controls-footer {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0, 180, 216, 0.2);
+    font-size: 12px;
+    color: rgba(142, 202, 230, 0.75);
+}
+
+kbd {
+    font-family: 'Space Mono', ui-monospace, monospace;
+    font-size: 12px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: rgba(0, 180, 216, 0.18);
+    border: 1px solid rgba(0, 180, 216, 0.45);
+    color: var(--orbit-silver);
+    white-space: nowrap;
+}
+
+body.light-mode .keyboard-controls-panel {
+    background: rgba(232, 244, 248, 0.98);
+    border-left-color: rgba(0, 119, 163, 0.4);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+}
+
 .event-list-panel.open {
     transform: translateX(0);
 }
@@ -820,6 +935,24 @@ body.viewer-no-nav .loading {
     margin-bottom: 8px;
 }
 
+.event-list-panel-list .event-detail {
+    font-size: 11px;
+    color: rgba(142, 202, 230, 0.9);
+    margin-bottom: 6px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.event-list-panel-list .event-link {
+    color: var(--cosmic-cyan);
+    text-decoration: underline;
+}
+
+.event-list-panel-list .event-link:hover {
+    opacity: 0.9;
+}
+
 .event-list-panel-list .line-row .event-meta {
     margin-bottom: 0;
 }
@@ -879,6 +1012,12 @@ body.light-mode .event-list-panel-list .event-horizon-empty {
 }
 body.light-mode .event-list-panel-list .event-title {
     color: var(--orbit-silver);
+}
+body.light-mode .event-list-panel-list .event-detail {
+    color: rgba(42, 95, 127, 0.95);
+}
+body.light-mode .event-list-panel-list .event-link {
+    color: #0066cc;
 }
 body.light-mode .event-list-panel-list .draw-line-btn {
     background: rgba(0, 119, 163, 0.4);
