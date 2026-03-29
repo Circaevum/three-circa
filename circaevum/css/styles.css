@@ -3,30 +3,81 @@
  * All styling for the planetary time visualization
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Orbitron:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap');
 
 /* ============================================
-   CSS VARIABLES (Theme Colors)
+   CSS VARIABLES — aligned with yin-portal tokens
    ============================================ */
 :root {
-    --deep-space: #000814;
-    --star-field: #001d3d;
-    --nebula-blue: #003566;
-    --cosmic-cyan: #00b4d8;
-    --solar-yellow: #ffd60a;
+    --deep-space: #020617;
+    --star-field: #020c1b;
+    --nebula-blue: #082f49;
+    --cosmic-cyan: #0ea5e9;
+    --solar-yellow: #eab308;
     --plasma-pink: #ff006e;
-    --orbit-silver: #8ecae6;
+    --orbit-silver: #cbd5f5;
     --nav-height: 56px;
+
+    --ui-font-display: 'Orbitron', sans-serif;
+    --ui-font-body: 'DM Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    --ui-font-mono: 'Space Mono', ui-monospace, monospace;
+    --ui-motion: 0.2s ease;
+    --ui-radius-sm: 6px;
+    --ui-radius-md: 10px;
+    --ui-radius-lg: 12px;
+
+    --ui-surface-nav: rgba(2, 10, 22, 0.9);
+    --ui-surface-panel: rgba(4, 14, 28, 0.98);
+    --ui-surface-panel-wash:
+        radial-gradient(120% 70% at 0% -20%, rgba(14, 165, 233, 0.14), transparent 52%),
+        radial-gradient(90% 50% at 100% 110%, rgba(234, 179, 8, 0.06), transparent 48%),
+        var(--ui-surface-panel);
+    --ui-surface-dropdown: rgba(5, 16, 34, 0.98);
+    --ui-surface-card-head: rgba(3, 12, 24, 0.55);
+
+    --ui-border: rgba(14, 165, 233, 0.28);
+    --ui-border-strong: rgba(14, 165, 233, 0.44);
+    --ui-divider: rgba(14, 165, 233, 0.14);
+    --ui-text-muted: rgba(148, 163, 184, 0.92);
+    --ui-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --ui-shadow-elevated:
+        0 0 0 1px rgba(0, 0, 0, 0.25),
+        0 20px 50px rgba(0, 0, 0, 0.5);
+    --ui-shadow-dropdown: 0 10px 36px rgba(0, 0, 0, 0.45);
+
+    --ui-scrollbar-thumb: rgba(14, 165, 233, 0.32);
+    --ui-scrollbar-thumb-hover: rgba(14, 165, 233, 0.5);
+    --ui-scrollbar-track: rgba(2, 6, 16, 0.45);
 }
 
 body.light-mode {
-    --deep-space: #e8f4f8;
-    --star-field: #d4e9f0;
-    --nebula-blue: #b8d8e6;
-    --cosmic-cyan: #0077a3;
-    --solar-yellow: #f4a300;
+    --deep-space: #f0f7fc;
+    --star-field: #e8f3fa;
+    --nebula-blue: #dbeafe;
+    --cosmic-cyan: #0284c7;
+    --solar-yellow: #d97706;
     --plasma-pink: #d4006e;
-    --orbit-silver: #2a5f7f;
+    --orbit-silver: #1e293b;
+
+    --ui-surface-nav: rgba(255, 255, 255, 0.94);
+    --ui-surface-panel: #ffffff;
+    --ui-surface-panel-wash: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(241, 245, 249, 0.98) 100%);
+    --ui-surface-dropdown: rgba(255, 255, 255, 0.99);
+    --ui-surface-card-head: rgba(255, 255, 255, 0.72);
+
+    --ui-border: rgba(2, 132, 199, 0.22);
+    --ui-border-strong: rgba(2, 132, 199, 0.38);
+    --ui-divider: rgba(148, 163, 184, 0.22);
+    --ui-text-muted: rgba(71, 85, 105, 0.88);
+    --ui-inset: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    --ui-shadow-elevated:
+        0 0 0 1px rgba(15, 23, 42, 0.06),
+        0 18px 44px rgba(15, 23, 42, 0.1);
+    --ui-shadow-dropdown: 0 12px 36px rgba(15, 23, 42, 0.1);
+
+    --ui-scrollbar-thumb: rgba(2, 132, 199, 0.4);
+    --ui-scrollbar-thumb-hover: rgba(2, 132, 199, 0.58);
+    --ui-scrollbar-track: rgba(226, 232, 240, 0.65);
 }
 
 /* ============================================
@@ -39,11 +90,62 @@ body.light-mode {
 }
 
 body {
-    font-family: 'Space Mono', monospace;
+    font-family: var(--ui-font-body);
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     background: var(--deep-space);
     color: var(--orbit-silver);
     overflow: hidden;
     cursor: crosshair;
+}
+
+/* Thin scrollbars on overlay panels (avoids bright OS scrollbar in dark mode) */
+.account-panel-body,
+.account-console,
+.left-panel-body,
+.event-list-panel-list,
+.keyboard-controls-panel-body {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ui-scrollbar-thumb) var(--ui-scrollbar-track);
+}
+
+.account-panel-body::-webkit-scrollbar,
+.account-console::-webkit-scrollbar,
+.left-panel-body::-webkit-scrollbar,
+.event-list-panel-list::-webkit-scrollbar,
+.keyboard-controls-panel-body::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+}
+
+.account-panel-body::-webkit-scrollbar-track,
+.account-console::-webkit-scrollbar-track,
+.left-panel-body::-webkit-scrollbar-track,
+.event-list-panel-list::-webkit-scrollbar-track,
+.keyboard-controls-panel-body::-webkit-scrollbar-track {
+    background: var(--ui-scrollbar-track);
+    border-radius: 4px;
+}
+
+.account-panel-body::-webkit-scrollbar-thumb,
+.account-console::-webkit-scrollbar-thumb,
+.left-panel-body::-webkit-scrollbar-thumb,
+.event-list-panel-list::-webkit-scrollbar-thumb,
+.keyboard-controls-panel-body::-webkit-scrollbar-thumb {
+    background: var(--ui-scrollbar-thumb);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+.account-panel-body::-webkit-scrollbar-thumb:hover,
+.account-console::-webkit-scrollbar-thumb:hover,
+.left-panel-body::-webkit-scrollbar-thumb:hover,
+.event-list-panel-list::-webkit-scrollbar-thumb:hover,
+.keyboard-controls-panel-body::-webkit-scrollbar-thumb:hover {
+    background: var(--ui-scrollbar-thumb-hover);
+    background-clip: padding-box;
 }
 
 /* ============================================
@@ -72,11 +174,13 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 16px;
-    background: rgba(0, 8, 20, 0.92);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(0, 180, 216, 0.35);
+    padding: 0 18px;
+    background: var(--ui-surface-nav);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--ui-border);
+    box-shadow: var(--ui-inset);
     pointer-events: auto;
+    transition: border-color var(--ui-motion), background var(--ui-motion);
 }
 
 .circaevum-nav .nav-left {
@@ -93,13 +197,13 @@ body {
 }
 
 .circaevum-nav .nav-brand {
-    font-family: 'Orbitron', sans-serif;
+    font-family: var(--ui-font-display);
     font-weight: 700;
-    font-size: 1.35rem;
-    letter-spacing: 0.08em;
+    font-size: 1.28rem;
+    letter-spacing: 0.07em;
     color: var(--solar-yellow);
     text-decoration: none;
-    text-shadow: 0 0 12px rgba(255, 214, 10, 0.4);
+    text-shadow: 0 0 14px rgba(255, 214, 10, 0.35);
 }
 
 .circaevum-nav .nav-link {
@@ -204,12 +308,12 @@ body.light-mode .circaevum-nav .light-mode-toggle .icon-sun {
     top: 100%;
     right: 0;
     margin-top: 6px;
-    min-width: 160px;
-    background: rgba(0, 8, 20, 0.96);
-    border: 1px solid rgba(0, 180, 216, 0.4);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    padding: 6px 0;
+    min-width: 176px;
+    background: var(--ui-surface-dropdown);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-md);
+    box-shadow: var(--ui-shadow-dropdown);
+    padding: 6px;
     display: none;
     z-index: 1002;
 }
@@ -221,33 +325,25 @@ body.light-mode .circaevum-nav .light-mode-toggle .icon-sun {
 .nav-dropdown-item {
     display: block;
     width: 100%;
-    padding: 10px 16px;
-    font-size: 13px;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    font-weight: 500;
     font-family: inherit;
     color: var(--orbit-silver);
     background: none;
     border: none;
+    border-radius: var(--ui-radius-sm);
     text-align: left;
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition: background var(--ui-motion);
 }
 
 .nav-dropdown-item:hover {
-    background: rgba(0, 180, 216, 0.2);
-}
-
-body.light-mode .nav-dropdown {
-    background: rgba(232, 244, 248, 0.98);
-    border-color: rgba(0, 119, 163, 0.4);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-}
-
-body.light-mode .nav-dropdown-item {
-    color: var(--orbit-silver);
+    background: rgba(14, 165, 233, 0.14);
 }
 
 body.light-mode .nav-dropdown-item:hover {
-    background: rgba(0, 119, 163, 0.15);
+    background: rgba(2, 132, 199, 0.1);
 }
 
 /* ============================================
@@ -274,9 +370,9 @@ body.light-mode .nav-dropdown-item:hover {
     max-width: 90vw;
     display: flex;
     flex-direction: column;
-    background: rgba(10, 10, 18, 0.96);
-    border-right: 1px solid rgba(0, 180, 216, 0.4);
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+    background: var(--ui-surface-panel-wash);
+    border-right: 1px solid var(--ui-border-strong);
+    box-shadow: var(--ui-shadow-elevated);
     z-index: 999;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
@@ -293,15 +389,17 @@ body.light-mode .nav-dropdown-item:hover {
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    background: rgba(0, 180, 216, 0.12);
-    border-bottom: 1px solid rgba(0, 180, 216, 0.35);
+    background: var(--ui-surface-card-head);
+    border-bottom: 1px solid var(--ui-divider);
     flex-shrink: 0;
 }
 
 .account-panel-header strong {
-    color: var(--orbit-silver);
-    font-size: 14px;
-    letter-spacing: 0.05em;
+    font-family: var(--ui-font-display);
+    color: var(--cosmic-cyan);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
 }
 
 .account-panel-close-btn {
@@ -431,7 +529,7 @@ body.light-mode .nav-dropdown-item:hover {
 }
 
 .account-console {
-    font-family: ui-monospace, monospace;
+    font-family: var(--ui-font-mono);
     font-size: 11px;
     line-height: 1.4;
     color: var(--orbit-silver);
@@ -580,17 +678,8 @@ body.light-mode .nav-dropdown-item:hover {
     border-color: rgba(0, 180, 216, 0.5);
 }
 
-body.light-mode .account-panel {
-    background: rgba(232, 244, 248, 0.98);
-    border-right-color: rgba(0, 119, 163, 0.4);
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.12);
-}
-body.light-mode .account-panel-header {
-    background: rgba(0, 119, 163, 0.12);
-    border-bottom-color: rgba(0, 119, 163, 0.35);
-}
 body.light-mode .account-panel-header strong {
-    color: var(--orbit-silver);
+    color: var(--cosmic-cyan);
 }
 body.light-mode .account-form-back {
     color: var(--cosmic-cyan);
@@ -907,9 +996,9 @@ body.light-mode .calendar-layer-visibility-btn {
     max-width: 90vw;
     display: flex;
     flex-direction: column;
-    background: rgba(10, 10, 18, 0.96);
-    border-left: 1px solid rgba(0, 180, 216, 0.4);
-    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
+    background: var(--ui-surface-panel-wash);
+    border-left: 1px solid var(--ui-border-strong);
+    box-shadow: var(--ui-shadow-elevated);
     z-index: 999;
     transform: translateX(100%);
     transition: transform 0.25s ease;
@@ -927,9 +1016,9 @@ body.light-mode .calendar-layer-visibility-btn {
     max-width: 90vw;
     display: flex;
     flex-direction: column;
-    background: rgba(10, 10, 18, 0.96);
-    border-left: 1px solid rgba(0, 180, 216, 0.4);
-    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
+    background: var(--ui-surface-panel-wash);
+    border-left: 1px solid var(--ui-border-strong);
+    box-shadow: var(--ui-shadow-elevated);
     z-index: 1000;
     transform: translateX(100%);
     transition: transform 0.25s ease;
@@ -962,15 +1051,17 @@ body.keyboard-panel-open .event-list-pull-tab {
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    background: rgba(0, 180, 216, 0.12);
-    border-bottom: 1px solid rgba(0, 180, 216, 0.35);
+    background: var(--ui-surface-card-head);
+    border-bottom: 1px solid var(--ui-divider);
     flex-shrink: 0;
 }
 
 .keyboard-controls-panel-header strong {
-    color: var(--orbit-silver);
-    font-size: 14px;
-    letter-spacing: 0.05em;
+    font-family: var(--ui-font-display);
+    color: var(--cosmic-cyan);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
 }
 
 .keyboard-controls-close-btn {
@@ -1027,7 +1118,7 @@ body.keyboard-panel-open .event-list-pull-tab {
 }
 
 kbd {
-    font-family: 'Space Mono', ui-monospace, monospace;
+    font-family: var(--ui-font-mono);
     font-size: 12px;
     padding: 3px 7px;
     border-radius: 6px;
@@ -1035,12 +1126,6 @@ kbd {
     border: 1px solid rgba(0, 180, 216, 0.45);
     color: var(--orbit-silver);
     white-space: nowrap;
-}
-
-body.light-mode .keyboard-controls-panel {
-    background: rgba(232, 244, 248, 0.98);
-    border-left-color: rgba(0, 119, 163, 0.4);
-    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
 }
 
 .event-list-panel.open {
@@ -1112,15 +1197,17 @@ body.viewer-no-nav .loading {
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    background: rgba(0, 180, 216, 0.12);
-    border-bottom: 1px solid rgba(0, 180, 216, 0.35);
+    background: var(--ui-surface-card-head);
+    border-bottom: 1px solid var(--ui-divider);
     flex-shrink: 0;
 }
 
 .event-list-panel-header strong {
-    color: var(--orbit-silver);
-    font-size: 14px;
-    letter-spacing: 0.05em;
+    font-family: var(--ui-font-display);
+    color: var(--cosmic-cyan);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
 }
 
 .event-list-panel-context {
@@ -1287,17 +1374,8 @@ body.viewer-no-nav .loading {
 }
 
 /* Light mode: Event List panel */
-body.light-mode .event-list-panel {
-    background: rgba(232, 244, 248, 0.98);
-    border-left-color: rgba(0, 119, 163, 0.4);
-    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
-}
-body.light-mode .event-list-panel-header {
-    background: rgba(0, 119, 163, 0.12);
-    border-bottom-color: rgba(0, 119, 163, 0.35);
-}
 body.light-mode .event-list-panel-header strong {
-    color: var(--orbit-silver);
+    color: var(--cosmic-cyan);
 }
 body.light-mode .event-list-panel .strip-btn {
     background: rgba(0, 119, 163, 0.3);
@@ -1465,9 +1543,9 @@ body.light-mode .scene-icon-btn.active {
     max-width: 90vw;
     height: 100vh;
     z-index: 1001;
-    background: rgba(10, 10, 18, 0.98);
-    border-right: 1px solid rgba(0, 180, 216, 0.4);
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+    background: var(--ui-surface-panel-wash);
+    border-right: 1px solid var(--ui-border-strong);
+    box-shadow: var(--ui-shadow-elevated);
     transform: translateX(-100%);
     transition: transform 0.25s ease;
     overflow: hidden;
@@ -1485,13 +1563,16 @@ body.light-mode .scene-icon-btn.active {
     align-items: center;
     justify-content: space-between;
     padding: 14px 16px;
-    background: rgba(0, 180, 216, 0.12);
-    border-bottom: 1px solid rgba(0, 180, 216, 0.35);
+    background: var(--ui-surface-card-head);
+    border-bottom: 1px solid var(--ui-divider);
 }
 
 .left-panel-header strong {
-    color: var(--orbit-silver);
-    font-size: 14px;
+    font-family: var(--ui-font-display);
+    color: var(--cosmic-cyan);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
 }
 
 .left-panel-body {
@@ -1521,13 +1602,11 @@ body.light-mode .scene-icon-btn.active {
    LIGHT MODE - Full UI adaptation
    ============================================ */
 body.light-mode #top-nav.circaevum-nav {
-    background: rgba(232, 244, 248, 0.96);
-    border-bottom-color: rgba(0, 119, 163, 0.4);
+    border-bottom-color: var(--ui-border-strong);
 }
 
 body.light-mode .circaevum-nav .nav-brand {
-    color: var(--solar-yellow);
-    text-shadow: 0 0 8px rgba(244, 163, 0, 0.3);
+    text-shadow: 0 0 10px rgba(217, 119, 6, 0.22);
 }
 
 body.light-mode .circaevum-nav .nav-icon-btn,
@@ -1550,19 +1629,8 @@ body.light-mode .circaevum-nav .nav-toggle.toggle-btn.active {
 }
 
 
-body.light-mode .left-panel {
-    background: rgba(232, 244, 248, 0.98);
-    border-right-color: rgba(0, 119, 163, 0.4);
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.12);
-}
-
-body.light-mode .left-panel-header {
-    background: rgba(0, 119, 163, 0.12);
-    border-bottom-color: rgba(0, 119, 163, 0.35);
-}
-
 body.light-mode .left-panel-header strong {
-    color: var(--orbit-silver);
+    color: var(--cosmic-cyan);
 }
 
 body.light-mode .left-panel-section h3 {
