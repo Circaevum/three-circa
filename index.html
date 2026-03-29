@@ -45,6 +45,7 @@
                 <button type="button" id="nav-account-btn" class="nav-icon-btn" title="Menu" aria-label="Open menu" aria-expanded="false" aria-haspopup="true">☰</button>
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="login">Log in</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="calendar-layers">Calendar Layers</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="keyboard-controls">Keyboard Controls</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="about">About</button>
@@ -58,12 +59,35 @@
         <div id="canvas-container"></div>
     </div>
 
-    <!-- Event List: right-side overlay panel (pops open on the right) -->
+    <button type="button" id="calendar-layers-pull-tab" class="calendar-layers-pull-tab" aria-label="Open Calendar Layers" title="Calendar Layers">Layers</button>
+
+    <!-- Left panel: account shortcuts + calendar layer management -->
+    <aside id="calendars-left-panel" class="calendars-left-panel left-panel" aria-hidden="true">
+        <div class="left-panel-header">
+            <strong>Calendar Layers</strong>
+            <button type="button" id="calendars-left-close" class="account-panel-close-btn" aria-label="Close Calendar Layers">×</button>
+        </div>
+        <div class="left-panel-body">
+            <div class="left-panel-section">
+                <h3>Account</h3>
+                <p class="muted">Log in and connect calendars in the full app.</p>
+                <button type="button" class="strip-btn calendars-left-login-btn" id="calendars-left-login-btn">Log in / Open app</button>
+            </div>
+            <div class="left-panel-section">
+                <h3>Calendars</h3>
+                <p class="muted muted-tight">Tap a layer name to select it. Eye toggles visibility.</p>
+                <div id="calendar-layers-list" class="calendar-layers-list"></div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Event List: nearby events relative to selected time -->
     <aside id="event-list-panel" class="event-list-panel" aria-hidden="true">
         <div class="event-list-panel-header">
-            <strong>Event List</strong>
+            <strong>Events</strong>
             <button type="button" id="event-list-close" class="event-list-close-btn" aria-label="Close">×</button>
         </div>
+        <p class="event-list-panel-context" id="events-panel-context"></p>
         <div class="event-list-panel-header-actions">
             <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
             <button type="button" id="events-panel-draw-all" class="strip-btn">Draw all</button>
@@ -102,7 +126,7 @@
             </div>
         </div>
     </aside>
-    <button type="button" id="event-list-pull-tab" class="event-list-pull-tab" aria-label="Open Event List" title="Event List">Events</button>
+    <button type="button" id="event-list-pull-tab" class="event-list-pull-tab" aria-label="Open Event List" title="Events">Events</button>
 
     <div id="hud">
         <!-- Kepler-style floating icon overlay on the scene (bottom-right) -->
@@ -117,6 +141,15 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
                     <circle cx="12" cy="12" r="8"/>
                     <path d="M12 4v2M12 18v2M4 12h2M18 12h2"/>
+                </svg>
+            </button>
+            <button type="button" class="scene-icon-btn active" id="events-timeline-scope-toggle" title="Events: selected year only (click for all time)" aria-label="Toggle events between selected year and all time">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3.5" y="5" width="17" height="16" rx="2"/>
+                    <path d="M3.5 10h17"/>
+                    <path d="M8 3v4M16 3v4"/>
+                    <path d="M7.5 14h3M13.5 14h3"/>
+                    <path d="M7.5 17h2M14 17h2.5"/>
                 </svg>
             </button>
             <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Light mode (L)" aria-label="Toggle light mode (L)">
@@ -439,11 +472,14 @@
         /** Navbar: Event List (right-side panel), hamburger dropdown (Account, Event List), Test event lines */
         document.addEventListener('DOMContentLoaded', function() {
           var panel = document.getElementById('event-list-panel');
+          var leftPanel = document.getElementById('calendars-left-panel');
           var keyboardPanel = document.getElementById('keyboard-controls-panel');
           var testBtn = document.getElementById('test-event-lines-btn');
           var navDropdown = document.getElementById('nav-dropdown');
           var navAccountBtn = document.getElementById('nav-account-btn');
           var landingPage = document.getElementById('landing-page');
+
+          if (typeof window.circaevumSelectedLayerId === 'undefined') window.circaevumSelectedLayerId = 'user-events';
 
           if (testBtn) {
             testBtn.onclick = function() {
@@ -456,28 +492,56 @@
             };
           }
 
+          function openCalendarsLeftPanel() {
+            // In wrapper (e.g. Yin-portal), same action as hamburger → Account: open parent Account panel.
+            if (window.self !== window.top && window.parent && typeof window.parent.postMessage === 'function') {
+              try {
+                window.parent.postMessage({ type: 'CIRCAEVUM_OPEN_ACCOUNT' }, '*');
+              } catch (err) {}
+              return;
+            }
+            if (!leftPanel) return;
+            leftPanel.classList.add('open');
+            leftPanel.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('calendars-left-panel-open');
+            refreshCalendarLayersList();
+          }
+
+          function closeCalendarsLeftPanel() {
+            if (window.self !== window.top) return;
+            if (!leftPanel) return;
+            leftPanel.classList.remove('open');
+            leftPanel.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('calendars-left-panel-open');
+          }
+
           function openEventListPanel() {
             if (!panel) return;
             panel.classList.add('open');
             panel.setAttribute('aria-hidden', 'false');
-            refreshEventsList();
+            document.body.classList.add('event-list-panel-open');
+            refreshEventsList(false);
           }
 
           function closeEventListPanel() {
             if (!panel) return;
             panel.classList.remove('open');
             panel.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('event-list-panel-open');
           }
 
           function openKeyboardControlsPanel() {
             if (!keyboardPanel) return;
             closeEventListPanel();
+            closeCalendarsLeftPanel();
+            document.body.classList.add('keyboard-panel-open');
             keyboardPanel.classList.add('open');
             keyboardPanel.setAttribute('aria-hidden', 'false');
           }
 
           function closeKeyboardControlsPanel() {
             if (!keyboardPanel) return;
+            document.body.classList.remove('keyboard-panel-open');
             keyboardPanel.classList.remove('open');
             keyboardPanel.setAttribute('aria-hidden', 'true');
           }
@@ -492,10 +556,22 @@
 
           var closeBtn = document.getElementById('event-list-close');
           if (closeBtn && panel) closeBtn.onclick = closeEventListPanel;
+          var calendarsLeftClose = document.getElementById('calendars-left-close');
+          if (calendarsLeftClose && leftPanel) calendarsLeftClose.onclick = closeCalendarsLeftPanel;
           var keyboardCloseBtn = document.getElementById('keyboard-controls-close');
           if (keyboardCloseBtn && keyboardPanel) keyboardCloseBtn.onclick = closeKeyboardControlsPanel;
 
           window.openEventListPanel = openEventListPanel;
+          window.openCalendarLayersPanel = openCalendarsLeftPanel;
+
+          var calendarLayersPullTab = document.getElementById('calendar-layers-pull-tab');
+          if (calendarLayersPullTab) calendarLayersPullTab.onclick = function() {
+            if (window.self !== window.top) {
+              openCalendarsLeftPanel();
+              return;
+            }
+            if (leftPanel && leftPanel.classList.contains('open')) closeCalendarsLeftPanel(); else openCalendarsLeftPanel();
+          };
           var pullTab = document.getElementById('event-list-pull-tab');
           if (pullTab && panel) pullTab.onclick = function() {
             if (panel.classList.contains('open')) closeEventListPanel(); else openEventListPanel();
@@ -527,6 +603,18 @@
           } else if (footerEl) {
             footerEl.style.display = 'none';
           }
+
+          var calendarsLeftLogin = document.getElementById('calendars-left-login-btn');
+          if (calendarsLeftLogin) {
+            if (fullAppUrl) {
+              calendarsLeftLogin.onclick = function() {
+                window.location.href = buildFullAppUrl(true);
+              };
+            } else {
+              calendarsLeftLogin.style.display = 'none';
+            }
+          }
+
           /* Hamburger: Log in (→ app with state + open=login), Event List */
           if (navAccountBtn && navDropdown) {
             navAccountBtn.onclick = function(e) {
@@ -543,6 +631,7 @@
                 navDropdown.classList.remove('open');
                 navDropdown.setAttribute('aria-hidden', 'true');
                 navAccountBtn.setAttribute('aria-expanded', 'false');
+                if (action === 'calendar-layers') openCalendarsLeftPanel();
                 if (action === 'event-list') openEventListPanel();
                 if (action === 'login' && fullAppUrl) window.location.href = buildFullAppUrl(true);
                 if (action === 'keyboard-controls') openKeyboardControlsPanel();
@@ -581,6 +670,123 @@
               .replace(/"/g, '&quot;')
               .replace(/'/g, '&#39;');
           }
+
+          function layerSwatchColor(layer) {
+            if (!layer || layer.color == null || layer.color === '') return null;
+            var c = layer.color;
+            if (typeof c === 'number') return '#' + (c >>> 0).toString(16).padStart(6, '0');
+            var s = String(c).trim();
+            if (/^#[0-9a-fA-F]{6}$/.test(s)) return s;
+            if (/^#[0-9a-fA-F]{3}$/.test(s)) return '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+            return null;
+          }
+
+          function setCircaevumSelectedLayerId(layerId) {
+            if (!layerId) return;
+            window.circaevumSelectedLayerId = layerId;
+          }
+          window.setCircaevumSelectedLayerId = setCircaevumSelectedLayerId;
+
+          function calendarVisibilitySvg(visible) {
+            if (visible) {
+              return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+            }
+            return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+          }
+
+          function calendarLayerVisibilityToggle(ev, gl, layerId) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            var cur = gl.getLayer(layerId);
+            var v = cur ? cur.visible !== false : true;
+            if (typeof gl.setLayerVisibility === 'function') gl.setLayerVisibility(layerId, !v);
+            refreshCalendarLayersList();
+            refreshEventsList(false);
+          }
+
+          function ensureCalendarLayersGLListeners(gl) {
+            if (!gl || gl._calendarLayersUiHooked || typeof gl.on !== 'function') return;
+            gl._calendarLayersUiHooked = true;
+            var r = function() {
+              refreshCalendarLayersList();
+              refreshEventsList(false);
+            };
+            gl.on('layerAdded', r);
+            gl.on('layerRemoved', r);
+            gl.on('layerVisibilityChanged', r);
+            gl.on('eventsIngested', r);
+          }
+
+          function refreshCalendarLayersList() {
+            var listEl = document.getElementById('calendar-layers-list');
+            if (!listEl) return;
+            listEl.innerHTML = '';
+            var gl = window.circaevumGL || (window.getGL && window.getGL());
+            if (!gl || typeof gl.getLayerIds !== 'function') {
+              listEl.innerHTML = '<p class="calendar-layers-empty">Circaevum GL not available yet. Open this tab after the scene loads.</p>';
+              return;
+            }
+            ensureCalendarLayersGLListeners(gl);
+            var ids = gl.getLayerIds();
+            if (!ids.length) {
+              listEl.innerHTML = '<p class="calendar-layers-empty">No calendar layers yet. Layers appear when calendars or events are added.</p>';
+              return;
+            }
+            ids.forEach(function(layerId) {
+              var layer = gl.getLayer(layerId);
+              var displayName = (layer && layer.name) ? layer.name : layerId;
+              var visible = layer ? layer.visible !== false : true;
+              var hex = layerSwatchColor(layer);
+              var nEv = (gl.getEventObjects && gl.getEventObjects(layerId)) ? gl.getEventObjects(layerId).length : 0;
+
+              var det = document.createElement('details');
+              det.className = 'calendar-layer-details';
+              det.open = true;
+
+              var sum = document.createElement('summary');
+              sum.className = 'calendar-layer-summary';
+
+              var sw = document.createElement('span');
+              sw.className = 'calendar-layer-swatch';
+              if (hex) sw.style.background = hex;
+              else sw.classList.add('calendar-layer-swatch-default');
+
+              var titleEl = document.createElement('span');
+              titleEl.className = 'calendar-layer-title';
+              titleEl.textContent = displayName;
+              titleEl.style.cursor = 'pointer';
+              titleEl.title = 'Select this layer';
+              titleEl.onmousedown = function(e) { e.stopPropagation(); };
+              titleEl.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                setCircaevumSelectedLayerId(layerId);
+              };
+
+              var visBtn = document.createElement('button');
+              visBtn.type = 'button';
+              visBtn.className = 'calendar-layer-visibility-btn' + (visible ? ' is-on' : ' is-off');
+              visBtn.setAttribute('aria-label', visible ? 'Hide calendar layer' : 'Show calendar layer');
+              visBtn.innerHTML = calendarVisibilitySvg(visible);
+              visBtn.onclick = function(e) { calendarLayerVisibilityToggle(e, gl, layerId); };
+
+              sum.appendChild(sw);
+              sum.appendChild(titleEl);
+              sum.appendChild(visBtn);
+
+              var body = document.createElement('div');
+              body.className = 'calendar-layer-body';
+              var meta = document.createElement('div');
+              meta.className = 'calendar-layer-meta';
+              meta.textContent = layerId + (nEv ? ' · ' + nEv + ' event' + (nEv !== 1 ? 's' : '') : '');
+              body.appendChild(meta);
+
+              det.appendChild(sum);
+              det.appendChild(body);
+              listEl.appendChild(det);
+            });
+          }
+          window.refreshCalendarLayersList = refreshCalendarLayersList;
 
           function linkifyText(s) {
             var text = String(s == null ? '' : s);
@@ -644,8 +850,45 @@
             return { start: start, end: end };
           }
 
+          function nearbyHalfSpanMs(zoom) {
+            var day = 86400000;
+            var z = typeof zoom === 'number' && !isNaN(zoom) ? zoom : (typeof currentZoom !== 'undefined' ? currentZoom : 2);
+            if (z >= 9) return day;
+            if (z >= 8) return 2 * day;
+            if (z >= 7) return 7 * day;
+            if (z >= 5) return 30 * day;
+            if (z >= 3) return 120 * day;
+            return 365 * day;
+          }
+
+          function rangesOverlap(a0, a1, b0, b1) {
+            return a1 >= b0 && a0 <= b1;
+          }
+
+          function eventItemOverlapsSelectedTime(item, ref, halfMs) {
+            var ev = item.ev;
+            var start = ev.start;
+            if (!start || !(start instanceof Date) || isNaN(start.getTime())) return false;
+            var end = ev.end && ev.end > start ? ev.end : oneDayLater(start);
+            if (!end || !(end instanceof Date) || isNaN(end.getTime())) end = start;
+            var t0 = ref.getTime() - halfMs;
+            var t1 = ref.getTime() + halfMs;
+            return rangesOverlap(start.getTime(), end.getTime(), t0, t1);
+          }
+
+          function lineOverlapsSelectedTime(line, ref, halfMs) {
+            var s = line.start instanceof Date ? line.start.getTime() : NaN;
+            var e = line.end instanceof Date ? line.end.getTime() : NaN;
+            if (isNaN(s)) return false;
+            if (isNaN(e)) e = s + 86400000;
+            var t0 = ref.getTime() - halfMs;
+            var t1 = ref.getTime() + halfMs;
+            return rangesOverlap(s, e, t0, t1);
+          }
+
         function refreshEventsList(drawAll) {
             var listEl = document.getElementById('events-panel-list');
+            var ctxEl = document.getElementById('events-panel-context');
             if (!listEl) return;
             listEl.innerHTML = '';
             var gl = window.circaevumGL;
@@ -657,23 +900,50 @@
               listEl.innerHTML = '<p class="event-horizon-empty">Circaevum GL not available. Reload the page and try again.</p>';
               return;
             }
+            if (typeof ensureCalendarLayersGLListeners === 'function') ensureCalendarLayersGLListeners(gl);
+
+            var ref = (typeof getSelectedDateTime === 'function') ? getSelectedDateTime() : new Date();
+            if (!ref || !(ref instanceof Date) || isNaN(ref.getTime())) ref = new Date();
+            var z = typeof currentZoom !== 'undefined' ? currentZoom : 2;
+            var halfMs = nearbyHalfSpanMs(z);
+            if (ctxEl) {
+              ctxEl.textContent = 'Near selected time ' + formatDate(ref) + ' — about ±' + Math.max(1, Math.round(halfMs / 86400000)) + ' days at zoom ' + z + '.';
+            }
+
             var events = [];
             var lines = [];
             var EVENT_LAYER_ID = USER_EVENTS_LAYER || 'user-events';
-            (gl.getEventObjects(EVENT_LAYER_ID) || []).forEach(function(o) { events.push({ layerId: EVENT_LAYER_ID, ev: o }); });
-            // Always rebuild lines from GL state; clear any previously drawn lines on this helper layer.
+            if (typeof gl.getLayerIds === 'function') {
+              gl.getLayerIds().forEach(function(lid) {
+                (gl.getEventObjects(lid) || []).forEach(function(o) {
+                  events.push({ layerId: lid, ev: o });
+                });
+              });
+            } else {
+              (gl.getEventObjects(EVENT_LAYER_ID) || []).forEach(function(o) { events.push({ layerId: EVENT_LAYER_ID, ev: o }); });
+            }
             if (typeof gl.removeEventLines === 'function') {
               gl.removeEventLines('event-lines');
             }
             (gl.getEventLines('event-lines') || []).forEach(function(ln) {
-              lines.push({ layerId: 'event-lines', start: ln.start, end: ln.end, label: ln.label });
+              lines.push({ start: ln.start, end: ln.end, label: ln.label });
             });
-            if (events.length === 0 && lines.length === 0) {
+
+            var totalEv = events.length;
+            var totalLn = lines.length;
+            if (totalEv === 0 && totalLn === 0) {
               listEl.innerHTML = '<p class="event-horizon-empty">No events or lines yet. Click <strong>Test event lines</strong> in the nav to add sample lines, then Refresh.</p>';
               return;
             }
 
-            // Sort events and lines chronologically by their start time.
+            events = events.filter(function(item) { return eventItemOverlapsSelectedTime(item, ref, halfMs); });
+            lines = lines.filter(function(line) { return lineOverlapsSelectedTime(line, ref, halfMs); });
+
+            if (events.length === 0 && lines.length === 0) {
+              listEl.innerHTML = '<p class="event-horizon-empty">Nothing in this time window (' + totalEv + ' event(s), ' + totalLn + ' line(s) loaded overall). Move <strong>selected time</strong> or zoom, then Refresh.</p>';
+              return;
+            }
+
             events.sort(function(a, b) {
               var as = a.ev && a.ev.start instanceof Date ? a.ev.start.getTime() : 0;
               var bs = b.ev && b.ev.start instanceof Date ? b.ev.start.getTime() : 0;
@@ -685,33 +955,34 @@
               return as - bs;
             });
 
-            events.forEach(function(item) {
+            function appendEventRow(container, item, layerHex) {
               var ev = item.ev;
               var start = ev.start;
               var end = ev.end;
-              if (!start || !(start instanceof Date) || isNaN(start.getTime())) {
-                return;
-              }
+              if (!start || !(start instanceof Date) || isNaN(start.getTime())) return;
               var endForLine = end && end > start ? end : oneDayLater(start);
               var endForNav = end && end > start ? end : endForLine;
               var name = ev.summary || ev.uid || 'Event';
               var row = document.createElement('div');
               row.className = 'event-row';
               var color = ev.color || ev.colorId || null;
-              var borderColor = color || 'rgba(0, 180, 216, 0.5)';
+              var borderColor = color || layerHex || 'rgba(0, 180, 216, 0.5)';
               var bgColor = color ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 180, 216, 0.08)';
               row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:6px;cursor:pointer;' +
                 'border-left:3px solid ' + borderColor + ';background:' + bgColor + ';';
               row.title = 'Click to focus on this event';
-              var details = [];
-              if (ev.location) details.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
-              if (ev.description) details.push('<div class="event-detail event-description">' + linkifyText(ev.description) + '</div>');
-              if (ev.url) details.push('<div class="event-detail event-url"><a class="event-link" href="' + escapeHtml(ev.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(ev.url) + '</a></div>');
+              var detParts = [];
+              if (ev.location) detParts.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
+              if (ev.description) detParts.push('<div class="event-detail event-description">' + linkifyText(ev.description) + '</div>');
+              if (ev.url) detParts.push('<div class="event-detail event-url"><a class="event-link" href="' + escapeHtml(ev.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(ev.url) + '</a></div>');
               row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div>' +
                 '<div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' +
-                details.join('') +
+                detParts.join('') +
                 '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
-              row.onclick = function() { navigateToEvent(start, endForNav); };
+              row.onclick = function() {
+                setCircaevumSelectedLayerId(item.layerId || EVENT_LAYER_ID);
+                navigateToEvent(start, endForNav);
+              };
               row.querySelectorAll('a').forEach(function(a) {
                 a.onclick = function(e) { e.stopPropagation(); };
               });
@@ -734,23 +1005,36 @@
                   window.parent.postMessage({ type: 'CIRCAEVUM_EDIT_EVENT', event: payload }, '*');
                 };
               } else if (editBtn) editBtn.style.display = 'none';
-              listEl.appendChild(row);
+              container.appendChild(row);
+            }
+
+            events.forEach(function(item) {
+              var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
+              appendEventRow(listEl, item, layerSwatchColor(layer));
             });
 
-            lines.forEach(function(item) {
-              var start = item.start;
-              var end = item.end;
-              var label = item.label;
-              var title = (label && String(label).trim()) ? String(label).trim() : (formatDate(start) + ' – ' + formatDate(end));
-              var row = document.createElement('div');
-              row.className = 'line-row';
-              row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:6px;cursor:pointer;';
-              row.title = 'Click to focus on this span';
-              row.innerHTML = '<div class="event-title">' + title + '</div>' +
-                '<div class="event-meta">' + formatDate(start) + ' → ' + formatDate(end) + '</div>';
-              row.onclick = function() { navigateToEvent(start, end); };
-              listEl.appendChild(row);
-            });
+            if (lines.length) {
+              var lh = document.createElement('div');
+              lh.className = 'events-nearby-lines-header';
+              lh.textContent = 'Nearby spans';
+              listEl.appendChild(lh);
+              lines.forEach(function(item) {
+                var start = item.start;
+                var end = item.end;
+                var label = item.label;
+                var t = (label && String(label).trim()) ? String(label).trim() : (formatDate(start) + ' – ' + formatDate(end));
+                var row = document.createElement('div');
+                row.className = 'line-row';
+                row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:6px;cursor:pointer;';
+                row.title = 'Click to focus on this span';
+                row.innerHTML = '<div class="event-title">' + escapeHtml(t) + '</div>' +
+                  '<div class="event-meta">' + formatDate(start) + ' → ' + formatDate(end) + '</div>';
+                row.onclick = function() {
+                  navigateToEvent(start, end);
+                };
+                listEl.appendChild(row);
+              });
+            }
           }
 
           var refreshBtn = document.getElementById('events-panel-refresh');
@@ -759,6 +1043,18 @@
           var drawAllBtn = document.getElementById('events-panel-draw-all');
           if (drawAllBtn) drawAllBtn.onclick = function() { refreshEventsList(true); };
           window.refreshEventsList = refreshEventsList;
+
+          var _circaevumUIRefreshRaf = 0;
+          window.circaevumOnSelectedTimeOrViewChanged = function() {
+            if (_circaevumUIRefreshRaf) return;
+            _circaevumUIRefreshRaf = requestAnimationFrame(function() {
+              _circaevumUIRefreshRaf = 0;
+              var ep = document.getElementById('event-list-panel');
+              if (ep && ep.classList.contains('open') && typeof refreshEventsList === 'function') {
+                refreshEventsList(false);
+              }
+            });
+          };
         });
       })();
     </script>
@@ -891,6 +1187,8 @@
               console.log('[Circaevum GL] Ingesting events from wrapper:', data.layerId, 'count=', data.events.length);
             } catch (e) {}
             gl.ingestEvents(data.layerId, data.events, data.options || {});
+            if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
+            if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
             // Do not auto fitToLayer here – it would jump selected time to earliest event (e.g. May 2025). Caller may send CIRCAEVUM_FIT_VIEW when focusing on a layer.
           } else if (data.type === 'CIRCAEVUM_FIT_VIEW' && data.focus != null && typeof data.zoom === 'number') {
             if (typeof gl.setZoomLevel === 'function') gl.setZoomLevel(data.zoom);
@@ -906,6 +1204,8 @@
             }
           } else if (data.type === 'CIRCAEVUM_CLEAR_EVENTS' && data.layerId) {
             gl.updateEvents(data.layerId, []);
+            if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
+            if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
           } else if (data.type === 'CIRCAEVUM_OPEN_EVENT_LIST' && typeof window.openEventListPanel === 'function') {
             window.openEventListPanel();
           } else if (data.type === 'CIRCAEVUM_HIGHLIGHT_EVENT' && typeof gl.setEventHighlight === 'function') {

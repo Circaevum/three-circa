@@ -68,13 +68,13 @@ const ZOOM_LEVELS = {
     0: { name: 'LANDING', span: 'Welcome', distance: 25, height: 160, timeYears: 0.00274, focusTarget: 'none', centerYear: 2025 },
     1: { name: 'CENTURY', span: '100 years', distance: 10000, height: 5000, timeYears: 100, focusTarget: 'sun', centerYear: 2050 },
     2: { name: 'DECADE', span: '10 years', distance: 800, height: 1600, timeYears: 10, focusTarget: 'sun', centerYear: 2025 },
-    3: { name: 'YEAR', span: '1 year', distance: 350, height: 800, timeYears: 1, focusTarget: 'sun', centerYear: 2025 },
-    4: { name: 'QUARTER', span: '3 months', distance: 200, height: 400, timeYears: 0.25, focusTarget: 'earth', centerYear: 2025 },
-    5: { name: 'MONTH', span: '1 month', distance: 70, height: 300, timeYears: 0.0833, focusTarget: 'earth', centerYear: 2025 },
-    6: { name: 'LUNAR CYCLE', span: '28 days', distance: 80, height: 240, timeYears: 0.0767, focusTarget: 'earth', centerYear: 2025 },
-    7: { name: 'WEEK', span: '7 days', distance: 25, height: 200, timeYears: 0.0192, focusTarget: 'earth', centerYear: 2025 },
-    8: { name: 'DAY', span: '24 hours', distance: 40, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025 },
-    9: { name: 'CLOCK', span: '24 hours', distance: 25, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025, isPolar: true }
+    3: { name: 'YEAR', span: '1 year', distance: 140, height: 500, timeYears: 1, focusTarget: 'sun', centerYear: 2025 },
+    4: { name: 'QUARTER', span: '3 months', distance: 70, height: 400, timeYears: 0.25, focusTarget: 'mid', centerYear: 2025 },
+    5: { name: 'MONTH', span: '1 month', distance: 25, height: 300, timeYears: 0.0833, focusTarget: 'mid', centerYear: 2025 },
+    6: { name: 'LUNAR CYCLE', span: '28 days', distance: 80, height: 240, timeYears: 0.0767, focusTarget: 'mid', centerYear: 2025 },
+    7: { name: 'WEEK', span: '7 days', distance: 13, height: 200, timeYears: 0.0192, focusTarget: 'mid', centerYear: 2025 },
+    8: { name: 'DAY', span: '24 hours', distance: 12, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025 },
+    9: { name: 'CLOCK', span: '24 hours', distance: 8, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025, isPolar: true }
 };
 
 // ============================================
@@ -91,7 +91,26 @@ const SCENE_CONFIG = {
     sunColor: 0xffd60a,
     orbitLineColor: 0x00b4d8,
     orbitLineOpacity: 0.3,
-    worldlineOpacity: 0.6
+    worldlineOpacity: 0.6,
+    /**
+     * Sun–Earth Lagrange points: distances along Sun→Earth use Earth orbit radius R (PLANET_DATA Earth.distance).
+     * Collinear L1–L3 positions follow circular restricted three-body (μ = M_Earth / (M_Sun + M_Earth)).
+     * Radial positions use Earth’s orbit radius R (PLANET_DATA Earth.distance). Marker mesh size is a fraction of Earth’s rendered sphere.
+     */
+    lagrangeMarkers: {
+        earthToSunMassRatio: 3.00346e-6,
+        /** Marker sphere radius = this × Earth’s current Three.js sphere radius. */
+        markerRadiusEarthFraction: 0.072,
+        /** Label offset along the Sun→point line (L1/L2/L3) or tangent (L4/L5), in Earth radii. */
+        labelRadialOffsetEarthMult: 2.1,
+        /** World-ish sprite scale ∝ Earth radius; zoom only tweaks slightly. */
+        labelSpriteEarthMultMin: 0.72,
+        labelSpriteEarthMultMax: 1.42,
+        colors: {
+            collinear: 0x8ab4d8,
+            triangular: 0x7bc4a8
+        }
+    }
 };
 
 // ============================================

@@ -157,12 +157,35 @@
     return createWrappedHelix(startHeight, endHeight, currentHeight, color, opacity);
   }
 
+  /**
+   * Hour-hand tip position (wrapped helix math) at a given scene height — for linking sub-day events to the circadian ring.
+   */
+  function getWrappedHandTipAtHeight(height, currentHeight) {
+    if (!SceneGeometry || !SceneGeometry.getAngle || !SceneGeometry.getPosition3D || typeof height !== 'number') {
+      return null;
+    }
+    const orbitAngle = SceneGeometry.getAngle(height, currentHeight);
+    const earthPos = SceneGeometry.getPosition3D(height, orbitAngle, earthDistance);
+    const HY = HEIGHT_PER_YEAR;
+    const remainder = ((height % HY) + HY) % HY / HY;
+    const dayOfYear = remainder * 365.25;
+    const hourFrac = (dayOfYear - Math.floor(dayOfYear)) * HOURS_PER_DAY;
+    const dayAngle = (hourFrac / HOURS_PER_DAY) * Math.PI * 2;
+    const handAngle = orbitAngle + dayAngle;
+    return {
+      x: earthPos.x + handLength * Math.cos(handAngle),
+      y: earthPos.y,
+      z: earthPos.z + handLength * Math.sin(handAngle)
+    };
+  }
+
   const CircadianRenderer = {
     init,
     create,
     buildCircadianHelixPoints,
     createWrappedHelix,
-    createStraightenedHelix
+    createStraightenedHelix,
+    getWrappedHandTipAtHeight
   };
 
   if (typeof module !== 'undefined' && module.exports) {

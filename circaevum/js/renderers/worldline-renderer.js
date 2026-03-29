@@ -114,9 +114,11 @@ const Worldlines = (function() {
         if (zoomLevel === 1) { // Century - show full 2000-2100
             startHeight = getHeightForYear(2000, 1);
             endHeight = getHeightForYear(2100, 1);
-        } else if (zoomLevel === 2) { // Decade - show 2020-2030
-            startHeight = getHeightForYear(2020, 1);
-            endHeight = getHeightForYear(2030, 1);
+        } else if (zoomLevel === 2) { // Decade - span containing navigated year (not fixed 2020–2030)
+            const y = typeof currentYear === 'number' ? currentYear : new Date().getFullYear();
+            const decadeStart = Math.floor(y / 10) * 10;
+            startHeight = getHeightForYear(decadeStart, 1);
+            endHeight = getHeightForYear(decadeStart + 10, 1);
         } else if (zoomLevel === 3) { // Year - show full year with current date
             const yearHeight = 100;
             const now = new Date();

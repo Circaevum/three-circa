@@ -55,14 +55,27 @@ let showTimeMarkerText = true;
 let showFullYearTimeMarkers = false; // When true, show time markers for the full selected year
 let showMoonWorldline = false; // Toggle for moon worldline
 let moonWorldlines = []; // Store moon worldline meshes
+let lagrangeMarkerObjects = []; // Sun–Earth L1–L5 at selected time (orbital plane)
 let circadianWorldlines = []; // Circadian rhythm helix (hour-hand), shown at day/clock zoom
 let circadianState = 'off'; // 'off' | 'straightened' | 'wrapped' – toggled via scene icon
+/** false = show calendar events only in selected year; true = all time (see scene calendar icon) */
+let showAllTimelineEvents = false;
+if (typeof window !== 'undefined') {
+    window.getCurrentZoomLevel = function () { return currentZoom; };
+    window.getCircadianRhythmState = function () { return circadianState; };
+}
 let flattenOn = false; // Flatten view on/off (zoom >= 3). Smooth transition via currentFlattenAmount.
 let currentFlattenAmount = 0; // Lerps toward 1 when flattenOn, toward 0 when off (no camera jump).
 // flattenIntensity: 0–1 where 0 = no flatten, 1 = maximum flatten.
 // Default to maximum flatten so the slider (0 = flattest, 1 = tallest) starts at the far left.
 let flattenIntensity = 1;
-let focusTargetOverride = null; // 'sun' | 'earth' | null – null = use ZOOM_LEVELS default
+let focusTargetOverride = null; // 'sun' | 'earth' | 'mid' | null – null = use ZOOM_LEVELS default
+if (typeof window !== 'undefined') {
+    /** Y scale applied to flattenableGroup (1 = no flatten). Used to keep event stagger visually consistent when flat. */
+    window.getEventFlattenYScale = function () {
+        return Math.max(0.05, 1 - currentFlattenAmount * 0.95);
+    };
+}
 
 // WebXR controls (using adapter system)
 let xrAdapter = null;
@@ -291,6 +304,8 @@ function getSelectedDateTime() {
     
     return selected;
 }
+
+if (typeof window !== 'undefined') window.getSelectedDateTime = getSelectedDateTime;
 
 // Update the time displays in the info panel
 function updateTimeDisplays() {
@@ -521,19 +536,24 @@ function createPlanets(zoomLevel) {
     orbitLines.length = 0;
     worldlines.length = 0;
 
+    lagrangeMarkerObjects.forEach((obj) => sceneContentGroup.remove(obj));
+    lagrangeMarkerObjects.length = 0;
+
     circadianWorldlines.forEach(obj => flatGroup.remove(obj));
     circadianWorldlines = [];
 
     const config = ZOOM_LEVELS[zoomLevel];
+    if (focusTargetOverride === 'mid' && (zoomLevel < 4 || zoomLevel > 7)) {
+        focusTargetOverride = null;
+    }
     const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
     const focusOnEarth = effectiveFocusTarget === 'earth';
     
-    // The orbital plane is at the current date
-    // For zoom levels 3+ (Year, Quarter, etc.), use precise date; for 1-2 use year start
-    // For Zoom 3 and 4, we need to use ACTUAL system date to avoid issues with navigated variables
+    // Orbital reference height for angle: must match Zoom 3/4 so Decade↔Year transitions don't snap.
+    // Use wall-clock "now" for Zoom 2–4; Year/Quarter were already on this plan; Decade used to use Jan 1
+    // of navigated year only, which broke continuity and skewed Earth vs SELECTED TIME within the year.
     let currentDateHeight;
-    if (zoomLevel === 3 || zoomLevel === 4) {
-        // Use centralized function if available, otherwise calculate directly
+    if (zoomLevel === 2 || zoomLevel === 3 || zoomLevel === 4) {
         if (typeof calculateActualCurrentDateHeight !== 'undefined' && calculateActualCurrentDateHeight) {
             currentDateHeight = calculateActualCurrentDateHeight();
         } else if (typeof calculateYearProgressForDate !== 'undefined' && calculateYearProgressForDate) {
@@ -545,7 +565,6 @@ function createPlanets(zoomLevel) {
             const yearProgress = calculateYearProgressForDate(actualYear, actualMonth, actualDay, actualHour);
             currentDateHeight = ((actualYear - CENTURY_START) * HEIGHT_PER_YEAR) + (yearProgress * HEIGHT_PER_YEAR);
         } else {
-            // Fallback calculation
             const nowActual = new Date();
             const actualYear = nowActual.getFullYear();
             const actualMonth = nowActual.getMonth();
@@ -555,7 +574,7 @@ function createPlanets(zoomLevel) {
             const yearProgress = (actualMonth + (actualDay - 1) / daysInMonth + actualHour / (24 * daysInMonth)) / 12;
             currentDateHeight = ((actualYear - CENTURY_START) * HEIGHT_PER_YEAR) + (yearProgress * HEIGHT_PER_YEAR);
         }
-    } else if (zoomLevel >= 3) {
+    } else if (zoomLevel >= 5) {
         currentDateHeight = calculateCurrentDateHeight();
     } else {
         currentDateHeight = getHeightForYear(currentYear, 1);
@@ -646,7 +665,7 @@ function createPlanets(zoomLevel) {
         } else {
             targetFocusPoint.set(0, selectedDateHeight, 0);
         }
-    } else if (effectiveFocusTarget === 'earth') {
+    } else if (effectiveFocusTarget === 'earth' || effectiveFocusTarget === 'mid') {
         // Calculate Earth's position at selected time using exact date height
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
         // Calculate Earth's angle at selected time using continuous height calculation
@@ -654,12 +673,15 @@ function createPlanets(zoomLevel) {
         const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / earth.orbitalPeriod;
         const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
         const earthAngle = earth.startAngle - angleFromCurrentToSelected; // Counter-clockwise
-        
-        targetFocusPoint.set(
-            Math.cos(earthAngle) * earth.distance,
-            selectedDateHeight,
-            Math.sin(earthAngle) * earth.distance
-        );
+        const earthX = Math.cos(earthAngle) * earth.distance;
+        const earthZ = Math.sin(earthAngle) * earth.distance;
+        if (effectiveFocusTarget === 'mid') {
+            // Zoom 7 (week): focal point between day-number and day-name rings — same as TimeMarkers RADII_CONFIG.day (21/32 and 23/32).
+            const midFrac = zoomLevel === 7 ? (21 / 32 + 23 / 32) / 2 : 0.5;
+            targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
+        } else {
+            targetFocusPoint.set(earthX, selectedDateHeight, earthZ);
+        }
     } else {
         // Sun-focused: point camera at the Sun's position in space-time (origin in X/Z at selected height)
         targetFocusPoint.set(0, selectedDateHeight, 0);
@@ -817,6 +839,11 @@ function createPlanets(zoomLevel) {
         }
     });
 
+    const earthPlanet = planetMeshes.find((p) => p.userData && p.userData.name === 'Earth');
+    if (earthPlanet) {
+        addLagrangeSunEarthMarkers(earthPlanet, selectedDateHeight, zoomLevel, planetScaleFactor);
+    }
+
     // Create moon worldline for Zoom 6 (Lunar view)
     if (zoomLevel === 6) {
         // Remove existing moon worldlines first
@@ -866,6 +893,17 @@ function createPlanets(zoomLevel) {
     // Zoom 0 is a landing camera mode; keep day/clock markers visible so selected-time
     // context does not disappear when toggling between 9 and 0.
     createTimeMarkers(zoomLevel === 0 ? 9 : zoomLevel);
+
+    if (typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshAllEventLayers === 'function') {
+        try {
+            window.circaevumGL.refreshAllEventLayers();
+        } catch (err) { /* GL may be disposing */ }
+    }
+    if (typeof window !== 'undefined' && typeof window.circaevumOnSelectedTimeOrViewChanged === 'function') {
+        try {
+            window.circaevumOnSelectedTimeOrViewChanged();
+        } catch (err) { /* optional UI */ }
+    }
 }
 
 // Get marker color based on light mode
@@ -873,9 +911,9 @@ function getMarkerColor() {
     return isLightMode ? 0x000000 : 0xffffff;
 }
 
-// Get selected time color (blue) - darker in light mode for better contrast
+// Get selected time color (blue) — line/mesh tint; darker in light mode so it matches label text weight
 function getSelectedTimeColor() {
-    return isLightMode ? 0x0066CC : 0x00FFFF; // Darker blue in light mode
+    return isLightMode ? 0x062d52 : 0x00FFFF
 }
 
 // Get orbit line color - darker in light mode for better contrast
@@ -883,54 +921,173 @@ function getOrbitLineColor() {
     return isLightMode ? 0x0066CC : SCENE_CONFIG.orbitLineColor; // Darker blue in light mode
 }
 
+/**
+ * Sun–Earth L1–L5 in the orbital plane at SELECTED TIME: co-rotating with Earth (same R, angle as Earth mesh).
+ * L1–L3 collinear from Sun: L1 at (1−γ)R / L2 at (1+γ)R along Sun→Earth (γ=(μ/3)^(1/3)), so L1 lies between Sun and Earth;
+ * L4/L5 at ±60° on the same circular orbit as Earth (equilateral CRTBP layout).
+ */
+function addLagrangeSunEarthMarkers(earthPlanet, selectedDateHeight, zoomLevel, planetScaleFactor) {
+    const cfg = SCENE_CONFIG.lagrangeMarkers;
+    if (!cfg || !earthPlanet || !sceneContentGroup || zoomLevel < 3) return;
+
+    const R = earthPlanet.userData.distance;
+    const ang = earthPlanet.userData.angle;
+    const y = selectedDateHeight;
+    const ux = Math.cos(ang);
+    const uz = Math.sin(ang);
+
+    const earthRadius =
+        earthPlanet.geometry && earthPlanet.geometry.parameters && earthPlanet.geometry.parameters.radius != null
+            ? earthPlanet.geometry.parameters.radius
+            : (typeof PLANET_DATA !== 'undefined'
+                ? (PLANET_DATA.find((p) => p.name === 'Earth') || { size: 6.5 }).size * planetScaleFactor
+                : 6.5 * planetScaleFactor);
+
+    const μ = cfg.earthToSunMassRatio;
+    const γ = Math.pow(μ / 3, 1 / 3);
+    const l1Along = 1 - γ;
+    const l2Along = 1 + γ;
+    const l3Along = -(1 + (5 * μ) / 12);
+
+    const fr = cfg.markerRadiusEarthFraction;
+    const rSphere = earthRadius * (typeof fr === 'number' ? fr : 0.072);
+    const radialOff = earthRadius * (cfg.labelRadialOffsetEarthMult ?? 2.1);
+
+    const collinearColor = cfg.colors.collinear;
+    const triangularColor = cfg.colors.triangular;
+    const mMin = cfg.labelSpriteEarthMultMin ?? 0.55;
+    const mMax = cfg.labelSpriteEarthMultMax ?? 1.15;
+    const zoomT = Math.max(0, Math.min(1, (zoomLevel - 3) / 6));
+    const labelEarthMult = mMax - zoomT * (mMax - mMin);
+
+    /**
+     * @param {'lineIn'|'lineOut'|'tangent'} labelAlong
+     *   lineIn = toward Sun along Sun→point; lineOut = away from Sun (L2/L3 labels past the point).
+     *   tangent = side offset in orbit plane for L4/L5 only.
+     * @param tangentSign ±1 when labelAlong === 'tangent'
+     */
+    function placeLagrangePoint(px, pz, color, label, labelAlong, tangentSign = 1) {
+        const geo = new THREE.SphereGeometry(rSphere, 16, 16);
+        const mat = new THREE.MeshStandardMaterial({
+            color,
+            metalness: 0.25,
+            roughness: 0.55,
+            emissive: color,
+            emissiveIntensity: 0.12,
+            transparent: true,
+            opacity: 0.9
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(px, y, pz);
+        mesh.userData = { type: 'LagrangeMarker', label };
+        sceneContentGroup.add(mesh);
+        lagrangeMarkerObjects.push(mesh);
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const cw = 80;
+        const ch = 30;
+        canvas.width = cw;
+        canvas.height = ch;
+        ctx.font = 'bold 14px Orbitron, sans-serif';
+        ctx.fillStyle = isLightMode ? 'rgba(25,45,70,0.95)' : 'rgba(220,235,255,0.95)';
+        ctx.strokeStyle = isLightMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)';
+        ctx.lineWidth = 1.35;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeText(label, cw / 2, ch / 2);
+        ctx.fillText(label, cw / 2, ch / 2);
+        const tex = new THREE.CanvasTexture(canvas);
+        const sm = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+        const sp = new THREE.Sprite(sm);
+        const hr = Math.hypot(px, pz) || 1;
+        const rx = px / hr;
+        const rz = pz / hr;
+        let lx = px;
+        let lz = pz;
+        if (labelAlong === 'lineIn') {
+            lx = px - rx * radialOff;
+            lz = pz - rz * radialOff;
+        } else if (labelAlong === 'lineOut') {
+            lx = px + rx * radialOff;
+            lz = pz + rz * radialOff;
+        } else {
+            const tx = (-pz / hr) * tangentSign;
+            const tz = (px / hr) * tangentSign;
+            lx = px + tx * radialOff;
+            lz = pz + tz * radialOff;
+        }
+        sp.position.set(lx, y, lz);
+        const sc = earthRadius * labelEarthMult;
+        sp.scale.set(sc * (cw / ch), sc, 1);
+        sp.userData.baseScale = { x: sc * (cw / ch), y: sc, z: 1 };
+        sp.renderOrder = 2;
+        sceneContentGroup.add(sp);
+        lagrangeMarkerObjects.push(sp);
+    }
+
+    // L1/L2 lie on Sun–Earth line (toward/away from Sun); labels sit on that same line, not to the sides.
+    placeLagrangePoint(ux * R * l1Along, uz * R * l1Along, collinearColor, 'L1', 'lineIn');
+    placeLagrangePoint(ux * R * l2Along, uz * R * l2Along, collinearColor, 'L2', 'lineOut');
+    placeLagrangePoint(ux * R * l3Along, uz * R * l3Along, collinearColor, 'L3', 'lineOut');
+    placeLagrangePoint(R * Math.cos(ang + Math.PI / 3), R * Math.sin(ang + Math.PI / 3), triangularColor, 'L4', 'tangent', 1);
+    placeLagrangePoint(R * Math.cos(ang - Math.PI / 3), R * Math.sin(ang - Math.PI / 3), triangularColor, 'L5', 'tangent', -1);
+}
+
 // Create 3D text label (using sprites for simplicity)
 // Note: This function is still needed as it's passed to TimeMarkers module
-// isLarge: if true, uses wider canvas and larger scale for month/year labels
+// isLarge: if true, taller canvas and larger base font (year headline labels)
 // sizeMultiplier: optional multiplier for text size (e.g., 0.5 for half size)
 // colorType: 'red' for current time, 'blue' for selected time, false/undefined for default
 function createTextLabel(text, height, radius, zoomLevel, angle = 0, colorType = false, isLarge = false, sizeMultiplier = 1.0) {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
-    
-    // Use wider canvas for large labels (like "December 2025")
-    if (isLarge) {
-        canvas.width = 1536; // Extra wide for month names
-        canvas.height = 256;
-    } else {
-        canvas.width = 512;
-        canvas.height = 128;
-    }
-    
+
+    const canvasHeight = isLarge ? 256 : 128;
+    const padding = isLarge ? 40 : 28;
+    const minWidth = isLarge ? 160 : 96;
+
     // Use color based on colorType: 'red' for current time, 'blue' for selected time, false for default
     let textColor;
     if (colorType === true || colorType === 'red') {
         textColor = 'rgba(255, 0, 0, 0.9)'; // Red for current time
     } else if (colorType === 'blue') {
-        // Darker blue in light mode for better contrast
-        textColor = isLightMode ? 'rgba(0, 102, 204, 0.9)' : 'rgba(0, 255, 255, 0.9)'; // Cyan/blue for selected time
+        // Navy in light mode — pairs with getSelectedMarkerLineColor / getSelectedTimeColor (#062d52)
+        textColor = isLightMode ? 'rgba(6, 45, 82, 0.92)' : 'rgba(0, 255, 255, 0.9)'; // Selected time
     } else {
         textColor = isLightMode ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)'; // Default
     }
-    context.fillStyle = textColor;
-    // Apply size multiplier to font size
+
     const baseFontSize = isLarge ? 80 : 60;
     const fontSize = baseFontSize * sizeMultiplier;
     context.font = `bold ${fontSize}px Orbitron`;
+    const metrics = context.measureText(text);
+    const canvasWidth = Math.max(minWidth, Math.ceil(metrics.width + padding * 2));
+
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+
+    context.fillStyle = textColor;
+    context.font = `bold ${fontSize}px Orbitron`;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    context.fillText(text, canvas.width / 2, canvas.height / 2);
-    
+    context.fillText(text, canvasWidth / 2, canvasHeight / 2);
+
     const texture = new THREE.CanvasTexture(canvas);
-    const spriteMaterial = new THREE.SpriteMaterial({ 
+    const spriteMaterial = new THREE.SpriteMaterial({
         map: texture,
         transparent: true,
-        opacity: 0.9
+        opacity: 0.9,
+        depthWrite: false,
+        alphaTest: 0.04
     });
-    
+
     const sprite = new THREE.Sprite(spriteMaterial);
+    // Above event ribbons (see EventRenderer duration renderOrder cap) so calendar labels stay pure white/black
+    sprite.renderOrder = 50;
     // Position sprite at the given angle and radius
     sprite.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
-    
+
     // Scale based on zoom level - larger for zoomed out views, smaller for zoomed in
     let scale;
     if (zoomLevel === 1) {
@@ -950,14 +1107,15 @@ function createTextLabel(text, height, radius, zoomLevel, angle = 0, colorType =
     } else {
         scale = 6; // Day
     }
-    
+
     // Apply size multiplier to scale
     scale = scale * sizeMultiplier;
-    
+
     const scaleY = scale * 0.25;
-    sprite.scale.set(scale, scaleY, 1);
-    sprite.userData.baseScale = { x: scale, y: scaleY, z: 1 };
-    
+    const scaleX = scaleY * (canvasWidth / canvasHeight);
+    sprite.scale.set(scaleX, scaleY, 1);
+    sprite.userData.baseScale = { x: scaleX, y: scaleY, z: 1 };
+
     (flattenableGroup || sceneContentGroup).add(sprite);
     timeMarkers.push(sprite);
 }
@@ -1354,6 +1512,15 @@ function initControls() {
     if (markersLinesBtn) markersLinesBtn.addEventListener('click', toggleTimeMarkerLines);
     if (markersTextBtn) markersTextBtn.addEventListener('click', toggleTimeMarkerText);
     if (markersYearBtn) markersYearBtn.addEventListener('click', toggleTimeMarkerYearMode);
+
+    const eventsTimelineScopeBtn = document.getElementById('events-timeline-scope-toggle');
+    if (eventsTimelineScopeBtn) {
+        eventsTimelineScopeBtn.addEventListener('click', toggleTimelineEventScope);
+        if (typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.getTimelineEventFilter === 'function') {
+            showAllTimelineEvents = window.circaevumGL.getTimelineEventFilter() === 'all';
+        }
+        updateEventsTimelineScopeButton();
+    }
     
     // Light mode toggle
     document.getElementById('light-mode-toggle').addEventListener('click', toggleLightMode);
@@ -1373,14 +1540,15 @@ function initControls() {
     if (flattenHeightSlider) {
         // Slider value represents height (0 = flattest, 1 = tallest).
         // Internally, flattenIntensity is how strong the flatten is (0 = none, 1 = max).
-        flattenHeightSlider.value = String(1 - flattenIntensity);
         flattenHeightSlider.addEventListener('input', (e) => {
+            if (!flattenOn) return;
             const value = parseFloat(e.target.value);
             if (!isNaN(value)) {
                 // Higher slider value = taller view (less flatten).
                 flattenIntensity = 1 - Math.min(1, Math.max(0, value));
             }
         });
+        syncFlattenHeightSlider();
     }
     
     // WebXR toggle (using adapter system) – show whenever adapter loads so user can try (e.g. on headset over HTTP)
@@ -1571,6 +1739,27 @@ function updateFlattenIconVisibility() {
     const shouldShow = currentZoom >= 3;
     if (btn) btn.style.display = shouldShow ? '' : 'none';
     if (sliderWrap) sliderWrap.style.display = shouldShow ? '' : 'none';
+    if (shouldShow) syncFlattenHeightSlider();
+}
+
+/**
+ * Keep flatten slider in sync with flatten on/off (F key, icon, embed).
+ * Off: slider at max height (value 1) and disabled. On: interactive value = 1 - flattenIntensity.
+ */
+function syncFlattenHeightSlider() {
+    const slider = document.getElementById('flatten-height-slider');
+    if (!slider || currentZoom < 3) return;
+    if (!flattenOn) {
+        slider.value = '1';
+        slider.disabled = true;
+        slider.setAttribute('aria-disabled', 'true');
+        slider.title = 'Enable flatten (F) to adjust height';
+    } else {
+        slider.disabled = false;
+        slider.removeAttribute('aria-disabled');
+        slider.removeAttribute('title');
+        slider.value = String(1 - flattenIntensity);
+    }
 }
 
 function toggleFlatten() {
@@ -1582,6 +1771,7 @@ function toggleFlatten() {
         btn.title = flattenOn ? 'Flatten view: on (F)' : 'Flatten view (F)';
         btn.setAttribute('aria-label', flattenOn ? 'Flatten view: on' : 'Flatten view: off');
     }
+    syncFlattenHeightSlider();
 }
 
 function toggleFlattenWithKey() {
@@ -1607,17 +1797,37 @@ function applyFlattenFromEmbed(enabled, internalIntensity) {
         btn.title = flattenOn ? 'Flatten view: on (F)' : 'Flatten view (F)';
         btn.setAttribute('aria-label', flattenOn ? 'Flatten view: on' : 'Flatten view: off');
     }
-    const slider = document.getElementById('flatten-height-slider');
-    if (slider) {
-        slider.value = String(1 - flattenIntensity);
-    }
     if (typeof updateFlattenIconVisibility === 'function') {
         updateFlattenIconVisibility();
+    } else {
+        syncFlattenHeightSlider();
     }
 }
 
 if (typeof window !== 'undefined') {
     window.applyFlattenFromEmbed = applyFlattenFromEmbed;
+}
+
+function updateEventsTimelineScopeButton() {
+    const btn = document.getElementById('events-timeline-scope-toggle');
+    if (!btn) return;
+    btn.classList.toggle('active', !showAllTimelineEvents);
+    if (showAllTimelineEvents) {
+        btn.title = 'Events: all time (click for selected year only)';
+        btn.setAttribute('aria-label', 'Showing all events. Switch to selected year only.');
+    } else {
+        btn.title = 'Events: selected year only (click for all time)';
+        btn.setAttribute('aria-label', 'Showing selected year only. Switch to all events.');
+    }
+}
+
+function toggleTimelineEventScope() {
+    showAllTimelineEvents = !showAllTimelineEvents;
+    const gl = typeof window !== 'undefined' && window.circaevumGL;
+    if (gl && typeof gl.setTimelineEventFilter === 'function') {
+        gl.setTimelineEventFilter(showAllTimelineEvents ? 'all' : 'year');
+    }
+    updateEventsTimelineScopeButton();
 }
 
 function toggleCircadianWorldline() {
@@ -1636,8 +1846,17 @@ function toggleCircadianWorldline() {
 
 function toggleFocusTarget() {
     const config = ZOOM_LEVELS[currentZoom];
-    const current = focusTargetOverride || config.focusTarget || 'sun';
-    const next = current === 'sun' ? 'earth' : 'sun';
+    const base = config.focusTarget || 'sun';
+    const current = focusTargetOverride || base;
+    let next;
+    if (currentZoom >= 4 && currentZoom <= 7) {
+        const cycle = ['earth', 'sun', 'mid'];
+        const idx = cycle.indexOf(current);
+        const i = idx === -1 ? 0 : (idx + 1) % cycle.length;
+        next = cycle[i];
+    } else {
+        next = current === 'sun' ? 'earth' : 'sun';
+    }
     focusTargetOverride = next;
     const focusLabel = document.getElementById('focus-target');
     if (focusLabel) focusLabel.textContent = next.toUpperCase();
@@ -1645,7 +1864,11 @@ function toggleFocusTarget() {
     if (btn) {
         btn.classList.toggle('active', next === 'earth');
         btn.title = `Camera focus: ${next.toUpperCase()} (C)`;
-        btn.setAttribute('aria-label', `Toggle camera focus between Sun and Earth (currently ${next.toUpperCase()})`);
+        const aria =
+            currentZoom >= 4 && currentZoom <= 7
+                ? `Cycle camera focus: Earth, then Sun, then midpoint between Sun and Earth at selected time (currently ${next.toUpperCase()})`
+                : `Toggle camera focus between Sun and Earth (currently ${next.toUpperCase()})`;
+        btn.setAttribute('aria-label', aria);
     }
     createPlanets(currentZoom);
 }
@@ -1824,7 +2047,12 @@ function toggleWebXR() {
                             if (!gl || typeof gl.getLayerIds !== 'function') return [];
                             return gl.getLayerIds().map((id) => {
                                 const l = gl.getLayer(id);
-                                return { id, name: (l && l.name) || id, visible: l ? l.visible !== false : true };
+                                return {
+                                    id,
+                                    name: (l && l.name) || id,
+                                    visible: l ? l.visible !== false : true,
+                                    color: l && l.color != null ? l.color : undefined
+                                };
                             });
                         },
                         setEventLayerVisibility: (layerId, visible) => {
@@ -2201,6 +2429,10 @@ function setZoomLevel(level, overrideDate) {
     
     // Now change the zoom level
     currentZoom = level;
+    // Mid focus only applies to quarter–week zooms (4–7)
+    if (level < 4 || level > 7) {
+        if (focusTargetOverride === 'mid') focusTargetOverride = null;
+    }
     const config = ZOOM_LEVELS[level];
     
     // Play transition sound
@@ -2329,21 +2561,29 @@ function getFocusPoint() {
     const config = ZOOM_LEVELS[currentZoom];
     const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
     
-    // Set vertical offset based on zoom level
+    // Set vertical offset based on zoom level (match Sun/planets at SELECTED TIME, not Jan 1 of currentYear)
     let verticalOffset = 0;
     if (currentZoom === 1) {
-        // Century view centers at 2050
         verticalOffset = getHeightForYear(2050, 1);
     } else {
-        // All other views center at current date (2025)
-        verticalOffset = getHeightForYear(currentYear, 1);
+        const sel = getSelectedDateTime();
+        verticalOffset = calculateDateHeight(
+            sel.getFullYear(),
+            sel.getMonth(),
+            sel.getDate(),
+            sel.getHours()
+        );
     }
     
-    if (effectiveFocusTarget === 'earth') {
+    if (effectiveFocusTarget === 'earth' || effectiveFocusTarget === 'mid') {
         const earthPlanet = planetMeshes.find(p => p.userData.name === 'Earth');
         if (earthPlanet) {
             const earthPos = earthPlanet.position.clone();
             earthPos.y = verticalOffset;
+            if (effectiveFocusTarget === 'mid') {
+                const midFrac = currentZoom === 7 ? (21 / 32 + 23 / 32) / 2 : 0.5;
+                return new THREE.Vector3(earthPos.x * midFrac, earthPos.y, earthPos.z * midFrac);
+            }
             return earthPos;
         }
     }
@@ -2375,6 +2615,9 @@ function animate(time, frame) {
         // Counter-scale only labels and point markers so they stay visible; let event tubes/lines flatten with the scene.
         if (currentFlattenAmount > 0.01) {
             flattenableGroup.traverse((obj) => {
+                if (obj.userData && obj.userData.eventStaggerRoot && typeof obj.userData.staggerLogical === 'number') {
+                    obj.position.y = obj.userData.staggerLogical / yScale;
+                }
                 const hasBaseScale = obj.userData && obj.userData.baseScale;
                 const isBillboard = obj.isSprite || obj.userData.type === 'EventLineLabel';
                 if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
@@ -2386,6 +2629,9 @@ function animate(time, frame) {
             });
         } else {
             flattenableGroup.traverse((obj) => {
+                if (obj.userData && obj.userData.eventStaggerRoot && typeof obj.userData.staggerLogical === 'number') {
+                    obj.position.y = obj.userData.staggerLogical;
+                }
                 const hasBaseScale = obj.userData && obj.userData.baseScale;
                 const isBillboard = obj.isSprite || obj.userData.type === 'EventLineLabel';
                 if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
