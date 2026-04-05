@@ -182,9 +182,9 @@
     g.rotation.set(0, 0, 0);
 
     var self = this;
-    var actionOrder = ['markersLines', 'markersText', 'lightMode', 'circadian', 'flatten'];
-    var iconLabels = { markersLines: 'Lines', markersText: 'Text', lightMode: 'Light', circadian: 'Cycle', flatten: 'Flat' };
-    var iconColors = { markersLines: 0x4a90e2, markersText: 0x94a3b8, lightMode: 0xfbbf24, circadian: 0x8b5cf6, flatten: 0x6ee7b7 };
+    var actionOrder = ['markersLines', 'markersText', 'lightMode', 'flatten'];
+    var iconLabels = { markersLines: 'Lines', markersText: 'Text', lightMode: 'Light', flatten: 'Flat' };
+    var iconColors = { markersLines: 0x4a90e2, markersText: 0x94a3b8, lightMode: 0xfbbf24, flatten: 0x6ee7b7 };
     var actions = actionOrder.filter(function (a) { return self.iconActions[a]; });
     var numIcons = actions.length;
     var totalIconWidth = numIcons * ICON_WIDTH + (numIcons - 1) * ICON_GAP;

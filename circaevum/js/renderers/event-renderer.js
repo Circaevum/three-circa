@@ -23,10 +23,62 @@
   const DAY_NUMBER_RADIUS_FRAC = 21 / 32;
   const DAY_NAME_RADIUS_FRAC = 23 / 32;
   const DAY_EVENT_DOT_RADIUS_FRAC = (DAY_NUMBER_RADIUS_FRAC + DAY_NAME_RADIUS_FRAC) / 2;
+  /** Duration ribbon border strokes; WebGL may still clamp to 1px on some GPUs—opacity is also boosted below. */
+  const RIBBON_OUTLINE_LINE_WIDTH = 6;
 
   function getZoomLevelForEvents() {
     if (typeof global.getCurrentZoomLevel === 'function') return global.getCurrentZoomLevel();
     return 5;
+  }
+
+  /** Match main.js: landing/month/week/day/clock show circadian helix ribbons and connectors. */
+  function isCircadianHelixZoom(zl) {
+    return zl === 0 || zl === 5 || zl === 7 || zl === 8 || zl === 9;
+  }
+
+  /** While flatten squishes the annual timeline, short circadian geometry stays in world Y — parent to sceneContentGroup, not flattenableGroup. */
+  function shouldAttachShortCircadianToWorldGroup() {
+    if (typeof global.isFlattenTimeStraightenActive !== 'function' || !global.isFlattenTimeStraightenActive()) return false;
+    const circ = typeof global.getCircadianRhythmState === 'function' ? global.getCircadianRhythmState() : 'off';
+    if (!circ || circ === 'off') return false;
+    return isCircadianHelixZoom(getZoomLevelForEvents());
+  }
+
+  function getCircadianStraightenBlendForEvents() {
+    if (typeof global.getCircadianStraightenBlend === 'function') {
+      return Math.min(1, Math.max(0, global.getCircadianStraightenBlend()));
+    }
+    return 0;
+  }
+
+  /** When day scope is on at circadian zooms, hide sub-day geometry that does not overlap the selected calendar day. */
+  function shouldHideCircadianShortEventForDayScope(start, end) {
+    const zl = getZoomLevelForEvents();
+    const circ = typeof global.getCircadianRhythmState === 'function' ? global.getCircadianRhythmState() : 'off';
+    if (!isCircadianHelixZoom(zl) || circ === 'off') return false;
+    if (typeof global.getCircadianShortEventScope === 'function' && global.getCircadianShortEventScope() === 'year') {
+      return false;
+    }
+    const selFn = getSelectedDateTimeFn();
+    if (!selFn || !start || isNaN(start.getTime())) return false;
+    const sel = selFn();
+    const dayStart = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
+    const dayEnd = new Date(dayStart.getTime());
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    const evStart = start;
+    const evEnd = end && end > start ? end : new Date(evStart.getTime() + 3600000);
+    const overlap = evEnd > dayStart && evStart < dayEnd;
+    return !overlap;
+  }
+
+  function getOrbitAngleForShortEventPlacement(height, currentHeight) {
+    const b = getCircadianStraightenBlendForEvents();
+    if (typeof SceneGeometry !== 'undefined' && SceneGeometry.getAngle) {
+      const aw = SceneGeometry.getAngle(height, currentHeight);
+      const as = SceneGeometry.getAngle(currentHeight, currentHeight);
+      return aw * (1 - b) + as * b;
+    }
+    return 0;
   }
 
   /** Week+ views draw day numbers / names; place sub-day event dots in that band. */
@@ -72,7 +124,7 @@
    */
   function addCircadianConnectorIfApplicable(parent, ax, ay, az, atDate, colorHex) {
     const zl = getZoomLevelForEvents();
-    if (zl < 8 || zl > 9 || !parent) return;
+    if (!isCircadianHelixZoom(zl) || !parent) return;
     const circ = typeof global.getCircadianRhythmState === 'function' ? global.getCircadianRhythmState() : 'off';
     if (!circ || circ === 'off') return;
     if (!isDateOnSelectedCalendarDay(atDate)) return;
@@ -88,7 +140,7 @@
         atDate.getHours() + atDate.getMinutes() / 60 + atDate.getSeconds() / 3600
       )
       : ay;
-    const tip = global.CircadianRenderer.getWrappedHandTipAtHeight(h, currentHeight);
+    const tip = global.CircadianRenderer.getWrappedHandTipAtHeight(h, currentHeight, getCircadianStraightenBlendForEvents());
     if (!tip) return;
     const geo = new global.THREE.BufferGeometry();
     geo.setAttribute('position', new global.THREE.Float32BufferAttribute([
@@ -281,9 +333,10 @@
     return geo;
   }
 
-  function addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder) {
+  function addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder, lineWidth) {
     const n = innerFlat.length / 3;
     if (n < 1) return;
+    const lw = lineWidth != null ? lineWidth : 1;
     function seg(si) {
       const ix = si * 3;
       const g = new global.THREE.BufferGeometry();
@@ -294,7 +347,8 @@
       const m = new global.THREE.LineBasicMaterial({
         color: colorHex,
         transparent: true,
-        opacity: opacity
+        opacity: opacity,
+        linewidth: lw
       });
       const line = new global.THREE.Line(g, m);
       line.renderOrder = renderOrder;
@@ -590,6 +644,72 @@
     return Math.max(0, Math.min(1, v));
   }
 
+  /**
+   * Portal/Yin: outline color from per-event provenance (native / CSV / ICS / URL / public, edited flag).
+   * Returns a THREE-compatible numeric color, or null if the event has no provenance field.
+   */
+  function getCircaevumProvenanceOutlineHex(event) {
+    if (!event || typeof event !== 'object') return null;
+    const srcRaw = event.circaevumSource;
+    if (srcRaw == null || String(srcRaw).trim() === '') return null;
+    const src = String(srcRaw).trim();
+    const edited =
+      event.circaevumEdited === true ||
+      event.circaevumEdited === 'true' ||
+      event.circaevumEdited === 1;
+    if (src === 'public_share') return parseColor('#dc2626');
+    if (src === 'native') return parseColor('#9333ea');
+    if (src === 'csv') return parseColor(edited ? '#22c55e' : '#2563eb');
+    if (src === 'ics_url') {
+      if (edited) return parseColor('#ea580c');
+      return parseColor('#eab308');
+    }
+    if (src === 'ics_file') {
+      if (edited) return parseColor('#ea580c');
+      return parseColor('#14b8a6');
+    }
+    return null;
+  }
+
+  /**
+   * Outline stroke color for duration ribbons.
+   * When the event carries circaevumSource (portal), outline color follows provenance and ignores borderStyle for color.
+   * @param {string} borderStyle - 'event' | 'layer' | 'none' | optional 'custom' (legacy stored styles)
+   * @param {Object|null} [eventForProvenance] - VEVENT-like row (optional)
+   */
+  function resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, eventForProvenance) {
+    const prov = eventForProvenance != null ? getCircaevumProvenanceOutlineHex(eventForProvenance) : null;
+    if (prov != null) return prov;
+    const bs = borderStyle || 'event';
+    if (bs === 'none') return null;
+    if (bs === 'custom') {
+      const raw = layerConfig && layerConfig.borderColor != null ? String(layerConfig.borderColor).trim() : '';
+      if (raw) return parseColor(raw);
+      return layerHex;
+    }
+    if (bs === 'layer') return layerHex;
+    return eventHex;
+  }
+
+  /** Stronger borderThickness → higher outline opacity (pairs with RIBBON_OUTLINE_LINE_WIDTH where supported). */
+  function getRibbonOutlineOpacity(baseOpacity, borderStyle, layerConfig) {
+    const bs = borderStyle || 'event';
+    if (bs === 'none') return 0;
+    const rawT = layerConfig && layerConfig.borderThickness != null ? Number(layerConfig.borderThickness) : 1;
+    const t = Math.max(0.3, Math.min(4, isNaN(rawT) ? 1 : rawT));
+    return Math.min(1, baseOpacity * (0.82 + 0.38 * t));
+  }
+
+  /** lineThickness scales radial span of inner/outer helix (portal “band width”). */
+  function applyLayerRibbonWidthScale(rInner, rOuter, earthDist, layerConfig) {
+    const rawTh = layerConfig && layerConfig.lineThickness != null ? Number(layerConfig.lineThickness) : 1;
+    const th = Math.max(0.3, Math.min(4, isNaN(rawTh) ? 1 : rawTh));
+    const mid = (rInner + rOuter) / 2;
+    let half = Math.max(earthDist * 0.012, (rOuter - rInner) / 2);
+    half *= 0.45 + 0.55 * th;
+    return { rInner: mid - half, rOuter: mid + half };
+  }
+
   function lerpHexColor(hexA, hexB, t) {
     const tt = clamp01(t);
     const ar = (hexA >> 16) & 0xff;
@@ -630,6 +750,231 @@
     return { minMs, maxMs };
   }
 
+  /** Spine + connectors: short events spread over months (heuristic) or explicit circaevumSeriesId. */
+  const SERIES_MIN_HEURISTIC_EVENTS = 4;
+  const SERIES_MIN_HEURISTIC_SPAN_DAYS = 45;
+  const SERIES_MAX_EVENT_HOURS = 48;
+  const SERIES_MIN_EXPLICIT_EVENTS = 2;
+  const SERIES_MIN_EXPLICIT_SPAN_DAYS = 14;
+  /** Sun-ward centerline of the series spine; radial thickness matches short-event ribbon bands. */
+  const SERIES_SPINE_RADIUS_FRAC = 0.34;
+
+  function passesHeuristicTimeSeries(arr) {
+    if (!arr || arr.length < SERIES_MIN_HEURISTIC_EVENTS) return false;
+    let minT = Infinity;
+    let maxT = -Infinity;
+    for (let i = 0; i < arr.length; i++) {
+      const ev = arr[i];
+      const s = getEventStart(ev);
+      if (!s || isNaN(s.getTime())) return false;
+      let e = getEventEnd(ev);
+      if (!e || e <= s) e = new Date(s.getTime() + 3600000);
+      if (durationHoursBetween(s, e) > SERIES_MAX_EVENT_HOURS) return false;
+      minT = Math.min(minT, s.getTime());
+      maxT = Math.max(maxT, e.getTime());
+    }
+    const spanDays = ( maxT - minT) / (24 * 60 * 60 * 1000);
+    return spanDays >= SERIES_MIN_HEURISTIC_SPAN_DAYS;
+  }
+
+  function passesExplicitTimeSeries(arr) {
+    if (!arr || arr.length < SERIES_MIN_EXPLICIT_EVENTS) return false;
+    let minT = Infinity;
+    let maxT = -Infinity;
+    for (let i = 0; i < arr.length; i++) {
+      const ev = arr[i];
+      const s = getEventStart(ev);
+      if (!s || isNaN(s.getTime())) return false;
+      let e = getEventEnd(ev);
+      if (!e || e <= s) e = new Date(s.getTime() + 3600000);
+      minT = Math.min(minT, s.getTime());
+      maxT = Math.max(maxT, e.getTime());
+    }
+    const spanDays = (maxT - minT) / (24 * 60 * 60 * 1000);
+    return spanDays >= SERIES_MIN_EXPLICIT_SPAN_DAYS;
+  }
+
+  /**
+   * @returns {Array<Array>} list of event arrays (each is one series)
+   */
+  function clusterEventsIntoTimeSeries(allEvents) {
+    if (!allEvents || allEvents.length < 2) return [];
+    const explicit = new Map();
+    const noId = [];
+    for (let i = 0; i < allEvents.length; i++) {
+      const ev = allEvents[i];
+      const raw = ev.circaevumSeriesId != null ? String(ev.circaevumSeriesId).trim() : '';
+      if (raw) {
+        if (!explicit.has(raw)) explicit.set(raw, []);
+        explicit.get(raw).push(ev);
+      } else {
+        noId.push(ev);
+      }
+    }
+    const out = [];
+    explicit.forEach((arr) => {
+      if (passesExplicitTimeSeries(arr)) out.push(arr);
+    });
+    const byCat = new Map();
+    for (let i = 0; i < noId.length; i++) {
+      const ev = noId[i];
+      const cat = getEventCategory(ev);
+      if (!byCat.has(cat)) byCat.set(cat, []);
+      byCat.get(cat).push(ev);
+    }
+    byCat.forEach((arr) => {
+      if (passesHeuristicTimeSeries(arr)) out.push(arr);
+    });
+    return out;
+  }
+
+  /** World position at event mid-time for connector endpoint (matches short-event placement). */
+  function getSeriesEventMidAnchor(ev, earthDist, currentHeight) {
+    const start = getEventStart(ev);
+    if (!start || isNaN(start.getTime())) return null;
+    let end = getEventEnd(ev);
+    if (!end || end <= start) end = new Date(start.getTime() + 3600000);
+    const mid = new Date((start.getTime() + end.getTime()) / 2);
+    if (typeof calculateDateHeight !== 'function') return null;
+    const startHeight = calculateDateHeight(
+      start.getFullYear(), start.getMonth(), start.getDate(), start.getHours()
+    );
+    const endHeight = calculateDateHeight(
+      end.getFullYear(), end.getMonth(), end.getDate(), end.getHours()
+    );
+    const midHeight = (startHeight + endHeight) / 2;
+    const rDot = getRadiusForDailyEventDot(earthDist, mid, 0);
+    const angle = getOrbitAngleForShortEventPlacement(midHeight, currentHeight);
+    if (typeof SceneGeometry !== 'undefined' && SceneGeometry.getPosition3D) {
+      const p = SceneGeometry.getPosition3D(midHeight, angle, rDot);
+      return { x: p.x, y: p.y, z: p.z };
+    }
+    return {
+      x: Math.cos(angle) * rDot,
+      y: midHeight,
+      z: Math.sin(angle) * rDot
+    };
+  }
+
+  /**
+   * Helical arc (inner+outer edges, same radial width as short events) + connector lines to each session.
+   * @returns {THREE.Group[]}
+   */
+  function createTimeSeriesDecorationGroups(events, layerConfig) {
+    const groups = [];
+    if (!events || !layerConfig || typeof calculateDateHeight !== 'function') return groups;
+    const seriesList = clusterEventsIntoTimeSeries(events);
+    if (seriesList.length === 0) return groups;
+
+    const earthDist = getEarthDistance();
+    const currentHeight = typeof calculateCurrentDateHeight === 'function'
+      ? calculateCurrentDateHeight()
+      : 0;
+    const layerHex = parseColor(layerConfig.color || '#00b4d8');
+    const rSpine = earthDist * SERIES_SPINE_RADIUS_FRAC;
+
+    for (let s = 0; s < seriesList.length; s++) {
+      const series = seriesList[s];
+      const sorted = series
+        .filter((ev) => getEventStart(ev))
+        .sort((a, b) => getEventStart(a).getTime() - getEventStart(b).getTime());
+      if (sorted.length < 2) continue;
+
+      const first = getEventStart(sorted[0]);
+      let maxEndT = -Infinity;
+      for (let i = 0; i < sorted.length; i++) {
+        const st = getEventStart(sorted[i]);
+        let en = getEventEnd(sorted[i]);
+        if (!en || en <= st) en = new Date(st.getTime() + 3600000);
+        maxEndT = Math.max(maxEndT, en.getTime());
+      }
+      const lastEnd = new Date(maxEndT);
+
+      const startHeight = calculateDateHeight(
+        first.getFullYear(), first.getMonth(), first.getDate(), first.getHours()
+      );
+      const endHeight = calculateDateHeight(
+        lastEnd.getFullYear(), lastEnd.getMonth(), lastEnd.getDate(), lastEnd.getHours()
+      );
+
+      const segCount = Math.max(48, Math.min(160, Math.ceil(Math.abs(endHeight - startHeight) / 8)));
+      const bandRef = getEventBandRadii(earthDist, 2);
+      const halfBand = (bandRef.rOuter - bandRef.rInner) / 2;
+      let rInnerSpine = rSpine - halfBand;
+      let rOuterSpine = rSpine + halfBand;
+      const ribbonSpine = applyLayerRibbonWidthScale(rInnerSpine, rOuterSpine, earthDist, layerConfig);
+      rInnerSpine = ribbonSpine.rInner;
+      rOuterSpine = ribbonSpine.rOuter;
+
+      const pair = buildHelixPair(startHeight, endHeight, rInnerSpine, rOuterSpine, currentHeight, segCount);
+      if (!pair.innerFlat || !pair.outerFlat || pair.innerFlat.length < 6) continue;
+
+      const root = new global.THREE.Group();
+      root.userData = {
+        type: 'EventSeriesDecoration',
+        layerId: layerConfig.id,
+      };
+
+      const roSpine = -10;
+      const spineOpacity = 0.5;
+      function spineEdgeFromFlat(flat) {
+        const g = new global.THREE.BufferGeometry();
+        g.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
+        const m = new global.THREE.LineBasicMaterial({
+          color: layerHex,
+          transparent: true,
+          opacity: spineOpacity,
+          linewidth: 1
+        });
+        const ln = new global.THREE.Line(g, m);
+        ln.renderOrder = roSpine;
+        return ln;
+      }
+      root.add(spineEdgeFromFlat(pair.innerFlat));
+      root.add(spineEdgeFromFlat(pair.outerFlat));
+      addBandEndConnectors(root, pair.innerFlat, pair.outerFlat, layerHex, spineOpacity, roSpine);
+
+      for (let i = 0; i < sorted.length; i++) {
+        const anchor = getSeriesEventMidAnchor(sorted[i], earthDist, currentHeight);
+        if (!anchor) continue;
+        const ev = sorted[i];
+        const st = getEventStart(ev);
+        let en = getEventEnd(ev);
+        if (!en || en <= st) en = new Date(st.getTime() + 3600000);
+        const midHeight = (calculateDateHeight(st.getFullYear(), st.getMonth(), st.getDate(), st.getHours()) +
+          calculateDateHeight(en.getFullYear(), en.getMonth(), en.getDate(), en.getHours())) / 2;
+        const angle = getOrbitAngleForShortEventPlacement(midHeight, currentHeight);
+        let sx; let sy; let sz;
+        if (typeof SceneGeometry !== 'undefined' && SceneGeometry.getPosition3D) {
+          const p = SceneGeometry.getPosition3D(midHeight, angle, rSpine);
+          sx = p.x;
+          sy = p.y;
+          sz = p.z;
+        } else {
+          sx = Math.cos(angle) * rSpine;
+          sy = midHeight;
+          sz = Math.sin(angle) * rSpine;
+        }
+        const connGeo = new global.THREE.BufferGeometry();
+        connGeo.setAttribute('position', new global.THREE.Float32BufferAttribute([
+          sx, sy, sz,
+          anchor.x, anchor.y, anchor.z
+        ], 3));
+        const connMat = new global.THREE.LineBasicMaterial({
+          color: layerHex,
+          transparent: true,
+          opacity: 0.32
+        });
+        const conn = new global.THREE.Line(connGeo, connMat);
+        conn.renderOrder = -9;
+        root.add(conn);
+      }
+
+      groups.push(root);
+    }
+    return groups;
+  }
+
   function getNormalizedTimeForDate(date, range) {
     if (!date || isNaN(date.getTime())) return 0.5;
     if (range && isFinite(range.minMs) && isFinite(range.maxMs) && range.maxMs > range.minMs) {
@@ -651,6 +996,7 @@
     const earthDist = getEarthDistance();
     const start = getEventStart(event);
     if (!start || isNaN(start.getTime())) return null;
+    if (shouldHideCircadianShortEventForDayScope(start, null)) return null;
 
     const r = shouldUseDayBandDotPlacement()
       ? earthDist * DAY_EVENT_DOT_RADIUS_FRAC
@@ -662,9 +1008,7 @@
     const currentHeight = typeof calculateCurrentDateHeight === 'function'
       ? calculateCurrentDateHeight()
       : height;
-    const angle = typeof SceneGeometry !== 'undefined' && SceneGeometry.getAngle
-      ? SceneGeometry.getAngle(height, currentHeight)
-      : 0;
+    const angle = getOrbitAngleForShortEventPlacement(height, currentHeight);
     const pos = typeof SceneGeometry !== 'undefined' && SceneGeometry.getPosition3D
       ? SceneGeometry.getPosition3D(height, angle, r)
       : { x: Math.cos(angle) * r, y: height, z: Math.sin(angle) * r };
@@ -672,7 +1016,7 @@
     const explicitColor = hasExplicitEventColor(event);
     const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
     const color = parseColor(explicitColor ? (event.color ?? event.colorId) : fallbackGradient);
-    const sphereR = shouldUseDayBandDotPlacement() ? 0.48 : 0.8;
+    const sphereR = shouldUseDayBandDotPlacement() ? 0.28 : 0.55;
     const geometry = new global.THREE.SphereGeometry(sphereR, 12, 12);
     const material = new global.THREE.MeshStandardMaterial({
       color,
@@ -687,9 +1031,10 @@
       type: 'EventObject',
       eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
     };
+    if (shouldAttachShortCircadianToWorldGroup()) userData.circadianWorldSpaceLayer = true;
     mesh.userData = userData;
 
-    const showConn = getZoomLevelForEvents() >= 8 &&
+    const showConn = isCircadianHelixZoom(getZoomLevelForEvents()) &&
       typeof global.getCircadianRhythmState === 'function' &&
       global.getCircadianRhythmState() !== 'off' &&
       isDateOnSelectedCalendarDay(start);
@@ -704,10 +1049,11 @@
   }
 
   /**
-   * Create a short worldline for a duration event. Supports layer style: plotType (lines | polygon2d | polygon3d),
-   * lineThickness, fillColor, borderStyle (event | layer | none).
+   * Create a short worldline for a duration event. Layer style: plotType (legacy), lineThickness (band width),
+   * fillColor (omit to follow per-event color), borderStyle (event | layer | custom | none), borderColor (with custom),
+   * borderThickness (outline emphasis).
    * @param {Object|VEvent} event
-   * @param {Object} layerConfig - id, color, opacity, plotType?, lineThickness?, fillColor?, borderStyle?
+   * @param {Object} layerConfig
    * @param {number} radius
    * @returns {THREE.Object3D|null} Line, Group (tube + outline), or flattened group
    */
@@ -732,34 +1078,155 @@
 
     const durationH = durationHoursBetween(start, end);
     if (durationH < 24) {
-      const midDate = new Date((start.getTime() + end.getTime()) / 2);
-      const rDot = getRadiusForDailyEventDot(earthDist, midDate, 0);
-      const getAngle = typeof SceneGeometry !== 'undefined' && SceneGeometry.getAngle
-        ? function (h) { return SceneGeometry.getAngle(h, currentHeight); }
-        : function () { return 0; };
-      const getPos = function (h, rad) {
-        const a = getAngle(h);
-        return { x: Math.cos(a) * rad, y: h, z: Math.sin(a) * rad };
-      };
+      if (shouldHideCircadianShortEventForDayScope(start, end)) return null;
+      const zl = getZoomLevelForEvents();
+      const circ = typeof global.getCircadianRhythmState === 'function' ? global.getCircadianRhythmState() : 'off';
+      const straightenBlend = getCircadianStraightenBlendForEvents();
+      const useHelixRibbon =
+        isCircadianHelixZoom(zl) &&
+        circ !== 'off' &&
+        typeof global.CircadianRenderer !== 'undefined' &&
+        typeof global.CircadianRenderer.buildHelixRibbonBetween === 'function' &&
+        typeof calculateDateHeight === 'function';
+
       const eventColorRaw = event.color ?? event.colorId ?? null;
       const explicitEventColor = hasExplicitEventColor(event);
       const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
       const eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
+      const layerHex = parseColor(layerConfig.color || '#00b4d8');
       const userData = {
         vevent: event,
         layerId: layerConfig.id,
         type: 'EventObject',
         eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
       };
+
+      if (useHelixRibbon) {
+        const segments = Math.max(8, Math.min(48, Math.ceil(durationH * 4)));
+        const ribbonPair = global.CircadianRenderer.buildHelixRibbonBetween(
+          start,
+          end,
+          currentHeight,
+          calculateDateHeight,
+          segments,
+          straightenBlend
+        );
+        if (ribbonPair && ribbonPair.innerFlat && ribbonPair.outerFlat && ribbonPair.innerFlat.length >= 6) {
+          const durationDays = Math.max(durationH / 24, 1 / 24);
+          const plotType = layerConfig.plotType ?? 'polygon3d';
+          const opacity = Math.min(1,
+            (layerConfig.opacity != null ? layerConfig.opacity : 0.78) * getDurationOpacityScale(durationDays));
+          const roBoost = getDurationRibbonRenderOrderBoost(durationDays);
+          const roFill = -4 + roBoost;
+          const roLine = -2 + roBoost;
+          const fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
+          const fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
+          const borderStyle = layerConfig.borderStyle || 'event';
+          const outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
+          const outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
+
+          const innerFlat = ribbonPair.innerFlat;
+          const outerFlat = ribbonPair.outerFlat;
+          const rLabelBand = earthDist * DAY_EVENT_DOT_RADIUS_FRAC;
+
+          function lineFromFlatShort(flat, hex, op, renderOrder, lineWidth) {
+            const lw = lineWidth != null ? lineWidth : 1;
+            const geometry = new global.THREE.BufferGeometry();
+            geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
+            const material = new global.THREE.LineBasicMaterial({
+              color: hex,
+              transparent: true,
+              opacity: op,
+              linewidth: lw
+            });
+            const lineObj = new global.THREE.Line(geometry, material);
+            lineObj.renderOrder = renderOrder != null ? renderOrder : roLine;
+            return lineObj;
+          }
+
+          const group = new global.THREE.Group();
+          group.userData = userData;
+          if (shouldAttachShortCircadianToWorldGroup()) userData.circadianWorldSpaceLayer = true;
+
+          if (plotType === 'lines') {
+            group.add(lineFromFlatShort(innerFlat, eventHex, opacity, roLine));
+            group.add(lineFromFlatShort(outerFlat, eventHex, opacity, roLine));
+            addBandEndConnectors(group, innerFlat, outerFlat, eventHex, opacity, roLine);
+          } else if (plotType === 'polygon3d' || plotType === 'polygon2d') {
+            const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
+            if (ribbonGeo) {
+              const fillMesh = new global.THREE.Mesh(ribbonGeo, new global.THREE.MeshBasicMaterial({
+                color: fillHex,
+                transparent: true,
+                opacity: fillOpacity,
+                side: global.THREE.DoubleSide,
+                depthWrite: false,
+                polygonOffset: true,
+                polygonOffsetFactor: 2,
+                polygonOffsetUnits: 1
+              }));
+              if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
+              fillMesh.renderOrder = roFill;
+              group.add(fillMesh);
+              if (borderStyle !== 'none' && outlineColorHex != null) {
+                group.add(lineFromFlatShort(innerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH));
+                group.add(lineFromFlatShort(outerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH));
+                addBandEndConnectors(group, innerFlat, outerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH);
+              }
+            }
+          }
+
+          const midDate = new Date((start.getTime() + end.getTime()) / 2);
+          const midH =
+            typeof calculateDateHeight === 'function'
+              ? calculateDateHeight(
+                midDate.getFullYear(),
+                midDate.getMonth(),
+                midDate.getDate(),
+                midDate.getHours() +
+                  midDate.getMinutes() / 60 +
+                  midDate.getSeconds() / 3600 +
+                  midDate.getMilliseconds() / 3600000
+              )
+              : (startHeight + endHeight) / 2;
+          const tip =
+            global.CircadianRenderer.getWrappedHandTipAtHeight &&
+            global.CircadianRenderer.getWrappedHandTipAtHeight(midH, currentHeight, straightenBlend);
+          const sameDay =
+            start.getFullYear() === end.getFullYear() &&
+            start.getMonth() === end.getMonth() &&
+            start.getDate() === end.getDate();
+          const nameStr = getEventSummaryText(event);
+          const midLabelText = nameStr || formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end));
+          const nameScale = 4.5;
+          if (tip) {
+            const midSprite = createEventLineLabelSprite(midLabelText, eventHex, tip.x, tip.y, tip.z, nameScale, true);
+            Object.assign(midSprite.userData, { type: 'EventObjectLabel', kind: 'mid' });
+            group.add(midSprite);
+          } else {
+            addEventWorldlineLabelSprites(group, event, start, end, startHeight, endHeight, rLabelBand, eventHex, currentHeight, 0);
+          }
+
+          if (group.children.length > 0) return group;
+        }
+      }
+
+      const midDate = new Date((start.getTime() + end.getTime()) / 2);
+      const rDot = getRadiusForDailyEventDot(earthDist, midDate, 0);
+      const getPos = function (h, rad) {
+        const a = getOrbitAngleForShortEventPlacement(h, currentHeight);
+        return { x: Math.cos(a) * rad, y: h, z: Math.sin(a) * rad };
+      };
       const midHeight = (startHeight + endHeight) / 2;
       const pos = getPos(midHeight, rDot);
-      const markerSize = Math.max(0.38, Math.min(0.95, 0.38 + 0.55 * Math.min(1, durationH / 24)));
+      const markerSize = Math.max(0.22, Math.min(0.5, 0.22 + 0.28 * Math.min(1, durationH / 24)));
       const marker = createEventLinePointMarker(pos.x, pos.y, pos.z, eventHex, markerSize, userData);
       const grp = new global.THREE.Group();
       grp.userData = userData;
       grp.add(marker);
       addEventWorldlineLabelSprites(grp, event, start, end, startHeight, endHeight, rDot, eventHex, currentHeight, 0);
       addCircadianConnectorIfApplicable(grp, pos.x, pos.y, pos.z, midDate, eventHex);
+      if (shouldAttachShortCircadianToWorldGroup()) grp.userData.circadianWorldSpaceLayer = true;
       return grp;
     }
 
@@ -769,6 +1236,9 @@
       : getEventBandRadii(earthDist, durationDays);
     let { rInner, rOuter } = band;
     if (rOuter <= rInner) rOuter = rInner + earthDist * 0.04;
+    const ribbonScaled = applyLayerRibbonWidthScale(rInner, rOuter, earthDist, layerConfig);
+    rInner = ribbonScaled.rInner;
+    rOuter = ribbonScaled.rOuter;
 
     const segments = 32;
     const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, currentHeight, segments);
@@ -790,6 +1260,8 @@
     // Prefer explicit fillColor, then per-event color, then layer color.
     const fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
     const borderStyle = layerConfig.borderStyle || 'event';
+    const outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
+    const outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
 
     const userData = {
       vevent: event,
@@ -798,13 +1270,15 @@
       eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
     };
 
-    function lineFromFlat(flat, hex, op, renderOrder) {
+    function lineFromFlat(flat, hex, op, renderOrder, lineWidth) {
+      const lw = lineWidth != null ? lineWidth : 1;
       const geometry = new global.THREE.BufferGeometry();
       geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
       const material = new global.THREE.LineBasicMaterial({
         color: hex,
         transparent: true,
-        opacity: op
+        opacity: op,
+        linewidth: lw
       });
       const lineObj = new global.THREE.Line(geometry, material);
       lineObj.renderOrder = renderOrder != null ? renderOrder : roLine;
@@ -840,11 +1314,10 @@
         if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
         fillMesh.renderOrder = roFill;
         group.add(fillMesh);
-        if (borderStyle !== 'none') {
-          const outlineColor = borderStyle === 'event' ? eventHex : layerHex;
-          group.add(lineFromFlat(innerFlat, outlineColor, opacity, roLine));
-          group.add(lineFromFlat(outerFlat, outlineColor, opacity, roLine));
-          addBandEndConnectors(group, innerFlat, outerFlat, outlineColor, opacity, roLine);
+        if (borderStyle !== 'none' && outlineColorHex != null) {
+          group.add(lineFromFlat(innerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH));
+          group.add(lineFromFlat(outerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH));
+          addBandEndConnectors(group, innerFlat, outerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH);
         }
         return attachEventStaggerRoot(
           wrapWorldlineWithLabels(group, userData, event, start, end, startHeight, endHeight, rOuter, eventHex, currentHeight, 0),
@@ -873,10 +1346,15 @@
     }
     const geometry = new global.THREE.BufferGeometry();
     geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
+    const fallbackOutlineHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
+    const useOutline = borderStyle !== 'none' && fallbackOutlineHex != null;
+    const strokeHex = useOutline ? fallbackOutlineHex : eventHex;
+    const strokeOp = useOutline ? getRibbonOutlineOpacity(opacity, borderStyle, layerConfig) : opacity;
     const material = new global.THREE.LineBasicMaterial({
-      color: eventHex,
+      color: strokeHex,
       transparent: true,
-      opacity
+      opacity: strokeOp,
+      linewidth: useOutline ? RIBBON_OUTLINE_LINE_WIDTH : 1
     });
     const line = new global.THREE.Line(geometry, material);
     line.renderOrder = roLine;
@@ -892,11 +1370,12 @@
    * Labels: event name at midsection, MM/DD at start and end; same color as the line.
    * @param {Array<{ start: Date|string, end: Date|string, label?: string, color?: string|number }>} lines
    * @param {Object} layerConfig - Layer config (id, color, opacity, ...)
-   * @param {THREE.Group|null} sceneContentGroup - Group to add lines to
+   * @param {THREE.Group|null} sceneContentGroup - Group to add lines to (usually flattenableGroup)
    * @param {number} radiusOverride - Optional; if not set, uses radius between worldline and day-name boundary
+   * @param {THREE.Group|null} worldSpaceGroup - When set (scene root), short circadian lines attach here if userData.circadianWorldSpaceLayer
    * @returns {Array<THREE.Object3D>} Created line and label objects (EventLine + sprites)
    */
-  function createEventLineObjects(lines, layerConfig, sceneContentGroup, radiusOverride) {
+  function createEventLineObjects(lines, layerConfig, sceneContentGroup, radiusOverride, worldSpaceGroup) {
     const lineTimeRange = getTimeRange(lines);
     const earthDist = typeof radiusOverride === 'number' && !isNaN(radiusOverride)
       ? radiusOverride
@@ -904,6 +1383,13 @@
     const objects = [];
     if (!lines || !Array.isArray(lines) || !layerConfig) return objects;
     const group = sceneContentGroup || null;
+    const worldGroup = worldSpaceGroup || null;
+
+    function addToFlattenOrWorld(root) {
+      if (!root) return;
+      const p = (worldGroup && root.userData && root.userData.circadianWorldSpaceLayer) ? worldGroup : group;
+      if (p) p.add(root);
+    }
 
     const currentHeight = typeof calculateCurrentDateHeight === 'function'
       ? calculateCurrentDateHeight()
@@ -952,11 +1438,172 @@
       const colorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
       const midHeight = (startHeight + endHeight) / 2;
 
+      const byCategory = layerConfig.layerStylesByCategory || {};
+      const firstStyle = Object.keys(byCategory).length > 0 ? byCategory[Object.keys(byCategory)[0]] : {};
+      const lineStyle = (line.category && byCategory[line.category]) ? byCategory[line.category] : firstStyle;
+      const outlineLayerCfg = { ...layerConfig, ...lineStyle };
+
       if (isShortEvent) {
+        if (shouldHideCircadianShortEventForDayScope(start, end)) {
+          continue;
+        }
+        const zl = getZoomLevelForEvents();
+        const circ = typeof global.getCircadianRhythmState === 'function' ? global.getCircadianRhythmState() : 'off';
+        const straightenBlendLines = getCircadianStraightenBlendForEvents();
+        const useHelixRibbon =
+          isCircadianHelixZoom(zl) &&
+          circ !== 'off' &&
+          typeof global.CircadianRenderer !== 'undefined' &&
+          typeof global.CircadianRenderer.buildHelixRibbonBetween === 'function' &&
+          typeof calculateDateHeight === 'function';
+
+        const getPosShort = function (h, rad) {
+          const a = getOrbitAngleForShortEventPlacement(h, currentHeight);
+          return {
+            x: Math.cos(a) * rad,
+            y: h,
+            z: Math.sin(a) * rad
+          };
+        };
+
+        if (useHelixRibbon) {
+          const segments = Math.max(8, Math.min(48, Math.ceil(durationH * 4)));
+          const ribbonPair = global.CircadianRenderer.buildHelixRibbonBetween(
+            start,
+            end,
+            currentHeight,
+            calculateDateHeight,
+            segments,
+            straightenBlendLines
+          );
+          if (ribbonPair && ribbonPair.innerFlat && ribbonPair.outerFlat && ribbonPair.innerFlat.length >= 6) {
+            const durationDaysSmall = Math.max(durationH / 24, 1 / 24);
+            const plotType = lineStyle.plotType ?? layerConfig.plotType ?? firstStyle.plotType ?? 'polygon3d';
+            const opacity = Math.min(1,
+              ((lineStyle.opacity != null ? lineStyle.opacity : layerConfig.opacity) ?? 0.78) *
+                getDurationOpacityScale(durationDaysSmall));
+            const roBoost = getDurationRibbonRenderOrderBoost(durationDaysSmall);
+            const roFill = -4 + roBoost;
+            const roLine = -2 + roBoost;
+            const fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDaysSmall));
+            const layerColorHex = parseColor(layerConfig.color || '#00b4d8');
+            const eventColorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
+            const fillColorFromStyle = lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
+            const fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color) : eventColorHex);
+            const borderStyle = lineStyle.borderStyle ?? layerConfig.borderStyle ?? firstStyle.borderStyle ?? 'event';
+            const outlineColorHexEvt = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
+            const outlineOpEvt = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
+            const innerFlat = ribbonPair.innerFlat;
+            const outerFlat = ribbonPair.outerFlat;
+
+            function evtShortLineFromFlat(flat, hex, op, lw) {
+              const g = new global.THREE.BufferGeometry();
+              g.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
+              const m = new global.THREE.LineBasicMaterial({
+                color: hex,
+                transparent: true,
+                opacity: borderStyle === 'none' ? 0 : op,
+                linewidth: lw != null ? lw : 1
+              });
+              const lo = new global.THREE.Line(g, m);
+              lo.renderOrder = roLine;
+              return lo;
+            }
+
+            const lineUserData = {
+              layerId: layerConfig.id,
+              type: 'EventLine',
+              start,
+              end,
+              label: line.label || null,
+              index: i
+            };
+            if (shouldAttachShortCircadianToWorldGroup()) lineUserData.circadianWorldSpaceLayer = true;
+            const lineRoot = new global.THREE.Group();
+            lineRoot.userData = { ...lineUserData };
+
+            if (plotType === 'lines') {
+              lineRoot.add(evtShortLineFromFlat(innerFlat, eventColorHex, opacity, 1));
+              lineRoot.add(evtShortLineFromFlat(outerFlat, eventColorHex, opacity, 1));
+              addBandEndConnectors(lineRoot, innerFlat, outerFlat, eventColorHex, opacity, roLine);
+            } else if (plotType === 'polygon3d' || plotType === 'polygon2d') {
+              const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
+              if (ribbonGeo) {
+                const fillMesh = new global.THREE.Mesh(ribbonGeo, new global.THREE.MeshBasicMaterial({
+                  color: fillHex,
+                  transparent: true,
+                  opacity: fillOpacity,
+                  side: global.THREE.DoubleSide,
+                  depthWrite: false,
+                  polygonOffset: true,
+                  polygonOffsetFactor: 2,
+                  polygonOffsetUnits: 1
+                }));
+                if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
+                fillMesh.renderOrder = roFill;
+                lineRoot.add(fillMesh);
+                if (borderStyle !== 'none' && outlineColorHexEvt != null) {
+                  lineRoot.add(evtShortLineFromFlat(innerFlat, outlineColorHexEvt, outlineOpEvt, RIBBON_OUTLINE_LINE_WIDTH));
+                  lineRoot.add(evtShortLineFromFlat(outerFlat, outlineColorHexEvt, outlineOpEvt, RIBBON_OUTLINE_LINE_WIDTH));
+                  addBandEndConnectors(lineRoot, innerFlat, outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, RIBBON_OUTLINE_LINE_WIDTH);
+                }
+              }
+            }
+
+            const midH =
+              typeof calculateDateHeight === 'function'
+                ? calculateDateHeight(
+                  midDate.getFullYear(),
+                  midDate.getMonth(),
+                  midDate.getDate(),
+                  midDate.getHours() +
+                    midDate.getMinutes() / 60 +
+                    midDate.getSeconds() / 3600 +
+                    midDate.getMilliseconds() / 3600000
+                )
+                : midHeight;
+            const tip =
+              global.CircadianRenderer.getWrappedHandTipAtHeight &&
+              global.CircadianRenderer.getWrappedHandTipAtHeight(midH, currentHeight, straightenBlendLines);
+            const midLabel =
+              (line.label && String(line.label).trim())
+                ? String(line.label).trim()
+                : formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end));
+            if (tip) {
+              const midSprite = createEventLineLabelSprite(midLabel, colorHex, tip.x, tip.y, tip.z, nameScale, true);
+              Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
+              lineRoot.add(midSprite);
+            } else {
+              const labelRadius = rShort + EVENT_LINE_LABEL_RADIUS_OFFSET;
+              const labelPos = getPosShort(midHeight, labelRadius);
+              const midSprite = createEventLineLabelSprite(midLabel, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true);
+              Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
+              lineRoot.add(midSprite);
+            }
+
+            if (lineRoot.children.length > 0) {
+              addToFlattenOrWorld(lineRoot);
+              objects.push(lineRoot);
+              continue;
+            }
+          }
+        }
+
         const labelRadius = rShort + EVENT_LINE_LABEL_RADIUS_OFFSET;
-        // Single marker at midpoint, only event name label (no arc, no start/end MM/DD)
-        const midPos = getPos(midHeight, rShort);
-        const markerSize = Math.max(0.35, Math.min(0.9, 0.35 + 0.55 * Math.min(1, durationH / 24)));
+        const midPos = getPosShort(midHeight, rShort);
+        const markerSize = Math.max(0.2, Math.min(0.48, 0.2 + 0.28 * Math.min(1, durationH / 24)));
+        const shortRoot = new global.THREE.Group();
+        shortRoot.userData = {
+          layerId: layerConfig.id,
+          type: 'EventLine',
+          start,
+          end,
+          label: line.label || null,
+          index: i,
+          shortEvent: true
+        };
+        if (shouldAttachShortCircadianToWorldGroup()) shortRoot.userData.circadianWorldSpaceLayer = true;
+
         const marker = createEventLinePointMarker(midPos.x, midPos.y, midPos.z, colorHex, markerSize, {
           layerId: layerConfig.id,
           type: 'EventLine',
@@ -966,26 +1613,28 @@
           index: i,
           shortEvent: true
         });
-        if (group) group.add(marker);
-        objects.push(marker);
+        shortRoot.add(marker);
 
-        const midLabel = (line.label && String(line.label).trim()) ? String(line.label).trim() : (formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end)));
-        const labelPos = getPos(midHeight, labelRadius);
-        const midSprite = createEventLineLabelSprite(midLabel, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true);
+        const midLabelFallback = (line.label && String(line.label).trim()) ? String(line.label).trim() : (formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end)));
+        const labelPos = getPosShort(midHeight, labelRadius);
+        const midSprite = createEventLineLabelSprite(midLabelFallback, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true);
         Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
-        if (group) group.add(midSprite);
-        objects.push(midSprite);
-        if (group) addCircadianConnectorIfApplicable(group, midPos.x, midPos.y, midPos.z, midDate, colorHex);
+        shortRoot.add(midSprite);
+
+        addCircadianConnectorIfApplicable(shortRoot, midPos.x, midPos.y, midPos.z, midDate, colorHex);
+        addToFlattenOrWorld(shortRoot);
+        objects.push(shortRoot);
         continue;
       }
 
       // Multi-day: inner/outer helices, end connectors, optional ribbon fill
-      const { rInner, rOuter } = getEventBandRadii(earthDist, durationDays);
+      let { rInner, rOuter } = getEventBandRadii(earthDist, durationDays);
+      if (rOuter <= rInner) rOuter = rInner + earthDist * 0.04;
+      const ribbonScaled = applyLayerRibbonWidthScale(rInner, rOuter, earthDist, outlineLayerCfg);
+      rInner = ribbonScaled.rInner;
+      rOuter = ribbonScaled.rOuter;
       const labelRadius = rOuter + EVENT_LINE_LABEL_RADIUS_OFFSET;
 
-      const byCategory = layerConfig.layerStylesByCategory || {};
-      const firstStyle = Object.keys(byCategory).length > 0 ? byCategory[Object.keys(byCategory)[0]] : {};
-      const lineStyle = (line.category && byCategory[line.category]) ? byCategory[line.category] : firstStyle;
       const plotType = lineStyle.plotType ?? layerConfig.plotType ?? firstStyle.plotType ?? 'polygon3d';
       const fillColorFromStyle = lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
       const borderStyle = lineStyle.borderStyle ?? layerConfig.borderStyle ?? firstStyle.borderStyle ?? 'event';
@@ -999,6 +1648,8 @@
       const roFill = -4 + roBoost;
       const roLine = -2 + roBoost;
       const fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
+      const outlineColorHexEvt = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
+      const outlineOpEvt = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
 
       const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, currentHeight, 32);
       const staggerLogical = getEventBandVerticalStagger(durationDays);
@@ -1016,13 +1667,15 @@
       const lineRoot = new global.THREE.Group();
       lineRoot.userData = { ...lineUserData };
 
-      function evtLineFromFlat(flat, hex, op) {
+      function evtLineFromFlat(flat, hex, op, lineWidth) {
+        const lw = lineWidth != null ? lineWidth : 1;
         const g = new global.THREE.BufferGeometry();
         g.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
         const m = new global.THREE.LineBasicMaterial({
           color: hex,
           transparent: true,
-          opacity: borderStyle === 'none' ? 0 : op
+          opacity: borderStyle === 'none' ? 0 : op,
+          linewidth: lw
         });
         const lo = new global.THREE.Line(g, m);
         lo.renderOrder = roLine;
@@ -1058,11 +1711,10 @@
           fillMesh.renderOrder = roFill;
           fillMesh.userData = { ...lineUserData, longTermFill: true };
           bandGroup.add(fillMesh);
-          if (borderStyle !== 'none') {
-            const outlineColor = borderStyle === 'event' ? eventColorHex : (borderStyle === 'layer' ? layerColorHex : eventColorHex);
-            bandGroup.add(evtLineFromFlat(innerFlat, outlineColor, opacity));
-            bandGroup.add(evtLineFromFlat(outerFlat, outlineColor, opacity));
-            addBandEndConnectors(bandGroup, innerFlat, outerFlat, outlineColor, opacity, roLine);
+          if (borderStyle !== 'none' && outlineColorHexEvt != null) {
+            bandGroup.add(evtLineFromFlat(innerFlat, outlineColorHexEvt, outlineOpEvt, RIBBON_OUTLINE_LINE_WIDTH));
+            bandGroup.add(evtLineFromFlat(outerFlat, outlineColorHexEvt, outlineOpEvt, RIBBON_OUTLINE_LINE_WIDTH));
+            addBandEndConnectors(bandGroup, innerFlat, outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, RIBBON_OUTLINE_LINE_WIDTH);
           }
           lineRoot.add(bandGroup);
           bandAdded = true;
@@ -1085,13 +1737,15 @@
             : { x: Math.cos(angle1) * rMid, y: endHeight, z: Math.sin(angle1) * rMid };
           points = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
         }
-        const outlineColor = borderStyle === 'event' ? eventColorHex : (borderStyle === 'layer' ? layerColorHex : eventColorHex);
+        const outlineColorFb = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
+        const outlineOpFb = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
         const lineGeometry = new global.THREE.BufferGeometry();
         lineGeometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
         const lineMaterial = new global.THREE.LineBasicMaterial({
-          color: outlineColor,
+          color: outlineColorFb != null ? outlineColorFb : eventColorHex,
           transparent: true,
-          opacity: borderStyle === 'none' ? 0 : opacity
+          opacity: borderStyle === 'none' ? 0 : outlineOpFb,
+          linewidth: borderStyle !== 'none' ? RIBBON_OUTLINE_LINE_WIDTH : 1
         });
         const lineObj = new global.THREE.Line(lineGeometry, lineMaterial);
         lineObj.renderOrder = roLine;
@@ -1117,7 +1771,7 @@
       lineRoot.add(midSprite);
 
       attachEventStaggerRoot(lineRoot, staggerLogical);
-      if (group) group.add(lineRoot);
+      addToFlattenOrWorld(lineRoot);
       objects.push(lineRoot);
     }
     return objects;
@@ -1127,8 +1781,9 @@
    * Create EventObjects for a set of events and add them to the scene group.
    * @param {Array} events - Array of VEvent or VEVENT-like objects
    * @param {Object} layerConfig - Layer config (id, color, opacity, ...)
-   * @param {THREE.Group|null} sceneContentGroup - Group to add meshes to
+   * @param {THREE.Group|null} sceneContentGroup - Group to add meshes to (timeline / flatten group)
    * @param {THREE.Scene|null} scene - Scene (unused for now, for API compatibility)
+   * @param {THREE.Group|null} worldSpaceGroup - When set, objects with userData.circadianWorldSpaceLayer attach here
    * @returns {Array<THREE.Object3D>} Created objects (meshes/lines) with userData.type === 'EventObject'
    */
   function getEventCategory(event) {
@@ -1136,10 +1791,11 @@
     return (c != null && String(c).trim()) ? String(c).trim() : 'Default';
   }
 
-  function createEventObjects(events, layerConfig, sceneContentGroup, scene) {
+  function createEventObjects(events, layerConfig, sceneContentGroup, scene, worldSpaceGroup) {
     const objects = [];
     if (!events || !layerConfig) return objects;
     const group = sceneContentGroup || null;
+    const worldGroup = worldSpaceGroup || null;
     const byCategory = layerConfig.layerStylesByCategory || {};
     const eventTimeRange = getTimeRange(events);
 
@@ -1154,10 +1810,20 @@
       const hasEnd = !!getEventEnd(event);
       const obj = hasEnd ? createEventWorldline(event, effectiveConfig) : createEventMarker(event, effectiveConfig);
       if (obj) {
-        if (group) group.add(obj);
+        const parent = (worldGroup && obj.userData && obj.userData.circadianWorldSpaceLayer) ? worldGroup : group;
+        if (parent) parent.add(obj);
         objects.push(obj);
       }
     }
+
+    const seriesBaseConfig = { ...layerConfig, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange };
+    const seriesRoots = createTimeSeriesDecorationGroups(events, seriesBaseConfig);
+    for (let si = 0; si < seriesRoots.length; si++) {
+      const sg = seriesRoots[si];
+      if (group) group.add(sg);
+      objects.push(sg);
+    }
+
     return objects;
   }
 

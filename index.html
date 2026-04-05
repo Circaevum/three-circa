@@ -20,6 +20,10 @@
           document.documentElement.classList.add('viewer-no-nav');
           document.body.classList.add('viewer-no-nav');
           window.CIRCAEVUM_VIEWER_MODE = true;
+          // Yin-portal (and similar wrappers) provide their own Layers rail; hide GL duplicate that was wired to Account.
+          if (inIframe) {
+            document.documentElement.classList.add('circaevum-embed-hide-layers-pull');
+          }
         }
         // Optional: set to your wrapper URL for "Open full app" (same-tab navigate with state).
         // On localhost, default to Yin-portal (wrapper) so the link works without config.
@@ -126,65 +130,92 @@
             </div>
         </div>
     </aside>
-    <button type="button" id="event-list-pull-tab" class="event-list-pull-tab" aria-label="Open Event List" title="Events">Events</button>
+    <button type="button" id="event-list-pull-tab" class="event-list-pull-tab" aria-label="Open Event List" title="Events">
+      <span class="event-list-pull-tab-inner">
+        <span class="event-list-pull-tab-chevron" aria-hidden="true">◀</span>
+        <span class="event-list-pull-tab-label">Events</span>
+      </span>
+    </button>
 
     <div id="hud">
         <!-- Kepler-style floating icon overlay on the scene (bottom-right) -->
         <div class="scene-icon-overlay" role="group" aria-label="Scene controls">
-            <button type="button" class="scene-icon-btn active" id="markers-lines-toggle" title="Time marker lines" aria-label="Toggle time marker lines">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 18h20"/><path d="M4 18v3"/><path d="M8 18v2"/><path d="M12 18v3"/><path d="M16 18v2"/><path d="M20 18v3"/></svg>
-            </button>
-            <button type="button" class="scene-icon-btn active" id="markers-text-toggle" title="Time marker text (T)" aria-label="Toggle time marker text (T)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><text x="12" y="16" font-size="12" font-weight="700" fill="currentColor" text-anchor="middle" font-family="system-ui,sans-serif">Tt</text></svg>
-            </button>
-            <button type="button" class="scene-icon-btn" id="markers-year-toggle" title="Show Year, Month, Week & Day markers for full year" aria-label="Toggle full-year time markers (Year, Month, Week, Day)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-                    <circle cx="12" cy="12" r="8"/>
-                    <path d="M12 4v2M12 18v2M4 12h2M18 12h2"/>
-                </svg>
-            </button>
-            <button type="button" class="scene-icon-btn active" id="events-timeline-scope-toggle" title="Events: selected year only (click for all time)" aria-label="Toggle events between selected year and all time">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="3.5" y="5" width="17" height="16" rx="2"/>
-                    <path d="M3.5 10h17"/>
-                    <path d="M8 3v4M16 3v4"/>
-                    <path d="M7.5 14h3M13.5 14h3"/>
-                    <path d="M7.5 17h2M14 17h2.5"/>
-                </svg>
-            </button>
-            <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Light mode (L)" aria-label="Toggle light mode (L)">
-                <span class="icon-moon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
-                <span class="icon-sun" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span>
-            </button>
-            <button type="button" class="scene-icon-btn" id="sound-toggle" title="Mute / Sound (M)" aria-label="Toggle sound (M)">
-                <span class="icon-speaker" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></span>
-                <span class="icon-muted" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></span>
-            </button>
-            <button type="button" class="scene-icon-btn" id="circadian-toggle" title="Circadian worldline: off" aria-label="Circadian worldline (cycle: off, straightened, wrapped)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2"/><path d="M12 8a4 4 0 0 1 0 8"/><path d="M12 8a4 4 0 0 0 0 8"/></svg>
-            </button>
-            <button type="button" class="scene-icon-btn" id="focus-toggle" title="Camera focus: SUN (C)" aria-label="Toggle camera focus between Sun and Earth (C)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="7"/><!-- lens -->
-                    <rect x="4" y="5" width="16" height="14" rx="2" ry="2"/><!-- body -->
-                    <path d="M9 3l2 2h2l2-2"/><!-- top hump -->
-                </svg>
-            </button>
-            <button type="button" class="scene-icon-btn" id="flatten-toggle" style="display: none;" title="Flatten view (F)" aria-label="Flatten time axis – show circles">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="12" rx="10" ry="3"/><path d="M2 12h20"/></svg>
-            </button>
-            <button type="button" class="scene-icon-btn" id="webxr-toggle" title="XR mode (X)" aria-label="Enter WebXR / VR (X)" style="display: none;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 12h2M19 12h2M3 10v4M19 10v4M6 8v8M18 8v8M6 8a4 4 0 0 1 6 0M12 8a4 4 0 0 1 6 0M6 16a4 4 0 0 0 6 0M12 16a4 4 0 0 0 6 0"/></svg>
-            </button>
-            <button type="button" class="scene-icon-btn scene-icon-toggle" id="scene-icon-toggle" title="Toggle scene controls" aria-label="Toggle scene controls">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <button type="button" class="scene-icon-btn scene-icon-toggle" id="scene-icon-toggle" title="Collapse scene controls" aria-label="Toggle scene controls">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M5 12h14"/><path d="M12 5l7 7-7 7"/>
                 </svg>
             </button>
+            <div class="scene-icon-grid" role="group" aria-label="Scene tool buttons">
+            <button type="button" class="scene-icon-btn active" id="markers-lines-toggle" title="Time marker lines" aria-label="Toggle time marker lines">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 18h20"/><path d="M4 18v3"/><path d="M8 18v2"/><path d="M12 18v3"/><path d="M16 18v2"/><path d="M20 18v3"/></svg>
+            </button>
+            <button type="button" class="scene-icon-btn active" id="markers-text-toggle" title="Time marker text (T)" aria-label="Toggle time marker text (T)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><text x="12" y="16" font-size="12" font-weight="700" fill="currentColor" text-anchor="middle" font-family="system-ui,sans-serif">Tt</text></svg>
+            </button>
+            <button type="button" class="scene-icon-btn" id="markers-year-toggle" title="Show Year, Month, Week & Day markers for full year" aria-label="Toggle full-year time markers (Year, Month, Week, Day)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9"/>
+                    <path d="M12 3v2M12 19v2M3 12h2M19 12h2"/>
+                    <path d="M6.34 6.34l1.41 1.41M16.24 16.24l1.41 1.41M17.66 6.34l-1.41 1.41M6.34 17.66l1.41-1.41"/>
+                </svg>
+            </button>
+            <button type="button" class="scene-icon-btn active" id="events-timeline-scope-toggle" title="Events: selected year only (click for all time)" aria-label="Toggle events between selected year and all time">
+                <!-- Icon swaps in JS: year vs all-time -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="4" y="5" width="16" height="15" rx="2"/>
+                    <path d="M4 10h16"/>
+                    <path d="M9 3v4M15 3v4"/>
+                    <path d="M12 14v4"/>
+                    <path d="M10 18h4"/>
+                </svg>
+            </button>
+            <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Light mode (L)" aria-label="Toggle light mode (L)">
+                <span class="icon-moon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
+                <span class="icon-sun" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span>
+            </button>
+            <button type="button" class="scene-icon-btn" id="sound-toggle" title="Mute / Sound (M)" aria-label="Toggle sound (M)">
+                <span class="icon-speaker" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></span>
+                <span class="icon-muted" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></span>
+            </button>
+            <button type="button" class="scene-icon-btn" id="focus-toggle" title="Camera focus: SUN (C)" aria-label="Toggle camera focus between Sun and Earth (C)">
+                <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <!-- XYZ origin: +Y up (green), +X right (red), +Z toward viewer as diagonal (blue) -->
+                    <path d="M12 17V6" stroke="#22c55e" stroke-width="2"/>
+                    <path d="M12 17h9" stroke="#ef4444" stroke-width="2"/>
+                    <path d="M12 17L5.5 11.5" stroke="#3b82f6" stroke-width="2"/>
+                    <circle cx="12" cy="17" r="2.2" fill="currentColor" stroke="none" opacity="0.92"/>
+                    <text x="12" y="5" font-size="5.5" font-weight="700" fill="#22c55e" text-anchor="middle" font-family="system-ui, sans-serif">Y</text>
+                    <text x="22.5" y="18.5" font-size="5.5" font-weight="700" fill="#ef4444" text-anchor="middle" font-family="system-ui, sans-serif">X</text>
+                    <text x="4.5" y="10.5" font-size="5.5" font-weight="700" fill="#3b82f6" text-anchor="middle" font-family="system-ui, sans-serif">Z</text>
+                </svg>
+            </button>
+            <button type="button" class="scene-icon-btn" id="flatten-toggle" style="display: none;" title="Flatten view (F)" aria-label="Flatten time axis – show circles">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="12" rx="10" ry="3"/><path d="M2 12h20"/></svg>
+            </button>
+            <button type="button" class="scene-icon-btn" id="webxr-toggle" title="XR mode (X)" aria-label="Enter WebXR / VR (X)" style="display: none;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 12h2M19 12h2M3 10v4M19 10v4M6 8v8M18 8v8M6 8a4 4 0 0 1 6 0M12 8a4 4 0 0 1 6 0M6 16a4 4 0 0 0 6 0M12 16a4 4 0 0 0 6 0"/></svg>
+            </button>
+            </div>
         </div>
 
-        <div class="scene-slider-wrap" id="flatten-slider-wrap" style="display: none;" aria-label="Flatten height">
-            <input type="range" id="flatten-height-slider" min="0" max="1" step="0.05" value="1" aria-label="Adjust flatten height">
+        <div class="scene-sliders-stack" id="scene-sliders-stack" style="display: none;">
+            <div class="scene-slider-wrap scene-slider-wrap--helix" id="circadian-helix-slider-wrap" style="display: none;" aria-label="Daily helix stretch">
+                <div class="scene-slider-heading">Daily helix</div>
+                <div class="scene-slider-caption"><span>Tight</span><span>Spread along the day</span></div>
+                <input type="range" id="circadian-helix-stretch-slider" min="0" max="1" step="0.05" value="0.5" aria-label="Compress or spread the circadian helix along time" title="Compress or spread the orange hour helix (does not squash the whole year)">
+                <div class="circadian-helix-extras">
+                    <div class="circadian-helix-span-hint" id="circadian-helix-span-hint" aria-live="polite"></div>
+                    <div class="circadian-scope-row" role="group" aria-label="Short-term events on helix">
+                        <button type="button" class="circadian-scope-btn active" id="circadian-events-scope-day" title="Show only events on the selected calendar day">Selected day</button>
+                        <button type="button" class="circadian-scope-btn" id="circadian-events-scope-year" title="Show sub-day events across the whole selected year">Whole year</button>
+                    </div>
+                </div>
+            </div>
+            <div class="scene-slider-wrap scene-slider-wrap--timeline" id="flatten-slider-wrap" style="display: none;" aria-label="Year timeline flatten">
+                <div class="scene-slider-heading">Year timeline (flatten)</div>
+                <div class="scene-slider-caption"><span>Flat disks</span><span>Taller year stack</span></div>
+                <input type="range" id="flatten-height-slider" min="0" max="1" step="0.05" value="1" aria-label="How much the year timeline is squashed when flatten is on" title="Requires flatten (F) on — adjusts only the long-term stack, not the daily helix">
+            </div>
         </div>
 
         <div class="title-block" aria-hidden="true">
@@ -228,86 +259,84 @@
         <div class="loading-text">INITIALIZING SOLAR SYSTEM...</div>
     </div>
 
-    <!-- Landing Page -->
+    <!-- Landing Page (About) -->
     <div class="landing-page" id="landing-page">
         <div class="landing-content">
-            <div class="landing-hero">
+            <header class="landing-hero">
+                <p class="landing-kicker">Spatial cognition · Planetary frame</p>
                 <h1>CIRCAEVUM</h1>
-                <div class="tagline">A SPACE FOR TIME</div>
-                <p style="font-size: 18px; color: rgba(142, 202, 230, 0.8); max-width: 600px; margin: 0 auto;">
-                    A 3D calendar modeled on Earth's natural rhythms.
+                <p class="landing-hero-lede">
+                    The mind’s natural wiring handles <strong>spatial</strong> structure with native fluency— with dedicated regions and cell types that 
+                    specialize in organizing and recalling layout, distance, and place in ways that are largely agnostic to <em>what</em> the 
+                    information is about. Circaevum uses that fact deliberately: we define a <strong>meaningful frame for temporal information</strong>, 
+                    grounded in first principles of how our planet moves, then show that frame in its simplest visual form—a scaffold you can see and 
+                    move through—so dates and events can be navigated with the same spatial habits you already rely on.
                 </p>
-                <div class="balance-accent">◐ ◑</div>
-                <button class="explore-btn" onclick="setZoomLevel(5)">EXPLORE THE PROTOTYPE</button>
-            </div>
-            
-            <div class="landing-section">
-                <h2>What It Is</h2>
+                <button type="button" class="explore-btn" onclick="setZoomLevel(5)">Enter the prototype</button>
+            </header>
+
+            <hr class="landing-rule" aria-hidden="true" />
+
+            <section class="landing-section" aria-labelledby="landing-h-principles">
+                <h2 id="landing-h-principles">First principles</h2>
+                <p class="landing-staples-intro">
+                    The theory behind Circaevum stitches together a handful of staples—memory techniques, perspective, neuroscience, physics, and the nested rhythms of Earth. Together they motivate a <strong>planetary scaffold</strong> for temporal information you can move through, not just scroll.
+                </p>
+                <ol class="landing-staples">
+                    <li>
+                        <strong>Method of loci.</strong>
+                        Attaching what you need to remember to specific places along a familiar path is one of the oldest memory arts. Circaevum generalizes that instinct: moments and spans get <em>addresses</em> on a shared spatialized frame so recall can reuse navigation instead of only rehearsal.
+                    </li>
+                    <li>
+                        <strong>The overview effect.</strong>
+                        Astronauts describe seeing Earth whole as a shift in scale and care. The prototype aims at a smaller, practical echo: a <em>lifted</em> view of your timelines—enough distance to see structure, enough detail to land on a day—so scheduling stops feeling like a wall of text.
+                    </li>
+                    <li>
+                        <strong>How the brain processes space.</strong>
+                        Dedicated neural machinery encodes place, direction, and distance; our minds are built to triangulate and revisit locations. When temporal data is laid out as geometry, it taps the same systems that already keep track of rooms, routes, and maps.
+                    </li>
+                    <li>
+                        <strong>How the brain processes time.</strong>
+                        Duration, order, and “when did that happen?” draw on overlapping circuits; abstract calendars and alerts often keep time <em>off-stage</em> in working memory. Pairing time with a visible, stable layout brings those relationships <em>on-stage</em> as positions you can scan and compare.
+                    </li>
+                    <li>
+                        <strong>Worldlines, in spacetime topology.</strong>
+                        In physics, a worldline is the path of a body through spacetime. Circaevum uses that picture gently: your events and Earth’s motion trace trajectories against the same backdrop, so “before / after / alongside” reads as continuity in a volume, not only as ticks on an axis.
+                    </li>
+                    <li>
+                        <strong>Aevum: a mode of existence.</strong>
+                        Borrowing from the longer write-up: a way of holding past, present, and future in one navigable field without collapsing everything to a single “now.” The interface is a working sketch of that stance—panorama plus drill-down—rather than a claim to have captured consciousness.
+                    </li>
+                    <li>
+                        <strong>Harmonics.</strong>
+                        Day length, lunar phase, seasons, and longer beats are coupled oscillations set by Earth’s mechanics. Representing time on a planet-true scaffold makes those <em>nested cycles</em> visible as structure you can orient to, whether or not you rely on them for planning today.
+                    </li>
+                </ol>
+                <p class="landing-doc-link">
+                    <a href="https://spot-hortensia-124.notion.site/Overview-of-Circaevum-1444d4493ac9804b9efbc4ea200a2e19" target="_blank" rel="noopener noreferrer">Overview of Circaevum</a> on Notion expands each of these threads (space in the brain, time in the brain, worldlines, aevum, harmonics, overview effect, method of loci).
+                </p>
+            </section>
+
+            <section class="landing-section" aria-labelledby="landing-h-spatial">
+                <h2 id="landing-h-spatial">From theory to the scene</h2>
                 <p>
-                    Circaevum maps time to the actual motion of planets. Each moment in your life has a unique position in 3D space—where Earth was along its path around the Sun.
+                    The prototype turns that stack into something you can steer: same planetary frame each session, zoom from wide spans down to a day, layers for your own events. The goal is a legible scaffold—so spatial habits and temporal content meet in one place.
                 </p>
+            </section>
+
+            <section class="landing-section landing-section--muted" aria-labelledby="landing-h-prototype">
+                <h2 id="landing-h-prototype">About this build</h2>
                 <p>
-                    Your brain already thinks spatially. Circaevum works with that. Memories become places you can navigate, anchored to planetary positions instead of arbitrary calendar grids.
+                    You’re using an active prototype: zoom levels from wide spans down to day-scale views, personal events on layers, optional circadian helix views where implemented. Imports and polish are early; rough edges are normal.
                 </p>
-                <p style="color: rgba(255, 193, 7, 0.7); font-style: italic; margin-top: 20px;">
-                    The body knows cycles the mind has forgotten. Dawn. Tide. Season. Breath.
+            </section>
+
+            <section class="landing-section landing-section--cta" aria-labelledby="landing-h-follow">
+                <h2 id="landing-h-follow">Stay in the loop</h2>
+                <p class="landing-follow-lede">
+                    If you’re drawn to spatial interfaces, planetary frames for time, or tooling built from how Earth actually moves, leave a note—we read them.
                 </p>
-            </div>
-            
-            <div class="landing-section">
-                <h2>What It Does</h2>
-                <p>
-                    <strong>Memory:</strong> Store personal memories at planetary coordinates. The place in space where a moment happened stays constant.
-                </p>
-                <p>
-                    <strong>Biological Rhythms:</strong> See the cycles that govern sleep, mood, and energy. Earth's rotation. Moon phases. Seasons. Make invisible patterns visible.
-                </p>
-                <p>
-                    <strong>Planning:</strong> Navigate future time as spatial movement. Understand date relationships through geometry, not counting.
-                </p>
-                <p>
-                    <strong>Natural Structure:</strong> Organize your worldview around actual planetary cycles. The universe as scaffold.
-                </p>
-            </div>
-            
-            <div class="balance-accent">✧ ❂ ✧</div>
-            
-            <div class="landing-section">
-                <h2>How It Works</h2>
-                <p>
-                    <strong>Spatial Memory:</strong> Your brain uses a variety of systems to encode information—location, orientation, action, people, time, date, and other relational systems. When new neural pathways form for ideas, experiences, and lessons, they connect to these regions for context. Novel thoughts create unique connections. Unique connections make stronger memories.
-                </p>
-                <p>
-                    The brain's spatial navigation has been honed for millennia. We memorize neighborhoods, buildings, parks, cities, rivers, beaches, mountain ranges, nations. This spatial mapping gives us visual context to anchor memories to.
-                </p>
-                <p>
-                    We're building a visual mapping system to leverage these inherent faculties. It defines a common format for contextual information—like a map of your home—a scalable system the brain can use to organize and navigate cohesively.
-                </p>
-                <p>
-                    <strong>Natural Cycles:</strong> Earth's rotation creates day and night. The Moon's orbit creates monthly rhythms. Earth's path around the Sun creates seasons. These aren't conventions—they're physical realities that shape all life.
-                </p>
-                <p style="color: rgba(255, 193, 7, 0.7); font-style: italic; margin-top: 15px;">
-                    We are not separate from these rhythms. We are expressions of them.
-                </p>
-                <p>
-                    <strong>Worldlines:</strong> A worldline is an object's path through space and time. Planets create spirals as they orbit a star that's traveling on its own trajectory. Your life follows Earth's spiral. Circaevum makes it visible and navigable.
-                </p>
-                <p>
-                    <strong>Aevernity:</strong> The name comes from aevum—a cognitive mode where past, present, and future moments coexist in awareness without collapsing into a single point. Neurologically, this is the brain's capacity to maintain multiple temporal perspectives simultaneously while remaining grounded in the present. A unified field of time as navigable space.
-                </p>
-            </div>
-            
-            <div class="balance-accent">⟡</div>
-            
-            <div class="landing-section">
-                <h2>Join the Development</h2>
-                <p>
-                    Circaevum is in active development. We're building a system that works with natural cycles and spatial cognition. If you're interested in planetary time, biological rhythms, or spatial memory, join us.
-                </p>
-                <p style="color: rgba(142, 202, 230, 0.6); font-style: italic; text-align: center; margin-top: 25px;">
-                    In mapping time to space, we find ourselves at home in both.
-                </p>
-                
+
                 <div class="registration-form">
                     <form id="registration-form" action="https://formsubmit.co/adam@circaevum.com" method="POST">
                         <!-- FormSubmit configuration -->
@@ -331,16 +360,14 @@
                             <textarea id="interest" name="interest" placeholder="Spatial memory, natural cycles, planetary time..."></textarea>
                         </div>
                         
-                        <button type="submit" class="submit-btn">Stay Connected</button>
+                        <button type="submit" class="submit-btn">Send</button>
                     </form>
                 </div>
-            </div>
-            
-            <div style="text-align: center; margin-top: 60px; padding: 40px 0; border-top: 1px solid rgba(0, 180, 216, 0.3);">
-                <p style="font-family: 'Space Mono', monospace; font-size: 14px; color: rgba(142, 202, 230, 0.6);">
-                    © 2025 Circaevum. All Rights Reserved.
-                </p>
-            </div>
+            </section>
+
+            <footer class="landing-footer">
+                <p>© 2026 Circaevum</p>
+            </footer>
         </div>
     </div>
 
@@ -385,7 +412,7 @@
             </div>
             <div class="zoom-option" data-zoom="0">
                 <div class="zoom-number">0</div>
-                <div class="zoom-desc">Info</div>
+                <div class="zoom-desc">Moment</div>
             </div>
         </div>
     </div>
@@ -553,6 +580,7 @@
             if (typeof setZoomLevel === 'function') setZoomLevel(0);
             landingPage.classList.toggle('active', shouldOpen);
           }
+          window.toggleAboutPanel = toggleAboutPanel;
 
           var closeBtn = document.getElementById('event-list-close');
           if (closeBtn && panel) closeBtn.onclick = closeEventListPanel;
@@ -1180,6 +1208,10 @@
             }
             return;
           }
+          if (data.type === 'CIRCAEVUM_TOGGLE_ABOUT' && typeof window.toggleAboutPanel === 'function') {
+            window.toggleAboutPanel();
+            return;
+          }
           var gl = window.circaevumGL || (window.getGL && window.getGL());
           if (!gl || typeof gl.ingestEvents !== 'function') return;
           if (data.type === 'CIRCAEVUM_INGEST_EVENTS' && data.layerId && Array.isArray(data.events)) {
@@ -1201,6 +1233,9 @@
               if (typeof data.ry === 'number' && !isNaN(data.ry)) {
                 cam.y = data.ry;
               }
+            }
+            if (data.resetPolar === true && typeof window.requestCircaevumPolarReseed === 'function') {
+              try { window.requestCircaevumPolarReseed(); } catch (e) {}
             }
           } else if (data.type === 'CIRCAEVUM_CLEAR_EVENTS' && data.layerId) {
             gl.updateEvents(data.layerId, []);

@@ -57,7 +57,12 @@ let showMoonWorldline = false; // Toggle for moon worldline
 let moonWorldlines = []; // Store moon worldline meshes
 let lagrangeMarkerObjects = []; // Sun–Earth L1–L5 at selected time (orbital plane)
 let circadianWorldlines = []; // Circadian rhythm helix (hour-hand), shown at day/clock zoom
-let circadianState = 'off'; // 'off' | 'straightened' | 'wrapped' – toggled via scene icon
+let circadianSelectedDayLabels = []; // Sprite(s) with selected calendar day, day/clock zoom only
+let circadianHelixMarkerGroups = []; // Week/month ticks along circadian helix (LineSegments)
+/** Short (<24h) circadian-scoped events: 'day' = selected calendar day only, 'year' = whole selected year. */
+let circadianShortEventScope = 'day';
+/** Default wrapped helix at day zoom; 'straightened' kept for API/debug. Toolbar toggle removed — use wrapped daily view. */
+let circadianState = 'wrapped';
 /** false = show calendar events only in selected year; true = all time (see scene calendar icon) */
 let showAllTimelineEvents = false;
 if (typeof window !== 'undefined') {
@@ -66,14 +71,61 @@ if (typeof window !== 'undefined') {
 }
 let flattenOn = false; // Flatten view on/off (zoom >= 3). Smooth transition via currentFlattenAmount.
 let currentFlattenAmount = 0; // Lerps toward 1 when flattenOn, toward 0 when off (no camera jump).
+/** 0 = circadian helix fully wrapped/helical, 1 = fully straightened (lerps like currentFlattenAmount). */
+let currentCircadianStraightenAmount = 0;
 // flattenIntensity: 0–1 where 0 = no flatten, 1 = maximum flatten.
 // Default to maximum flatten so the slider (0 = flattest, 1 = tallest) starts at the far left.
 let flattenIntensity = 1;
+/** UI 0 = circadian helix tight along time, 1 = spread; 0.5 → 1× natural calendar scale (see getCircadianHelixYStretchMult). */
+let circadianHelixStretchSlider = 0.5;
 let focusTargetOverride = null; // 'sun' | 'earth' | 'mid' | null – null = use ZOOM_LEVELS default
 if (typeof window !== 'undefined') {
     /** Y scale applied to flattenableGroup (1 = no flatten). Used to keep event stagger visually consistent when flat. */
     window.getEventFlattenYScale = function () {
         return Math.max(0.05, 1 - currentFlattenAmount * 0.95);
+    };
+    /** True while flatten (F) is on — short circadian ribbons use a straight vertical Earth line vs wrapping the orbit. */
+    window.isFlattenTimeStraightenActive = function () { return !!flattenOn; };
+    /**
+     * Vertical scale for the circadian (daily) helix vs selected time: compress or stretch span along the time axis.
+     * Range ~0.2–1.8; 1.0 at slider midpoint. Does not affect the separate year-timeline flatten slider.
+     */
+    window.getCircadianHelixYStretchMult = function () {
+        var t = circadianHelixStretchSlider;
+        if (typeof t !== 'number' || isNaN(t)) t = 0.5;
+        t = Math.min(1, Math.max(0, t));
+        return 0.2 + t * 1.6;
+    };
+    /** Blended circadian geometry: short-event ribbons and orange helix morph with this (0–1). */
+    window.getCircadianStraightenBlend = function () {
+        return typeof currentCircadianStraightenAmount === 'number' ? currentCircadianStraightenAmount : 0;
+    };
+    /** 'day' | 'year' — filters sub-day event ribbons/dots at circadian zooms (see HUD toggle). */
+    window.getCircadianShortEventScope = function () {
+        return circadianShortEventScope === 'year' ? 'year' : 'day';
+    };
+    window.getCircaevumLightMode = function () {
+        return !!isLightMode;
+    };
+    window.getCircadianHelixVisualStyle = function () {
+        if (isLightMode) {
+            return {
+                helixColor: 0xd97706,
+                helixOpacity: 0.9,
+                markerMonth: 0x1d4ed8,
+                markerWeek: 0x5b21b6,
+                markerOpacity: 0.95,
+                markerWeekOpacity: 0.85
+            };
+        }
+        return {
+            helixColor: 0xffb347,
+            helixOpacity: 0.82,
+            markerMonth: 0x7dd3fc,
+            markerWeek: 0xc4b5fd,
+            markerOpacity: 0.92,
+            markerWeekOpacity: 0.8
+        };
     };
 }
 
@@ -204,6 +256,21 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
     }
 }
 
+/** Month (5), landing (0), week (7), day (8), clock (9): circadian helix, selected-day label, short-event ribbons. */
+function isCircadianHelixZoom(zl) {
+    return zl === 0 || zl === 5 || zl === 7 || zl === 8 || zl === 9;
+}
+
+/** How many calendar days the orange helix spans (centered on selected time). */
+function circadianSpanDaysForZoom(zl) {
+    if (zl === 9) return 1;
+    if (zl === 8) return 2;
+    if (zl === 7) return 7;
+    if (zl === 5) return 14;
+    if (zl === 0) return 2;
+    return 2;
+}
+
 // Format a date for display
 function formatDateTime(date) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -328,7 +395,17 @@ let ghostOrbitLine = null; // Ghost version of orbit line
 let targetCameraUp = null; // Target camera up vector - initialized in initScene
 let currentCameraUp = null; // Current camera up vector - initialized in initScene
 let targetCameraPosition = null; // Target camera position offset - initialized in initScene
+let polarViewDir = null; // Unit offset focus→camera in polar zooms; updated by drag, not rebuilt from scratch
+let needPolarOrbitInit = true; // After non-polar → polar, seed polarViewDir from camera or default
 let isPolarView = false; // Track if in polar view mode
+if (typeof window !== 'undefined') {
+    window.requestCircaevumPolarReseed = function () {
+        needPolarOrbitInit = true;
+    };
+}
+/** Scene Z roll (R key) in radians; scene.rotation.z eases toward this so the pivot is animated. */
+let sceneRollTargetRad = 0;
+const sceneRollSmoothSpeed = 0.16;
 
 // Initialize scene
 function initScene() {
@@ -340,6 +417,7 @@ function initScene() {
         targetCameraUp = new THREE.Vector3(0, 1, 0);
         currentCameraUp = new THREE.Vector3(0, 1, 0);
         targetCameraPosition = new THREE.Vector3(0, 0, 0);
+        polarViewDir = new THREE.Vector3(0, -1, 0);
         
         // Call SceneCore.initScene which will set scene, camera, renderer, etc. on window
         SceneCore.initScene({
@@ -361,6 +439,7 @@ function initScene() {
         targetCameraUp = new THREE.Vector3(0, 1, 0);
         currentCameraUp = new THREE.Vector3(0, 1, 0);
         targetCameraPosition = new THREE.Vector3(0, 0, 0);
+        polarViewDir = new THREE.Vector3(0, -1, 0);
         
         scene = new THREE.Scene();
         scene.background = new THREE.Color(SCENE_CONFIG.backgroundColor);
@@ -371,6 +450,7 @@ function initScene() {
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
         const currentYearHeight = getHeightForYear(currentYear, 1);
         camera.position.set(0, currentYearHeight + 400, 800);
+        scene.add(camera);
         renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -539,8 +619,20 @@ function createPlanets(zoomLevel) {
     lagrangeMarkerObjects.forEach((obj) => sceneContentGroup.remove(obj));
     lagrangeMarkerObjects.length = 0;
 
-    circadianWorldlines.forEach(obj => flatGroup.remove(obj));
+    circadianWorldlines.forEach(obj => {
+        flatGroup.remove(obj);
+        if (sceneContentGroup) sceneContentGroup.remove(obj);
+    });
     circadianWorldlines = [];
+    circadianSelectedDayLabels.forEach(obj => {
+        flatGroup.remove(obj);
+        if (sceneContentGroup) sceneContentGroup.remove(obj);
+    });
+    circadianSelectedDayLabels = [];
+    circadianHelixMarkerGroups.forEach(obj => {
+        if (sceneContentGroup) sceneContentGroup.remove(obj);
+    });
+    circadianHelixMarkerGroups = [];
 
     const config = ZOOM_LEVELS[zoomLevel];
     if (focusTargetOverride === 'mid' && (zoomLevel < 4 || zoomLevel > 7)) {
@@ -574,7 +666,8 @@ function createPlanets(zoomLevel) {
             const yearProgress = (actualMonth + (actualDay - 1) / daysInMonth + actualHour / (24 * daysInMonth)) / 12;
             currentDateHeight = ((actualYear - CENTURY_START) * HEIGHT_PER_YEAR) + (yearProgress * HEIGHT_PER_YEAR);
         }
-    } else if (zoomLevel >= 5) {
+    } else if (zoomLevel >= 5 || zoomLevel === 0) {
+        // Zoom 0 shares the day/clock orbital anchor so Earth stays on its worldline vs helical curve.
         currentDateHeight = calculateCurrentDateHeight();
     } else {
         currentDateHeight = getHeightForYear(currentYear, 1);
@@ -613,59 +706,9 @@ function createPlanets(zoomLevel) {
     // Update target focus point to follow selected position (will be smoothly interpolated)
     // For earth-focused zooms, focus on Earth's X,Z position at selected height
     // For sun-focused zooms, focus on the Sun at selected height (x=z=0)
-    if (zoomLevel === 0 && !focusTargetOverride) {
-        // Zoom 0 (Landing): focus halfway along the "red hour hand" direction
-        // from Earth toward the current hour, so the camera includes the local
-        // Earth region and the circadian/hour view near now.
-        const now = new Date();
-        const hourToDisplay = now.getHours();
-
-        const earth = PLANET_DATA.find(p => p.name === 'Earth');
-        if (earth) {
-            // Earth position at the selected height (matches how planets are placed below)
-            const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
-            const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / earth.orbitalPeriod;
-            const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
-            const earthAngle = earth.startAngle - angleFromCurrentToSelected; // Counter-clockwise
-
-            const earthX = Math.cos(earthAngle) * earth.distance;
-            const earthY = selectedDateHeight;
-            const earthZ = Math.sin(earthAngle) * earth.distance;
-
-            // Noon points toward the Sun (Sun at origin); match timemarker-renderer math.
-            const sunToEarthAngle = Math.atan2(earthZ, earthX);
-
-            // Matches TimeMarkers RADII_CONFIG.hour.spiral(dist) = dist * 0.1 * 0.9
-            const spiralRadius = earth.distance * 0.1 * 0.9;
-
-            // Use the "hour spiral" day-height scaling from zoom 8 (24h = one day).
-            const hourZoom = (ZOOM_LEVELS[8] && ZOOM_LEVELS[8].timeYears != null) ? 8 : 9;
-            const dayHeight = (ZOOM_LEVELS[hourZoom].timeYears || 0.00274) * 100;
-            const spiralHeight = dayHeight;
-
-            const currentT = hourToDisplay / 24;
-            const currentHourRadians = currentT * Math.PI * 2;
-            const currentAngleFromEarth = sunToEarthAngle - currentHourRadians;
-
-            const currentOffsetX = Math.cos(currentAngleFromEarth) * spiralRadius;
-            const currentOffsetZ = Math.sin(currentAngleFromEarth) * spiralRadius;
-
-            // Current hour tip height uses: centerY + (t * spiralHeight) - (spiralHeight/2)
-            const currentHourY = earthY + (currentT * spiralHeight) - (spiralHeight / 2);
-
-            const hourTipX = earthX + currentOffsetX;
-            const hourTipZ = earthZ + currentOffsetZ;
-
-            // Midpoint between Earth center and the hour-tip end of the red hand.
-            targetFocusPoint.set(
-                (earthX + hourTipX) / 2,
-                (earthY + currentHourY) / 2,
-                (earthZ + hourTipZ) / 2
-            );
-        } else {
-            targetFocusPoint.set(0, selectedDateHeight, 0);
-        }
-    } else if (effectiveFocusTarget === 'earth' || effectiveFocusTarget === 'mid') {
+    // Landing (0) and clock (9) both use earth focus so the worldline stays visually
+    // anchored; framing toward the circadian helix is handled in the polar camera rig only.
+    if (effectiveFocusTarget === 'earth' || effectiveFocusTarget === 'mid') {
         // Calculate Earth's position at selected time using exact date height
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
         // Calculate Earth's angle at selected time using continuous height calculation
@@ -868,31 +911,126 @@ function createPlanets(zoomLevel) {
         moonWorldlines = [];
     }
 
-    // Circadian rhythm worldline (hour-hand helix) at day/clock zoom (8 or 9), when toggled on
-    if ((zoomLevel === 8 || zoomLevel === 9) && typeof circadianState !== 'undefined' && circadianState !== 'off') {
-        if (typeof CircadianRenderer !== 'undefined' && CircadianRenderer.create) {
+    // Circadian rhythm worldline (hour-hand helix): landing, month, week, day, clock — when not off.
+    // Geometry morphs wrapped ↔ straight via currentCircadianStraightenAmount (updated in animate).
+    if (isCircadianHelixZoom(zoomLevel) && typeof circadianState !== 'undefined' && circadianState !== 'off') {
+        if (typeof CircadianRenderer !== 'undefined' && CircadianRenderer.createAnimatedHelixLine) {
             const currentHeight = typeof selectedDateHeight !== 'undefined' && !isNaN(selectedDateHeight)
                 ? selectedDateHeight
                 : currentDateHeight;
-            const spanDays = zoomLevel === 9 ? 1 : 2;
-            const mode = circadianState === 'straightened' ? 1 : 2;
-            const circadianLine = CircadianRenderer.create(
-                zoomLevel,
-                currentHeight,
-                mode,
-                { color: 0xffaa44, opacity: 0.55, spanDays }
-            );
+            const spanDays = circadianSpanDaysForZoom(zoomLevel);
+            const circLineOpts = typeof window.getCircadianHelixVisualStyle === 'function'
+                ? window.getCircadianHelixVisualStyle()
+                : {};
+            const circadianLine = CircadianRenderer.createAnimatedHelixLine(currentHeight, {
+                color: circLineOpts.helixColor != null ? circLineOpts.helixColor : 0xffaa44,
+                opacity: circLineOpts.helixOpacity != null ? circLineOpts.helixOpacity : 0.82,
+                spanDays
+            });
             if (circadianLine) {
-                flatGroup.add(circadianLine);
+                sceneContentGroup.add(circadianLine);
                 circadianWorldlines.push(circadianLine);
             }
+            if (typeof CircadianRenderer.createHelixStructureMarkersGroup === 'function') {
+                const mk = CircadianRenderer.createHelixStructureMarkersGroup(spanDays);
+                if (mk) {
+                    sceneContentGroup.add(mk);
+                    circadianHelixMarkerGroups.push(mk);
+                    if (typeof CircadianRenderer.refreshHelixStructureMarkersGroup === 'function') {
+                        CircadianRenderer.refreshHelixStructureMarkersGroup(
+                            mk,
+                            currentCircadianStraightenAmount,
+                            currentHeight,
+                            getSelectedDateTime()
+                        );
+                    }
+                }
+            }
         }
+    }
+
+    // Selected calendar day near Earth (same zooms as circadian helix; always, independent of straight/wrapped)
+    if (isCircadianHelixZoom(zoomLevel) && earthPlanet && typeof THREE !== 'undefined') {
+        const sd = getSelectedDateTime();
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const monNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const labelText = `${dayNames[sd.getDay()]}, ${monNames[sd.getMonth()]} ${sd.getDate()}, ${sd.getFullYear()}`;
+        const logicalFont = 'bold 44px Orbitron, system-ui, sans-serif';
+        const padX = 72;
+        const logicalH = 88;
+        const trackEm = '0.1em';
+        const measureCv = document.createElement('canvas');
+        const mctx = measureCv.getContext('2d');
+        mctx.font = logicalFont;
+        try {
+            mctx.letterSpacing = trackEm;
+        } catch (err) { /* match draw path */ }
+        const textW = Math.ceil(mctx.measureText(labelText).width);
+        // Extra slack so year digits and commas don’t feel tight; wider canvas → wider world billboard with same aspect.
+        const logicalW = Math.max(640, textW + padX * 2 + 96);
+        const dpr = Math.min(3, Math.max(1.5, typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 2));
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = Math.floor(logicalW * dpr);
+        canvas.height = Math.floor(logicalH * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        if (typeof ctx.imageSmoothingEnabled === 'boolean') ctx.imageSmoothingEnabled = true;
+        if (ctx.imageSmoothingQuality) ctx.imageSmoothingQuality = 'high';
+
+        const cyan = isLightMode ? '#0369a1' : '#22d3ee';
+        ctx.font = logicalFont;
+        ctx.fillStyle = cyan;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        try {
+            ctx.letterSpacing = trackEm;
+        } catch (err) { /* older canvas */ }
+        ctx.fillText(labelText, logicalW / 2, logicalH / 2);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.needsUpdate = true;
+        tex.generateMipmaps = false;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        const mat = new THREE.SpriteMaterial({
+            map: tex,
+            transparent: true,
+            opacity: 0.95,
+            depthWrite: false
+        });
+        const spr = new THREE.Sprite(mat);
+        spr.renderOrder = 40;
+        const ex = earthPlanet.position.x;
+        const ey = earthPlanet.position.y;
+        const ez = earthPlanet.position.z;
+        // Offset above Earth center along +Y (world time axis); keep label readable but nearer the globe.
+        const er = earthPlanet.geometry && earthPlanet.geometry.parameters && earthPlanet.geometry.parameters.radius;
+        const rise = Math.max(1.55, er ? er * 2.65 : 2.45);
+        spr.position.set(ex, ey + rise, ez);
+        // Match sprite quad aspect to canvas (logicalW:logicalH) so text is not stretched; scale whole
+        // billboard down so it stays a comfortable width near Earth (high-DPI canvas keeps it sharp).
+        const aspect = logicalW / logicalH;
+        const worldH = 0.78;
+        const worldW = worldH * aspect;
+        spr.scale.set(worldW, worldH, 1);
+        spr.userData.immuneToFlatten = true;
+        // flattenableGroup scales Y each frame; without baseScale the animate loop replaces scale with (1,1/yScale,1) and squashes X.
+        spr.userData.baseScale = { x: worldW, y: worldH, z: 1 };
+        const dayLabelParent =
+            flattenOn && isCircadianHelixZoom(zoomLevel) ? sceneContentGroup : flatGroup;
+        dayLabelParent.add(spr);
+        circadianSelectedDayLabels.push(spr);
     }
 
     // Create time markers for this zoom level.
     // Zoom 0 is a landing camera mode; keep day/clock markers visible so selected-time
     // context does not disappear when toggling between 9 and 0.
     createTimeMarkers(zoomLevel === 0 ? 9 : zoomLevel);
+
+    if (typeof updateCircadianHelixSpanHint === 'function') {
+        updateCircadianHelixSpanHint();
+    }
 
     if (typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshAllEventLayers === 'function') {
         try {
@@ -1248,11 +1386,15 @@ function initControls() {
         if (isDragging) {
             const deltaX = e.clientX - previousMousePosition.x;
             const deltaY = e.clientY - previousMousePosition.y;
-            
-            cameraRotation.y -= deltaX * 0.005;
-            cameraRotation.x -= deltaY * 0.005;
-            cameraRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraRotation.x));
-            
+
+            if (currentZoom === 0 || currentZoom === 9) {
+                applyPolarOrbitDelta(deltaX, deltaY);
+            } else {
+                cameraRotation.y -= deltaX * 0.005;
+                cameraRotation.x -= deltaY * 0.005;
+                clampCameraRotationPitch();
+            }
+
             previousMousePosition = { x: e.clientX, y: e.clientY };
         }
     });
@@ -1326,11 +1468,15 @@ function initControls() {
             // Single touch drag - rotate camera
             const deltaX = e.touches[0].clientX - previousMousePosition.x;
             const deltaY = e.touches[0].clientY - previousMousePosition.y;
-            
-            cameraRotation.y -= deltaX * 0.005;
-            cameraRotation.x -= deltaY * 0.005;
-            cameraRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraRotation.x));
-            
+
+            if (currentZoom === 0 || currentZoom === 9) {
+                applyPolarOrbitDelta(deltaX, deltaY);
+            } else {
+                cameraRotation.y -= deltaX * 0.005;
+                cameraRotation.x -= deltaY * 0.005;
+                clampCameraRotationPitch();
+            }
+
             previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         } else if (e.touches.length === 2) {
             // Pinch to zoom
@@ -1525,10 +1671,6 @@ function initControls() {
     // Light mode toggle
     document.getElementById('light-mode-toggle').addEventListener('click', toggleLightMode);
 
-    // Circadian worldline toggle (cycle: off -> straightened -> wrapped -> off)
-    const circadianToggleBtn = document.getElementById('circadian-toggle');
-    if (circadianToggleBtn) circadianToggleBtn.addEventListener('click', toggleCircadianWorldline);
-
     // Camera focus toggle (Sun <-> Earth)
     const focusToggleBtn = document.getElementById('focus-toggle');
     if (focusToggleBtn) focusToggleBtn.addEventListener('click', toggleFocusTarget);
@@ -1549,6 +1691,40 @@ function initControls() {
             }
         });
         syncFlattenHeightSlider();
+    }
+
+    const circadianHelixStretchEl = document.getElementById('circadian-helix-stretch-slider');
+    if (circadianHelixStretchEl) {
+        circadianHelixStretchEl.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            if (!isNaN(value)) {
+                circadianHelixStretchSlider = Math.min(1, Math.max(0, value));
+                if (typeof createPlanets === 'function') createPlanets(currentZoom);
+            }
+        });
+    }
+    const circScopeDay = document.getElementById('circadian-events-scope-day');
+    const circScopeYear = document.getElementById('circadian-events-scope-year');
+    function refreshEventsAfterCircadianScopeChange() {
+        syncCircadianShortEventScopeButtons();
+        if (typeof window !== 'undefined' && window.circaevumGL &&
+            typeof window.circaevumGL.refreshAllEventLayers === 'function') {
+            try {
+                window.circaevumGL.refreshAllEventLayers();
+            } catch (err) { /* GL may be disposing */ }
+        }
+    }
+    if (circScopeDay) {
+        circScopeDay.addEventListener('click', () => {
+            circadianShortEventScope = 'day';
+            refreshEventsAfterCircadianScopeChange();
+        });
+    }
+    if (circScopeYear) {
+        circScopeYear.addEventListener('click', () => {
+            circadianShortEventScope = 'year';
+            refreshEventsAfterCircadianScopeChange();
+        });
     }
     
     // WebXR toggle (using adapter system) – show whenever adapter loads so user can try (e.g. on headset over HTTP)
@@ -1733,13 +1909,72 @@ function getFlattenedY(logicalY) {
     return logicalY * Math.max(0.05, yScale);
 }
 
+function syncCircadianShortEventScopeButtons() {
+    const d = document.getElementById('circadian-events-scope-day');
+    const y = document.getElementById('circadian-events-scope-year');
+    if (d) d.classList.toggle('active', circadianShortEventScope !== 'year');
+    if (y) y.classList.toggle('active', circadianShortEventScope === 'year');
+}
+
+function updateCircadianHelixSpanHint() {
+    const el = document.getElementById('circadian-helix-span-hint');
+    if (!el) return;
+    if (
+        typeof isCircadianHelixZoom !== 'function' ||
+        !isCircadianHelixZoom(currentZoom) ||
+        typeof circadianState === 'undefined' ||
+        circadianState === 'off'
+    ) {
+        el.textContent = '';
+        return;
+    }
+    const span = circadianSpanDaysForZoom(currentZoom);
+    const sd = getSelectedDateTime();
+    const start = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate(), 0, 0, 0, 0);
+    const half = Math.floor(span / 2);
+    start.setDate(start.getDate() - half);
+    const end = new Date(start.getTime());
+    end.setDate(end.getDate() + span - 1);
+    const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const fmt = function (dt) {
+        return mon[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
+    };
+    el.textContent =
+        'Span: ' + fmt(start) + ' — ' + fmt(end) + ' (' + span + 'd). Ticks: month starts & Mondays (week).';
+}
+
+function updateCircadianHelixSliderVisibility() {
+    const helixWrap = document.getElementById('circadian-helix-slider-wrap');
+    if (!helixWrap) return;
+    const show =
+        typeof isCircadianHelixZoom === 'function' &&
+        isCircadianHelixZoom(currentZoom) &&
+        typeof circadianState !== 'undefined' &&
+        circadianState !== 'off';
+    helixWrap.style.display = show ? '' : 'none';
+    if (show) {
+        updateCircadianHelixSpanHint();
+        syncCircadianShortEventScopeButtons();
+    }
+}
+
 function updateFlattenIconVisibility() {
     const btn = document.getElementById('flatten-toggle');
     const sliderWrap = document.getElementById('flatten-slider-wrap');
+    const stack = document.getElementById('scene-sliders-stack');
     const shouldShow = currentZoom >= 3;
     if (btn) btn.style.display = shouldShow ? '' : 'none';
     if (sliderWrap) sliderWrap.style.display = shouldShow ? '' : 'none';
     if (shouldShow) syncFlattenHeightSlider();
+    updateCircadianHelixSliderVisibility();
+    if (stack) {
+        const showHelix =
+            typeof isCircadianHelixZoom === 'function' &&
+            isCircadianHelixZoom(currentZoom) &&
+            typeof circadianState !== 'undefined' &&
+            circadianState !== 'off';
+        stack.style.display = shouldShow || showHelix ? 'flex' : 'none';
+    }
 }
 
 /**
@@ -1762,6 +1997,17 @@ function syncFlattenHeightSlider() {
     }
 }
 
+function rebuildSceneAndEventsForFlattenChange() {
+    if (typeof createPlanets === 'function') {
+        createPlanets(currentZoom);
+    }
+    if (typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshAllEventLayers === 'function') {
+        try {
+            window.circaevumGL.refreshAllEventLayers();
+        } catch (err) { /* GL may be disposing */ }
+    }
+}
+
 function toggleFlatten() {
     if (currentZoom < 3) return;
     flattenOn = !flattenOn;
@@ -1772,6 +2018,7 @@ function toggleFlatten() {
         btn.setAttribute('aria-label', flattenOn ? 'Flatten view: on' : 'Flatten view: off');
     }
     syncFlattenHeightSlider();
+    rebuildSceneAndEventsForFlattenChange();
 }
 
 function toggleFlattenWithKey() {
@@ -1802,6 +2049,7 @@ function applyFlattenFromEmbed(enabled, internalIntensity) {
     } else {
         syncFlattenHeightSlider();
     }
+    rebuildSceneAndEventsForFlattenChange();
 }
 
 if (typeof window !== 'undefined') {
@@ -1811,13 +2059,20 @@ if (typeof window !== 'undefined') {
 function updateEventsTimelineScopeButton() {
     const btn = document.getElementById('events-timeline-scope-toggle');
     if (!btn) return;
-    btn.classList.toggle('active', !showAllTimelineEvents);
+    const yearOnly = !showAllTimelineEvents;
+    btn.classList.toggle('active', yearOnly);
     if (showAllTimelineEvents) {
         btn.title = 'Events: all time (click for selected year only)';
         btn.setAttribute('aria-label', 'Showing all events. Switch to selected year only.');
     } else {
         btn.title = 'Events: selected year only (click for all time)';
         btn.setAttribute('aria-label', 'Showing selected year only. Switch to all events.');
+    }
+    // Legible 1Y / all-time: bold text + Feather-style lemniscate (fills icon; not 9px glyph).
+    if (showAllTimelineEvents) {
+        btn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c-2-3-4-3-6 0 2 3 4 3 6 0 2-3 4-3 6 0-2 3-4 3-6 0-2-3-4-3-6 0"/></svg>`;
+    } else {
+        btn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><text x="12" y="16.8" font-size="14" font-weight="800" text-anchor="middle" fill="currentColor" font-family="system-ui, -apple-system, Segoe UI, sans-serif" letter-spacing="-0.04em">1Y</text></svg>`;
     }
 }
 
@@ -1842,6 +2097,7 @@ function toggleCircadianWorldline() {
         btn.setAttribute('aria-label', titles[circadianState]);
     }
     createPlanets(currentZoom);
+    if (typeof updateFlattenIconVisibility === 'function') updateFlattenIconVisibility();
 }
 
 function toggleFocusTarget() {
@@ -2032,14 +2288,12 @@ function toggleWebXR() {
                             markersLines: toggleTimeMarkerLines,
                             markersText: toggleTimeMarkerText,
                             lightMode: toggleLightMode,
-                            circadian: toggleCircadianWorldline,
                             flatten: toggleFlatten
                         },
                         getLayerState: {
                             markersLines: () => showTimeMarkerLines,
                             markersText: () => showTimeMarkerText,
                             lightMode: () => isLightMode,
-                            circadian: () => circadianState !== 'off',
                             flatten: () => flattenOn
                         },
                         getEventLayers: () => {
@@ -2388,6 +2642,58 @@ function navigateUnit(direction) {
     updateTimeDisplays(); // Update time displays after navigation
 }
 
+function clampCameraRotationPitch() {
+    const lim = Math.PI / 2 - 0.0001;
+    cameraRotation.x = Math.max(-lim, Math.min(lim, cameraRotation.x));
+}
+
+/** Default polar view: nadir tilted toward SELECTED TIME hour-hand direction in XZ (stronger on landing). */
+function buildDefaultPolarViewDirection() {
+    const v = new THREE.Vector3(0, -1, 0);
+    const earthMesh = planetMeshes.find(p => p.userData && p.userData.name === 'Earth');
+    const earthDef = PLANET_DATA.find(p => p.name === 'Earth');
+    let sunToEarthAngle = 0;
+    let hourAngleFromEarth = 0;
+    if (earthMesh) {
+        const ex = earthMesh.position.x;
+        const ez = earthMesh.position.z;
+        sunToEarthAngle = Math.atan2(ez, ex);
+        const sel = getSelectedDateTime();
+        const hourFrac =
+            (sel.getHours() + sel.getMinutes() / 60 + sel.getSeconds() / 3600) / 24;
+        hourAngleFromEarth = sunToEarthAngle - hourFrac * Math.PI * 2;
+    } else if (earthDef) {
+        sunToEarthAngle = earthDef.startAngle;
+        const sel = getSelectedDateTime();
+        const hourFrac =
+            (sel.getHours() + sel.getMinutes() / 60 + sel.getSeconds() / 3600) / 24;
+        hourAngleFromEarth = sunToEarthAngle - hourFrac * Math.PI * 2;
+    }
+    const baseTilt = currentZoom === 0 ? 0.5 : 0.24;
+    const hourDirX = Math.cos(hourAngleFromEarth);
+    const hourDirZ = Math.sin(hourAngleFromEarth);
+    v.set(hourDirX * Math.sin(baseTilt), -Math.cos(baseTilt), hourDirZ * Math.sin(baseTilt));
+    return v.normalize();
+}
+
+/** Incremental polar orbit: world Y yaw, then pitch about axis ⟂ both Y and view (stable for steady drags). */
+function applyPolarOrbitDelta(deltaX, deltaY) {
+    if (!polarViewDir) return;
+    const sens = 0.005;
+    polarViewDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * sens);
+    const pitchAxis = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), polarViewDir);
+    if (pitchAxis.lengthSq() > 1e-14) {
+        pitchAxis.normalize();
+        polarViewDir.applyAxisAngle(pitchAxis, -deltaY * sens);
+    }
+    polarViewDir.normalize();
+    // Stay mostly below the focal slab (clock / landing are under Earth in +Y time)
+    if (polarViewDir.y > -0.06) {
+        polarViewDir.y = -0.06;
+        polarViewDir.normalize();
+    }
+}
+
 function toggleTimeRotation() {
     // Cycle through view modes: angled -> top-down -> bottom-up -> angled
     viewMode = (viewMode + 1) % 3;
@@ -2400,8 +2706,8 @@ function toggleTimeRotation() {
 }
 
 function rotate90Right() {
-    // Rotate the entire scene 90 degrees clockwise around Z axis
-    scene.rotation.z -= Math.PI / 2;
+    if (!scene) return;
+    sceneRollTargetRad -= Math.PI / 2;
 }
 
 // Helper function to get background color based on view mode and light mode
@@ -2412,23 +2718,22 @@ function getBackgroundColor(viewMode, isLightMode) {
     return colors[viewMode];
 }
 
-function toggleTimeRotation() {
-    // Cycle through view modes: angled -> top-down -> bottom-up -> angled
-    viewMode = (viewMode + 1) % 3;
-    
-    scene.background = new THREE.Color(getBackgroundColor(viewMode, isLightMode));
-    
-    // Adjust camera rotation based on view mode
-    const rotations = [Math.PI / 6, Math.PI / 2, -Math.PI / 2];
-    cameraRotation.x = rotations[viewMode];
-}
-
 function setZoomLevel(level, overrideDate) {
     // CRITICAL: Get selected date BEFORE changing currentZoom (or use override when navigating to a specific event)
     const selectedDate = overrideDate instanceof Date ? overrideDate : getSelectedDateTime();
-    
+
+    const prevZoom = currentZoom;
+    const prevPolar = prevZoom === 0 || prevZoom === 9;
+
     // Now change the zoom level
     currentZoom = level;
+    const nextPolar = level === 0 || level === 9;
+    if (nextPolar && !prevPolar) {
+        needPolarOrbitInit = true;
+    }
+    if (!nextPolar) {
+        needPolarOrbitInit = true;
+    }
     // Mid focus only applies to quarter–week zooms (4–7)
     if (level < 4 || level > 7) {
         if (focusTargetOverride === 'mid') focusTargetOverride = null;
@@ -2643,10 +2948,68 @@ function animate(time, frame) {
             });
         }
     }
-    
+
+    // Circadian wrapped ↔ straightened morph (same lerp rate as flatten for a consistent feel).
+    let circadianStraightenTarget = 0;
+    if (typeof isCircadianHelixZoom === 'function' && isCircadianHelixZoom(currentZoom) &&
+        typeof circadianState !== 'undefined' && circadianState !== 'off') {
+        if (circadianState === 'straightened' || (flattenOn && currentZoom >= 3)) {
+            circadianStraightenTarget = 1;
+        }
+    }
+    currentCircadianStraightenAmount +=
+        (circadianStraightenTarget - currentCircadianStraightenAmount) * 0.08;
+    if (typeof CircadianRenderer !== 'undefined' && CircadianRenderer.refreshCircadianHelixLine &&
+        circadianWorldlines && circadianWorldlines.length) {
+        const sdHel = getSelectedDateTime();
+        const chHel = calculateDateHeight(
+            sdHel.getFullYear(),
+            sdHel.getMonth(),
+            sdHel.getDate(),
+            sdHel.getHours()
+        );
+        circadianWorldlines.forEach(function (ln) {
+            if (ln && ln.userData && ln.userData.circadianHelixAnim) {
+                CircadianRenderer.refreshCircadianHelixLine(
+                    ln,
+                    currentCircadianStraightenAmount,
+                    chHel,
+                    ln.userData.spanDays
+                );
+            }
+        });
+        circadianHelixMarkerGroups.forEach(function (mg) {
+            if (mg && CircadianRenderer.refreshHelixStructureMarkersGroup) {
+                CircadianRenderer.refreshHelixStructureMarkersGroup(
+                    mg,
+                    currentCircadianStraightenAmount,
+                    chHel,
+                    getSelectedDateTime()
+                );
+            }
+        });
+    }
+    if (Math.abs(circadianStraightenTarget - currentCircadianStraightenAmount) > 0.002 &&
+        typeof window !== 'undefined' && window.circaevumGL &&
+        typeof window.circaevumGL.refreshAllEventLayers === 'function') {
+        try {
+            window.circaevumGL.refreshAllEventLayers();
+        } catch (e) { /* GL may be disposing */ }
+    }
+
+    // System roll (R): ease scene Z to match target so content and camera (child of scene) pivot together.
+    if (scene && typeof sceneRollTargetRad === 'number') {
+        const rollErr = sceneRollTargetRad - scene.rotation.z;
+        if (Math.abs(rollErr) > 1e-7) {
+            scene.rotation.z += rollErr * sceneRollSmoothSpeed;
+        } else {
+            scene.rotation.z = sceneRollTargetRad;
+        }
+    }
+
     // Planets stay at rest at their accurate positions
     // No orbital animation
-    
+
     // Smooth focus point transition (targetFocusPoint is set in createPlanets)
     focusPoint.x += (targetFocusPoint.x - focusPoint.x) * cameraTransitionSpeed;
     focusPoint.y += (targetFocusPoint.y - focusPoint.y) * cameraTransitionSpeed;
@@ -2655,59 +3018,77 @@ function animate(time, frame) {
     // Smooth camera distance transition
     currentCameraDistance += (targetCameraDistance - currentCameraDistance) * cameraTransitionSpeed;
     
-    const config = ZOOM_LEVELS[currentZoom];
     const distance = currentCameraDistance;
-    
+
+    const inXRWindowed = xrAdapter && xrAdapter.isPresenting() && xrAdapter.windowedMode;
+    const camForPos = (inXRWindowed && contentCamera) ? contentCamera : camera;
+
     // Set target camera orientation based on zoom level
     if (currentZoom === 9 || currentZoom === 0) {
         isPolarView = true;
-        
-        // Get Earth's position
-        const earth = PLANET_DATA.find(p => p.name === 'Earth');
-        const earthX = Math.cos(earth.startAngle) * 50;
-        const earthZ = Math.sin(earth.startAngle) * 50;
-        
-        // Sun to Earth angle (where noon points)
-        const sunToEarthAngle = Math.atan2(earthZ, earthX);
-        
-        // Target: Camera below Earth looking up (rotated 180°)
-        targetCameraPosition.set(0, -distance, 0);
-        
-        // Target: Up vector points toward noon (toward Sun), rotated 180°
+
+        if (needPolarOrbitInit && polarViewDir && camForPos) {
+            polarViewDir.subVectors(camForPos.position, focusPoint);
+            if (polarViewDir.lengthSq() < 1e-8) {
+                polarViewDir.copy(buildDefaultPolarViewDirection());
+            } else {
+                polarViewDir.normalize();
+                if (polarViewDir.y > -0.06) {
+                    polarViewDir.y = -0.06;
+                    polarViewDir.normalize();
+                }
+            }
+            needPolarOrbitInit = false;
+        }
+
+        const earthMesh = planetMeshes.find(p => p.userData && p.userData.name === 'Earth');
+        const earthDef = PLANET_DATA.find(p => p.name === 'Earth');
+        let sunToEarthAngle = 0;
+        if (earthMesh) {
+            sunToEarthAngle = Math.atan2(earthMesh.position.z, earthMesh.position.x);
+        } else if (earthDef) {
+            sunToEarthAngle = earthDef.startAngle;
+        }
+
+        if (polarViewDir) {
+            targetCameraPosition.copy(polarViewDir).multiplyScalar(distance);
+        } else {
+            targetCameraPosition.copy(buildDefaultPolarViewDirection()).multiplyScalar(distance);
+        }
+
         targetCameraUp.set(
-            -Math.cos(sunToEarthAngle), // Negated for 180° rotation
+            -Math.cos(sunToEarthAngle),
             0,
-            -Math.sin(sunToEarthAngle)  // Negated for 180° rotation
+            -Math.sin(sunToEarthAngle)
         );
-        
-        // Debug: Log once per second
-        if (Math.floor(time) % 100 === 0) {
+
+        if (Math.floor(time) % 100 === 0 && currentZoom === 9) {
             console.log('Zoom 9 - Camera distance:', distance, 'Focus point:', focusPoint.y, 'Markers visible:', timeMarkers.length);
         }
     } else {
         isPolarView = false;
-        
+
         // Target: Normal camera positioning
         const cameraX = Math.sin(cameraRotation.y) * Math.cos(cameraRotation.x) * distance;
         const cameraY = Math.sin(cameraRotation.x) * distance;
         const cameraZ = Math.cos(cameraRotation.y) * Math.cos(cameraRotation.x) * distance;
-        
+
         targetCameraPosition.set(cameraX, cameraY, cameraZ);
-        
+
         // Target: Default up vector
         targetCameraUp.set(0, 1, 0);
     }
-    
-    const inXRWindowed = xrAdapter && xrAdapter.isPresenting() && xrAdapter.windowedMode;
-    const camForPos = (inXRWindowed && contentCamera) ? contentCamera : camera;
+
     const currentPos = new THREE.Vector3(
         camForPos.position.x - focusPoint.x,
         camForPos.position.y - focusPoint.y,
         camForPos.position.z - focusPoint.z
     );
-    
-    currentPos.lerp(targetCameraPosition, cameraTransitionSpeed);
-    
+
+    const polarCam = currentZoom === 0 || currentZoom === 9;
+    const camLerp = polarCam ? 1 : cameraTransitionSpeed;
+    currentPos.lerp(targetCameraPosition, camLerp);
+
     const cam = (inXRWindowed && contentCamera) ? contentCamera : camera;
     if (cam) {
         cam.position.set(
@@ -2715,7 +3096,7 @@ function animate(time, frame) {
             focusPoint.y + currentPos.y,
             focusPoint.z + currentPos.z
         );
-        currentCameraUp.lerp(targetCameraUp, cameraTransitionSpeed);
+        currentCameraUp.lerp(targetCameraUp, camLerp);
         cam.up.copy(currentCameraUp);
         cam.lookAt(focusPoint);
     }

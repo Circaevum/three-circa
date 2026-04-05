@@ -248,7 +248,9 @@ const SceneGeometry = (function() {
                 const now = new Date();
                 height = getHeightForYear(now.getFullYear(), 1);
             }
-        } else if (zoomLevel >= 5) {
+        } else if (zoomLevel >= 5 || zoomLevel === 0) {
+            // Landing (0) uses the same “present” height anchor as day/clock zooms so Earth,
+            // orbit, and helical worldlines share one orbital phase (matches createPlanets).
             if (typeof calculateCurrentDateHeight === 'function') {
                 height = calculateCurrentDateHeight();
             } else {

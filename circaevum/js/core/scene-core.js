@@ -61,6 +61,9 @@ function initScene(dependencies = {}) {
         camera.position.set(0, currentYearHeight + 400, 800);
     }
 
+    // Camera lives under scene so system roll (R) rotates content and viewpoint together; focal math stays in scene-local space.
+    scene.add(camera);
+
     renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     // Limit pixel ratio on mobile for better performance (max 2)

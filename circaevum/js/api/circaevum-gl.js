@@ -732,6 +732,8 @@ class CircaevumGL {
 
     // Decide which scene group to attach to: flattenableGroup flattens with time markers, else fallback.
     const targetGroup = this.flattenableGroup || this.sceneContentGroup;
+    const worldSpaceGroup =
+      this.flattenableGroup && this.sceneContentGroup ? this.sceneContentGroup : null;
 
     // Per-category styles from wrapper (layer name -> style); apply when rendering each event
     const layerConfigWithStyles = {
@@ -745,7 +747,8 @@ class CircaevumGL {
         filteredEvents,
         layerConfigWithStyles,
         targetGroup,
-        this.scene
+        this.scene,
+        worldSpaceGroup
       );
       allObjects.push(...objects);
     }
@@ -757,7 +760,9 @@ class CircaevumGL {
       const lineObjects = EventRenderer.createEventLineObjects(
         lines,
         layerConfigWithStyles,
-        targetGroup
+        targetGroup,
+        undefined,
+        worldSpaceGroup
       );
       allObjects.push(...lineObjects);
     }
