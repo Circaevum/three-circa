@@ -77,20 +77,21 @@ const TimeMarkers = (function() {
         const actualDay = now.getDate();
         
         let currentDateHeight = calculateCurrentDateHeight();
-        if (zoomLevel === 3 || zoomLevel === 4) {
-            // Use centralized functions if available
+        // Decade / Year / Quarter: same "now" height as planets & worldlines (not Jan 1 of navigated year)
+        if (zoomLevel === 2 || zoomLevel === 3 || zoomLevel === 4) {
             let yearProgress;
             if (typeof calculateYearProgressForDate === 'function') {
                 yearProgress = calculateYearProgressForDate(actualYear, actualMonth, actualDay, 0);
             } else {
-                // Fallback
                 const daysInMonth = getDaysInMonth ? getDaysInMonth(actualYear, actualMonth) : 30;
                 yearProgress = (actualMonth + (actualDay - 1) / daysInMonth) / 12;
             }
-            currentDateHeight = ((actualYear - 2000) * 100) + (yearProgress * 100);
+            const cs = typeof CENTURY_START === 'number' ? CENTURY_START : 2000;
+            currentDateHeight = ((actualYear - cs) * 100) + (yearProgress * 100);
         }
 
         let selectedYear, selectedMonth, selectedQuarter, selectedDateHeight;
+        let selectedDayForReturn = 1;
         if (zoomLevel === 1) {
             // Century view - preserve selected year from currentYear (which is updated by navigation)
             // Snap to nearest decade for proper highlighting
@@ -100,11 +101,12 @@ const TimeMarkers = (function() {
             selectedQuarter = Math.floor(actualMonth / 3);
             selectedDateHeight = getHeightForYear(selectedYear, 1);
         } else if (zoomLevel === 2) {
-            // Decade view - use currentYear which is updated by navigation
+            // Decade view - same calendar date as getSelectedDateTime (year from navigation, month/day from clock)
             selectedYear = (currentYear !== undefined && currentYear !== null) ? currentYear : actualYear;
             selectedMonth = actualMonth;
             selectedQuarter = Math.floor(actualMonth / 3);
-            selectedDateHeight = getHeightForYear(selectedYear, 1);
+            selectedDayForReturn = actualDay;
+            selectedDateHeight = calculateDateHeight(selectedYear, selectedMonth, actualDay, now.getHours());
         } else if (zoomLevel === 3) {
             selectedYear = actualYear + selectedYearOffset;
             selectedQuarter = currentQuarter;
@@ -169,7 +171,7 @@ const TimeMarkers = (function() {
         return {
             currentDate: now,
             currentDateHeight,
-            selectedDate: new Date(selectedYear, selectedMonth, 1),
+            selectedDate: new Date(selectedYear, selectedMonth, selectedDayForReturn),
             selectedDateHeight,
             selectedYear,
             selectedMonth,
@@ -200,10 +202,15 @@ const TimeMarkers = (function() {
         return earth.startAngle - (orbits * Math.PI * 2);
     }
 
+    /** Selected-time marker lines in light mode: clearly navy vs. old bright #0066CC (pairs with label rgba in main.js). */
+    function getSelectedMarkerLineColor() {
+        return isLightMode ? 0x062d52 : 0x00FFFF;
+    }
+
     function getColor(isCurrent, isSelected, hasOffset) {
         if (isCurrent) return 0xFF0000;
         // In full-year scope, show selected (blue) whenever the unit matches selected time, even without A/D offset
-        if (isSelected && (_fullYearScope ? true : hasOffset)) return isLightMode ? 0x0066CC : 0x00FFFF;
+        if (isSelected && (_fullYearScope ? true : hasOffset)) return getSelectedMarkerLineColor();
         return getMarkerColor();
     }
 
@@ -526,14 +533,19 @@ const TimeMarkers = (function() {
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
             
             const lineColor = getColor(isCurrent || prevIsCurrent, isSelected || prevIsSelected, hasOffset || prevHasOffset);
+            const sel = isSelected || prevIsSelected;
+            const cur = isCurrent || prevIsCurrent;
+            let lineOp = cur || sel ? 0.9 : 0.7;
+            if (isLightMode && sel && !cur) lineOp = 0.82;
             const material = new THREE.LineBasicMaterial({
                 color: lineColor,
                 transparent: true,
-                opacity: (isCurrent || isSelected) ? 0.9 : 0.7,
+                opacity: lineOp,
                 linewidth: (isCurrent || isSelected) ? 3 : 2
             });
             
             const line = new THREE.Line(geometry, material);
+            line.renderOrder = 4;
             scene.add(line);
             timeMarkers.push(line);
             
@@ -633,6 +645,7 @@ const TimeMarkers = (function() {
                     linewidth: 2
                 });
                 const curveLine = new THREE.Line(curveGeometry, curveMaterial);
+                curveLine.renderOrder = 4;
                 scene.add(curveLine);
                 timeMarkers.push(curveLine);
             });
@@ -708,6 +721,7 @@ const TimeMarkers = (function() {
                     linewidth: 2
                 });
                 const curveLine = new THREE.Line(curveGeometry, curveMaterial);
+                curveLine.renderOrder = 4;
                 scene.add(curveLine);
                 timeMarkers.push(curveLine);
             });
@@ -866,6 +880,7 @@ const TimeMarkers = (function() {
                     linewidth: 2
                 });
                 const curveLine = new THREE.Line(curveGeometry, curveMaterial);
+                curveLine.renderOrder = 4;
                 scene.add(curveLine);
                 timeMarkers.push(curveLine);
             });
@@ -1096,6 +1111,7 @@ const TimeMarkers = (function() {
                     linewidth: 2
                 });
                 const curveLine = new THREE.Line(curveGeometry, curveMaterial);
+                curveLine.renderOrder = 4;
                 scene.add(curveLine);
                 timeMarkers.push(curveLine);
             });
@@ -1361,6 +1377,7 @@ const TimeMarkers = (function() {
                 });
                 
                 const line = new THREE.Line(geometry, material);
+                line.renderOrder = 4;
                 scene.add(line);
                 timeMarkers.push(line);
                 newMoonCount++;
@@ -1466,7 +1483,7 @@ const TimeMarkers = (function() {
             const isSelected = year === timeState.selectedYear;
             if (year >= 2020 && year <= 2040) {
             }
-            const color = isCurrent ? 0xFF0000 : (isSelected ? 0x00FFFF : getMarkerColor());
+            const color = isCurrent ? 0xFF0000 : (isSelected ? getSelectedMarkerLineColor() : getMarkerColor());
             
             // Create vertical line from Sun position - all same size
             const lineGeometry = new THREE.BufferGeometry();
@@ -1482,6 +1499,7 @@ const TimeMarkers = (function() {
                 opacity: 0.6
             });
             const line = new THREE.Line(lineGeometry, lineMaterial);
+            line.renderOrder = 4;
             scene.add(line);
             timeMarkers.push(line);
             
@@ -1504,7 +1522,7 @@ const TimeMarkers = (function() {
             const isSelected = year === timeState.selectedYear;
             if (year >= 2020 && year <= 2030) {
             }
-            const color = isCurrent ? 0xFF0000 : (isSelected ? 0x00FFFF : getMarkerColor());
+            const color = isCurrent ? 0xFF0000 : (isSelected ? getSelectedMarkerLineColor() : getMarkerColor());
             
             // Create vertical line from Sun position - all same size
             const lineGeometry = new THREE.BufferGeometry();
@@ -1520,6 +1538,7 @@ const TimeMarkers = (function() {
                 opacity: 0.6
             });
             const line = new THREE.Line(lineGeometry, lineMaterial);
+            line.renderOrder = 4;
             scene.add(line);
             timeMarkers.push(line);
             
@@ -1543,7 +1562,7 @@ const TimeMarkers = (function() {
         const isSelected = selectedYear !== currentYear;
         
         const yearHeight = getHeightForYear(selectedYear, 1);
-        const color = isCurrent ? 0xFF0000 : (isSelected ? 0x00FFFF : getMarkerColor());
+        const color = isCurrent ? 0xFF0000 : (isSelected ? getSelectedMarkerLineColor() : getMarkerColor());
         
         // Create vertical line from Sun position
         const lineGeometry = new THREE.BufferGeometry();
@@ -1560,6 +1579,7 @@ const TimeMarkers = (function() {
             linewidth: 2 // Thicker line
         });
         const line = new THREE.Line(lineGeometry, lineMaterial);
+        line.renderOrder = 4;
         scene.add(line);
         timeMarkers.push(line);
         
@@ -1657,6 +1677,7 @@ const TimeMarkers = (function() {
             linewidth: 2
         });
         const spiral = new THREE.Line(spiralGeometry, spiralMaterial);
+        spiral.renderOrder = 4;
         scene.add(spiral);
         timeMarkers.push(spiral);
         
@@ -1741,6 +1762,7 @@ const TimeMarkers = (function() {
             linewidth: 2
         });
         const currentHourLine = new THREE.Line(lineGeometry, lineMaterial);
+        currentHourLine.renderOrder = 4;
         scene.add(currentHourLine);
         timeMarkers.push(currentHourLine);
     }

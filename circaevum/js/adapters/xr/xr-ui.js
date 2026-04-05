@@ -87,7 +87,7 @@
     return tex;
   }
 
-  function makeLayerRowTexture(label, isOn) {
+  function makeLayerRowTexture(label, isOn, colorHex) {
     var w = 256;
     var h = 64;
     var canvas = document.createElement('canvas');
@@ -100,11 +100,20 @@
     roundRect(ctx, 2, 2, w - 4, h - 4, 6);
     ctx.fill();
     ctx.stroke();
+    if (colorHex != null && colorHex !== '') {
+      var ch = typeof colorHex === 'number' ? colorHex : parseInt(String(colorHex).replace(/^#/, ''), 16);
+      if (!isNaN(ch)) {
+        ctx.fillStyle = '#' + ch.toString(16).padStart(6, '0');
+        roundRect(ctx, 6, 10, 8, h - 20, 2);
+        ctx.fill();
+      }
+    }
     ctx.fillStyle = '#e2e8f0';
     ctx.font = 'bold 22px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, 16, h / 2);
+    var textX = colorHex != null && colorHex !== '' ? 22 : 16;
+    ctx.fillText(label, textX, h / 2);
     ctx.textAlign = 'right';
     ctx.fillStyle = isOn ? '#22c55e' : '#64748b';
     ctx.fillText(isOn ? 'ON' : 'OFF', w - 16, h / 2);
@@ -124,7 +133,7 @@
     ctx.font = 'bold 24px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Event layers', 0, h / 2);
+    ctx.fillText('Calendar Layers', 0, h / 2);
     var tex = new THREE.CanvasTexture(canvas);
     tex.needsUpdate = true;
     return tex;
@@ -133,7 +142,7 @@
   /**
    * @param {THREE.Scene} scene
    * @param {object} xrAdapter - WebXRAdapter instance (session, referenceSpace)
-   * @param {object} callbacks - { setZoomLevel, getZoomLevel, iconActions?, getLayerState?, getEventLayers?, setEventLayerVisibility? }
+   * @param {object} callbacks - { setZoomLevel, getZoomLevel, iconActions?, getLayerState?, getEventLayers? (Calendar Layers), setEventLayerVisibility? }
    */
   function XRUI(scene, xrAdapter, callbacks) {
     this.scene = scene;
@@ -173,9 +182,9 @@
     g.rotation.set(0, 0, 0);
 
     var self = this;
-    var actionOrder = ['markersLines', 'markersText', 'lightMode', 'circadian', 'flatten'];
-    var iconLabels = { markersLines: 'Lines', markersText: 'Text', lightMode: 'Light', circadian: 'Cycle', flatten: 'Flat' };
-    var iconColors = { markersLines: 0x4a90e2, markersText: 0x94a3b8, lightMode: 0xfbbf24, circadian: 0x8b5cf6, flatten: 0x6ee7b7 };
+    var actionOrder = ['markersLines', 'markersText', 'lightMode', 'flatten'];
+    var iconLabels = { markersLines: 'Lines', markersText: 'Text', lightMode: 'Light', flatten: 'Flat' };
+    var iconColors = { markersLines: 0x4a90e2, markersText: 0x94a3b8, lightMode: 0xfbbf24, flatten: 0x6ee7b7 };
     var actions = actionOrder.filter(function (a) { return self.iconActions[a]; });
     var numIcons = actions.length;
     var totalIconWidth = numIcons * ICON_WIDTH + (numIcons - 1) * ICON_GAP;
@@ -255,7 +264,7 @@
       var layerId = layer.id;
       var rowLabel = layer.name || layerId;
       var isOn = layer.visible !== false;
-      var tex = makeLayerRowTexture(rowLabel, isOn);
+      var tex = makeLayerRowTexture(rowLabel, isOn, layer.color);
       var rowGeom = new THREE.PlaneGeometry(LAYER_ROW_WIDTH, LAYER_ROW_HEIGHT);
       var rowMat = new THREE.MeshBasicMaterial({
         map: tex,
@@ -278,7 +287,8 @@
           var l = list.find(function (x) { return x.id === layerId; });
           return l ? l.visible !== false : false;
         },
-        label: rowLabel
+        label: rowLabel,
+        color: layer.color
       });
     });
 
@@ -292,7 +302,7 @@
       var isOn = row.getState ? row.getState() : false;
       var oldTex = row.mesh.material.map;
       if (oldTex) oldTex.dispose();
-      row.mesh.material.map = makeLayerRowTexture(row.label, isOn);
+      row.mesh.material.map = makeLayerRowTexture(row.label, isOn, row.color);
       row.mesh.material.needsUpdate = true;
     });
   };

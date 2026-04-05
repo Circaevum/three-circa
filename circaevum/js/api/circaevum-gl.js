@@ -38,6 +38,10 @@ class CircaevumGL {
       ...options
     };
 
+    /** 'year' = show only events overlapping the selected calendar year; 'all' = no time scope filter */
+    this.timelineEventFilter =
+      options.timelineEventFilter === 'all' ? 'all' : 'year';
+
     // Internal state
     this.layers = new Map(); // layerId -> LayerConfig
     this.events = new Map(); // layerId -> Event[]
@@ -719,6 +723,7 @@ class CircaevumGL {
     if (layer.filter) {
       filteredEvents = this._applyFilter(events, layer.filter);
     }
+    filteredEvents = this._applyTimelineScopeFilter(filteredEvents);
 
     // Remove existing objects for this layer
     this._removeLayerObjects(layerId);
@@ -727,6 +732,8 @@ class CircaevumGL {
 
     // Decide which scene group to attach to: flattenableGroup flattens with time markers, else fallback.
     const targetGroup = this.flattenableGroup || this.sceneContentGroup;
+    const worldSpaceGroup =
+      this.flattenableGroup && this.sceneContentGroup ? this.sceneContentGroup : null;
 
     // Per-category styles from wrapper (layer name -> style); apply when rendering each event
     const layerConfigWithStyles = {
@@ -740,18 +747,22 @@ class CircaevumGL {
         filteredEvents,
         layerConfigWithStyles,
         targetGroup,
-        this.scene
+        this.scene,
+        worldSpaceGroup
       );
       allObjects.push(...objects);
     }
 
     // Create event line objects (addEventLines API)
-    const lines = this.eventLines.get(layerId) || [];
+    const linesRaw = this.eventLines.get(layerId) || [];
+    const lines = this._filterEventLinesForTimeline(linesRaw);
     if (lines.length > 0 && typeof EventRenderer !== 'undefined' && EventRenderer.createEventLineObjects) {
       const lineObjects = EventRenderer.createEventLineObjects(
         lines,
         layerConfigWithStyles,
-        targetGroup
+        targetGroup,
+        undefined,
+        worldSpaceGroup
       );
       allObjects.push(...lineObjects);
     }
@@ -765,6 +776,125 @@ class CircaevumGL {
     if (filteredEvents.length === 0 && lines.length === 0 && typeof EventRenderer === 'undefined') {
       console.warn('EventRenderer not available. Events will not be rendered.');
     }
+  }
+
+  /**
+   * Calendar year used for "this year" event scope (follows main scene selected time when available).
+   * @private
+   */
+  _getTimelineFilterYear() {
+    if (typeof getSelectedDateTime === 'function') {
+      try {
+        const d = getSelectedDateTime();
+        if (d && !isNaN(d.getTime())) return d.getFullYear();
+      } catch (e) { /* ignore */ }
+    }
+    return new Date().getFullYear();
+  }
+
+  /**
+   * Start/end Dates for overlap test (same rules as getEventObjects).
+   * @private
+   */
+  _getEventDateBounds(event) {
+    let start = null;
+    let end = null;
+    if (typeof VEvent !== 'undefined' && event instanceof VEvent) {
+      start = event.getStartDate();
+      end = event.getEndDate();
+    } else {
+      if (event.dtstart) {
+        if (event.dtstart.dateTime) start = new Date(event.dtstart.dateTime);
+        else if (event.dtstart.date) start = new Date(event.dtstart.date + 'T00:00:00Z');
+        else if (typeof event.dtstart === 'string') {
+          const d = new Date(event.dtstart);
+          start = !isNaN(d.getTime()) ? d : null;
+        }
+      } else {
+        const rawStart = event.startTime || event.start || event.date;
+        if (rawStart instanceof Date) start = rawStart;
+        else if (rawStart) {
+          const d = new Date(rawStart);
+          start = !isNaN(d.getTime()) ? d : null;
+        }
+      }
+      if (event.dtend) {
+        if (event.dtend.dateTime) end = new Date(event.dtend.dateTime);
+        else if (event.dtend.date) end = new Date(event.dtend.date + 'T00:00:00Z');
+        else if (typeof event.dtend === 'string') {
+          const d = new Date(event.dtend);
+          end = !isNaN(d.getTime()) ? d : null;
+        }
+      } else {
+        const rawEnd = event.endTime || event.end;
+        if (rawEnd instanceof Date) end = rawEnd;
+        else if (rawEnd) {
+          const d = new Date(rawEnd);
+          end = !isNaN(d.getTime()) ? d : null;
+        }
+      }
+    }
+    if (start && isNaN(start.getTime())) start = null;
+    if (end && isNaN(end.getTime())) end = null;
+    return { start, end };
+  }
+
+  /**
+   * Event overlaps [Jan 1 .. Dec 31] of `year` in local calendar sense.
+   * @private
+   */
+  _eventOverlapsYear(event, year) {
+    const { start, end } = this._getEventDateBounds(event);
+    if (!start) return false;
+    const rangeStart = new Date(year, 0, 1, 0, 0, 0, 0).getTime();
+    const rangeEnd = new Date(year, 11, 31, 23, 59, 59, 999).getTime();
+    const s = start.getTime();
+    const e = (end && !isNaN(end.getTime())) ? end.getTime() : s;
+    return s <= rangeEnd && e >= rangeStart;
+  }
+
+  _lineOverlapsYear(line, year) {
+    const rangeStart = new Date(year, 0, 1, 0, 0, 0, 0).getTime();
+    const rangeEnd = new Date(year, 11, 31, 23, 59, 59, 999).getTime();
+    const s = line.start.getTime();
+    const e = line.end.getTime();
+    return s <= rangeEnd && e >= rangeStart;
+  }
+
+  _applyTimelineScopeFilter(events) {
+    if (this.timelineEventFilter !== 'year') return events;
+    const y = this._getTimelineFilterYear();
+    return events.filter(e => this._eventOverlapsYear(e, y));
+  }
+
+  _filterEventLinesForTimeline(lines) {
+    if (this.timelineEventFilter !== 'year') return lines;
+    const y = this._getTimelineFilterYear();
+    return lines.filter(ln => this._lineOverlapsYear(ln, y));
+  }
+
+  /**
+   * Re-render every layer (e.g. after selected year changes while in "year" scope).
+   */
+  refreshAllEventLayers() {
+    for (const layerId of this.layers.keys()) {
+      this._renderLayer(layerId);
+    }
+  }
+
+  /**
+   * @param {'year'|'all'} mode - 'year' = only events overlapping selected calendar year
+   */
+  setTimelineEventFilter(mode) {
+    const next = mode === 'all' ? 'all' : 'year';
+    if (this.timelineEventFilter === next) return;
+    this.timelineEventFilter = next;
+    this.refreshAllEventLayers();
+    this._emit('timelineEventFilterChanged', { filter: next });
+  }
+
+  getTimelineEventFilter() {
+    return this.timelineEventFilter;
   }
 
   /**

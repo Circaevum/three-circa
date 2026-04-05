@@ -237,19 +237,20 @@ const SceneGeometry = (function() {
     function getCurrentDateHeight(zoomLevel) {
         let height;
         
-        if (zoomLevel === 3 || zoomLevel === 4) {
-            // Use actual system date for Zoom 3 and 4
+        if (zoomLevel === 2 || zoomLevel === 3 || zoomLevel === 4) {
+            // Decade + Year + Quarter: same orbital phase anchor as createPlanets (wall-clock now)
             if (typeof calculateActualCurrentDateHeight === 'function') {
                 height = calculateActualCurrentDateHeight();
             } else if (typeof calculateCurrentDateHeight === 'function') {
                 height = calculateCurrentDateHeight();
             } else {
                 console.error('SceneGeometry.getCurrentDateHeight: No date calculation function available for Zoom', zoomLevel);
-                // Fallback: use current year
                 const now = new Date();
                 height = getHeightForYear(now.getFullYear(), 1);
             }
-        } else if (zoomLevel >= 3) {
+        } else if (zoomLevel >= 5 || zoomLevel === 0) {
+            // Landing (0) uses the same “present” height anchor as day/clock zooms so Earth,
+            // orbit, and helical worldlines share one orbital phase (matches createPlanets).
             if (typeof calculateCurrentDateHeight === 'function') {
                 height = calculateCurrentDateHeight();
             } else {
