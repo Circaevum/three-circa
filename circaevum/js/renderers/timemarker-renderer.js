@@ -617,7 +617,10 @@ const TimeMarkers = (function() {
                 const quarterStartMonth = qIndex * 3;
                 const quarterStartHeight = calculateDateHeight(qYear, quarterStartMonth, 1, 0);
                 const quarterEndMonth = quarterStartMonth + 3;
-                const quarterEndHeight = calculateDateHeight(qYear, quarterEndMonth, 1, 0);
+                // calculateDateHeight expects month 0–11; month 12 is Jan next year (Q4 end).
+                const quarterEndHeight = quarterEndMonth >= 12
+                  ? calculateDateHeight(qYear + 1, 0, 1, 0)
+                  : calculateDateHeight(qYear, quarterEndMonth, 1, 0);
                 
                 // Use SceneGeometry for consistent curve generation
                 const curvePoints = SceneGeometry ?
@@ -693,7 +696,10 @@ const TimeMarkers = (function() {
                 } else {
                     monthStartHeight = calculateDateHeight(mYear, mIndex, 1, 0);
                     const nextMonth = mIndex + 1;
-                    monthEndHeight = calculateDateHeight(mYear, nextMonth, 1, 0);
+                    // December (11): end is Jan 1 next year, not month 12 (undefined in getDaysInMonth).
+                    monthEndHeight = nextMonth >= 12
+                      ? calculateDateHeight(mYear + 1, 0, 1, 0)
+                      : calculateDateHeight(mYear, nextMonth, 1, 0);
                 }
                 // Use SceneGeometry for consistent curve generation
                 const curvePoints = SceneGeometry ?
