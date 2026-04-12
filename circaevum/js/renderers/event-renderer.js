@@ -94,6 +94,31 @@
     return (end.getTime() - start.getTime()) / (3600 * 1000);
   }
 
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+  /** Span length in days (fractional). Zero if missing or non-positive span. */
+  function durationDaysBetween(start, end) {
+    if (!start || !end || !(end > start)) return 0;
+    return (end.getTime() - start.getTime()) / MS_PER_DAY;
+  }
+
+  /**
+   * Minimum zoom level (main.js 0–9) at which we draw event text sprites (titles and MM/DD ticks).
+   * Longer spans appear at coarser zoom; short spans require Week / Day / Clock.
+   */
+  function eventTextLabelsMinZoomForDurationDays(durationDays) {
+    if (durationDays < 1) return 8; // sub-day → Zoom 8+
+    if (durationDays < 7) return 7; // super-day, sub-week → Zoom 7+
+    if (durationDays < 31) return 5; // super-week, sub-month → Zoom 5+
+    return 4; // ~1 month and longer (incl. several-month) → Zoom 4+
+  }
+
+  function areEventTextLabelsVisibleAtCurrentZoom(start, end) {
+    const zl = getZoomLevelForEvents();
+    const days = durationDaysBetween(start, end);
+    return zl >= eventTextLabelsMinZoomForDurationDays(days);
+  }
+
   function isSub24HourSpan(start, end) {
     if (!end || end <= start) return true;
     return durationHoursBetween(start, end) < 24;
@@ -574,6 +599,7 @@
    */
   function addEventWorldlineLabelSprites(parent, event, start, end, startHeight, endHeight, r, eventHex, currentHeight, staggerY) {
     if (!parent || !start || !end || end <= start) return;
+    if (!areEventTextLabelsVisibleAtCurrentZoom(start, end)) return;
     const sy = staggerY != null && !isNaN(staggerY) ? staggerY : 0;
     const sameDay = start.getFullYear() === end.getFullYear() &&
       start.getMonth() === end.getMonth() && start.getDate() === end.getDate();
@@ -810,6 +836,109 @@
     return (rr << 16) | (rg << 8) | rb;
   }
 
+  /** Desaturate distant events toward achromatic gray (strong contrast) while leaving a hint of hue. */
+  const TEMPORAL_NEUTRAL_HEX = 0x8f8f8f;
+  /** Within this window of selected or “now”, keep full chroma. */
+  const TEMPORAL_VIVID_CLOSE_MS = 2.5 * 24 * 60 * 60 * 1000;
+  /** Beyond this distance from both, blend down to TEMPORAL_VIVID_FLOOR. */
+  const TEMPORAL_VIVID_FAR_MS = 65 * 24 * 60 * 60 * 1000;
+  /** Minimum weight on the true event color when far (>0 so never fully monochrome). */
+  const TEMPORAL_VIVID_FLOOR = 0.14;
+
+  function temporalFadeSmoothstep(edge0, edge1, x) {
+    if (x <= edge0) return 0;
+    if (x >= edge1) return 1;
+    const t = (x - edge0) / (edge1 - edge0);
+    return t * t * (3 - 2 * t);
+  }
+
+  /**
+   * @param {Date|null} start
+   * @param {Date|null} end
+   * @returns {number} midpoint ms, or start, or NaN
+   */
+  function getEventTemporalAnchorMs(start, end) {
+    if (!start || isNaN(start.getTime())) return NaN;
+    const a = start.getTime();
+    if (!end || !(end > start)) return a;
+    return (a + end.getTime()) / 2;
+  }
+
+  /** 1 = full vivid color; TEMPORAL_VIVID_FLOOR = most muted (vs neutral). */
+  function getTemporalVividness01(anchorMs) {
+    if (!isFinite(anchorMs)) return 1;
+    const selFn = getSelectedDateTimeFn();
+    const nowMs = Date.now();
+    const dSel = selFn ? Math.abs(anchorMs - selFn().getTime()) : Infinity;
+    const dNow = Math.abs(anchorMs - nowMs);
+    const d = Math.min(dSel, dNow);
+    const u = temporalFadeSmoothstep(TEMPORAL_VIVID_CLOSE_MS, TEMPORAL_VIVID_FAR_MS, d);
+    return TEMPORAL_VIVID_FLOOR + (1 - TEMPORAL_VIVID_FLOOR) * (1 - u);
+  }
+
+  /**
+   * Half-width of the “in focus” time window around selected time, by zoom.
+   * Matches yang/web/index.html nearbyHalfSpanMs (event list / horizon).
+   */
+  function getFocusHalfSpanMsForZoom(zl) {
+    const z = typeof zl === 'number' && !isNaN(zl) ? zl : 5;
+    if (z >= 9) return MS_PER_DAY;
+    if (z >= 8) return 2 * MS_PER_DAY;
+    if (z >= 7) return 7 * MS_PER_DAY;
+    if (z >= 5) return 30 * MS_PER_DAY;
+    if (z >= 3) return 120 * MS_PER_DAY;
+    return 365 * MS_PER_DAY;
+  }
+
+  /** ms gap between event [s,e] and window [center±half]; 0 if they overlap. */
+  function getPeripheralSeparationMs(spanStart, spanEnd, centerMs, halfMs) {
+    if (!spanStart || isNaN(spanStart.getTime())) return 0;
+    const s = spanStart.getTime();
+    const e = spanEnd && !isNaN(spanEnd.getTime()) && spanEnd.getTime() > s ? spanEnd.getTime() : s;
+    const w0 = centerMs - halfMs;
+    const w1 = centerMs + halfMs;
+    if (e < w0) return w0 - e;
+    if (s > w1) return s - w1;
+    return 0;
+  }
+
+  /**
+   * At Zoom 5+ (month/week/day/clock), ease saturation down for events outside the zoom’s time window.
+   * Stronger at 7–9; smooth band just outside the window.
+   */
+  function getPeripheralVividness01(spanStart, spanEnd) {
+    const zl = getZoomLevelForEvents();
+    if (zl < 5) return 1;
+    const selFn = getSelectedDateTimeFn();
+    if (!selFn) return 1;
+    if (!spanStart || isNaN(spanStart.getTime())) return 1;
+    const centerMs = selFn().getTime();
+    const halfMs = getFocusHalfSpanMsForZoom(zl);
+    const sep = getPeripheralSeparationMs(spanStart, spanEnd, centerMs, halfMs);
+    if (sep <= 0) return 1;
+    const fadeMs = Math.max(halfMs * 0.24, MS_PER_DAY * 0.85);
+    const u = temporalFadeSmoothstep(0, fadeMs, sep);
+    let floor;
+    if (zl >= 9) floor = 0.16;
+    else if (zl >= 8) floor = 0.22;
+    else if (zl >= 7) floor = 0.3;
+    else floor = 0.45;
+    return floor + (1 - floor) * (1 - u);
+  }
+
+  /**
+   * @param {Date|null} spanStart - event (or line) interval start; drives peripheral window test
+   * @param {Date|null} spanEnd - interval end; omit or same as start for instant events
+   */
+  function applyTemporalVividnessToHex(hex, anchorMs, spanStart, spanEnd) {
+    const vt = getTemporalVividness01(anchorMs);
+    const vp = spanStart && !isNaN(spanStart.getTime())
+      ? getPeripheralVividness01(spanStart, spanEnd)
+      : 1;
+    const v = Math.min(vt, vp);
+    return lerpHexColor(TEMPORAL_NEUTRAL_HEX, hex, v);
+  }
+
   // Earlier events -> warmer red, later events -> cooler blue.
   function getTimeGradientHex(normalizedTime) {
     const EARLY_RED = 0xef4444;
@@ -975,6 +1104,8 @@
         maxEndT = Math.max(maxEndT, en.getTime());
       }
       const lastEnd = new Date(maxEndT);
+      const seriesMidMs = (first.getTime() + lastEnd.getTime()) / 2;
+      const spineColorHex = applyTemporalVividnessToHex(layerHex, seriesMidMs, first, lastEnd);
 
       const startHeight = calculateDateHeight(
         first.getFullYear(), first.getMonth(), first.getDate(), first.getHours()
@@ -1007,7 +1138,7 @@
         const g = new global.THREE.BufferGeometry();
         g.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
         const m = new global.THREE.LineBasicMaterial({
-          color: layerHex,
+          color: spineColorHex,
           transparent: true,
           opacity: spineOpacity,
           linewidth: 1
@@ -1018,7 +1149,7 @@
       }
       root.add(spineEdgeFromFlat(pair.innerFlat));
       root.add(spineEdgeFromFlat(pair.outerFlat));
-      addBandEndConnectors(root, pair.innerFlat, pair.outerFlat, layerHex, spineOpacity, roSpine);
+      addBandEndConnectors(root, pair.innerFlat, pair.outerFlat, spineColorHex, spineOpacity, roSpine);
 
       for (let i = 0; i < sorted.length; i++) {
         const anchor = getSeriesEventMidAnchor(sorted[i], earthDist, currentHeight);
@@ -1046,8 +1177,10 @@
           sx, sy, sz,
           anchor.x, anchor.y, anchor.z
         ], 3));
+        const connAnchorMs = (st.getTime() + en.getTime()) / 2;
+        const connColorHex = applyTemporalVividnessToHex(layerHex, connAnchorMs, st, en);
         const connMat = new global.THREE.LineBasicMaterial({
-          color: layerHex,
+          color: connColorHex,
           transparent: true,
           opacity: 0.32
         });
@@ -1101,7 +1234,10 @@
 
     const explicitColor = hasExplicitEventColor(event);
     const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
-    const color = parseColor(explicitColor ? (event.color ?? event.colorId) : fallbackGradient);
+    const colorBase = parseColor(explicitColor ? (event.color ?? event.colorId) : fallbackGradient);
+    let spanEnd = getEventEnd(event);
+    if (!spanEnd || spanEnd <= start) spanEnd = start;
+    const color = applyTemporalVividnessToHex(colorBase, start.getTime(), start, spanEnd);
     const sphereR = shouldUseDayBandDotPlacement() ? 0.28 : 0.55;
     const geometry = new global.THREE.SphereGeometry(sphereR, 12, 12);
     const material = new global.THREE.MeshStandardMaterial({
@@ -1164,6 +1300,7 @@
 
     const durationH = durationHoursBetween(start, end);
     if (durationH < 24) {
+      const anchorMsShort = getEventTemporalAnchorMs(start, end);
       if (shouldHideCircadianShortEventForDayScope(start, end)) return null;
       const zl = getZoomLevelForEvents();
       const circ = typeof global.getCircadianRhythmState === 'function' ? global.getCircadianRhythmState() : 'off';
@@ -1178,7 +1315,8 @@
       const eventColorRaw = event.color ?? event.colorId ?? null;
       const explicitEventColor = hasExplicitEventColor(event);
       const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
-      const eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
+      let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
+      eventHex = applyTemporalVividnessToHex(eventHex, anchorMsShort, start, end);
       const layerHex = parseColor(layerConfig.color || '#00b4d8');
       const userData = {
         vevent: event,
@@ -1206,9 +1344,11 @@
           const roFill = -4 + roBoost;
           const roLine = -2 + roBoost;
           const fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
-          const fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
+          let fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
+          fillHex = applyTemporalVividnessToHex(fillHex, anchorMsShort, start, end);
           const borderStyle = layerConfig.borderStyle || 'event';
-          const outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
+          let outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
+          if (outlineColorHex != null) outlineColorHex = applyTemporalVividnessToHex(outlineColorHex, anchorMsShort, start, end);
           const outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
 
           const innerFlat = ribbonPair.innerFlat;
@@ -1288,12 +1428,14 @@
           const nameStr = getEventSummaryText(event);
           const midLabelText = nameStr || formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end));
           const nameScale = 4.5;
-          if (tip) {
-            const midSprite = createEventLineLabelSprite(midLabelText, eventHex, tip.x, tip.y, tip.z, nameScale, true);
-            Object.assign(midSprite.userData, { type: 'EventObjectLabel', kind: 'mid' });
-            group.add(midSprite);
-          } else {
-            addEventWorldlineLabelSprites(group, event, start, end, startHeight, endHeight, rLabelBand, eventHex, currentHeight, 0);
+          if (areEventTextLabelsVisibleAtCurrentZoom(start, end)) {
+            if (tip) {
+              const midSprite = createEventLineLabelSprite(midLabelText, eventHex, tip.x, tip.y, tip.z, nameScale, true);
+              Object.assign(midSprite.userData, { type: 'EventObjectLabel', kind: 'mid' });
+              group.add(midSprite);
+            } else {
+              addEventWorldlineLabelSprites(group, event, start, end, startHeight, endHeight, rLabelBand, eventHex, currentHeight, 0);
+            }
           }
 
           if (group.children.length > 0) return group;
@@ -1341,15 +1483,19 @@
     const roFill = -4 + roBoost;
     const roLine = -2 + roBoost;
     const fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
+    const anchorMsLong = getEventTemporalAnchorMs(start, end);
     const eventColorRaw = event.color ?? event.colorId ?? null;
     const explicitEventColor = hasExplicitEventColor(event);
     const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
-    const eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
+    let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
+    eventHex = applyTemporalVividnessToHex(eventHex, anchorMsLong, start, end);
     const layerHex = parseColor(layerConfig.color || '#00b4d8');
     // Prefer explicit fillColor, then per-event color, then layer color.
-    const fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
+    let fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
+    fillHex = applyTemporalVividnessToHex(fillHex, anchorMsLong, start, end);
     const borderStyle = layerConfig.borderStyle || 'event';
-    const outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
+    let outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
+    if (outlineColorHex != null) outlineColorHex = applyTemporalVividnessToHex(outlineColorHex, anchorMsLong, start, end);
     const outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
 
     const userData = {
@@ -1436,7 +1582,8 @@
         : { x: Math.cos(angle1) * rMid, y: endHeight, z: Math.sin(angle1) * rMid };
       points = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
     }
-    const fallbackOutlineHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
+    let fallbackOutlineHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
+    if (fallbackOutlineHex != null) fallbackOutlineHex = applyTemporalVividnessToHex(fallbackOutlineHex, anchorMsLong, start, end);
     const useOutline = borderStyle !== 'none' && fallbackOutlineHex != null;
     const strokeHex = useOutline ? fallbackOutlineHex : eventHex;
     const strokeOp = useOutline ? getRibbonOutlineOpacity(opacity, borderStyle, layerConfig) : opacity;
@@ -1529,11 +1676,13 @@
       const isShortEvent = durationH < 24;
 
       const midDate = new Date((start.getTime() + end.getTime()) / 2);
+      const anchorMs = midDate.getTime();
       const rShort = getRadiusForDailyEventDot(earthDist, midDate, i % 4);
 
       const lineHasExplicitColor = hasExplicitEventColor(line);
       const lineGradient = getTimeGradientHex(getNormalizedTimeForDate(start, lineTimeRange));
-      const colorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
+      let colorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
+      colorHex = applyTemporalVividnessToHex(colorHex, anchorMs, start, end);
       const midHeight = (startHeight + endHeight) / 2;
 
       const byCategory = layerConfig.layerStylesByCategory || {};
@@ -1585,11 +1734,14 @@
             const roLine = -2 + roBoost;
             const fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDaysSmall));
             const layerColorHex = parseColor(layerConfig.color || '#00b4d8');
-            const eventColorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
+            let eventColorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
+            eventColorHex = applyTemporalVividnessToHex(eventColorHex, anchorMs, start, end);
             const fillColorFromStyle = lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
-            const fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color) : eventColorHex);
+            let fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color) : eventColorHex);
+            fillHex = applyTemporalVividnessToHex(fillHex, anchorMs, start, end);
             const borderStyle = lineStyle.borderStyle ?? layerConfig.borderStyle ?? firstStyle.borderStyle ?? 'event';
-            const outlineColorHexEvt = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
+            let outlineColorHexEvt = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
+            if (outlineColorHexEvt != null) outlineColorHexEvt = applyTemporalVividnessToHex(outlineColorHexEvt, anchorMs, start, end);
             const outlineOpEvt = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
             const innerFlat = ribbonPair.innerFlat;
             const outerFlat = ribbonPair.outerFlat;
@@ -1670,16 +1822,18 @@
               (line.label && String(line.label).trim())
                 ? String(line.label).trim()
                 : formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end));
-            if (tip) {
-              const midSprite = createEventLineLabelSprite(midLabel, colorHex, tip.x, tip.y, tip.z, nameScale, true);
-              Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
-              lineRoot.add(midSprite);
-            } else {
-              const labelRadius = rShort + EVENT_LINE_LABEL_RADIUS_OFFSET;
-              const labelPos = getPosShort(midHeight, labelRadius);
-              const midSprite = createEventLineLabelSprite(midLabel, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true);
-              Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
-              lineRoot.add(midSprite);
+            if (areEventTextLabelsVisibleAtCurrentZoom(start, end)) {
+              if (tip) {
+                const midSprite = createEventLineLabelSprite(midLabel, colorHex, tip.x, tip.y, tip.z, nameScale, true);
+                Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
+                lineRoot.add(midSprite);
+              } else {
+                const labelRadius = rShort + EVENT_LINE_LABEL_RADIUS_OFFSET;
+                const labelPos = getPosShort(midHeight, labelRadius);
+                const midSprite = createEventLineLabelSprite(midLabel, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true);
+                Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
+                lineRoot.add(midSprite);
+              }
             }
 
             if (lineRoot.children.length > 0) {
@@ -1716,11 +1870,13 @@
         });
         shortRoot.add(marker);
 
-        const midLabelFallback = (line.label && String(line.label).trim()) ? String(line.label).trim() : (formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end)));
-        const labelPos = getPosShort(midHeight, labelRadius);
-        const midSprite = createEventLineLabelSprite(midLabelFallback, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true);
-        Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
-        shortRoot.add(midSprite);
+        if (areEventTextLabelsVisibleAtCurrentZoom(start, end)) {
+          const midLabelFallback = (line.label && String(line.label).trim()) ? String(line.label).trim() : (formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end)));
+          const labelPos = getPosShort(midHeight, labelRadius);
+          const midSprite = createEventLineLabelSprite(midLabelFallback, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true);
+          Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
+          shortRoot.add(midSprite);
+        }
 
         addCircadianConnectorIfApplicable(shortRoot, midPos.x, midPos.y, midPos.z, midDate, colorHex);
         addToFlattenOrWorld(shortRoot);
@@ -1741,15 +1897,18 @@
       const borderStyle = lineStyle.borderStyle ?? layerConfig.borderStyle ?? firstStyle.borderStyle ?? 'event';
 
       const layerColorHex = parseColor(layerConfig.color || '#00b4d8');
-      const eventColorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
-      const fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color) : eventColorHex);
+      let eventColorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
+      eventColorHex = applyTemporalVividnessToHex(eventColorHex, anchorMs, start, end);
+      let fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color) : eventColorHex);
+      fillHex = applyTemporalVividnessToHex(fillHex, anchorMs, start, end);
       const opacity = Math.min(1,
         ((lineStyle.opacity != null ? lineStyle.opacity : layerConfig.opacity) ?? 0.7) * getDurationOpacityScale(durationDays));
       const roBoost = getDurationRibbonRenderOrderBoost(durationDays);
       const roFill = -4 + roBoost;
       const roLine = -2 + roBoost;
       const fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
-      const outlineColorHexEvt = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
+      let outlineColorHexEvt = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
+      if (outlineColorHexEvt != null) outlineColorHexEvt = applyTemporalVividnessToHex(outlineColorHexEvt, anchorMs, start, end);
       const outlineOpEvt = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
 
       const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, currentHeight, 32);
@@ -1841,7 +2000,8 @@
             : { x: Math.cos(angle1) * rMid, y: endHeight, z: Math.sin(angle1) * rMid };
           points = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
         }
-        const outlineColorFb = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
+        let outlineColorFb = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
+        if (outlineColorFb != null) outlineColorFb = applyTemporalVividnessToHex(outlineColorFb, anchorMs, start, end);
         const outlineOpFb = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
         const useOutFb = borderStyle !== 'none' && outlineColorFb != null;
         const strokeHexFb = useOutFb ? outlineColorFb : eventColorHex;
@@ -1870,18 +2030,20 @@
       const endPos = getPos(endHeight, labelRadius);
       const midPos = getPos(midHeight, labelRadius);
 
-      const startSprite = createEventLineLabelSprite(formatMMDD(start), colorHex, startPos.x, startPos.y, startPos.z, startEndScale, false);
-      Object.assign(startSprite.userData, { type: 'EventLineLabel', kind: 'start' });
-      lineRoot.add(startSprite);
+      if (areEventTextLabelsVisibleAtCurrentZoom(start, end)) {
+        const startSprite = createEventLineLabelSprite(formatMMDD(start), colorHex, startPos.x, startPos.y, startPos.z, startEndScale, false);
+        Object.assign(startSprite.userData, { type: 'EventLineLabel', kind: 'start' });
+        lineRoot.add(startSprite);
 
-      const endSprite = createEventLineLabelSprite(formatMMDD(end), colorHex, endPos.x, endPos.y, endPos.z, startEndScale, false);
-      Object.assign(endSprite.userData, { type: 'EventLineLabel', kind: 'end' });
-      lineRoot.add(endSprite);
+        const endSprite = createEventLineLabelSprite(formatMMDD(end), colorHex, endPos.x, endPos.y, endPos.z, startEndScale, false);
+        Object.assign(endSprite.userData, { type: 'EventLineLabel', kind: 'end' });
+        lineRoot.add(endSprite);
 
-      const midLabel = (line.label && String(line.label).trim()) ? String(line.label).trim() : (formatMMDD(start) + ' – ' + formatMMDD(end));
-      const midSprite = createEventLineLabelSprite(midLabel, colorHex, midPos.x, midPos.y, midPos.z, nameScale, true);
-      Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
-      lineRoot.add(midSprite);
+        const midLabel = (line.label && String(line.label).trim()) ? String(line.label).trim() : (formatMMDD(start) + ' – ' + formatMMDD(end));
+        const midSprite = createEventLineLabelSprite(midLabel, colorHex, midPos.x, midPos.y, midPos.z, nameScale, true);
+        Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
+        lineRoot.add(midSprite);
+      }
 
       attachEventStaggerRoot(lineRoot, staggerLogical);
       addToFlattenOrWorld(lineRoot);

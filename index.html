@@ -118,7 +118,7 @@
                 <div class="keyboard-controls-item" role="listitem"><kbd>[</kbd> / <kbd>]</kbd> Nudge 15 minutes (any zoom)</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>N</kbd> Return to present</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>C</kbd> Focus target (Sun/Earth)</div>
-                <div class="keyboard-controls-item" role="listitem"><kbd>L</kbd> Light mode</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>L</kbd> Theme: dark / light / sky</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>T</kbd> Time marker text</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>M</kbd> Moon, lunar path &amp; Artemis II</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>Shift</kbd>+<kbd>M</kbd> Mute / Sound</div>
@@ -182,9 +182,10 @@
                     <circle class="lunar-crater" cx="8.25" cy="14.05" r="0.52"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Light mode (L)" aria-label="Toggle light mode (L)">
+            <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Theme: dark (L)" aria-label="Cycle appearance: dark, light, sky (L)">
                 <span class="icon-moon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
                 <span class="icon-sun" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span>
+                <span class="icon-sky" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18h12a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.66-1.3A3.5 3.5 0 0 0 6 18z"/></svg></span>
             </button>
             <button type="button" class="scene-icon-btn" id="sound-toggle" title="Mute / Sound (Shift+M)" aria-label="Toggle sound (Shift+M)">
                 <span class="icon-speaker" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></span>
@@ -854,36 +855,26 @@
             return x;
           }
 
-          function zoomLevelForSpanDays(days) {
-            if (days <= 1) return 9;
-            if (days <= 7) return 8;
-            if (days <= 30) return 7;
-            if (days <= 90) return 5;
-            if (days <= 365) return 4;
-            if (days <= 3650) return 3;
-            return 2;
-          }
-
           function navigateToEvent(start, end) {
             var s = start instanceof Date ? start : new Date(start);
             var e = end instanceof Date ? end : new Date(end);
             if (!s || isNaN(s.getTime())) return;
             if (!e || isNaN(e.getTime()) || e <= s) e = oneDayLater(s) || s;
             var mid = new Date((s.getTime() + e.getTime()) / 2);
-            var days = (e.getTime() - s.getTime()) / (24 * 60 * 60 * 1000);
-            var spanDays = Math.max(0.001, days);
-            // Default: zoom into Day / Clock (8) for typical events; use span-based zoom only for long-term events.
-            var zoom = spanDays > 365 ? zoomLevelForSpanDays(spanDays) : 8;
-            if (typeof window.setNavigateLongTermEventFocus === 'function') {
-              window.setNavigateLongTermEventFocus(spanDays > 365);
-            }
-            // Update zoom (camera) based on span.
-            if (typeof setZoomLevel === 'function') setZoomLevel(zoom);
-            // Then snap Selected Time / Earth position to the event midpoint.
+            // Keep current zoom / camera framing; only ease the selected time to the event midpoint.
             try {
-              var gl = window.circaevumGL || (window.getGL && window.getGL());
-              if (gl && typeof gl.navigateToTime === 'function') {
-                gl.navigateToTime(mid);
+              if (typeof window.smoothNavigateToTime === 'function') {
+                var ref = (typeof window.getSelectedDateTime === 'function')
+                  ? window.getSelectedDateTime()
+                  : new Date();
+                var spanMs = Math.abs(mid.getTime() - ref.getTime());
+                var dur = Math.min(2400, Math.max(880, Math.round(spanMs / 42)));
+                window.smoothNavigateToTime(mid, dur);
+              } else {
+                var gl = window.circaevumGL || (window.getGL && window.getGL());
+                if (gl && typeof gl.navigateToTime === 'function') {
+                  gl.navigateToTime(mid);
+                }
               }
             } catch (e) {}
           }
@@ -1146,6 +1137,9 @@
 
           var _circaevumUIRefreshRaf = 0;
           window.circaevumOnSelectedTimeOrViewChanged = function() {
+            if (typeof window.isSmoothNavigateToTimeActive === 'function' && window.isSmoothNavigateToTimeActive()) {
+              return;
+            }
             if (_circaevumUIRefreshRaf) return;
             _circaevumUIRefreshRaf = requestAnimationFrame(function() {
               _circaevumUIRefreshRaf = 0;
@@ -1324,7 +1318,11 @@
         if (window.self !== window.top && window.parent.postMessage) {
           setTimeout(function() {
             try {
-              window.parent.postMessage({ type: 'CIRCAEVUM_THEME', lightMode: document.body.classList.contains('light-mode') }, '*');
+              window.parent.postMessage({
+                type: 'CIRCAEVUM_THEME',
+                lightMode: document.body.classList.contains('light-mode'),
+                appearanceTheme: (typeof window.getAppearanceTheme === 'function' ? window.getAppearanceTheme() : (document.body.classList.contains('sky-theme') ? 'sky' : (document.body.classList.contains('light-mode') ? 'light' : 'dark')))
+              }, '*');
             } catch (e) {}
           }, 1200);
           // Notify parent when GL is ready so wrapper can send FIT_VIEW (restore zoom/focus from URL)

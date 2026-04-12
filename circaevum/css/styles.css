@@ -86,6 +86,23 @@ body.light-mode {
     --ui-scrollbar-track: rgba(226, 232, 240, 0.65);
 }
 
+/* Third theme: sky blue (uses light-mode for shared chrome; overrides tokens below). */
+body.light-mode.sky-theme {
+    --deep-space: #dbeafe;
+    --star-field: #bfdbfe;
+    --nebula-blue: #93c5fd;
+    --cosmic-cyan: #0369a1;
+    --orbit-silver: #0c4a6e;
+    --scene-moon-layer-icon: #0e4b6e;
+    --scene-moon-layer-icon-active: #0284c7;
+
+    --ui-surface-panel-wash:
+        linear-gradient(180deg, rgba(240, 249, 255, 0.99) 0%, rgba(224, 242, 254, 0.98) 100%);
+    --ui-border: rgba(14, 116, 181, 0.28);
+    --ui-border-strong: rgba(14, 116, 181, 0.42);
+    --ui-text-muted: rgba(21, 70, 102, 0.88);
+}
+
 /* ============================================
    BASE STYLES
    ============================================ */
@@ -274,13 +291,15 @@ body {
     justify-content: center;
 }
 .circaevum-nav .light-mode-toggle .icon-sun,
-.circaevum-nav .light-mode-toggle .icon-moon {
+.circaevum-nav .light-mode-toggle .icon-moon,
+.circaevum-nav .light-mode-toggle .icon-sky {
     position: absolute;
     display: flex;
     align-items: center;
     justify-content: center;
 }
-.circaevum-nav .light-mode-toggle .icon-sun {
+.circaevum-nav .light-mode-toggle .icon-sun,
+.circaevum-nav .light-mode-toggle .icon-sky {
     display: none;
 }
 .circaevum-nav .light-mode-toggle .icon-moon {
@@ -289,7 +308,13 @@ body {
 body.light-mode .circaevum-nav .light-mode-toggle .icon-moon {
     display: none;
 }
-body.light-mode .circaevum-nav .light-mode-toggle .icon-sun {
+body.light-mode:not(.sky-theme) .circaevum-nav .light-mode-toggle .icon-sun {
+    display: flex;
+}
+body.sky-theme .circaevum-nav .light-mode-toggle .icon-sun {
+    display: none;
+}
+body.sky-theme .circaevum-nav .light-mode-toggle .icon-sky {
     display: flex;
 }
 
@@ -1621,11 +1646,12 @@ body.light-mode .event-list-panel-list .draw-line-btn.drawn {
     opacity: 0.58;
 }
 
-/* Light mode toggle: show moon by default, sun when body.light-mode */
+/* Theme toggle: moon (dark) → sun (light) → cloud (sky) */
 .scene-icon-btn#light-mode-toggle {
     position: relative;
 }
-.scene-icon-btn#light-mode-toggle .icon-sun {
+.scene-icon-btn#light-mode-toggle .icon-sun,
+.scene-icon-btn#light-mode-toggle .icon-sky {
     display: none;
 }
 .scene-icon-btn#light-mode-toggle .icon-moon {
@@ -1634,7 +1660,13 @@ body.light-mode .event-list-panel-list .draw-line-btn.drawn {
 body.light-mode .scene-icon-btn#light-mode-toggle .icon-moon {
     display: none;
 }
-body.light-mode .scene-icon-btn#light-mode-toggle .icon-sun {
+body.light-mode:not(.sky-theme) .scene-icon-btn#light-mode-toggle .icon-sun {
+    display: flex;
+}
+body.sky-theme .scene-icon-btn#light-mode-toggle .icon-sun {
+    display: none;
+}
+body.sky-theme .scene-icon-btn#light-mode-toggle .icon-sky {
     display: flex;
 }
 
@@ -1670,6 +1702,17 @@ body.light-mode .scene-icon-btn:hover {
 body.light-mode .scene-icon-btn.active {
     background: rgba(0, 119, 163, 0.25);
     color: var(--cosmic-cyan);
+}
+
+body.light-mode.sky-theme .scene-icon-overlay {
+    background: rgba(219, 234, 254, 0.9);
+    border-color: rgba(3, 105, 161, 0.32);
+}
+body.light-mode.sky-theme .scene-icon-btn:hover {
+    background: rgba(3, 105, 161, 0.14);
+}
+body.light-mode.sky-theme .scene-icon-btn.active {
+    background: rgba(3, 105, 161, 0.22);
 }
 
 /* ============================================

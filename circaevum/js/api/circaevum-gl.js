@@ -597,6 +597,11 @@ class CircaevumGL {
     this._refreshMoonWorldline(currentDateHeight, zoomLevel);
   }
 
+  /** Remove the optional Moon worldline overlay (e.g. when main scene hides moon at coarse zoom). */
+  clearMoonWorldline() {
+    this._removeMoonWorldline();
+  }
+
   /**
    * @private
    * @param {number} [overrideHeight]
