@@ -23,8 +23,11 @@
   const DAY_NUMBER_RADIUS_FRAC = 21 / 32;
   const DAY_NAME_RADIUS_FRAC = 23 / 32;
   const DAY_EVENT_DOT_RADIUS_FRAC = (DAY_NUMBER_RADIUS_FRAC + DAY_NAME_RADIUS_FRAC) / 2;
-  /** Duration ribbon border strokes; WebGL may still clamp to 1px on some GPUs—opacity is also boosted below. */
-  const RIBBON_OUTLINE_LINE_WIDTH = 6;
+  /**
+   * LineBasicMaterial.linewidth is ignored in WebGL on most platforms; ribbon outlines use mesh tubes instead.
+   * Radius = earthDist * FRAC * (outline emphasis); ~0.005 reads clearly at Earth orbit scale (~50).
+   */
+  const RIBBON_OUTLINE_TUBE_RADIUS_FRAC = 0.0003;
 
   function getZoomLevelForEvents() {
     if (typeof global.getCurrentZoomLevel === 'function') return global.getCurrentZoomLevel();
@@ -333,10 +336,22 @@
     return geo;
   }
 
-  function addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder, lineWidth) {
+  function addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder, tubeRadius) {
     const n = innerFlat.length / 3;
     if (n < 1) return;
-    const lw = lineWidth != null ? lineWidth : 1;
+    const THREE = global.THREE;
+    if (tubeRadius != null && tubeRadius > 0 && typeof THREE.CylinderGeometry === 'function') {
+      function cap(si) {
+        const ix = si * 3;
+        const p0 = new THREE.Vector3(innerFlat[ix], innerFlat[ix + 1], innerFlat[ix + 2]);
+        const p1 = new THREE.Vector3(outerFlat[ix], outerFlat[ix + 1], outerFlat[ix + 2]);
+        const c = cylinderBetweenPoints(p0, p1, tubeRadius * 0.92, colorHex, opacity, renderOrder);
+        if (c) group.add(c);
+      }
+      cap(0);
+      cap(n - 1);
+      return;
+    }
     function seg(si) {
       const ix = si * 3;
       const g = new global.THREE.BufferGeometry();
@@ -348,7 +363,7 @@
         color: colorHex,
         transparent: true,
         opacity: opacity,
-        linewidth: lw
+        linewidth: 1
       });
       const line = new global.THREE.Line(g, m);
       line.renderOrder = renderOrder;
@@ -691,13 +706,84 @@
     return eventHex;
   }
 
-  /** Stronger borderThickness → higher outline opacity (pairs with RIBBON_OUTLINE_LINE_WIDTH where supported). */
+  /** Stronger borderThickness → higher outline opacity and thicker tube stroke. */
   function getRibbonOutlineOpacity(baseOpacity, borderStyle, layerConfig) {
     const bs = borderStyle || 'event';
     if (bs === 'none') return 0;
     const rawT = layerConfig && layerConfig.borderThickness != null ? Number(layerConfig.borderThickness) : 1;
     const t = Math.max(0.3, Math.min(4, isNaN(rawT) ? 1 : rawT));
     return Math.min(1, baseOpacity * (0.82 + 0.38 * t));
+  }
+
+  function getRibbonOutlineTubeRadius(earthDist, layerConfig) {
+    const ed = earthDist != null && !isNaN(earthDist) ? earthDist : EARTH_RADIUS;
+    const rawT = layerConfig && layerConfig.borderThickness != null ? Number(layerConfig.borderThickness) : 1;
+    const t = Math.max(0.3, Math.min(4, isNaN(rawT) ? 1 : rawT));
+    return Math.max(ed * 0.001, ed * RIBBON_OUTLINE_TUBE_RADIUS_FRAC * (0.42 + 0.58 * t));
+  }
+
+  function cylinderBetweenPoints(p0, p1, radius, colorHex, opacity, renderOrder) {
+    const THREE = global.THREE;
+    const dir = new THREE.Vector3().subVectors(p1, p0);
+    const len = dir.length();
+    if (len < 1e-9) return null;
+    const geom = new THREE.CylinderGeometry(radius, radius, len, 6, 1, false);
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: opacity,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.renderOrder = renderOrder;
+    const axis = new THREE.Vector3(0, 1, 0);
+    const ndir = dir.clone().normalize();
+    mesh.quaternion.setFromUnitVectors(axis, ndir);
+    mesh.position.copy(new THREE.Vector3().addVectors(p0, p1).multiplyScalar(0.5));
+    return mesh;
+  }
+
+  /**
+   * Thick polyline stroke along flat [x,y,z,...] using TubeGeometry (smooth) or short cylinders (fallback).
+   */
+  function createTubeOutlineAlongFlat(flat, colorHex, opacity, renderOrder, earthDist, layerConfig) {
+    const THREE = global.THREE;
+    const nPts = flat.length / 3;
+    if (nPts < 2) return null;
+    const r = getRibbonOutlineTubeRadius(earthDist, layerConfig);
+    if (nPts === 2) {
+      const p0 = new THREE.Vector3(flat[0], flat[1], flat[2]);
+      const p1 = new THREE.Vector3(flat[3], flat[4], flat[5]);
+      return cylinderBetweenPoints(p0, p1, r, colorHex, opacity, renderOrder);
+    }
+    if (typeof THREE.CatmullRomCurve3 === 'function' && typeof THREE.TubeGeometry === 'function') {
+      const points = [];
+      for (let i = 0; i < flat.length; i += 3) {
+        points.push(new THREE.Vector3(flat[i], flat[i + 1], flat[i + 2]));
+      }
+      const curve = new THREE.CatmullRomCurve3(points);
+      const tubularSegments = Math.max(8, Math.min(160, (nPts - 1) * 4));
+      const geo = new THREE.TubeGeometry(curve, tubularSegments, r, 5, false);
+      const mat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: opacity,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.renderOrder = renderOrder;
+      return mesh;
+    }
+    const group = new THREE.Group();
+    for (let i = 0; i < nPts - 1; i++) {
+      const p0 = new THREE.Vector3(flat[i * 3], flat[i * 3 + 1], flat[i * 3 + 2]);
+      const p1 = new THREE.Vector3(flat[(i + 1) * 3], flat[(i + 1) * 3 + 1], flat[(i + 1) * 3 + 2]);
+      const c = cylinderBetweenPoints(p0, p1, r, colorHex, opacity, renderOrder);
+      if (c) group.add(c);
+    }
+    return group.children.length ? group : null;
   }
 
   /** lineThickness scales radial span of inner/outer helix (portal “band width”). */
@@ -1169,9 +1255,12 @@
               fillMesh.renderOrder = roFill;
               group.add(fillMesh);
               if (borderStyle !== 'none' && outlineColorHex != null) {
-                group.add(lineFromFlatShort(innerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH));
-                group.add(lineFromFlatShort(outerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH));
-                addBandEndConnectors(group, innerFlat, outerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH);
+                const tubeR = getRibbonOutlineTubeRadius(earthDist, layerConfig);
+                const oIn = createTubeOutlineAlongFlat(innerFlat, outlineColorHex, outlineOp, roLine, earthDist, layerConfig);
+                const oOut = createTubeOutlineAlongFlat(outerFlat, outlineColorHex, outlineOp, roLine, earthDist, layerConfig);
+                if (oIn) group.add(oIn);
+                if (oOut) group.add(oOut);
+                addBandEndConnectors(group, innerFlat, outerFlat, outlineColorHex, outlineOp, roLine, tubeR);
               }
             }
           }
@@ -1315,9 +1404,12 @@
         fillMesh.renderOrder = roFill;
         group.add(fillMesh);
         if (borderStyle !== 'none' && outlineColorHex != null) {
-          group.add(lineFromFlat(innerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH));
-          group.add(lineFromFlat(outerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH));
-          addBandEndConnectors(group, innerFlat, outerFlat, outlineColorHex, outlineOp, roLine, RIBBON_OUTLINE_LINE_WIDTH);
+          const tubeR = getRibbonOutlineTubeRadius(earthDist, layerConfig);
+          const oIn = createTubeOutlineAlongFlat(innerFlat, outlineColorHex, outlineOp, roLine, earthDist, layerConfig);
+          const oOut = createTubeOutlineAlongFlat(outerFlat, outlineColorHex, outlineOp, roLine, earthDist, layerConfig);
+          if (oIn) group.add(oIn);
+          if (oOut) group.add(oOut);
+          addBandEndConnectors(group, innerFlat, outerFlat, outlineColorHex, outlineOp, roLine, tubeR);
         }
         return attachEventStaggerRoot(
           wrapWorldlineWithLabels(group, userData, event, start, end, startHeight, endHeight, rOuter, eventHex, currentHeight, 0),
@@ -1344,23 +1436,29 @@
         : { x: Math.cos(angle1) * rMid, y: endHeight, z: Math.sin(angle1) * rMid };
       points = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
     }
-    const geometry = new global.THREE.BufferGeometry();
-    geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
     const fallbackOutlineHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
     const useOutline = borderStyle !== 'none' && fallbackOutlineHex != null;
     const strokeHex = useOutline ? fallbackOutlineHex : eventHex;
     const strokeOp = useOutline ? getRibbonOutlineOpacity(opacity, borderStyle, layerConfig) : opacity;
-    const material = new global.THREE.LineBasicMaterial({
-      color: strokeHex,
-      transparent: true,
-      opacity: strokeOp,
-      linewidth: useOutline ? RIBBON_OUTLINE_LINE_WIDTH : 1
-    });
-    const line = new global.THREE.Line(geometry, material);
-    line.renderOrder = roLine;
-    line.userData = userData;
+    let strokeObj = null;
+    if (useOutline) {
+      strokeObj = createTubeOutlineAlongFlat(points, strokeHex, strokeOp, roLine, earthDist, layerConfig);
+    }
+    if (!strokeObj) {
+      const geometry = new global.THREE.BufferGeometry();
+      geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
+      const material = new global.THREE.LineBasicMaterial({
+        color: strokeHex,
+        transparent: true,
+        opacity: strokeOp,
+        linewidth: 1
+      });
+      strokeObj = new global.THREE.Line(geometry, material);
+      strokeObj.renderOrder = roLine;
+    }
+    strokeObj.userData = userData;
     return attachEventStaggerRoot(
-      wrapWorldlineWithLabels(line, userData, event, start, end, startHeight, endHeight, rOuter, eventHex, currentHeight, 0),
+      wrapWorldlineWithLabels(strokeObj, userData, event, start, end, startHeight, endHeight, rOuter, eventHex, currentHeight, 0),
       staggerLogical);
   }
 
@@ -1543,9 +1641,12 @@
                 fillMesh.renderOrder = roFill;
                 lineRoot.add(fillMesh);
                 if (borderStyle !== 'none' && outlineColorHexEvt != null) {
-                  lineRoot.add(evtShortLineFromFlat(innerFlat, outlineColorHexEvt, outlineOpEvt, RIBBON_OUTLINE_LINE_WIDTH));
-                  lineRoot.add(evtShortLineFromFlat(outerFlat, outlineColorHexEvt, outlineOpEvt, RIBBON_OUTLINE_LINE_WIDTH));
-                  addBandEndConnectors(lineRoot, innerFlat, outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, RIBBON_OUTLINE_LINE_WIDTH);
+                  const tubeR = getRibbonOutlineTubeRadius(earthDist, outlineLayerCfg);
+                  const oIn = createTubeOutlineAlongFlat(innerFlat, outlineColorHexEvt, outlineOpEvt, roLine, earthDist, outlineLayerCfg);
+                  const oOut = createTubeOutlineAlongFlat(outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, earthDist, outlineLayerCfg);
+                  if (oIn) lineRoot.add(oIn);
+                  if (oOut) lineRoot.add(oOut);
+                  addBandEndConnectors(lineRoot, innerFlat, outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, tubeR);
                 }
               }
             }
@@ -1712,9 +1813,12 @@
           fillMesh.userData = { ...lineUserData, longTermFill: true };
           bandGroup.add(fillMesh);
           if (borderStyle !== 'none' && outlineColorHexEvt != null) {
-            bandGroup.add(evtLineFromFlat(innerFlat, outlineColorHexEvt, outlineOpEvt, RIBBON_OUTLINE_LINE_WIDTH));
-            bandGroup.add(evtLineFromFlat(outerFlat, outlineColorHexEvt, outlineOpEvt, RIBBON_OUTLINE_LINE_WIDTH));
-            addBandEndConnectors(bandGroup, innerFlat, outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, RIBBON_OUTLINE_LINE_WIDTH);
+            const tubeR = getRibbonOutlineTubeRadius(earthDist, outlineLayerCfg);
+            const oIn = createTubeOutlineAlongFlat(innerFlat, outlineColorHexEvt, outlineOpEvt, roLine, earthDist, outlineLayerCfg);
+            const oOut = createTubeOutlineAlongFlat(outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, earthDist, outlineLayerCfg);
+            if (oIn) bandGroup.add(oIn);
+            if (oOut) bandGroup.add(oOut);
+            addBandEndConnectors(bandGroup, innerFlat, outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, tubeR);
           }
           lineRoot.add(bandGroup);
           bandAdded = true;
@@ -1739,18 +1843,27 @@
         }
         const outlineColorFb = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
         const outlineOpFb = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
-        const lineGeometry = new global.THREE.BufferGeometry();
-        lineGeometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
-        const lineMaterial = new global.THREE.LineBasicMaterial({
-          color: outlineColorFb != null ? outlineColorFb : eventColorHex,
-          transparent: true,
-          opacity: borderStyle === 'none' ? 0 : outlineOpFb,
-          linewidth: borderStyle !== 'none' ? RIBBON_OUTLINE_LINE_WIDTH : 1
-        });
-        const lineObj = new global.THREE.Line(lineGeometry, lineMaterial);
-        lineObj.renderOrder = roLine;
-        lineObj.userData = lineUserData;
-        lineRoot.add(lineObj);
+        const useOutFb = borderStyle !== 'none' && outlineColorFb != null;
+        const strokeHexFb = useOutFb ? outlineColorFb : eventColorHex;
+        const strokeOpFb = borderStyle === 'none' ? 0 : outlineOpFb;
+        let strokeObjFb = null;
+        if (useOutFb && strokeOpFb > 0) {
+          strokeObjFb = createTubeOutlineAlongFlat(points, strokeHexFb, strokeOpFb, roLine, earthDist, outlineLayerCfg);
+        }
+        if (!strokeObjFb) {
+          const lineGeometry = new global.THREE.BufferGeometry();
+          lineGeometry.setAttribute('position', new global.THREE.Float32BufferAttribute(points, 3));
+          const lineMaterial = new global.THREE.LineBasicMaterial({
+            color: strokeHexFb,
+            transparent: true,
+            opacity: borderStyle === 'none' ? 0 : strokeOpFb,
+            linewidth: 1
+          });
+          strokeObjFb = new global.THREE.Line(lineGeometry, lineMaterial);
+          strokeObjFb.renderOrder = roLine;
+        }
+        strokeObjFb.userData = lineUserData;
+        lineRoot.add(strokeObjFb);
       }
 
       const startPos = getPos(startHeight, labelRadius);

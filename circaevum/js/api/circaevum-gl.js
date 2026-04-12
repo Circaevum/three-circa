@@ -19,6 +19,13 @@
  * Dependencies:
  *   - VEvent class from js/models/vevent.js (must be loaded before this file)
  *   - EventRenderer from js/renderers/event-renderer.js (for event visualization)
+ *
+ * Core scene geometry shared with the main app includes Earth–Moon mechanics (global MoonMechanics
+ * from core/moon-mechanics.js, configured via SCENE_CONFIG.moonMechanics). Mission-specific paths
+ * are optional separate scripts under circaevum/js/missions/.
+ *
+ * Core overlay: optional Moon worldline (same geometry as main Worldlines.createMoonWorldline), on by
+ * default (`showMoonWorldline`). Depends on worldline-renderer.js + globals used by Worldlines.init.
  */
 
 // Import core modules (will be bundled or loaded separately)
@@ -35,6 +42,8 @@ class CircaevumGL {
     this.options = {
       zoomLevel: options.zoomLevel || 2,
       lightMode: options.lightMode || false,
+      /** When true, CircaevumGL adds/updates a lunar orbit worldline in the flattenable group (independent of main.js keyboard toggle). */
+      showMoonWorldline: options.showMoonWorldline !== false,
       ...options
     };
 
@@ -56,7 +65,9 @@ class CircaevumGL {
     this.renderer = null;
     this.sceneContentGroup = null;
     this.flattenableGroup = null; // Group that is scaled when flatten view is on (from main.js)
-    
+    /** @type {THREE.Line|null} */
+    this._moonWorldlineMesh = null;
+
     // Initialize the scene
     this._initialize();
   }
@@ -88,6 +99,7 @@ class CircaevumGL {
         this.flattenableGroup = flattenableGroup;
       }
       this._setupEventListeners();
+      this._refreshMoonWorldline();
       return;
     }
     
@@ -533,6 +545,7 @@ class CircaevumGL {
       setZoomLevel(level);
     }
 
+    this._refreshMoonWorldline();
     this._emit('zoomChanged', { level });
   }
 
@@ -561,7 +574,87 @@ class CircaevumGL {
       }
     }
 
+    this._refreshMoonWorldline();
     this._emit('timeChanged', { date: targetDate });
+  }
+
+  /**
+   * Show or hide the core Moon worldline overlay.
+   * @param {boolean} visible
+   */
+  setMoonWorldlineVisible(visible) {
+    this.options.showMoonWorldline = !!visible;
+    this._refreshMoonWorldline();
+  }
+
+  /**
+   * Rebuild the Moon worldline (same span/geometry as main app). Call after scene time/zoom changes
+   * if not using navigateToTime / setZoomLevel from this instance.
+   * @param {number} [currentDateHeight] - Orbit reference height (defaults to calculateCurrentDateHeight())
+   * @param {number} [zoomLevel] - Defaults to global currentZoom or options.zoomLevel
+   */
+  refreshMoonWorldline(currentDateHeight, zoomLevel) {
+    this._refreshMoonWorldline(currentDateHeight, zoomLevel);
+  }
+
+  /**
+   * @private
+   * @param {number} [overrideHeight]
+   * @param {number} [overrideZoom]
+   */
+  _removeMoonWorldline() {
+    if (!this._moonWorldlineMesh) return;
+    const root = this._moonWorldlineMesh;
+    if (root.parent && typeof root.parent.remove === 'function') {
+      root.parent.remove(root);
+    }
+    root.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+        else obj.material.dispose();
+      }
+    });
+    this._moonWorldlineMesh = null;
+  }
+
+  /**
+   * @private
+   * @param {number} [overrideHeight]
+   * @param {number} [overrideZoom]
+   */
+  _refreshMoonWorldline(overrideHeight, overrideZoom) {
+    if (!this.options.showMoonWorldline) {
+      this._removeMoonWorldline();
+      return;
+    }
+    const flat = this.flattenableGroup || this.sceneContentGroup;
+    if (!flat || typeof Worldlines === 'undefined' || !Worldlines.createMoonWorldline) {
+      return;
+    }
+
+    const refH =
+      overrideHeight != null && typeof overrideHeight === 'number' && !isNaN(overrideHeight)
+        ? overrideHeight
+        : typeof calculateCurrentDateHeight === 'function'
+          ? calculateCurrentDateHeight()
+          : 0;
+    const zl =
+      overrideZoom != null && typeof overrideZoom === 'number' && !isNaN(overrideZoom)
+        ? overrideZoom
+        : typeof currentZoom !== 'undefined'
+          ? currentZoom
+          : this.options.zoomLevel;
+
+    this._removeMoonWorldline();
+    const line = Worldlines.createMoonWorldline(refH, zl);
+    if (!line) return;
+    line.userData = Object.assign({}, line.userData || {}, {
+      type: 'CircaevumGLCore',
+      role: 'moonWorldline'
+    });
+    flat.add(line);
+    this._moonWorldlineMesh = line;
   }
 
   /**
@@ -783,6 +876,13 @@ class CircaevumGL {
    * @private
    */
   _getTimelineFilterYear() {
+    // Decade (2) / Year (3): `currentYear` is the authoritative browsed year on the timeline.
+    // Prefer it so calendar layers stay aligned with the year ring even if derived offsets drift slightly.
+    if (typeof currentZoom === 'number' && (currentZoom === 2 || currentZoom === 3)) {
+      if (typeof currentYear === 'number' && !isNaN(currentYear)) {
+        return currentYear;
+      }
+    }
     if (typeof getSelectedDateTime === 'function') {
       try {
         const d = getSelectedDateTime();
@@ -1054,6 +1154,8 @@ class CircaevumGL {
    * Destroy the instance and clean up resources
    */
   destroy() {
+    this._removeMoonWorldline();
+
     // Remove all layers
     this.getLayerIds().forEach(layerId => {
       this.removeLayer(layerId);

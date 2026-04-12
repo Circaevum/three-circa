@@ -53,16 +53,21 @@ let viewMode = 0; // 0 = angled, 1 = top-down (looking into future), 2 = bottom-
 let showTimeMarkerLines = true;
 let showTimeMarkerText = true;
 let showFullYearTimeMarkers = false; // When true, show time markers for the full selected year
-let showMoonWorldline = false; // Toggle for moon worldline
+/** Pedagogical Moon mesh + dashed guide + lunar worldline + Artemis II overlay (scene icon / M). */
+let showMoonLayer = true;
 let moonWorldlines = []; // Store moon worldline meshes
 let lagrangeMarkerObjects = []; // Sun–Earth L1–L5 at selected time (orbital plane)
+/** Core pedagogical Moon mesh + Earth–Moon dashed guide (see core/moon-mechanics.js). */
+let moonMechanicObjects = [];
+/** Artemis II trajectory + labels; shown only when showMoonLayer (see missions/artemis-ii-mission.js). */
+let artemisMissionObjects = [];
 let circadianWorldlines = []; // Circadian rhythm helix (hour-hand), shown at day/clock zoom
 let circadianSelectedDayLabels = []; // Sprite(s) with selected calendar day, day/clock zoom only
 let circadianHelixMarkerGroups = []; // Week/month ticks along circadian helix (LineSegments)
 /** Short (<24h) circadian-scoped events: 'day' = selected calendar day only, 'year' = whole selected year. */
 let circadianShortEventScope = 'day';
-/** Default wrapped helix at day zoom; 'straightened' kept for API/debug. Toolbar toggle removed — use wrapped daily view. */
-let circadianState = 'wrapped';
+/** Default off so the daily helix frame is not on until the user enables it. */
+let circadianState = 'off';
 /** false = show calendar events only in selected year; true = all time (see scene calendar icon) */
 let showAllTimelineEvents = false;
 if (typeof window !== 'undefined') {
@@ -78,7 +83,9 @@ let currentCircadianStraightenAmount = 0;
 let flattenIntensity = 1;
 /** UI 0 = circadian helix tight along time, 1 = spread; 0.5 → 1× natural calendar scale (see getCircadianHelixYStretchMult). */
 let circadianHelixStretchSlider = 0.5;
-let focusTargetOverride = null; // 'sun' | 'earth' | 'mid' | null – null = use ZOOM_LEVELS default
+let focusTargetOverride = null; // 'sun' | 'earth' | 'mid' | 'moon' | null – null = use ZOOM_LEVELS default
+/** When true (long-term event click), keep mid focus and use day-number/day-name radial band (same as week view mid). */
+let focusMidFromLongTermEventClick = false;
 if (typeof window !== 'undefined') {
     /** Y scale applied to flattenableGroup (1 = no flatten). Used to keep event stagger visually consistent when flat. */
     window.getEventFlattenYScale = function () {
@@ -157,12 +164,16 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
     switch(targetZoomLevel) {
         case 1: // Century view - preserve exact selected year
             currentYear = selectedYear;
+            currentHourInDay = selectedHour;
+            selectedMinuteInHour = selectedDate.getMinutes();
             break;
             
         case 2: // Decade view
             currentYear = selectedYear;
             const decadeStart = selectedYear - (selectedYear % 10);
             selectedDecadeOffset = Math.floor((selectedYear - decadeStart) / 10);
+            currentHourInDay = selectedHour;
+            selectedMinuteInHour = selectedDate.getMinutes();
             break;
             
         case 3: // Year view - navigate by quarters
@@ -171,6 +182,8 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
             currentQuarter = Math.floor(selectedMonth / 3);
             currentMonthInYear = selectedMonth; // Full month index (0-11)
             currentMonth = selectedMonth % 3; // Month within quarter (0-2)
+            currentHourInDay = selectedHour;
+            selectedMinuteInHour = selectedDate.getMinutes();
             break;
             
         case 4: // Quarter view - navigate by months
@@ -187,36 +200,29 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
             
             // Calculate month within quarter (0-2)
             currentMonth = selectedMonth % 3;
+            currentHourInDay = selectedHour;
+            selectedMinuteInHour = selectedDate.getMinutes();
             break;
             
-        case 5: // Month view - navigate by weeks
-            // Calculate month offset (months since system month)
+        case 5: // Month view — navigate by weeks within calendar month
+        case 6: // Lunar-cycle zoom — same calendar week grid as month (no separate lunar epoch)
+            {
             const totalSystemMonths = actualYear * 12 + actualMonth;
             const totalSelectedMonths = selectedYear * 12 + selectedMonth;
             selectedWeekOffset = totalSelectedMonths - totalSystemMonths;
-            
-            // Calculate which week in the month the selected day is in
-            // Find the first Sunday of the month (or before it)
+
             const firstOfMonth = new Date(selectedYear, selectedMonth, 1);
             const firstSundayOffset = -firstOfMonth.getDay();
             const firstSunday = new Date(selectedYear, selectedMonth, 1 + firstSundayOffset);
-            
-            // Calculate how many weeks from first Sunday to selected day
+
             const daysFromFirstSunday = Math.floor((selectedDate - firstSunday) / (1000 * 60 * 60 * 24));
             currentWeekInMonth = Math.floor(daysFromFirstSunday / 7);
-            // Clamp to reasonable range (0-5)
             currentWeekInMonth = Math.max(0, Math.min(5, currentWeekInMonth));
-            
-            // Calculate day within week
+
             currentDayInWeek = selectedDayOfWeek;
-            break;
-            
-        case 6: // Lunar view
-            // Similar to month view but with lunar cycles
-            const lunarCycleLength = 29.5; // days
-            const daysSinceSystem = (selectedDate - now) / (1000 * 60 * 60 * 24);
-            selectedLunarOffset = Math.floor(daysSinceSystem / lunarCycleLength);
-            currentWeekInMonth = Math.floor((daysSinceSystem % lunarCycleLength) / 7);
+            currentHourInDay = selectedHour;
+            selectedMinuteInHour = selectedDate.getMinutes();
+            }
             break;
             
         case 7: // Week view - navigate by days
@@ -235,6 +241,7 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
             // Day within week (0-6, where 0 is Sunday)
             currentDayInWeek = selectedDayOfWeek;
             currentHourInDay = selectedHour;
+            selectedMinuteInHour = selectedDate.getMinutes();
             break;
             
         case 0: // Landing camera view (shares day/hour selection model)
@@ -252,6 +259,7 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
             
             // Hour within day
             currentHourInDay = selectedHour;
+            selectedMinuteInHour = selectedDate.getMinutes();
             break;
     }
 }
@@ -320,28 +328,23 @@ function getSelectedDateTime() {
             selected.setMonth(adjustedMonth4);
             break;
             
-        case 5: // Month view - selectedWeekOffset + currentWeekInMonth + currentDayInWeek
-            // First, move to the selected month
+        case 5: // Month view — selectedWeekOffset + currentWeekInMonth + currentDayInWeek
+        case 6: // Lunar zoom — same date reconstruction as month
+            {
             const targetMonth = actualMonth + selectedWeekOffset;
             const targetYear = actualYear + Math.floor(targetMonth / 12);
             const targetMonthIndex = ((targetMonth % 12) + 12) % 12;
             selected.setFullYear(targetYear);
             selected.setMonth(targetMonthIndex);
-            
-            // Now calculate the specific week and day within that month
-            // Find the first Sunday of the selected month (or before it)
+
             const firstOfSelectedMonth = new Date(targetYear, targetMonthIndex, 1);
-            const firstSundayOffset = -firstOfSelectedMonth.getDay();
-            const firstSunday = new Date(targetYear, targetMonthIndex, 1 + firstSundayOffset);
-            
-            // Add weeks and days from the first Sunday
+            const firstSundayOffsetM = -firstOfSelectedMonth.getDay();
+            const firstSunday = new Date(targetYear, targetMonthIndex, 1 + firstSundayOffsetM);
+
             const daysToAdd = (currentWeekInMonth * 7) + currentDayInWeek;
             selected.setTime(firstSunday.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
-            break;
-            
-        case 6: // Lunar view
-            // Lunar offset in ~29.5 day cycles
-            selected.setDate(selected.getDate() + (selectedLunarOffset * 29));
+            selected.setHours(currentHourInDay, selectedMinuteInHour, 0, 0);
+            }
             break;
             
         case 7: // Week view - selectedDayOffset + currentDayInWeek
@@ -354,6 +357,7 @@ function getSelectedDateTime() {
             const sundayOfSelectedWeek = sundayOfCurrentWeek + (selectedDayOffset * 7);
             const selectedDay7 = sundayOfSelectedWeek + currentDayInWeek;
             selected.setDate(selectedDay7);
+            selected.setHours(currentHourInDay, selectedMinuteInHour, 0, 0);
             break;
             
         case 0: // Landing camera view (shares day/hour selection model)
@@ -361,6 +365,7 @@ function getSelectedDateTime() {
         case 9: // Clock view
             const hourDiff = currentHourInDay - actualHour;
             selected.setHours(selected.getHours() + hourDiff + (selectedHourOffset * 24));
+            selected.setMinutes(selectedMinuteInHour, 0, 0);
             break;
             
         default:
@@ -373,6 +378,24 @@ function getSelectedDateTime() {
 }
 
 if (typeof window !== 'undefined') window.getSelectedDateTime = getSelectedDateTime;
+
+/**
+ * Radial position along Sun→Earth for camera "mid" focus: halfway between TimeMarkers day.number and day.dayName (21/32 and 23/32 W).
+ * Long-term event navigation always uses this band; week/day/clock zooms use it for normal mid focus too.
+ */
+function getFocusMidRadialFrac(zoomLevel) {
+    const dayBandMidFrac = (21 / 32 + 23 / 32) / 2;
+    if (focusMidFromLongTermEventClick) return dayBandMidFrac;
+    if (zoomLevel === 7 || zoomLevel === 8 || zoomLevel === 9) return dayBandMidFrac;
+    return 0.5;
+}
+
+if (typeof window !== 'undefined') {
+    window.setNavigateLongTermEventFocus = function (enabled) {
+        focusMidFromLongTermEventClick = !!enabled;
+        if (enabled) focusTargetOverride = 'mid';
+    };
+}
 
 // Update the time displays in the info panel
 function updateTimeDisplays() {
@@ -619,6 +642,16 @@ function createPlanets(zoomLevel) {
     lagrangeMarkerObjects.forEach((obj) => sceneContentGroup.remove(obj));
     lagrangeMarkerObjects.length = 0;
 
+    moonMechanicObjects.forEach((obj) => {
+        if (obj && obj.parent) obj.parent.remove(obj);
+    });
+    moonMechanicObjects.length = 0;
+
+    artemisMissionObjects.forEach((obj) => {
+        if (obj && obj.parent) obj.parent.remove(obj);
+    });
+    artemisMissionObjects.length = 0;
+
     circadianWorldlines.forEach(obj => {
         flatGroup.remove(obj);
         if (sceneContentGroup) sceneContentGroup.remove(obj);
@@ -635,7 +668,10 @@ function createPlanets(zoomLevel) {
     circadianHelixMarkerGroups = [];
 
     const config = ZOOM_LEVELS[zoomLevel];
-    if (focusTargetOverride === 'mid' && (zoomLevel < 4 || zoomLevel > 7)) {
+    if (focusTargetOverride === 'mid' && (zoomLevel < 4 || zoomLevel > 7) && !focusMidFromLongTermEventClick) {
+        focusTargetOverride = null;
+    }
+    if (focusTargetOverride === 'moon' && zoomLevel !== 6) {
         focusTargetOverride = null;
     }
     const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
@@ -719,11 +755,33 @@ function createPlanets(zoomLevel) {
         const earthX = Math.cos(earthAngle) * earth.distance;
         const earthZ = Math.sin(earthAngle) * earth.distance;
         if (effectiveFocusTarget === 'mid') {
-            // Zoom 7 (week): focal point between day-number and day-name rings — same as TimeMarkers RADII_CONFIG.day (21/32 and 23/32).
-            const midFrac = zoomLevel === 7 ? (21 / 32 + 23 / 32) / 2 : 0.5;
+            const midFrac = getFocusMidRadialFrac(zoomLevel);
             targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
         } else {
             targetFocusPoint.set(earthX, selectedDateHeight, earthZ);
+        }
+    } else if (effectiveFocusTarget === 'moon') {
+        const earth = PLANET_DATA.find(p => p.name === 'Earth');
+        const moonXZ =
+            typeof MoonMechanics !== 'undefined' && MoonMechanics.moonXZSynodicAtHeight
+                ? MoonMechanics.moonXZSynodicAtHeight.bind(MoonMechanics)
+                : typeof MoonMechanics !== 'undefined' && MoonMechanics.moonXZAtHeight
+                  ? MoonMechanics.moonXZAtHeight.bind(MoonMechanics)
+                  : null;
+        if (moonXZ && earth) {
+            const mxz = moonXZ(selectedDateHeight, currentDateHeight, earth, null, selectedDate);
+            targetFocusPoint.set(mxz.x, selectedDateHeight, mxz.z);
+        } else if (earth) {
+            const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
+            const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / earth.orbitalPeriod;
+            const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
+            const earthAngle = earth.startAngle - angleFromCurrentToSelected;
+            const earthX = Math.cos(earthAngle) * earth.distance;
+            const earthZ = Math.sin(earthAngle) * earth.distance;
+            const midFrac = getFocusMidRadialFrac(zoomLevel);
+            targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
+        } else {
+            targetFocusPoint.set(0, selectedDateHeight, 0);
         }
     } else {
         // Sun-focused: point camera at the Sun's position in space-time (origin in X/Z at selected height)
@@ -887,28 +945,62 @@ function createPlanets(zoomLevel) {
         addLagrangeSunEarthMarkers(earthPlanet, selectedDateHeight, zoomLevel, planetScaleFactor);
     }
 
-    // Create moon worldline for Zoom 6 (Lunar view)
-    if (zoomLevel === 6) {
-        // Remove existing moon worldlines first
-        moonWorldlines.forEach(mesh => {
-            flatGroup.remove(mesh);
+    if (
+        showMoonLayer &&
+        typeof MoonMechanics !== 'undefined' &&
+        MoonMechanics.addPedagogicalMoon &&
+        earthPlanet &&
+        typeof THREE !== 'undefined'
+    ) {
+        const moonObjs = MoonMechanics.addPedagogicalMoon({
+            THREE,
+            earthPlanet,
+            currentDateHeight,
+            selectedDateHeight,
+            selectedDate: getSelectedDateTime(),
+            flatGroup,
+            sceneContentGroup,
+            zoomLevel,
+            planetScaleFactor,
+            isLightMode
         });
-        moonWorldlines = [];
-        
-        // Create moon worldline
-        if (typeof Worldlines !== 'undefined' && Worldlines.createMoonWorldline) {
-            const moonWorldline = Worldlines.createMoonWorldline(currentDateHeight, zoomLevel);
-            if (moonWorldline) {
-                flatGroup.add(moonWorldline);
-                moonWorldlines.push(moonWorldline);
-            }
+        moonObjs.forEach((o) => moonMechanicObjects.push(o));
+    }
+
+    if (
+        showMoonLayer &&
+        typeof ArtemisIIMission !== 'undefined' &&
+        ArtemisIIMission.build &&
+        earthPlanet &&
+        typeof THREE !== 'undefined'
+    ) {
+        const built = ArtemisIIMission.build({
+            THREE,
+            earthPlanet,
+            currentDateHeight,
+            selectedDateHeight,
+            calculateDateHeight,
+            flatGroup,
+            sceneContentGroup,
+            zoomLevel,
+            planetScaleFactor,
+            isLightMode,
+            selectedYear: getSelectedDateTime().getFullYear()
+        });
+        built.meshes.forEach((o) => artemisMissionObjects.push(o));
+        built.lines.forEach((o) => artemisMissionObjects.push(o));
+    }
+
+    moonWorldlines.forEach((mesh) => {
+        flatGroup.remove(mesh);
+    });
+    moonWorldlines = [];
+    if (showMoonLayer && typeof Worldlines !== 'undefined' && Worldlines.createMoonWorldline) {
+        const moonWorldline = Worldlines.createMoonWorldline(currentDateHeight, zoomLevel);
+        if (moonWorldline) {
+            flatGroup.add(moonWorldline);
+            moonWorldlines.push(moonWorldline);
         }
-    } else {
-        // Remove moon worldlines when not in Zoom 6
-        moonWorldlines.forEach(mesh => {
-            flatGroup.remove(mesh);
-        });
-        moonWorldlines = [];
     }
 
     // Circadian rhythm worldline (hour-hand helix): landing, month, week, day, clock — when not off.
@@ -1035,6 +1127,11 @@ function createPlanets(zoomLevel) {
     if (typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshAllEventLayers === 'function') {
         try {
             window.circaevumGL.refreshAllEventLayers();
+        } catch (err) { /* GL may be disposing */ }
+    }
+    if (typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshMoonWorldline === 'function') {
+        try {
+            window.circaevumGL.refreshMoonWorldline(currentDateHeight, zoomLevel);
         } catch (err) { /* GL may be disposing */ }
     }
     if (typeof window !== 'undefined' && typeof window.circaevumOnSelectedTimeOrViewChanged === 'function') {
@@ -1372,14 +1469,133 @@ function applyTimeMarkerVisibility() {
 // Quarter view - radial lines from Sun to Earth's orbital path for each month
 // Year view (Zoom 3) - create markers for all 4 quarters and all 12 months of the year
 // Month view - radial lines for each week
-// Lunar cycle view - show moon's orbit around Earth
-// Create lunar label positioned at absolute coordinates
 // Week view - daily radial markers
 function initControls() {
+    const pickRaycaster = new THREE.Raycaster();
+    const pickPointer = new THREE.Vector2();
+    let dragStartPos = null;
+
+    function tryPickArtemisMissionTrajectory(clientX, clientY) {
+        if (!renderer || !camera || !sceneContentGroup || typeof THREE === 'undefined') return false;
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (!rect.width || !rect.height) return false;
+        pickPointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        pickPointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+        pickRaycaster.setFromCamera(pickPointer, camera);
+        const hits = pickRaycaster.intersectObjects(sceneContentGroup.children, true);
+        if (!hits.length) return false;
+
+        const local = new THREE.Vector3();
+        for (let hi = 0; hi < hits.length; hi++) {
+            let o = hits[hi].object;
+            while (o) {
+                const ud = o.userData;
+                if (ud && ud.type === 'MoonPhaseMarker') {
+                    if (ud.artemisNavigateTimeMs != null && !isNaN(ud.artemisNavigateTimeMs)) {
+                        smoothNavigateToTime(new Date(ud.artemisNavigateTimeMs));
+                        return true;
+                    }
+                }
+                if (ud && ud.type === 'ArtemisIIMission') {
+                    if (ud.artemisNavigateTimeMs != null && !isNaN(ud.artemisNavigateTimeMs)) {
+                        smoothNavigateToTime(new Date(ud.artemisNavigateTimeMs));
+                        return true;
+                    }
+                    if (
+                        ud.role === 'trajectoryRibbon' &&
+                        ud.artemisCenterline &&
+                        ud.artemisTimeMs
+                    ) {
+                        const line = ud.artemisCenterline;
+                        const times = ud.artemisTimeMs;
+                        const n = line.length / 3;
+                        if (n < 2) return false;
+                        local.copy(hits[hi].point);
+                        o.worldToLocal(local);
+                        let bestD = Infinity;
+                        let bestMs = times[0];
+                        for (let i = 0; i < n - 1; i++) {
+                            const ax = line[i * 3];
+                            const ay = line[i * 3 + 1];
+                            const az = line[i * 3 + 2];
+                            const bx = line[(i + 1) * 3];
+                            const by = line[(i + 1) * 3 + 1];
+                            const bz = line[(i + 1) * 3 + 2];
+                            const abx = bx - ax;
+                            const aby = by - ay;
+                            const abz = bz - az;
+                            const apx = local.x - ax;
+                            const apy = local.y - ay;
+                            const apz = local.z - az;
+                            const ab2 = abx * abx + aby * aby + abz * abz;
+                            let t = ab2 < 1e-20 ? 0 : (apx * abx + apy * aby + apz * abz) / ab2;
+                            t = Math.max(0, Math.min(1, t));
+                            const qx = ax + t * abx;
+                            const qy = ay + t * aby;
+                            const qz = az + t * abz;
+                            const dx = local.x - qx;
+                            const dy = local.y - qy;
+                            const dz = local.z - qz;
+                            const d2 = dx * dx + dy * dy + dz * dz;
+                            if (d2 < bestD) {
+                                bestD = d2;
+                                const ta = times[i];
+                                const tb = times[i + 1];
+                                bestMs = ta + t * (tb - ta);
+                            }
+                        }
+                        smoothNavigateToTime(new Date(bestMs));
+                        return true;
+                    }
+                }
+                o = o.parent;
+            }
+        }
+        return false;
+    }
+
+    function trySelectEventObjectAtClientPoint(clientX, clientY) {
+        if (!renderer || !camera || !sceneContentGroup) return;
+        if (tryPickArtemisMissionTrajectory(clientX, clientY)) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        pickPointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        pickPointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+        pickRaycaster.setFromCamera(pickPointer, camera);
+        const hits = pickRaycaster.intersectObjects(sceneContentGroup.children, true);
+        const eventHit = hits.find((hit) => {
+            let cur = hit.object;
+            while (cur) {
+                if (cur.userData && cur.userData.type === 'EventObject' && cur.userData.vevent) return true;
+                cur = cur.parent;
+            }
+            return false;
+        });
+        if (!eventHit) return;
+        let target = eventHit.object;
+        while (target && !(target.userData && target.userData.type === 'EventObject' && target.userData.vevent)) {
+            target = target.parent;
+        }
+        if (!target || !target.userData || !target.userData.vevent) return;
+        const ve = target.userData.vevent;
+        const startRaw = ve.start || ve.startTime || ve.date || ve.dtstart?.dateTime || ve.dtstart?.date || null;
+        const endRaw = ve.end || ve.endTime || ve.dtend?.dateTime || ve.dtend?.date || null;
+        const start = startRaw instanceof Date ? startRaw : (startRaw ? new Date(startRaw) : null);
+        const end = endRaw instanceof Date ? endRaw : (endRaw ? new Date(endRaw) : null);
+        if (!start || isNaN(start.getTime())) return;
+        if (typeof window.setCircaevumSelectedLayerId === 'function' && target.userData.layerId) {
+            window.setCircaevumSelectedLayerId(target.userData.layerId);
+        }
+        if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
+        if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
+        if (typeof window.navigateToEvent === 'function') window.navigateToEvent(start, end);
+    }
+
     // Mouse events for desktop
     renderer.domElement.addEventListener('mousedown', (e) => {
         isDragging = true;
         previousMousePosition = { x: e.clientX, y: e.clientY };
+        dragStartPos = { x: e.clientX, y: e.clientY };
     });
 
     renderer.domElement.addEventListener('mousemove', (e) => {
@@ -1399,7 +1615,16 @@ function initControls() {
         }
     });
 
-    renderer.domElement.addEventListener('mouseup', () => { isDragging = false; });
+    renderer.domElement.addEventListener('mouseup', (e) => {
+        const wasDragging = isDragging;
+        isDragging = false;
+        if (!wasDragging || !dragStartPos) return;
+        const dx = e.clientX - dragStartPos.x;
+        const dy = e.clientY - dragStartPos.y;
+        dragStartPos = null;
+        if (Math.hypot(dx, dy) > 6) return;
+        trySelectEventObjectAtClientPoint(e.clientX, e.clientY);
+    });
     renderer.domElement.addEventListener('mouseleave', () => { isDragging = false; });
     
     // Touch events for mobile
@@ -1448,15 +1673,9 @@ function initControls() {
                 // Vertical swipe for zoom
                 if (Math.abs(deltaY) > Math.abs(deltaX)) {
                     if (deltaY < 0 && currentZoom < 9) {
-                        // Swipe up = zoom in
-                        let nextZoom = currentZoom + 1;
-                        if (nextZoom === 6 && currentZoom !== 6) nextZoom = 7;
-                        setZoomLevel(nextZoom);
+                        setZoomLevel(currentZoom + 1);
                     } else if (deltaY > 0 && currentZoom > 1) {
-                        // Swipe down = zoom out
-                        let prevZoom = currentZoom - 1;
-                        if (prevZoom === 6 && currentZoom !== 6) prevZoom = 5;
-                        setZoomLevel(prevZoom);
+                        setZoomLevel(currentZoom - 1);
                     }
                 }
             }
@@ -1527,37 +1746,39 @@ function initControls() {
         if (key >= 0 && key <= 9) {
             setZoomLevel(key);
         } else if (e.key.toLowerCase() === 'w') {
+            if (e.repeat) return;
             // Zoom in (increase zoom level). Wrap between 9 <-> 0.
             if (isLandingPage) {
                 setZoomLevel(9);
             } else if (currentZoom === 9) {
                 setZoomLevel(0);
-            } else {
-                // Zoom in (increase zoom level), skip Lunar view (6)
-                if (currentZoom < 9) {
-                    let nextZoom = currentZoom + 1;
-                    // Skip Lunar view (6) unless we're already at 6
-                    if (nextZoom === 6 && currentZoom !== 6) {
-                        nextZoom = 7;
-                    }
-                    setZoomLevel(nextZoom);
-                }
+            } else if (currentZoom < 9) {
+                setZoomLevel(currentZoom + 1);
             }
         } else if (e.key.toLowerCase() === 's') {
+            if (e.repeat) return;
             // Zoom out (decrease zoom level). Wrap between 0 <-> 9.
             if (isLandingPage) {
                 setZoomLevel(9);
-            } else {
-                // Zoom out (decrease zoom level), skip Lunar view (6)
-                if (currentZoom > 1) {
-                    let prevZoom = currentZoom - 1;
-                    // Skip Lunar view (6) unless we're already at 6
-                    if (prevZoom === 6 && currentZoom !== 6) {
-                        prevZoom = 5;
-                    }
-                    setZoomLevel(prevZoom);
-                }
+            } else if (currentZoom > 1) {
+                setZoomLevel(currentZoom - 1);
             }
+        } else if ((e.key === '[' || e.code === 'BracketLeft') && !isLandingPage) {
+            e.preventDefault();
+            nudgeSelectedWallTime(-15 * 60 * 1000); // 15 minutes back
+            if (typeof playTickSound === 'function') playTickSound(Math.min(9, currentZoom + 1));
+        } else if ((e.key === ']' || e.code === 'BracketRight') && !isLandingPage) {
+            e.preventDefault();
+            nudgeSelectedWallTime(15 * 60 * 1000); // 15 minutes forward
+            if (typeof playTickSound === 'function') playTickSound(Math.min(9, currentZoom + 1));
+        } else if (e.key.toLowerCase() === 'a' && e.shiftKey && !isLandingPage) {
+            e.preventDefault();
+            nudgeSelectedWallTime(-60 * 60 * 1000); // 1 hour (finer than “one day” in week/month views)
+            if (typeof playTickSound === 'function') playTickSound(Math.min(9, currentZoom + 1));
+        } else if (e.key.toLowerCase() === 'd' && e.shiftKey && !isLandingPage) {
+            e.preventDefault();
+            nudgeSelectedWallTime(60 * 60 * 1000);
+            if (typeof playTickSound === 'function') playTickSound(Math.min(9, currentZoom + 1));
         } else if (e.key.toLowerCase() === 'a' && !isLandingPage) {
             navigateUnit(-1); // Navigate down one unit (previous week, day, hour, etc.)
             if (typeof playTickSound === 'function') playTickSound(currentZoom);
@@ -1573,8 +1794,13 @@ function initControls() {
         } else if (e.key.toLowerCase() === 't' && !isLandingPage) {
             toggleTimeMarkerText(); // Time marker text
         } else if (e.key.toLowerCase() === 'm' && !isLandingPage) {
-            const soundBtn = document.getElementById('sound-toggle');
-            if (soundBtn) soundBtn.click(); // Mute/Sound
+            if (e.shiftKey) {
+                const soundBtn = document.getElementById('sound-toggle');
+                if (soundBtn) soundBtn.click();
+            } else {
+                e.preventDefault();
+                toggleMoonLayer();
+            }
         } else if (e.key.toLowerCase() === 'x' && !isLandingPage) {
             toggleWebXR(); // XR mode
         } else if (e.key.toLowerCase() === 'r' && !isLandingPage) {
@@ -1606,14 +1832,8 @@ function initControls() {
     const handleZoomIn = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        // Zoom in (increase zoom level), skip Lunar view (6)
         if (currentZoom < 9) {
-            let nextZoom = currentZoom + 1;
-            // Skip Lunar view (6) unless we're already at 6
-            if (nextZoom === 6 && currentZoom !== 6) {
-                nextZoom = 7;
-            }
-            setZoomLevel(nextZoom);
+            setZoomLevel(currentZoom + 1);
         }
     };
     
@@ -1621,14 +1841,8 @@ function initControls() {
     const handleZoomOut = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        // Zoom out (decrease zoom level), skip Lunar view (6)
         if (currentZoom > 1) {
-            let prevZoom = currentZoom - 1;
-            // Skip Lunar view (6) unless we're already at 6
-            if (prevZoom === 6 && currentZoom !== 6) {
-                prevZoom = 5;
-            }
-            setZoomLevel(prevZoom);
+            setZoomLevel(currentZoom - 1);
         }
     };
     
@@ -1655,6 +1869,7 @@ function initControls() {
     const markersLinesBtn = document.getElementById('markers-lines-toggle');
     const markersTextBtn = document.getElementById('markers-text-toggle');
     const markersYearBtn = document.getElementById('markers-year-toggle');
+    if (markersLinesBtn) markersLinesBtn.classList.toggle('active', showTimeMarkerLines);
     if (markersLinesBtn) markersLinesBtn.addEventListener('click', toggleTimeMarkerLines);
     if (markersTextBtn) markersTextBtn.addEventListener('click', toggleTimeMarkerText);
     if (markersYearBtn) markersYearBtn.addEventListener('click', toggleTimeMarkerYearMode);
@@ -1666,6 +1881,12 @@ function initControls() {
             showAllTimelineEvents = window.circaevumGL.getTimelineEventFilter() === 'all';
         }
         updateEventsTimelineScopeButton();
+    }
+
+    const moonLayerBtn = document.getElementById('moon-layer-toggle');
+    if (moonLayerBtn) {
+        moonLayerBtn.classList.toggle('active', showMoonLayer);
+        moonLayerBtn.addEventListener('click', toggleMoonLayer);
     }
     
     // Light mode toggle
@@ -1766,6 +1987,7 @@ function returnToPresent() {
     currentMonthInYear = now.getMonth();
     currentDayOfMonth = now.getDate();
     currentHourInDay = now.getHours();
+    selectedMinuteInHour = now.getMinutes();
     currentQuarter = Math.floor(currentMonthInYear / 3);
     currentMonth = currentMonthInYear % 3;
     currentWeekInMonth = Math.floor((currentDayOfMonth - 1) / 7);
@@ -1776,108 +1998,32 @@ function returnToPresent() {
     updateTimeDisplays(); // Update time displays after returning to present
 }
 
-// Smoothly animate back to current time
-let isAnimatingToPresent = false;
+/** Same easing path as trajectory smooth navigation; ends on true wall-clock “now” via returnToPresent(). */
 function smoothReturnToPresent() {
-    if (isAnimatingToPresent) return; // Prevent multiple simultaneous animations
-    
-    // Calculate the target height (current system time)
-    const presentHeight = calculateCurrentDateHeight();
-    
-    // Set the target focus point to the present
-    targetFocusPoint.y = presentHeight;
-    
-    // Start animation flag
-    isAnimatingToPresent = true;
-    
-    // Animate the offsets to zero over time
-    const animationDuration = 1500; // ms - slower for smoother animation
-    const startTime = performance.now();
-    
-    // Store starting values
-    const startOffsets = {
-        selectedYearOffset,
-        selectedQuarterOffset,
-        selectedWeekOffset,
-        selectedDayOffset,
-        selectedHourOffset,
-        selectedLunarOffset,
-        selectedDecadeOffset,
-        currentYear: currentYear,
-        currentMonthInYear: currentMonthInYear,
-        currentMonth: currentMonth,
-        currentWeekInMonth: currentWeekInMonth,
-        currentDayInWeek: currentDayInWeek,
-        currentHourInDay: currentHourInDay
-    };
-    
-    // Target values (current system time)
-    const now = new Date();
-    const targetValues = {
-        currentYear: now.getFullYear(),
-        currentMonthInYear: now.getMonth(),
-        currentMonth: now.getMonth() % 3,
-        currentWeekInMonth: Math.floor((now.getDate() - 1) / 7),
-        currentDayInWeek: now.getDay(),
-        currentHourInDay: now.getHours()
-    };
-    
-    function animateStep() {
-        const elapsed = performance.now() - startTime;
-        const progress = Math.min(elapsed / animationDuration, 1);
-        
-        // Ease-in-out quintic for very smooth acceleration and deceleration
-        const eased = progress < 0.5
-            ? 16 * Math.pow(progress, 5)
-            : 1 - Math.pow(-2 * progress + 2, 5) / 2;
-        
-        // Interpolate offsets toward zero (use floor for smooth continuous movement)
-        selectedYearOffset = Math.floor(startOffsets.selectedYearOffset * (1 - eased) + 0.5);
-        selectedQuarterOffset = Math.floor(startOffsets.selectedQuarterOffset * (1 - eased) + 0.5);
-        selectedWeekOffset = Math.floor(startOffsets.selectedWeekOffset * (1 - eased) + 0.5);
-        selectedDayOffset = Math.floor(startOffsets.selectedDayOffset * (1 - eased) + 0.5);
-        selectedHourOffset = Math.floor(startOffsets.selectedHourOffset * (1 - eased) + 0.5);
-        selectedLunarOffset = Math.floor(startOffsets.selectedLunarOffset * (1 - eased) + 0.5);
-        selectedDecadeOffset = Math.floor(startOffsets.selectedDecadeOffset * (1 - eased) + 0.5);
-        
-        // Interpolate navigation variables toward current time
-        currentYear = Math.floor(startOffsets.currentYear + (targetValues.currentYear - startOffsets.currentYear) * eased + 0.5);
-        currentMonthInYear = Math.floor(startOffsets.currentMonthInYear + (targetValues.currentMonthInYear - startOffsets.currentMonthInYear) * eased + 0.5);
-        currentMonth = Math.floor(startOffsets.currentMonth + (targetValues.currentMonth - startOffsets.currentMonth) * eased + 0.5);
-        currentWeekInMonth = Math.floor(startOffsets.currentWeekInMonth + (targetValues.currentWeekInMonth - startOffsets.currentWeekInMonth) * eased + 0.5);
-        currentDayInWeek = Math.floor(startOffsets.currentDayInWeek + (targetValues.currentDayInWeek - startOffsets.currentDayInWeek) * eased + 0.5);
-        currentHourInDay = Math.floor(startOffsets.currentHourInDay + (targetValues.currentHourInDay - startOffsets.currentHourInDay) * eased + 0.5);
-        
-        // Update the scene
-        createPlanets(currentZoom);
-        updateTimeDisplays();
-        
-        if (progress < 1) {
-            requestAnimationFrame(animateStep);
-        } else {
-            // Animation complete - ensure we're exactly at present
-            isAnimatingToPresent = false;
-            returnToPresent(); // Final cleanup to ensure exact values
-        }
-    }
-    
-    requestAnimationFrame(animateStep);
+    if (isSmoothNavigatingTime) return;
+    smoothNavigateToTime(new Date(), 1500, true);
 }
 
-function toggleMoonWorldline() {
-    showMoonWorldline = !showMoonWorldline;
-    const flatGroup = flattenableGroup || sceneContentGroup;
-    if (showMoonWorldline) {
-        if (typeof Worldlines !== 'undefined' && Worldlines.createMoonWorldline) {
-            const currentDateHeight = calculateCurrentDateHeight();
-            const moonWorldline = Worldlines.createMoonWorldline(currentDateHeight, currentZoom);
-            flatGroup.add(moonWorldline);
-            moonWorldlines.push(moonWorldline);
-        }
-    } else {
-        moonWorldlines.forEach(mesh => flatGroup.remove(mesh));
-        moonWorldlines = [];
+function toggleMoonLayer() {
+    showMoonLayer = !showMoonLayer;
+    const btn = document.getElementById('moon-layer-toggle');
+    if (btn) {
+        btn.classList.toggle('active', showMoonLayer);
+        btn.title = showMoonLayer
+            ? 'Moon, lunar path & Artemis II (M)'
+            : 'Moon, lunar path & Artemis II: hidden (M)';
+        btn.setAttribute(
+            'aria-label',
+            showMoonLayer
+                ? 'Hide Moon mesh, lunar worldline, and Artemis II trajectory (M)'
+                : 'Show Moon mesh, lunar worldline, and Artemis II trajectory (M)'
+        );
     }
+    createPlanets(currentZoom);
+}
+
+if (typeof window !== 'undefined') {
+    window.toggleMoonLayer = toggleMoonLayer;
 }
 
 // createMoonWorldline moved to worldlines.js module
@@ -2101,11 +2247,17 @@ function toggleCircadianWorldline() {
 }
 
 function toggleFocusTarget() {
+    focusMidFromLongTermEventClick = false;
     const config = ZOOM_LEVELS[currentZoom];
     const base = config.focusTarget || 'sun';
     const current = focusTargetOverride || base;
     let next;
-    if (currentZoom >= 4 && currentZoom <= 7) {
+    if (currentZoom === 6) {
+        const cycle = ['moon', 'earth', 'sun', 'mid'];
+        const idx = cycle.indexOf(current);
+        const i = idx === -1 ? 0 : (idx + 1) % cycle.length;
+        next = cycle[i];
+    } else if (currentZoom >= 4 && currentZoom <= 7) {
         const cycle = ['earth', 'sun', 'mid'];
         const idx = cycle.indexOf(current);
         const i = idx === -1 ? 0 : (idx + 1) % cycle.length;
@@ -2120,10 +2272,14 @@ function toggleFocusTarget() {
     if (btn) {
         btn.classList.toggle('active', next === 'earth');
         btn.title = `Camera focus: ${next.toUpperCase()} (C)`;
-        const aria =
-            currentZoom >= 4 && currentZoom <= 7
-                ? `Cycle camera focus: Earth, then Sun, then midpoint between Sun and Earth at selected time (currently ${next.toUpperCase()})`
-                : `Toggle camera focus between Sun and Earth (currently ${next.toUpperCase()})`;
+        let aria;
+        if (currentZoom === 6) {
+            aria = `Cycle camera focus: Moon, Earth, Sun, midpoint Sun–Earth at selected time (currently ${next.toUpperCase()})`;
+        } else if (currentZoom >= 4 && currentZoom <= 7) {
+            aria = `Cycle camera focus: Earth, then Sun, then midpoint between Sun and Earth at selected time (currently ${next.toUpperCase()})`;
+        } else {
+            aria = `Toggle camera focus between Sun and Earth (currently ${next.toUpperCase()})`;
+        }
         btn.setAttribute('aria-label', aria);
     }
     createPlanets(currentZoom);
@@ -2240,6 +2396,8 @@ function toggleWebXR() {
         if (xrInputAdapter) {
             xrInputAdapter.cleanup();
         }
+        const orbitalPanel = document.querySelector('.info-panel');
+        if (orbitalPanel) orbitalPanel.style.display = '';
         button.classList.remove('active');
         button.title = 'WebXR';
         button.setAttribute('aria-label', 'Enter WebXR / VR');
@@ -2318,6 +2476,8 @@ function toggleWebXR() {
                 const roomScene = xrAdapter.windowedMode ? xrAdapter.getRoomScene() : null;
                 xrUI.show(session, roomScene);
             }
+            const orbitalPanel = document.querySelector('.info-panel');
+            if (orbitalPanel) orbitalPanel.style.display = 'none';
             
             if (xrAdapter.windowedMode && contentCamera && focusPoint && targetCameraPosition) {
                 contentCamera.position.set(
@@ -2587,9 +2747,9 @@ function navigateUnit(direction) {
             }
             break;
             
-        case 5: // Month view - navigate weeks
+        case 5: // Month view — navigate weeks within month
             currentWeekInMonth += direction;
-            
+
             if (currentWeekInMonth < 0) {
                 selectedWeekOffset--;
                 currentWeekInMonth = 4;
@@ -2598,16 +2758,34 @@ function navigateUnit(direction) {
                 currentWeekInMonth = 0;
             }
             break;
-            
-        case 6: // Lunar view - navigate weeks within lunar cycle
-            currentWeekInMonth += direction;
-            
-            if (currentWeekInMonth < 0) {
-                selectedLunarOffset--;
-                currentWeekInMonth = 3;
-            } else if (currentWeekInMonth > 3) {
-                selectedLunarOffset++;
-                currentWeekInMonth = 0;
+
+        case 6: // Lunar zoom — one synodic quadrant (~¼ month) along the schematic lunar cycle
+            {
+                const synMs =
+                    typeof MoonMechanics !== 'undefined' && MoonMechanics.SYNODIC_MONTH_MS
+                        ? MoonMechanics.SYNODIC_MONTH_MS
+                        : 29.530588861 * 86400000;
+                const next = getSelectedDateTime();
+                next.setTime(next.getTime() + direction * (synMs / 4));
+                applySelectedDateToZoomLevel(next, 6);
+                if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
+                    TimeMarkers.updateOffsets({
+                        selectedYearOffset,
+                        selectedQuarterOffset,
+                        selectedWeekOffset,
+                        selectedDayOffset,
+                        selectedHourOffset,
+                        selectedLunarOffset,
+                        currentYear,
+                        currentMonthInYear,
+                        currentMonth,
+                        currentQuarter,
+                        currentWeekInMonth,
+                        currentDayInWeek,
+                        currentDayOfMonth,
+                        currentHourInDay
+                    });
+                }
             }
             break;
             
@@ -2734,9 +2912,12 @@ function setZoomLevel(level, overrideDate) {
     if (!nextPolar) {
         needPolarOrbitInit = true;
     }
-    // Mid focus only applies to quarter–week zooms (4–7)
+    // Mid focus normally only applies to quarter–week zooms (4–7); long-term event click keeps mid at any zoom.
     if (level < 4 || level > 7) {
-        if (focusTargetOverride === 'mid') focusTargetOverride = null;
+        if (focusTargetOverride === 'mid' && !focusMidFromLongTermEventClick) focusTargetOverride = null;
+    }
+    if (level !== 6 && focusTargetOverride === 'moon') {
+        focusTargetOverride = null;
     }
     const config = ZOOM_LEVELS[level];
     
@@ -2862,6 +3043,109 @@ function setSelectedDateTime(date) {
     }
 }
 
+/** Smoothly animates SELECTED TIME from current selection to target (e.g. Artemis trajectory click). */
+let isSmoothNavigatingTime = false;
+/**
+ * @param {Date|string|number} targetDate
+ * @param {number} [durationMs]
+ * @param {boolean} [snapToLivePresent] If true (Space / return-to-present), final frame uses returnToPresent() so time matches real now.
+ */
+function smoothNavigateToTime(targetDate, durationMs, snapToLivePresent) {
+    const dur = durationMs != null ? durationMs : 1350;
+    const endDate = targetDate instanceof Date ? targetDate : new Date(targetDate);
+    if (!endDate || isNaN(endDate.getTime())) return;
+    if (isSmoothNavigatingTime) return;
+
+    isSmoothNavigatingTime = true;
+    const startDate = getSelectedDateTime();
+    const t0 = performance.now();
+
+    function timeMarkersPayload() {
+        return {
+            selectedYearOffset,
+            selectedQuarterOffset,
+            selectedWeekOffset,
+            selectedDayOffset,
+            selectedHourOffset,
+            selectedLunarOffset,
+            currentYear,
+            currentMonthInYear,
+            currentMonth,
+            currentQuarter,
+            currentWeekInMonth,
+            currentDayInWeek,
+            currentDayOfMonth,
+            currentHourInDay
+        };
+    }
+
+    function step(now) {
+        const elapsed = now - t0;
+        const u = Math.min(1, elapsed / dur);
+        const eased = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+        const ms = startDate.getTime() + (endDate.getTime() - startDate.getTime()) * eased;
+        const d = new Date(ms);
+        applySelectedDateToZoomLevel(d, currentZoom);
+        if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
+            TimeMarkers.updateOffsets(timeMarkersPayload());
+        }
+        createPlanets(currentZoom);
+        updateTimeDisplays();
+        if (u < 1) {
+            requestAnimationFrame(step);
+        } else {
+            if (snapToLivePresent) {
+                returnToPresent();
+            } else {
+                setSelectedDateTime(endDate);
+            }
+            isSmoothNavigatingTime = false;
+        }
+    }
+    requestAnimationFrame(step);
+}
+
+if (typeof window !== 'undefined') {
+    window.smoothNavigateToTime = smoothNavigateToTime;
+}
+
+/**
+ * Nudge SELECTED TIME by wall-clock milliseconds (works at any zoom; recalculates offset grid).
+ * Use for steps smaller than navigateUnit (e.g. hour in week view, quarter-hour on day view).
+ */
+function nudgeSelectedWallTime(deltaMs) {
+    if (currentZoom === 0) return;
+    const d = typeof deltaMs === 'number' && !isNaN(deltaMs) ? deltaMs : 0;
+    if (d === 0) return;
+    const next = getSelectedDateTime();
+    next.setTime(next.getTime() + d);
+    applySelectedDateToZoomLevel(next, currentZoom);
+    if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
+        TimeMarkers.updateOffsets({
+            selectedYearOffset,
+            selectedQuarterOffset,
+            selectedWeekOffset,
+            selectedDayOffset,
+            selectedHourOffset,
+            selectedLunarOffset,
+            currentYear,
+            currentMonthInYear,
+            currentMonth,
+            currentQuarter,
+            currentWeekInMonth,
+            currentDayInWeek,
+            currentDayOfMonth,
+            currentHourInDay
+        });
+    }
+    createPlanets(currentZoom);
+    updateTimeDisplays();
+}
+
+if (typeof window !== 'undefined') {
+    window.nudgeSelectedWallTime = nudgeSelectedWallTime;
+}
+
 function getFocusPoint() {
     const config = ZOOM_LEVELS[currentZoom];
     const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
@@ -2886,13 +3170,30 @@ function getFocusPoint() {
             const earthPos = earthPlanet.position.clone();
             earthPos.y = verticalOffset;
             if (effectiveFocusTarget === 'mid') {
-                const midFrac = currentZoom === 7 ? (21 / 32 + 23 / 32) / 2 : 0.5;
+                const midFrac = getFocusMidRadialFrac(currentZoom);
                 return new THREE.Vector3(earthPos.x * midFrac, earthPos.y, earthPos.z * midFrac);
             }
             return earthPos;
         }
     }
-    
+
+    if (effectiveFocusTarget === 'moon') {
+        const earth = typeof PLANET_DATA !== 'undefined' ? PLANET_DATA.find((p) => p.name === 'Earth') : null;
+        const moonXZ =
+            typeof MoonMechanics !== 'undefined' && MoonMechanics.moonXZSynodicAtHeight
+                ? MoonMechanics.moonXZSynodicAtHeight.bind(MoonMechanics)
+                : typeof MoonMechanics !== 'undefined' && MoonMechanics.moonXZAtHeight
+                  ? MoonMechanics.moonXZAtHeight.bind(MoonMechanics)
+                  : null;
+        if (moonXZ && earth) {
+            const refH =
+                typeof calculateCurrentDateHeight === 'function' ? calculateCurrentDateHeight() : verticalOffset;
+            const sel = getSelectedDateTime();
+            const mxz = moonXZ(verticalOffset, refH, earth, null, sel);
+            return new THREE.Vector3(mxz.x, verticalOffset, mxz.z);
+        }
+    }
+
     return new THREE.Vector3(0, verticalOffset, 0);
 }
 
