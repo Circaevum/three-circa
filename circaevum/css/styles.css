@@ -16,6 +16,9 @@
     --solar-yellow: #eab308;
     --plasma-pink: #ff006e;
     --orbit-silver: #cbd5f5;
+    /** Moon-layer toggle only: cooler moonstone vs generic scene icons */
+    --scene-moon-layer-icon: #aec4dc;
+    --scene-moon-layer-icon-active: #7dd3fc;
     --nav-height: 56px;
 
     --ui-font-display: 'Orbitron', sans-serif;
@@ -58,6 +61,9 @@ body.light-mode {
     --solar-yellow: #d97706;
     --plasma-pink: #d4006e;
     --orbit-silver: #1e293b;
+    /** Moon-layer toggle: deep indigo moon on light chrome (not the same slate as other icons) */
+    --scene-moon-layer-icon: #1e3a5f;
+    --scene-moon-layer-icon-active: #0369a1;
 
     --ui-surface-nav: rgba(255, 255, 255, 0.94);
     --ui-surface-panel: #ffffff;
@@ -1596,6 +1602,23 @@ body.light-mode .event-list-panel-list .draw-line-btn.drawn {
 .scene-icon-btn#events-timeline-scope-toggle svg {
     width: 24px;
     height: 24px;
+}
+
+/* Moon & lunar path: own palette per theme (other scene icons stay orbit-silver / cosmic-cyan) */
+.scene-icon-btn#moon-layer-toggle {
+    color: var(--scene-moon-layer-icon);
+}
+.scene-icon-btn#moon-layer-toggle:hover,
+.scene-icon-btn#moon-layer-toggle.active {
+    color: var(--scene-moon-layer-icon-active);
+}
+/* Crater rings slightly softer than limb so the disk reads as one body */
+.scene-icon-btn#moon-layer-toggle svg .lunar-crater {
+    opacity: 0.48;
+}
+.scene-icon-btn#moon-layer-toggle:hover svg .lunar-crater,
+.scene-icon-btn#moon-layer-toggle.active svg .lunar-crater {
+    opacity: 0.58;
 }
 
 /* Light mode toggle: show moon by default, sun when body.light-mode */

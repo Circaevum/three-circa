@@ -23,6 +23,8 @@ let currentYear = now.getFullYear();
 let currentMonthInYear = now.getMonth(); // 0-11
 let currentDayOfMonth = now.getDate(); // 1-31
 let currentHourInDay = now.getHours(); // 0-23
+/** Minute within the selected hour (0–59); used with currentHourInDay for week/month/day reconstruction. */
+let selectedMinuteInHour = now.getMinutes();
 
 // Derived date values
 let currentQuarter = Math.floor(currentMonthInYear / 3); // 0-3 for Q1-Q4

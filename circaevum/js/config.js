@@ -71,7 +71,7 @@ const ZOOM_LEVELS = {
     3: { name: 'YEAR', span: '1 year', distance: 140, height: 500, timeYears: 1, focusTarget: 'sun', centerYear: 2025 },
     4: { name: 'QUARTER', span: '3 months', distance: 70, height: 400, timeYears: 0.25, focusTarget: 'mid', centerYear: 2025 },
     5: { name: 'MONTH', span: '1 month', distance: 25, height: 300, timeYears: 0.0833, focusTarget: 'mid', centerYear: 2025 },
-    6: { name: 'LUNAR CYCLE', span: '28 days', distance: 80, height: 240, timeYears: 0.0767, focusTarget: 'mid', centerYear: 2025 },
+    6: { name: 'LUNAR CYCLE', span: '28 days', distance: 19, height: 240, timeYears: 0.0767, focusTarget: 'moon', centerYear: 2025 },
     7: { name: 'WEEK', span: '7 days', distance: 13, height: 200, timeYears: 0.0192, focusTarget: 'mid', centerYear: 2025 },
     8: { name: 'DAY', span: '24 hours', distance: 12, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025 },
     9: { name: 'CLOCK', span: '24 hours', distance: 8, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025, isPolar: true }
@@ -110,6 +110,27 @@ const SCENE_CONFIG = {
             collinear: 0x8ab4d8,
             triangular: 0x7bc4a8
         }
+    },
+    /**
+     * Pedagogical Earth–Moon layout in the ecliptic plane (not to scale).
+     * Moon sits along Earth’s velocity tangent so “ahead in orbit” reads clearly; used by the Moon mesh,
+     * Earth–Moon guide, lunar worldline (zoom 6), and mission overlays that blend Earth–Moon space.
+     */
+    moonMechanics: {
+        offsetFromEarth: 10.75,
+        sphereRadiusEarthFraction: 0.28,
+        sphereRadiusMin: 1.02,
+        dashOpacity: 0.55,
+        dashSize: 2.5,
+        dashGap: 1.8,
+        showZoomMin: 2,
+        showZoomMax: 8,
+        /** Sidereal month (~27.32 d); Moon angle advances with selected calendar time. */
+        siderealOrbitDays: 27.321661,
+        /** Radians added to orbit angle (visual alignment). */
+        orbitPhaseOffsetRad: 0,
+        /** UTC ms epoch for orbit phase (arbitrary origin; motion is consistent). */
+        orbitEpochUtcMs: Date.UTC(2000, 0, 6, 18, 0, 0)
     }
 };
 
