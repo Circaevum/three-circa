@@ -27,6 +27,7 @@
 let scene, camera, renderer;
 let sceneContentGroup = null;
 let flattenableGroup = null; // Worldlines and time markers only; scaled when flatten is on. Sun/planets stay in sceneContentGroup.
+let timeMarkersGroup = null; // Time markers only; enables marker-only flatten mode.
 let sunMesh = null;
 let sunGlow = null;
 let sunLight = null;
@@ -84,12 +85,16 @@ let circadianShortEventScope = 'day';
 let circadianState = 'off';
 /** false = show calendar events only in selected year; true = all time (see scene calendar icon) */
 let showAllTimelineEvents = false;
+/** 'alpha' keeps hue for long-term events and fades fill opacity out-of-window; 'desaturate' uses prior gray blend behavior. */
+let longEventContextFadeMode = 'alpha';
 if (typeof window !== 'undefined') {
     window.getCurrentZoomLevel = function () { return currentZoom; };
     window.getCircadianRhythmState = function () { return circadianState; };
+    window.getLongEventContextFadeMode = function () { return longEventContextFadeMode; };
 }
-let flattenOn = false; // Flatten view on/off (zoom >= 3). Smooth transition via currentFlattenAmount.
-let currentFlattenAmount = 0; // Lerps toward 1 when flattenOn, toward 0 when off (no camera jump).
+let flattenMode = 'off'; // 'off' | 'markers' | 'all'
+let currentFlattenAmount = 0; // Lerps for event/worldline flatten in mode 'all'.
+let currentTimeMarkerFlattenAmount = 0;
 /** 0 = circadian helix fully wrapped/helical, 1 = fully straightened (lerps like currentFlattenAmount). */
 let currentCircadianStraightenAmount = 0;
 // flattenIntensity: 0–1 where 0 = no flatten, 1 = maximum flatten.
@@ -105,8 +110,8 @@ if (typeof window !== 'undefined') {
     window.getEventFlattenYScale = function () {
         return Math.max(0.05, 1 - currentFlattenAmount * 0.95);
     };
-    /** True while flatten (F) is on — short circadian ribbons use a straight vertical Earth line vs wrapping the orbit. */
-    window.isFlattenTimeStraightenActive = function () { return !!flattenOn; };
+    /** True only when marker + event timeline geometry are both flattened. */
+    window.isFlattenTimeStraightenActive = function () { return flattenMode === 'all'; };
     /**
      * Vertical scale for the circadian (daily) helix vs selected time: compress or stretch span along the time axis.
      * Range ~0.2–1.8; 1.0 at slider midpoint. Does not affect the separate year-timeline flatten slider.
@@ -478,6 +483,8 @@ function initScene() {
         if (typeof window.stars !== 'undefined') stars = window.stars;
         flattenableGroup = new THREE.Group();
         sceneContentGroup.add(flattenableGroup);
+        timeMarkersGroup = new THREE.Group();
+        sceneContentGroup.add(timeMarkersGroup);
     } else {
         // Fallback: original implementation (should not be needed if SceneCore is loaded)
         console.warn('SceneCore not available, using fallback initScene');
@@ -494,6 +501,8 @@ function initScene() {
         scene.add(sceneContentGroup);
         flattenableGroup = new THREE.Group();
         sceneContentGroup.add(flattenableGroup);
+        timeMarkersGroup = new THREE.Group();
+        sceneContentGroup.add(timeMarkersGroup);
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
         const currentYearHeight = getHeightForYear(currentYear, 1);
         camera.position.set(0, currentYearHeight + 400, 800);
@@ -1391,7 +1400,7 @@ function createPlanets(zoomLevel) {
         // flattenableGroup scales Y each frame; without baseScale the animate loop replaces scale with (1,1/yScale,1) and squashes X.
         spr.userData.baseScale = { x: worldW, y: worldH, z: 1 };
         const dayLabelParent =
-            flattenOn && isCircadianHelixZoom(zoomLevel) ? sceneContentGroup : flatGroup;
+            flattenMode === 'all' && isCircadianHelixZoom(zoomLevel) ? sceneContentGroup : flatGroup;
         dayLabelParent.add(spr);
         circadianSelectedDayLabels.push(spr);
     }
@@ -1640,7 +1649,7 @@ function createTextLabel(text, height, radius, zoomLevel, angle = 0, colorType =
     sprite.scale.set(scaleX, scaleY, 1);
     sprite.userData.baseScale = { x: scaleX, y: scaleY, z: 1 };
 
-    (flattenableGroup || sceneContentGroup).add(sprite);
+    (timeMarkersGroup || flattenableGroup || sceneContentGroup).add(sprite);
     timeMarkers.push(sprite);
 }
 
@@ -1671,7 +1680,7 @@ function initTimeMarkers() {
         }
         
         TimeMarkers.init({
-            scene: flattenableGroup || sceneContentGroup,
+            scene: timeMarkersGroup || flattenableGroup || sceneContentGroup,
             timeMarkers,
             getMarkerColor,
             createTextLabel,
@@ -2014,6 +2023,18 @@ function initControls() {
         lastTouchDistance = 0;
     });
 
+    function getNextKeyboardZoomLevel(direction) {
+        // Keep W/S zoom stepping on stable calendar scales.
+        // This avoids jumps into lunar (6) and landing camera (0) unless explicitly selected.
+        const sequence = [1, 2, 3, 4, 5, 7, 8, 9];
+        const currentIdx = sequence.indexOf(currentZoom);
+        const nextIdx = currentIdx === -1
+            ? (direction > 0 ? 0 : sequence.length - 1)
+            : currentIdx + (direction > 0 ? 1 : -1);
+        if (nextIdx < 0 || nextIdx >= sequence.length) return null;
+        return sequence[nextIdx];
+    }
+
     document.addEventListener('keydown', (e) => {
         // Check if user is typing in a text field
         const activeElement = document.activeElement;
@@ -2036,22 +2057,12 @@ function initControls() {
             setZoomLevel(key);
         } else if (e.key.toLowerCase() === 'w') {
             if (e.repeat) return;
-            // Zoom in (increase zoom level). Wrap between 9 <-> 0.
-            if (isLandingPage) {
-                setZoomLevel(9);
-            } else if (currentZoom === 9) {
-                setZoomLevel(0);
-            } else if (currentZoom < 9) {
-                setZoomLevel(currentZoom + 1);
-            }
+            const nextZoom = getNextKeyboardZoomLevel(1);
+            if (typeof nextZoom === 'number') setZoomLevel(nextZoom);
         } else if (e.key.toLowerCase() === 's') {
             if (e.repeat) return;
-            // Zoom out (decrease zoom level). Wrap between 0 <-> 9.
-            if (isLandingPage) {
-                setZoomLevel(9);
-            } else if (currentZoom > 1) {
-                setZoomLevel(currentZoom - 1);
-            }
+            const nextZoom = getNextKeyboardZoomLevel(-1);
+            if (typeof nextZoom === 'number') setZoomLevel(nextZoom);
         } else if ((e.key === '[' || e.code === 'BracketLeft') && !isLandingPage) {
             e.preventDefault();
             nudgeSelectedWallTime(-15 * 60 * 1000); // 15 minutes back
@@ -2171,6 +2182,11 @@ function initControls() {
         }
         updateEventsTimelineScopeButton();
     }
+    const eventsColorFadeBtn = document.getElementById('events-color-fade-toggle');
+    if (eventsColorFadeBtn) {
+        eventsColorFadeBtn.addEventListener('click', toggleLongEventContextFadeMode);
+        updateLongEventContextFadeButton();
+    }
 
     const moonLayerBtn = document.getElementById('moon-layer-toggle');
     if (moonLayerBtn) {
@@ -2187,13 +2203,16 @@ function initControls() {
 
     // Flatten view: icon toggles flatten on/off (smooth transition in animate)
     const flattenToggleBtn = document.getElementById('flatten-toggle');
-    if (flattenToggleBtn) flattenToggleBtn.addEventListener('click', toggleFlatten);
+    if (flattenToggleBtn) {
+        flattenToggleBtn.addEventListener('click', toggleFlatten);
+        syncFlattenToggleButtonState();
+    }
     const flattenHeightSlider = document.getElementById('flatten-height-slider');
     if (flattenHeightSlider) {
         // Slider value represents height (0 = flattest, 1 = tallest).
         // Internally, flattenIntensity is how strong the flatten is (0 = none, 1 = max).
         flattenHeightSlider.addEventListener('input', (e) => {
-            if (!flattenOn) return;
+            if (flattenMode !== 'all') return;
             const value = parseFloat(e.target.value);
             if (!isNaN(value)) {
                 // Higher slider value = taller view (less flatten).
@@ -2279,8 +2298,11 @@ function returnToPresent() {
     selectedMinuteInHour = now.getMinutes();
     currentQuarter = Math.floor(currentMonthInYear / 3);
     currentMonth = currentMonthInYear % 3;
-    currentWeekInMonth = Math.floor((currentDayOfMonth - 1) / 7);
     currentDayInWeek = now.getDay();
+
+    // Keep per-zoom calendar decomposition consistent with getSelectedDateTime/applySelectedDateToZoomLevel.
+    // This prevents a one-week jump at the end of smooth return-to-present in month/lunar zooms.
+    applySelectedDateToZoomLevel(now, currentZoom);
     
     // Recreate planets and markers at current position
     createPlanets(currentZoom);
@@ -2424,11 +2446,16 @@ function updateFlattenIconVisibility() {
 function syncFlattenHeightSlider() {
     const slider = document.getElementById('flatten-height-slider');
     if (!slider || currentZoom < 3) return;
-    if (!flattenOn) {
+    if (flattenMode === 'off') {
         slider.value = '1';
         slider.disabled = true;
         slider.setAttribute('aria-disabled', 'true');
         slider.title = 'Enable flatten (F) to adjust height';
+    } else if (flattenMode === 'markers') {
+        slider.value = '0';
+        slider.disabled = true;
+        slider.setAttribute('aria-disabled', 'true');
+        slider.title = 'Markers-only flatten is fixed at full flatten';
     } else {
         slider.disabled = false;
         slider.removeAttribute('aria-disabled');
@@ -2448,15 +2475,30 @@ function rebuildSceneAndEventsForFlattenChange() {
     }
 }
 
+function syncFlattenToggleButtonState() {
+    const btn = document.getElementById('flatten-toggle');
+    if (!btn) return;
+    const isOn = flattenMode !== 'off';
+    btn.classList.toggle('active', isOn);
+    if (flattenMode === 'markers') {
+        btn.title = 'Flatten mode: time markers only (full) (F)';
+        btn.setAttribute('aria-label', 'Flatten mode: time markers only, fully flattened');
+    } else if (flattenMode === 'all') {
+        btn.title = 'Flatten mode: markers + event worldlines (F)';
+        btn.setAttribute('aria-label', 'Flatten mode: time markers and event worldlines');
+    } else {
+        btn.title = 'Flatten view (F)';
+        btn.setAttribute('aria-label', 'Flatten mode: off');
+    }
+}
+
 function toggleFlatten() {
     if (currentZoom < 3) return;
-    flattenOn = !flattenOn;
-    const btn = document.getElementById('flatten-toggle');
-    if (btn) {
-        btn.classList.toggle('active', flattenOn);
-        btn.title = flattenOn ? 'Flatten view: on (F)' : 'Flatten view (F)';
-        btn.setAttribute('aria-label', flattenOn ? 'Flatten view: on' : 'Flatten view: off');
-    }
+    // Requested order: 1) regular (off), 2) markers only (full), 3) markers + event worldlines.
+    if (flattenMode === 'off') flattenMode = 'markers';
+    else if (flattenMode === 'markers') flattenMode = 'all';
+    else flattenMode = 'off';
+    syncFlattenToggleButtonState();
     syncFlattenHeightSlider();
     rebuildSceneAndEventsForFlattenChange();
 }
@@ -2472,18 +2514,13 @@ function toggleFlattenWithKey() {
  * @param {number} [internalIntensity] - 0 = no flatten, 1 = max flatten (matches flattenIntensity in this file)
  */
 function applyFlattenFromEmbed(enabled, internalIntensity) {
-    flattenOn = !!enabled;
+    flattenMode = enabled ? 'all' : 'off';
     if (typeof internalIntensity === 'number' && !isNaN(internalIntensity)) {
         flattenIntensity = Math.min(1, Math.max(0, internalIntensity));
-    } else if (flattenOn) {
+    } else if (flattenMode === 'all') {
         flattenIntensity = 1;
     }
-    const btn = document.getElementById('flatten-toggle');
-    if (btn) {
-        btn.classList.toggle('active', flattenOn);
-        btn.title = flattenOn ? 'Flatten view: on (F)' : 'Flatten view (F)';
-        btn.setAttribute('aria-label', flattenOn ? 'Flatten view: on' : 'Flatten view: off');
-    }
+    syncFlattenToggleButtonState();
     if (typeof updateFlattenIconVisibility === 'function') {
         updateFlattenIconVisibility();
     } else {
@@ -2523,6 +2560,37 @@ function toggleTimelineEventScope() {
         gl.setTimelineEventFilter(showAllTimelineEvents ? 'all' : 'year');
     }
     updateEventsTimelineScopeButton();
+}
+
+function updateLongEventContextFadeButton() {
+    const btn = document.getElementById('events-color-fade-toggle');
+    if (!btn) return;
+    const alphaMode = longEventContextFadeMode === 'alpha';
+    btn.classList.toggle('active', alphaMode);
+    if (alphaMode) {
+        btn.title = 'Long-term event context: fade transparency, keep hue (click for desaturate)';
+        btn.setAttribute('aria-label', 'Long-term context uses transparency fade while keeping hue. Click to switch to desaturate.');
+    } else {
+        btn.title = 'Long-term event context: desaturate color (click for transparency fade)';
+        btn.setAttribute('aria-label', 'Long-term context desaturates color. Click to switch to transparency fade.');
+    }
+}
+
+function toggleLongEventContextFadeMode() {
+    longEventContextFadeMode = longEventContextFadeMode === 'alpha' ? 'desaturate' : 'alpha';
+    updateLongEventContextFadeButton();
+    const gl = typeof window !== 'undefined' ? window.circaevumGL : null;
+    if (gl && typeof gl.refreshAllEventLayers === 'function') {
+        try {
+            gl.refreshAllEventLayers();
+        } catch (err) {
+            console.warn('Could not refresh event layers after long-term context fade toggle:', err);
+        }
+    }
+    if (typeof window !== 'undefined' && typeof window.refreshEventsList === 'function') {
+        const ep = document.getElementById('event-list-panel');
+        if (ep && ep.classList.contains('open')) window.refreshEventsList(false);
+    }
 }
 
 function toggleCircadianWorldline() {
@@ -2771,7 +2839,7 @@ function toggleWebXR() {
                             markersLines: () => showTimeMarkerLines,
                             markersText: () => showTimeMarkerText,
                             lightMode: () => isLightMode,
-                            flatten: () => flattenOn
+                            flatten: () => flattenMode !== 'off'
                         },
                         getEventLayers: () => {
                             const gl = typeof window !== 'undefined' && (window.circaevumGL || (window.getGL && window.getGL()));
@@ -3071,40 +3139,23 @@ function navigateUnit(direction) {
 
             if (currentWeekInMonth < 0) {
                 selectedWeekOffset--;
-                currentWeekInMonth = 4;
-            } else if (currentWeekInMonth > 4) {
+                currentWeekInMonth = 5;
+            } else if (currentWeekInMonth > 5) {
                 selectedWeekOffset++;
                 currentWeekInMonth = 0;
             }
             break;
 
-        case 6: // Lunar zoom — one synodic quadrant (~¼ month) along the schematic lunar cycle
-            {
-                const synMs =
-                    typeof MoonMechanics !== 'undefined' && MoonMechanics.SYNODIC_MONTH_MS
-                        ? MoonMechanics.SYNODIC_MONTH_MS
-                        : 29.530588861 * 86400000;
-                const next = getSelectedDateTime();
-                next.setTime(next.getTime() + direction * (synMs / 4));
-                applySelectedDateToZoomLevel(next, 6);
-                if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
-                    TimeMarkers.updateOffsets({
-                        selectedYearOffset,
-                        selectedQuarterOffset,
-                        selectedWeekOffset,
-                        selectedDayOffset,
-                        selectedHourOffset,
-                        selectedLunarOffset,
-                        currentYear,
-                        currentMonthInYear,
-                        currentMonth,
-                        currentQuarter,
-                        currentWeekInMonth,
-                        currentDayInWeek,
-                        currentDayOfMonth,
-                        currentHourInDay
-                    });
-                }
+        case 6: // Lunar zoom — keep A/D local (same week-step behavior as month zoom)
+            // Skip the larger synodic-quarter jump here; it pulls focus too far from current context.
+            currentWeekInMonth += direction;
+
+            if (currentWeekInMonth < 0) {
+                selectedWeekOffset--;
+                currentWeekInMonth = 5;
+            } else if (currentWeekInMonth > 5) {
+                selectedWeekOffset++;
+                currentWeekInMonth = 0;
             }
             break;
             
@@ -3551,39 +3602,60 @@ function animate(time, frame) {
         }
     }
     
-    // Smooth flatten transition: scale only worldlines/markers (flattenableGroup), not Sun/planets.
-    // Flatten toward the SELECTED TIME (focus Y), not toward zero.
-    const flattenTarget = flattenOn ? flattenIntensity : 0;
-    currentFlattenAmount += (flattenTarget - currentFlattenAmount) * 0.08;
-    const yScale = Math.max(0.05, 1 - currentFlattenAmount * 0.95);
-    if (typeof flattenableGroup !== 'undefined' && flattenableGroup && typeof focusPoint !== 'undefined' && focusPoint) {
-        flattenableGroup.scale.set(1, yScale, 1);
-        flattenableGroup.position.y = focusPoint.y * (1 - yScale); // plane of flatten passes through selected time
-        // Counter-scale only labels and point markers so they stay visible; let event tubes/lines flatten with the scene.
-        if (currentFlattenAmount > 0.01) {
-            flattenableGroup.traverse((obj) => {
-                if (obj.userData && obj.userData.eventStaggerRoot && typeof obj.userData.staggerLogical === 'number') {
-                    obj.position.y = obj.userData.staggerLogical / yScale;
+    function getEventNameLabelScaleMultiplier(labelObj, selectedMs) {
+        if (!labelObj || !labelObj.userData || !labelObj.userData.isEventNameLabel) return 1;
+        const s = Number(labelObj.userData.labelStartMs);
+        const eRaw = Number(labelObj.userData.labelEndMs);
+        if (!isFinite(s) || !isFinite(selectedMs)) return 1;
+        const e = isFinite(eRaw) && eRaw >= s ? eRaw : s;
+        let sep = 0;
+        if (selectedMs < s) sep = s - selectedMs;
+        else if (selectedMs > e) sep = selectedMs - e;
+        const closeMs = 3 * 24 * 60 * 60 * 1000;
+        const farMs = 60 * 24 * 60 * 60 * 1000;
+        let t;
+        if (sep <= closeMs) t = 0;
+        else if (sep >= farMs) t = 1;
+        else t = (sep - closeMs) / (farMs - closeMs);
+        // Name labels start smaller by default and grow as selected time approaches.
+        return 1.18 - (1.18 - 0.72) * t;
+    }
+
+    const selectedMsForLabelScale = typeof getSelectedDateTime === 'function'
+        ? getSelectedDateTime().getTime()
+        : Date.now();
+
+    function applyFlattenToGroup(group, amount, includeEventStagger) {
+        if (!group || !focusPoint) return;
+        const yScaleLocal = Math.max(0.05, 1 - amount * 0.95);
+        group.scale.set(1, yScaleLocal, 1);
+        group.position.y = focusPoint.y * (1 - yScaleLocal);
+        if (amount > 0.01) {
+            group.traverse((obj) => {
+                if (includeEventStagger && obj.userData && obj.userData.eventStaggerRoot && typeof obj.userData.staggerLogical === 'number') {
+                    obj.position.y = obj.userData.staggerLogical / yScaleLocal;
                 }
                 const hasBaseScale = obj.userData && obj.userData.baseScale;
                 const isBillboard = obj.isSprite || obj.userData.type === 'EventLineLabel';
                 if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
                     const b = obj.userData.baseScale;
-                    obj.scale.set(b.x, b.y / yScale, b.z);
+                    const mul = getEventNameLabelScaleMultiplier(obj, selectedMsForLabelScale);
+                    obj.scale.set(b.x * mul, (b.y * mul) / yScaleLocal, b.z);
                 } else if (obj.userData.immuneToFlatten || obj.userData.type === 'EventLineMarker') {
-                    obj.scale.set(1, 1 / yScale, 1);
+                    obj.scale.set(1, 1 / yScaleLocal, 1);
                 }
             });
         } else {
-            flattenableGroup.traverse((obj) => {
-                if (obj.userData && obj.userData.eventStaggerRoot && typeof obj.userData.staggerLogical === 'number') {
+            group.traverse((obj) => {
+                if (includeEventStagger && obj.userData && obj.userData.eventStaggerRoot && typeof obj.userData.staggerLogical === 'number') {
                     obj.position.y = obj.userData.staggerLogical;
                 }
                 const hasBaseScale = obj.userData && obj.userData.baseScale;
                 const isBillboard = obj.isSprite || obj.userData.type === 'EventLineLabel';
                 if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
                     const b = obj.userData.baseScale;
-                    obj.scale.set(b.x, b.y, b.z);
+                    const mul = getEventNameLabelScaleMultiplier(obj, selectedMsForLabelScale);
+                    obj.scale.set(b.x * mul, b.y * mul, b.z);
                 } else if (obj.userData.immuneToFlatten || obj.userData.type === 'EventLineMarker') {
                     obj.scale.set(1, 1, 1);
                 }
@@ -3591,11 +3663,25 @@ function animate(time, frame) {
         }
     }
 
+    // Smooth flatten transition (split: all-timeline vs time-markers-only).
+    const flattenTargetAll = flattenMode === 'all' ? flattenIntensity : 0;
+    const flattenTargetMarkers = flattenMode === 'markers'
+        ? 1
+        : (flattenMode === 'all' ? flattenIntensity : 0);
+    currentFlattenAmount += (flattenTargetAll - currentFlattenAmount) * 0.08;
+    currentTimeMarkerFlattenAmount += (flattenTargetMarkers - currentTimeMarkerFlattenAmount) * 0.08;
+    if (typeof flattenableGroup !== 'undefined' && flattenableGroup && typeof focusPoint !== 'undefined' && focusPoint) {
+        applyFlattenToGroup(flattenableGroup, currentFlattenAmount, true);
+    }
+    if (typeof timeMarkersGroup !== 'undefined' && timeMarkersGroup && typeof focusPoint !== 'undefined' && focusPoint) {
+        applyFlattenToGroup(timeMarkersGroup, currentTimeMarkerFlattenAmount, false);
+    }
+
     // Circadian wrapped ↔ straightened morph (same lerp rate as flatten for a consistent feel).
     let circadianStraightenTarget = 0;
     if (typeof isCircadianHelixZoom === 'function' && isCircadianHelixZoom(currentZoom) &&
         typeof circadianState !== 'undefined' && circadianState !== 'off') {
-        if (circadianState === 'straightened' || (flattenOn && currentZoom >= 3)) {
+        if (circadianState === 'straightened' || (flattenMode === 'all' && currentZoom >= 3)) {
             circadianStraightenTarget = 1;
         }
     }
