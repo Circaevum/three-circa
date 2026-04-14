@@ -49,7 +49,6 @@
                 <button type="button" id="nav-account-btn" class="nav-icon-btn" title="Menu" aria-label="Open menu" aria-expanded="false" aria-haspopup="true">☰</button>
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="login">Log in</button>
-                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="calendar-layers">Calendar Layers</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="keyboard-controls">Keyboard Controls</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="about">About</button>
@@ -169,6 +168,12 @@
                     <path d="M9 3v4M15 3v4"/>
                     <path d="M12 14v4"/>
                     <path d="M10 18h4"/>
+                </svg>
+            </button>
+            <button type="button" class="scene-icon-btn active" id="events-color-fade-toggle" title="Long-term event context: transparency fade" aria-label="Toggle long-term event context rendering mode">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 3c3.8 4.6 6 7.2 6 10a6 6 0 1 1-12 0c0-2.8 2.2-5.4 6-10z"/>
+                    <path d="M9.25 15.2c1.2 1 3.1 1.1 4.4.15"/>
                 </svg>
             </button>
             <button type="button" class="scene-icon-btn active" id="moon-layer-toggle" title="Moon, lunar path &amp; Artemis II (M)" aria-label="Toggle Moon mesh, lunar worldline, and Artemis II trajectory (M)">
@@ -914,6 +919,25 @@
             return 365 * day;
           }
 
+          function durationDaysBetweenLocal(start, end) {
+            if (!start || !(start instanceof Date) || isNaN(start.getTime())) return 0;
+            if (!end || !(end instanceof Date) || isNaN(end.getTime()) || end <= start) return 0;
+            return (end.getTime() - start.getTime()) / 86400000;
+          }
+
+          function eventTextLabelsMinZoomForDurationDaysLocal(durationDays) {
+            if (durationDays < 1) return 8;
+            if (durationDays < 7) return 7;
+            if (durationDays < 31) return 5;
+            return 4;
+          }
+
+          function shouldShowEventTextAtZoomLocal(start, end, zoom) {
+            var z = typeof zoom === 'number' && !isNaN(zoom) ? zoom : (typeof currentZoom !== 'undefined' ? currentZoom : 2);
+            var days = durationDaysBetweenLocal(start, end);
+            return z >= eventTextLabelsMinZoomForDurationDaysLocal(days);
+          }
+
           function rangesOverlap(a0, a1, b0, b1) {
             return a1 >= b0 && a0 <= b1;
           }
@@ -1030,6 +1054,15 @@
               }
             }
 
+            if (!drawAll) {
+              events = events.filter(function(item) {
+                var ev = item && item.ev ? item.ev : null;
+                if (!ev || !(ev.start instanceof Date) || isNaN(ev.start.getTime())) return false;
+                var end = ev.end && ev.end > ev.start ? ev.end : null;
+                return shouldShowEventTextAtZoomLocal(ev.start, end, z);
+              });
+            }
+
             if (events.length === 0 && lines.length === 0) {
               listEl.innerHTML = '<p class="event-horizon-empty">Nothing in this time window (' + totalEv + ' event(s), ' + totalLn + ' line(s) loaded overall). Move <strong>selected time</strong> or zoom, use <strong>Draw all</strong>, or switch the 1Y / all-time events control, then Refresh.</p>';
               return;
@@ -1104,6 +1137,14 @@
               appendEventRow(listEl, item, layerSwatchColor(layer));
             });
 
+            var selectedTimeDivider = document.createElement('div');
+            selectedTimeDivider.className = 'events-nearby-lines-header';
+            selectedTimeDivider.textContent = 'Selected time — ' + formatDate(ref);
+            selectedTimeDivider.style.margin = '8px 0 12px';
+            selectedTimeDivider.style.borderTop = '1px solid rgba(0,180,216,0.25)';
+            selectedTimeDivider.style.paddingTop = '8px';
+            listEl.appendChild(selectedTimeDivider);
+
             if (lines.length) {
               var lh = document.createElement('div');
               lh.className = 'events-nearby-lines-header';
@@ -1126,6 +1167,15 @@
                 listEl.appendChild(row);
               });
             }
+
+            requestAnimationFrame(function() {
+              var panelBody = listEl.parentElement;
+              if (!panelBody || typeof panelBody.clientHeight !== 'number') return;
+              var dividerTop = selectedTimeDivider.offsetTop;
+              var dividerCenter = dividerTop + (selectedTimeDivider.offsetHeight / 2);
+              var targetScrollTop = dividerCenter - (panelBody.clientHeight / 2);
+              panelBody.scrollTop = Math.max(0, targetScrollTop);
+            });
           }
 
           var refreshBtn = document.getElementById('events-panel-refresh');

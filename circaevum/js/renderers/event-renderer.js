@@ -29,6 +29,70 @@
    */
   const RIBBON_OUTLINE_TUBE_RADIUS_FRAC = 0.0003;
 
+  /** Multi-day ribbon fills at or above this span use a radial alpha gradient (opaque at Sun-ward inner edge, fading toward outer). */
+  const LONG_EVENT_RIBBON_RADIAL_GRADIENT_MIN_DAYS = 1;
+  /** Outer-edge fill alpha = fillOpacity × this (inner edge uses full fillOpacity). Outlines are unchanged. */
+  const LONG_EVENT_RIBBON_OUTER_FILL_ALPHA_RATIO = 0.1;
+  /** In alpha-fade mode, out-of-window long-term fills reduce inner alpha more than outer (but never disappear). */
+  const LONG_EVENT_CONTEXT_INNER_ALPHA_MIN = 0.28;
+  const LONG_EVENT_CONTEXT_OUTER_ALPHA_MIN = 0.18;
+
+  function longEventRibbonUsesRadialFillGradient(durationDays) {
+    return durationDays >= LONG_EVENT_RIBBON_RADIAL_GRADIENT_MIN_DAYS;
+  }
+
+  function getLongEventContextFadeMode() {
+    if (typeof global.getLongEventContextFadeMode === 'function') {
+      const mode = String(global.getLongEventContextFadeMode() || '').toLowerCase();
+      if (mode === 'alpha') return 'alpha';
+      if (mode === 'desaturate') return 'desaturate';
+    }
+    return 'desaturate';
+  }
+
+  /**
+   * @param {number} fillHex
+   * @param {number} fillOpacity - same combined opacity as MeshBasicMaterial (capped)
+   * @param {object} THREE - global THREE
+   */
+  function createLongTermRibbonFillShaderMaterial(fillHex, fillOpacity, THREE, innerScale, outerScale) {
+    const inScale = innerScale != null ? innerScale : 1;
+    const outScale = outerScale != null ? outerScale : 1;
+    const innerA = Math.min(1, Math.max(0, fillOpacity * inScale));
+    const outerA = Math.min(1, Math.max(0, fillOpacity * LONG_EVENT_RIBBON_OUTER_FILL_ALPHA_RATIO * outScale));
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        diffuse: { value: new THREE.Color(fillHex) },
+        innerAlpha: { value: innerA },
+        outerAlpha: { value: outerA }
+      },
+      vertexShader: [
+        'attribute float ribbonEdge;',
+        'varying float vRibbonEdge;',
+        'void main() {',
+        '  vRibbonEdge = ribbonEdge;',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'uniform vec3 diffuse;',
+        'uniform float innerAlpha;',
+        'uniform float outerAlpha;',
+        'varying float vRibbonEdge;',
+        'void main() {',
+        '  float a = mix(innerAlpha, outerAlpha, vRibbonEdge);',
+        '  gl_FragColor = vec4(diffuse, a);',
+        '}'
+      ].join('\n'),
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: 2,
+      polygonOffsetUnits: 1
+    });
+  }
+
   function getZoomLevelForEvents() {
     if (typeof global.getCurrentZoomLevel === 'function') return global.getCurrentZoomLevel();
     return 5;
@@ -357,8 +421,37 @@
     const geo = new global.THREE.BufferGeometry();
     geo.setIndex(idx);
     geo.setAttribute('position', new global.THREE.BufferAttribute(pos, 3));
+    const ribbonEdge = new Float32Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      ribbonEdge[i * 2] = 0;
+      ribbonEdge[i * 2 + 1] = 1;
+    }
+    geo.setAttribute('ribbonEdge', new global.THREE.BufferAttribute(ribbonEdge, 1));
     geo.computeVertexNormals();
     return geo;
+  }
+
+  function createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays, contextFade) {
+    const THREE = global.THREE;
+    const useGradient = longEventRibbonUsesRadialFillGradient(durationDays);
+    const innerScale = contextFade && contextFade.innerScale != null ? contextFade.innerScale : 1;
+    const outerScale = contextFade && contextFade.outerScale != null ? contextFade.outerScale : 1;
+    const mat = useGradient
+      ? createLongTermRibbonFillShaderMaterial(fillHex, fillOpacity, THREE, innerScale, outerScale)
+      : new THREE.MeshBasicMaterial({
+        color: fillHex,
+        transparent: true,
+        opacity: fillOpacity * innerScale,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: 2,
+        polygonOffsetUnits: 1
+      });
+    const fillMesh = new global.THREE.Mesh(ribbonGeo, mat);
+    if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
+    fillMesh.renderOrder = roFill;
+    return fillMesh;
   }
 
   function addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder, tubeRadius) {
@@ -510,6 +603,16 @@
     return sprite;
   }
 
+  function attachEventLabelTiming(sprite, start, end, isNameLabel) {
+    if (!sprite || !sprite.userData) return sprite;
+    const s = start instanceof Date && !isNaN(start.getTime()) ? start.getTime() : NaN;
+    const e = end instanceof Date && !isNaN(end.getTime()) && end > start ? end.getTime() : s;
+    if (isFinite(s)) sprite.userData.labelStartMs = s;
+    if (isFinite(e)) sprite.userData.labelEndMs = e;
+    if (isNameLabel) sprite.userData.isEventNameLabel = true;
+    return sprite;
+  }
+
   /**
    * Format date as MM/DD for start/end labels
    */
@@ -627,7 +730,12 @@
     if (isShortEvent) {
       const midLabel = nameStr || (formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end)));
       const midPos = getPos(midHeight, labelRadius);
-      const midSprite = createEventLineLabelSprite(midLabel, eventHex, midPos.x, midPos.y + sy, midPos.z, nameScale, true);
+      const midSprite = attachEventLabelTiming(
+        createEventLineLabelSprite(midLabel, eventHex, midPos.x, midPos.y + sy, midPos.z, nameScale, true),
+        start,
+        end,
+        true
+      );
       Object.assign(midSprite.userData, { type: 'EventObjectLabel', kind: 'mid' });
       parent.add(midSprite);
       return;
@@ -646,7 +754,12 @@
     parent.add(endSprite);
 
     const midLabel = nameStr || (formatMMDD(start) + ' – ' + formatMMDD(end));
-    const midSprite = createEventLineLabelSprite(midLabel, eventHex, midPos.x, midPos.y + sy, midPos.z, nameScale, true);
+    const midSprite = attachEventLabelTiming(
+      createEventLineLabelSprite(midLabel, eventHex, midPos.x, midPos.y + sy, midPos.z, nameScale, true),
+      start,
+      end,
+      true
+    );
     Object.assign(midSprite.userData, { type: 'EventObjectLabel', kind: 'mid' });
     parent.add(midSprite);
   }
@@ -876,6 +989,14 @@
     return TEMPORAL_VIVID_FLOOR + (1 - TEMPORAL_VIVID_FLOOR) * (1 - u);
   }
 
+  function getTemporalContextFactors(anchorMs, spanStart, spanEnd) {
+    const vt = getTemporalVividness01(anchorMs);
+    const vp = spanStart && !isNaN(spanStart.getTime())
+      ? getPeripheralVividness01(spanStart, spanEnd)
+      : 1;
+    return { vt, vp, v: Math.min(vt, vp) };
+  }
+
   /**
    * Half-width of the “in focus” time window around selected time, by zoom.
    * Matches yang/web/index.html nearbyHalfSpanMs (event list / horizon).
@@ -931,12 +1052,24 @@
    * @param {Date|null} spanEnd - interval end; omit or same as start for instant events
    */
   function applyTemporalVividnessToHex(hex, anchorMs, spanStart, spanEnd) {
-    const vt = getTemporalVividness01(anchorMs);
-    const vp = spanStart && !isNaN(spanStart.getTime())
-      ? getPeripheralVividness01(spanStart, spanEnd)
-      : 1;
-    const v = Math.min(vt, vp);
-    return lerpHexColor(TEMPORAL_NEUTRAL_HEX, hex, v);
+    const f = getTemporalContextFactors(anchorMs, spanStart, spanEnd);
+    return lerpHexColor(TEMPORAL_NEUTRAL_HEX, hex, f.v);
+  }
+
+  function applyLongTermContextColorToHex(hex, anchorMs, spanStart, spanEnd, durationDays) {
+    if (durationDays >= 1 && getLongEventContextFadeMode() === 'alpha') return hex;
+    return applyTemporalVividnessToHex(hex, anchorMs, spanStart, spanEnd);
+  }
+
+  function getLongTermContextFillFadeScales(anchorMs, spanStart, spanEnd, durationDays) {
+    if (durationDays < 1 || getLongEventContextFadeMode() !== 'alpha') {
+      return { innerScale: 1, outerScale: 1 };
+    }
+    const f = getTemporalContextFactors(anchorMs, spanStart, spanEnd);
+    const attenuation = Math.max(0, 1 - f.vp);
+    const innerScale = Math.max(LONG_EVENT_CONTEXT_INNER_ALPHA_MIN, 1 - 0.78 * attenuation);
+    const outerScale = Math.max(LONG_EVENT_CONTEXT_OUTER_ALPHA_MIN, 1 - 0.45 * attenuation);
+    return { innerScale, outerScale };
   }
 
   // Earlier events -> warmer red, later events -> cooler blue.
@@ -1381,18 +1514,7 @@
           } else if (plotType === 'polygon3d' || plotType === 'polygon2d') {
             const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
             if (ribbonGeo) {
-              const fillMesh = new global.THREE.Mesh(ribbonGeo, new global.THREE.MeshBasicMaterial({
-                color: fillHex,
-                transparent: true,
-                opacity: fillOpacity,
-                side: global.THREE.DoubleSide,
-                depthWrite: false,
-                polygonOffset: true,
-                polygonOffsetFactor: 2,
-                polygonOffsetUnits: 1
-              }));
-              if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
-              fillMesh.renderOrder = roFill;
+              const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays);
               group.add(fillMesh);
               if (borderStyle !== 'none' && outlineColorHex != null) {
                 const tubeR = getRibbonOutlineTubeRadius(earthDist, layerConfig);
@@ -1430,7 +1552,12 @@
           const nameScale = 4.5;
           if (areEventTextLabelsVisibleAtCurrentZoom(start, end)) {
             if (tip) {
-              const midSprite = createEventLineLabelSprite(midLabelText, eventHex, tip.x, tip.y, tip.z, nameScale, true);
+              const midSprite = attachEventLabelTiming(
+                createEventLineLabelSprite(midLabelText, eventHex, tip.x, tip.y, tip.z, nameScale, true),
+                start,
+                end,
+                true
+              );
               Object.assign(midSprite.userData, { type: 'EventObjectLabel', kind: 'mid' });
               group.add(midSprite);
             } else {
@@ -1488,15 +1615,16 @@
     const explicitEventColor = hasExplicitEventColor(event);
     const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
     let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
-    eventHex = applyTemporalVividnessToHex(eventHex, anchorMsLong, start, end);
+    eventHex = applyLongTermContextColorToHex(eventHex, anchorMsLong, start, end, durationDays);
     const layerHex = parseColor(layerConfig.color || '#00b4d8');
     // Prefer explicit fillColor, then per-event color, then layer color.
     let fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
-    fillHex = applyTemporalVividnessToHex(fillHex, anchorMsLong, start, end);
+    fillHex = applyLongTermContextColorToHex(fillHex, anchorMsLong, start, end, durationDays);
     const borderStyle = layerConfig.borderStyle || 'event';
     let outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
-    if (outlineColorHex != null) outlineColorHex = applyTemporalVividnessToHex(outlineColorHex, anchorMsLong, start, end);
+    if (outlineColorHex != null) outlineColorHex = applyLongTermContextColorToHex(outlineColorHex, anchorMsLong, start, end, durationDays);
     const outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
+    const fillFade = getLongTermContextFillFadeScales(anchorMsLong, start, end, durationDays);
 
     const userData = {
       vevent: event,
@@ -1536,18 +1664,7 @@
       if (ribbonGeo) {
         const group = new global.THREE.Group();
         group.userData = userData;
-        const fillMesh = new global.THREE.Mesh(ribbonGeo, new global.THREE.MeshBasicMaterial({
-          color: fillHex,
-          transparent: true,
-          opacity: fillOpacity,
-          side: global.THREE.DoubleSide,
-          depthWrite: false,
-          polygonOffset: true,
-          polygonOffsetFactor: 2,
-          polygonOffsetUnits: 1
-        }));
-        if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
-        fillMesh.renderOrder = roFill;
+        const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays, fillFade);
         group.add(fillMesh);
         if (borderStyle !== 'none' && outlineColorHex != null) {
           const tubeR = getRibbonOutlineTubeRadius(earthDist, layerConfig);
@@ -1583,7 +1700,7 @@
       points = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
     }
     let fallbackOutlineHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
-    if (fallbackOutlineHex != null) fallbackOutlineHex = applyTemporalVividnessToHex(fallbackOutlineHex, anchorMsLong, start, end);
+    if (fallbackOutlineHex != null) fallbackOutlineHex = applyLongTermContextColorToHex(fallbackOutlineHex, anchorMsLong, start, end, durationDays);
     const useOutline = borderStyle !== 'none' && fallbackOutlineHex != null;
     const strokeHex = useOutline ? fallbackOutlineHex : eventHex;
     const strokeOp = useOutline ? getRibbonOutlineOpacity(opacity, borderStyle, layerConfig) : opacity;
@@ -1779,18 +1896,7 @@
             } else if (plotType === 'polygon3d' || plotType === 'polygon2d') {
               const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
               if (ribbonGeo) {
-                const fillMesh = new global.THREE.Mesh(ribbonGeo, new global.THREE.MeshBasicMaterial({
-                  color: fillHex,
-                  transparent: true,
-                  opacity: fillOpacity,
-                  side: global.THREE.DoubleSide,
-                  depthWrite: false,
-                  polygonOffset: true,
-                  polygonOffsetFactor: 2,
-                  polygonOffsetUnits: 1
-                }));
-                if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
-                fillMesh.renderOrder = roFill;
+                const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDaysSmall);
                 lineRoot.add(fillMesh);
                 if (borderStyle !== 'none' && outlineColorHexEvt != null) {
                   const tubeR = getRibbonOutlineTubeRadius(earthDist, outlineLayerCfg);
@@ -1824,13 +1930,23 @@
                 : formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end));
             if (areEventTextLabelsVisibleAtCurrentZoom(start, end)) {
               if (tip) {
-                const midSprite = createEventLineLabelSprite(midLabel, colorHex, tip.x, tip.y, tip.z, nameScale, true);
+                const midSprite = attachEventLabelTiming(
+                  createEventLineLabelSprite(midLabel, colorHex, tip.x, tip.y, tip.z, nameScale, true),
+                  start,
+                  end,
+                  true
+                );
                 Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
                 lineRoot.add(midSprite);
               } else {
                 const labelRadius = rShort + EVENT_LINE_LABEL_RADIUS_OFFSET;
                 const labelPos = getPosShort(midHeight, labelRadius);
-                const midSprite = createEventLineLabelSprite(midLabel, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true);
+                const midSprite = attachEventLabelTiming(
+                  createEventLineLabelSprite(midLabel, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true),
+                  start,
+                  end,
+                  true
+                );
                 Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
                 lineRoot.add(midSprite);
               }
@@ -1873,7 +1989,12 @@
         if (areEventTextLabelsVisibleAtCurrentZoom(start, end)) {
           const midLabelFallback = (line.label && String(line.label).trim()) ? String(line.label).trim() : (formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end)));
           const labelPos = getPosShort(midHeight, labelRadius);
-          const midSprite = createEventLineLabelSprite(midLabelFallback, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true);
+          const midSprite = attachEventLabelTiming(
+            createEventLineLabelSprite(midLabelFallback, colorHex, labelPos.x, labelPos.y, labelPos.z, nameScale, true),
+            start,
+            end,
+            true
+          );
           Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
           shortRoot.add(midSprite);
         }
@@ -1898,9 +2019,9 @@
 
       const layerColorHex = parseColor(layerConfig.color || '#00b4d8');
       let eventColorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
-      eventColorHex = applyTemporalVividnessToHex(eventColorHex, anchorMs, start, end);
+      eventColorHex = applyLongTermContextColorToHex(eventColorHex, anchorMs, start, end, durationDays);
       let fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color) : eventColorHex);
-      fillHex = applyTemporalVividnessToHex(fillHex, anchorMs, start, end);
+      fillHex = applyLongTermContextColorToHex(fillHex, anchorMs, start, end, durationDays);
       const opacity = Math.min(1,
         ((lineStyle.opacity != null ? lineStyle.opacity : layerConfig.opacity) ?? 0.7) * getDurationOpacityScale(durationDays));
       const roBoost = getDurationRibbonRenderOrderBoost(durationDays);
@@ -1908,8 +2029,9 @@
       const roLine = -2 + roBoost;
       const fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
       let outlineColorHexEvt = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
-      if (outlineColorHexEvt != null) outlineColorHexEvt = applyTemporalVividnessToHex(outlineColorHexEvt, anchorMs, start, end);
+      if (outlineColorHexEvt != null) outlineColorHexEvt = applyLongTermContextColorToHex(outlineColorHexEvt, anchorMs, start, end, durationDays);
       const outlineOpEvt = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
+      const fillFade = getLongTermContextFillFadeScales(anchorMs, start, end, durationDays);
 
       const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, currentHeight, 32);
       const staggerLogical = getEventBandVerticalStagger(durationDays);
@@ -1957,18 +2079,7 @@
         if (ribbonGeo) {
           const bandGroup = new global.THREE.Group();
           bandGroup.userData = { ...lineUserData };
-          const fillMesh = new global.THREE.Mesh(ribbonGeo, new global.THREE.MeshBasicMaterial({
-            color: fillHex,
-            transparent: true,
-            opacity: fillOpacity,
-            side: global.THREE.DoubleSide,
-            depthWrite: false,
-            polygonOffset: true,
-            polygonOffsetFactor: 2,
-            polygonOffsetUnits: 1
-          }));
-          if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
-          fillMesh.renderOrder = roFill;
+          const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays, fillFade);
           fillMesh.userData = { ...lineUserData, longTermFill: true };
           bandGroup.add(fillMesh);
           if (borderStyle !== 'none' && outlineColorHexEvt != null) {
@@ -2001,7 +2112,7 @@
           points = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
         }
         let outlineColorFb = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
-        if (outlineColorFb != null) outlineColorFb = applyTemporalVividnessToHex(outlineColorFb, anchorMs, start, end);
+        if (outlineColorFb != null) outlineColorFb = applyLongTermContextColorToHex(outlineColorFb, anchorMs, start, end, durationDays);
         const outlineOpFb = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
         const useOutFb = borderStyle !== 'none' && outlineColorFb != null;
         const strokeHexFb = useOutFb ? outlineColorFb : eventColorHex;
@@ -2040,7 +2151,12 @@
         lineRoot.add(endSprite);
 
         const midLabel = (line.label && String(line.label).trim()) ? String(line.label).trim() : (formatMMDD(start) + ' – ' + formatMMDD(end));
-        const midSprite = createEventLineLabelSprite(midLabel, colorHex, midPos.x, midPos.y, midPos.z, nameScale, true);
+        const midSprite = attachEventLabelTiming(
+          createEventLineLabelSprite(midLabel, colorHex, midPos.x, midPos.y, midPos.z, nameScale, true),
+          start,
+          end,
+          true
+        );
         Object.assign(midSprite.userData, { type: 'EventLineLabel', kind: 'mid' });
         lineRoot.add(midSprite);
       }

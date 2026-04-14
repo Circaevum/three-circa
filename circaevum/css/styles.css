@@ -2476,9 +2476,9 @@ h1 {
     background: rgba(0, 8, 20, 0.9);
     backdrop-filter: blur(10px);
     border: 2px solid var(--cosmic-cyan);
-    border-radius: 15px;
-    padding: 20px 25px;
-    min-width: 280px;
+    border-radius: 12px;
+    padding: 12px 16px;
+    min-width: 220px;
     box-shadow: 0 0 30px rgba(0, 180, 216, 0.3);
     pointer-events: none;
     z-index: 150;
@@ -2486,19 +2486,19 @@ h1 {
 
 .info-panel h3 {
     font-family: 'Orbitron', sans-serif;
-    font-size: 1.1rem;
+    font-size: 0.9rem;
     color: var(--cosmic-cyan);
-    margin-bottom: 16px;
+    margin-bottom: 10px;
     letter-spacing: 0.1em;
     border-bottom: 1px solid var(--nebula-blue);
-    padding-bottom: 8px;
+    padding-bottom: 6px;
 }
 
 .info-row {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 10px;
-    font-size: 0.85rem;
+    margin-bottom: 7px;
+    font-size: 0.78rem;
 }
 
 .info-label {
