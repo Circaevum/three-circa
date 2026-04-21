@@ -32,6 +32,8 @@ class VEvent {
     this.rrule = data.rrule || null;
     this.exdate = data.exdate || [];
     this.categories = data.categories || [];
+    this.isTrip = data.isTrip === true;
+    this.isWorkEvent = data.isWorkEvent === true;
     this.color = data.color || null;
     this.class = data.class || 'PUBLIC';
     this.layerId = data.layerId || null;
@@ -113,6 +115,8 @@ class VEvent {
       rrule: this.rrule,
       exdate: this.exdate,
       categories: this.categories,
+      isTrip: this.isTrip,
+      isWorkEvent: this.isWorkEvent,
       color: this.color,
       class: this.class,
       layerId: this.layerId

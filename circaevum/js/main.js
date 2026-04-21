@@ -79,6 +79,14 @@ let circadianHelixMarkerGroups = []; // Week/month ticks along circadian helix (
 /** Thick Sun↔Earth cylinders: actual now (red) vs selected time (blue); sceneContentGroup space. */
 let sunEarthTimeRadialCurrent = null;
 let sunEarthTimeRadialSelected = null;
+/** List-context circle: sky-filled disks to Sun axis + rim wall; Day/Clock outer radius to Earth orbit. */
+let listHorizonEarthRingMesh = null;
+let listHorizonEarthRingCurrentRadius = null;
+let listHorizonEarthRingTargetRadius = null;
+let listHorizonEarthRingCurrentHeight = null;
+let listHorizonEarthRingTargetHeight = null;
+let listHorizonEarthRingEarthDistance = null;
+let listHorizonEarthRingTargetZoom = null;
 /** Short (<24h) circadian-scoped events: 'day' = selected calendar day only, 'year' = whole selected year. */
 let circadianShortEventScope = 'day';
 /** Default off so the daily helix frame is not on until the user enables it. */
@@ -165,6 +173,10 @@ let xrUI = null;
 let xrDomQuad = null;
 let xrDomQuadTexture = null;
 let xrDomQuadRefreshId = null;
+/** XR panel: how many calendar steps A/D-equivalent moves apply per press (1–8). */
+let xrTimeScale = 1;
+const XR_TIME_SCALE_MIN = 1;
+const XR_TIME_SCALE_MAX = 8;
 /** Camera used to render the solar system to the window texture in XR windowed mode (same logic as 2D view). */
 let contentCamera = null;
 
@@ -691,6 +703,309 @@ function disposeSunEarthTimeRadials() {
     sunEarthTimeRadialSelected = null;
 }
 
+const EVENT_LIST_MS_PER_DAY = 86400000;
+const EVENT_LIST_MS_PER_YEAR = 365 * EVENT_LIST_MS_PER_DAY;
+
+/** Script-tag builds expose Three on `window`; bare `THREE` is not in scope under ESM/Vite. */
+function getThreeNamespace() {
+    if (typeof window !== 'undefined' && window.THREE) return window.THREE;
+    if (typeof globalThis !== 'undefined' && globalThis.THREE) return globalThis.THREE;
+    return null;
+}
+
+/** Same half-span as `nearbyHalfSpanMs` in `yang/web/index.html` (event list time window). */
+function getEventListHalfSpanMs(zoomLevel) {
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+    if (z >= 9) return EVENT_LIST_MS_PER_DAY;
+    if (z >= 8) return 2 * EVENT_LIST_MS_PER_DAY;
+    if (z >= 7) return 7 * EVENT_LIST_MS_PER_DAY;
+    if (z >= 5) return 30 * EVENT_LIST_MS_PER_DAY;
+    if (z >= 3) return 120 * EVENT_LIST_MS_PER_DAY;
+    return 365 * EVENT_LIST_MS_PER_DAY;
+}
+
+function disposeListHorizonEarthRing() {
+    if (!listHorizonEarthRingMesh) return;
+    if (listHorizonEarthRingMesh.parent) listHorizonEarthRingMesh.parent.remove(listHorizonEarthRingMesh);
+    listHorizonEarthRingMesh.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+    });
+    listHorizonEarthRingMesh = null;
+}
+
+function resetListHorizonEarthRingAnimationState() {
+    listHorizonEarthRingCurrentRadius = null;
+    listHorizonEarthRingTargetRadius = null;
+    listHorizonEarthRingCurrentHeight = null;
+    listHorizonEarthRingTargetHeight = null;
+    listHorizonEarthRingEarthDistance = null;
+    listHorizonEarthRingTargetZoom = null;
+}
+
+function resolveListHorizonRingRadius(z, W) {
+    if (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getListContextRingRadiusForZoom === 'function') {
+        return TimeMarkers.getListContextRingRadiusForZoom(z, W);
+    }
+    const monthOuter = W / 2;
+    const weekOuter = W * 5 / 8;
+    const dayInner = W * 5 / 8;
+    const dayOuter = W * 3 / 4;
+    const qOuter = W / 4;
+    let ro;
+    if (z <= 0) ro = dayInner;
+    else if (z <= 2) ro = W * 0.5;
+    else if (z === 3) ro = qOuter;
+    else if (z === 4) ro = monthOuter;
+    else if (z <= 6) ro = weekOuter;
+    else if (z === 7) ro = dayOuter;
+    else ro = W;
+    const rMax = z >= 8 ? W * 0.998 : W * 0.92;
+    return Math.max(W * 0.08, Math.min(ro, rMax));
+}
+
+function rebuildListHorizonEarthRingMesh(radius, yCenter, earthW, z) {
+    const T = getThreeNamespace();
+    if (!T || !sceneContentGroup || !isFinite(radius) || !isFinite(yCenter) || !isFinite(earthW)) return;
+    disposeListHorizonEarthRing();
+    const extendEarth = Math.floor(z) >= 8;
+    const mesh = buildListHorizonHoopGroup(
+        T,
+        radius,
+        earthW,
+        yCenter,
+        getListHorizonRingColorHex(),
+        7,
+        { extendToEarthOrbit: extendEarth }
+    );
+    if (!mesh) return;
+    sceneContentGroup.add(mesh);
+    listHorizonEarthRingMesh = mesh;
+}
+
+/** Legacy accent for the hoop wall (annuli use sky shader). */
+function getListHorizonRingColorHex() {
+    return isLightMode ? 0x0891b2 : 0x22d3ee;
+}
+
+/**
+ * Sky disk fill + original list-hoop cyan on the outer edge (`edgeColorHex` = getListHorizonRingColorHex).
+ */
+function createListHorizonSkyDiskMaterial(THREE, isLight, edgeColorHex) {
+    const light = !!isLight;
+    const zenith = new THREE.Color(light ? 0x6a9ec8 : 0x142a48);
+    const skyBand = new THREE.Color(light ? 0xa8d4f5 : 0x3d7eb8);
+    const twilight = new THREE.Color(light ? 0xffc9a8 : 0xc87858);
+    const twilightMix = new THREE.Color(light ? 0xe8b8e0 : 0x6a5080);
+    const edgeCol = new THREE.Color(edgeColorHex != null ? edgeColorHex : 0x22d3ee);
+    return new THREE.ShaderMaterial({
+        uniforms: {
+            zenithColor: { value: zenith },
+            skyBandColor: { value: skyBand },
+            twilightColor: { value: twilight },
+            twilightMixColor: { value: twilightMix },
+            edgeColor: { value: edgeCol }
+        },
+        vertexShader: [
+            'attribute float annulusT;',
+            'varying float vAnnulusT;',
+            'void main() {',
+            '  vAnnulusT = annulusT;',
+            '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+            '}'
+        ].join('\n'),
+        fragmentShader: [
+            'uniform vec3 zenithColor;',
+            'uniform vec3 skyBandColor;',
+            'uniform vec3 twilightColor;',
+            'uniform vec3 twilightMixColor;',
+            'uniform vec3 edgeColor;',
+            'varying float vAnnulusT;',
+            'void main() {',
+            '  float t = vAnnulusT;',
+            '  vec3 c = zenithColor;',
+            '  c = mix(c, skyBandColor, smoothstep(0.0, 0.48, t));',
+            '  vec3 skyHi = mix(skyBandColor, vec3(0.82, 0.93, 1.0), 0.35);',
+            '  c = mix(c, skyHi, smoothstep(0.28, 0.72, t));',
+            '  float tw = smoothstep(0.93, 1.0, t);',
+            '  vec3 twC = mix(twilightColor, twilightMixColor, 0.45 * tw);',
+            '  c = mix(c, twC, tw * 0.45);',
+            '  c = mix(c, vec3(0.92, 0.96, 1.0), 0.22);',
+            '  float cyanEdge = smoothstep(0.76, 1.0, t);',
+            '  c = mix(c, edgeColor, cyanEdge * 0.92);',
+            '  float a = mix(0.04, 0.14, smoothstep(0.0, 0.38, t));',
+            '  a = mix(a, 0.20, smoothstep(0.32, 0.75, t));',
+            '  a = mix(a, 0.14, smoothstep(0.94, 1.0, t));',
+            '  a = mix(a, min(a + 0.18, 0.34), cyanEdge * 0.65);',
+            '  gl_FragColor = vec4(c, a);',
+            '}'
+        ].join('\n'),
+        transparent: true,
+        depthTest: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1
+    });
+}
+
+/**
+ * Filled disk in the plane y = const: sky gradient from center (included context) to context-circle edge.
+ */
+function buildListHorizonSkyDiskMesh(THREE, radius, y, nSeg, colorHex, opacity, renderOrder) {
+    void opacity;
+    const TWO_PI = Math.PI * 2;
+    const ro = Math.max(0, radius);
+    if (ro < 1e-4) return null;
+
+    const n = Math.max(24, Math.min(96, nSeg));
+    const positions = [];
+    const annulusT = [];
+    const indices = [];
+
+    positions.push(0, y, 0);
+    annulusT.push(0);
+    const iCenter = 0;
+    for (let i = 0; i < n; i++) {
+        const t0 = (i / n) * TWO_PI;
+        const c0 = Math.cos(t0);
+        const s0 = Math.sin(t0);
+        positions.push(c0 * ro, y, s0 * ro);
+        annulusT.push(1);
+    }
+    for (let i = 0; i < n; i++) {
+        const a = iCenter;
+        const b = 1 + i;
+        const c = 1 + ((i + 1) % n);
+        indices.push(a, b, c);
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
+    geom.setAttribute('annulusT', new THREE.Float32BufferAttribute(new Float32Array(annulusT), 1));
+    geom.setIndex(indices);
+
+    const mat = createListHorizonSkyDiskMaterial(THREE, isLightMode, colorHex);
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.renderOrder = renderOrder != null ? renderOrder : 7;
+    mesh.userData = { type: 'ListHorizonEarthRing' };
+    return mesh;
+}
+
+/**
+ * Context circle: vertical wall on the outer radius + sky-filled disks (top/bottom) covering interior to Sun axis.
+ * @param {object} [opts] - `{ extendToEarthOrbit?: boolean }` relaxes outer radius cap toward W (Day/Clock).
+ */
+function buildListHorizonHoopGroup(THREE, rHoop, earthW, yCenter, colorHex, renderOrder, opts) {
+    if (!THREE) return null;
+    const TWO_PI = Math.PI * 2;
+    const extendEarth = opts && opts.extendToEarthOrbit === true;
+    const roCap = extendEarth ? 0.998 : 0.94;
+    const ro = Math.max(earthW * 0.2, Math.min(rHoop, earthW * roCap));
+    const halfH = Math.max(0.75, earthW * 0.014);
+    const y0 = yCenter - halfH;
+    const y1 = yCenter + halfH;
+
+    const n = Math.max(36, Math.min(96, Math.round(52 + ro * 0.28)));
+
+    const positions = [];
+    const indices = [];
+    let vi = 0;
+    function addV(x, y, z) {
+        positions.push(x, y, z);
+        return vi++;
+    }
+    function addQuad(a, b, c, d) {
+        indices.push(a, b, c, a, c, d);
+    }
+
+    for (let i = 0; i < n; i++) {
+        const t0 = (i / n) * TWO_PI;
+        const t1 = ((i + 1) / n) * TWO_PI;
+        const c0 = Math.cos(t0);
+        const s0 = Math.sin(t0);
+        const c1 = Math.cos(t1);
+        const s1 = Math.sin(t1);
+        const a = addV(c0 * ro, y0, s0 * ro);
+        const b = addV(c1 * ro, y0, s1 * ro);
+        const c = addV(c1 * ro, y1, s1 * ro);
+        const d = addV(c0 * ro, y1, s0 * ro);
+        addQuad(a, b, c, d);
+    }
+
+    const wallGeom = new THREE.BufferGeometry();
+    wallGeom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
+    wallGeom.setIndex(indices);
+    wallGeom.computeVertexNormals();
+
+    const matWall = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.36,
+        side: THREE.DoubleSide,
+        depthTest: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1
+    });
+    const wall = new THREE.Mesh(wallGeom, matWall);
+    wall.renderOrder = renderOrder != null ? renderOrder : 7;
+    wall.userData = { type: 'ListHorizonEarthRing' };
+
+    const group = new THREE.Group();
+    group.userData = { type: 'ListHorizonEarthRing' };
+    group.add(wall);
+
+    const bottom = buildListHorizonSkyDiskMesh(THREE, ro, y0, n, colorHex, null, renderOrder);
+    const top = buildListHorizonSkyDiskMesh(THREE, ro, y1, n, colorHex, null, renderOrder);
+    if (bottom) group.add(bottom);
+    if (top) group.add(top);
+
+    return group;
+}
+
+/**
+ * Zoom-context hoop on the outer edge of the primary time-marker band for this zoom
+ * (see TimeMarkers.getListContextRingRadiusForZoom): flat ring at selected time height on sceneContentGroup.
+ * Hidden when list Draw-all is on.
+ */
+function updateListHorizonEarthRing(zoomLevel) {
+    const T = getThreeNamespace();
+    if (!T || !sceneContentGroup || !PLANET_DATA || !PLANET_DATA.length) return;
+    if (typeof window !== 'undefined' && window.eventsListHorizonRingActive === false) {
+        disposeListHorizonEarthRing();
+        resetListHorizonEarthRingAnimationState();
+        return;
+    }
+
+    const earth = PLANET_DATA.find((p) => p.name === 'Earth');
+    if (!earth) return;
+
+    const { selectedDateHeight } = computeSceneDateHeights(zoomLevel);
+    const W = earth.distance;
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+    const targetRadius = resolveListHorizonRingRadius(z, W);
+
+    listHorizonEarthRingTargetRadius = targetRadius;
+    listHorizonEarthRingTargetHeight = selectedDateHeight;
+    listHorizonEarthRingEarthDistance = W;
+    listHorizonEarthRingTargetZoom = z;
+
+    if (listHorizonEarthRingCurrentRadius == null || listHorizonEarthRingCurrentHeight == null || !listHorizonEarthRingMesh) {
+        listHorizonEarthRingCurrentRadius = targetRadius;
+        listHorizonEarthRingCurrentHeight = selectedDateHeight;
+        rebuildListHorizonEarthRingMesh(listHorizonEarthRingCurrentRadius, listHorizonEarthRingCurrentHeight, W, z);
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.updateListHorizonEarthRingScene = function () {
+        updateListHorizonEarthRing(currentZoom);
+    };
+}
+
 /**
  * Radial tube Sun (origin in XZ at that date height) ↔ Earth on the helical worldline, thicker than tick lines.
  */
@@ -926,6 +1241,7 @@ function applyLightTimeScrubUpdate(zoomLevel) {
     }
 
     updateSunEarthTimeRadials(zoomLevel);
+    updateListHorizonEarthRing(zoomLevel);
 
     return true;
 }
@@ -1411,6 +1727,7 @@ function createPlanets(zoomLevel) {
     createTimeMarkers(zoomLevel === 0 ? 9 : zoomLevel);
 
     updateSunEarthTimeRadials(zoomLevel);
+    updateListHorizonEarthRing(zoomLevel);
 
     if (typeof updateCircadianHelixSpanHint === 'function') {
         updateCircadianHelixSpanHint();
@@ -1624,13 +1941,13 @@ function createTextLabel(text, height, radius, zoomLevel, angle = 0, colorType =
     // Scale based on zoom level - larger for zoomed out views, smaller for zoomed in
     let scale;
     if (zoomLevel === 1) {
-        scale = 3000; // Century - larger for far distance
+        scale = 1100; // Century - extra reduced
     } else if (zoomLevel === 2) {
-        scale = 200; // Decade - larger
+        scale = 150; // Decade - reduced
     } else if (zoomLevel === 3) {
-        scale = 37.5; // Year - reduced by 2x (was 75)
+        scale = 30; // Year - reduced
     } else if (zoomLevel === 4) {
-        scale = 50; // Quarter - smaller (was 100)
+        scale = 42; // Quarter - slightly reduced
     } else if (zoomLevel === 5) {
         scale = 16.5; // Month - half size (was 33)
     } else if (zoomLevel === 6) {
@@ -2857,6 +3174,20 @@ function toggleWebXR() {
                         setEventLayerVisibility: (layerId, visible) => {
                             const gl = typeof window !== 'undefined' && (window.circaevumGL || (window.getGL && window.getGL()));
                             if (gl && typeof gl.setLayerVisibility === 'function') gl.setLayerVisibility(layerId, visible);
+                        },
+                        getTimeScale: () => xrTimeScale,
+                        adjustTimeScale: (delta) => {
+                            const d = delta > 0 ? 1 : -1;
+                            xrTimeScale = Math.max(XR_TIME_SCALE_MIN, Math.min(XR_TIME_SCALE_MAX, xrTimeScale + d));
+                            if (xrUI && typeof xrUI.refreshTimeScaleLabel === 'function') {
+                                xrUI.refreshTimeScaleLabel();
+                            }
+                        },
+                        /** Move selected time by xrTimeScale calendar steps (A/D equivalent). */
+                        navigateTimeScaled: (direction) => {
+                            if (currentZoom === 0) return;
+                            navigateUnit(direction, xrTimeScale);
+                            if (typeof playTickSound === 'function') playTickSound(currentZoom);
                         }
                     });
                 }
@@ -3080,34 +3411,34 @@ function cleanupXRControls() {
 }
 
 // Toggle rotation between vertical and horizontal orientation (R key)
-function navigateUnit(direction) {
-    // Navigate within the current zoom level's units
-    // direction: -1 for previous (A key), +1 for next (D key)
-    
-    switch(currentZoom) {
+/** One calendar step at the current zoom (A/D); used internally by navigateUnit. */
+function navigateUnitStep(direction) {
+    switch (currentZoom) {
         case 1: // Century view - navigate by 10 years, snap to nearest decade
             currentYear += direction * 10;
             currentYear = Math.round(currentYear / 10) * 10;
             break;
-            
+
         case 2: // Decade view - navigate years
-            const yearInDecade = currentYear % 10;
-            const newYearInDecade = yearInDecade + direction;
-            
-            if (newYearInDecade < 0) {
-                selectedDecadeOffset--;
-                currentYear = currentYear - (yearInDecade + 1) + 9;
-            } else if (newYearInDecade > 9) {
-                selectedDecadeOffset++;
-                currentYear = currentYear - yearInDecade + 10;
-            } else {
-                currentYear += direction;
+            {
+                const yearInDecade = currentYear % 10;
+                const newYearInDecade = yearInDecade + direction;
+
+                if (newYearInDecade < 0) {
+                    selectedDecadeOffset--;
+                    currentYear = currentYear - (yearInDecade + 1) + 9;
+                } else if (newYearInDecade > 9) {
+                    selectedDecadeOffset++;
+                    currentYear = currentYear - yearInDecade + 10;
+                } else {
+                    currentYear += direction;
+                }
             }
             break;
-            
+
         case 3: // Year view - navigate by quarters
             currentQuarter += direction;
-            
+
             if (currentQuarter < 0) {
                 selectedYearOffset--;
                 currentYear--;
@@ -3117,14 +3448,14 @@ function navigateUnit(direction) {
                 currentYear++;
                 currentQuarter = 0;
             }
-            
+
             currentMonthInYear = currentQuarter * 3;
             currentMonth = 0;
             break;
-            
+
         case 4: // Quarter view - navigate months
             currentMonth += direction;
-            
+
             if (currentMonth < 0) {
                 selectedQuarterOffset--;
                 currentMonth = 2;
@@ -3133,7 +3464,7 @@ function navigateUnit(direction) {
                 currentMonth = 0;
             }
             break;
-            
+
         case 5: // Month view — navigate weeks within month
             currentWeekInMonth += direction;
 
@@ -3147,7 +3478,6 @@ function navigateUnit(direction) {
             break;
 
         case 6: // Lunar zoom — keep A/D local (same week-step behavior as month zoom)
-            // Skip the larger synodic-quarter jump here; it pulls focus too far from current context.
             currentWeekInMonth += direction;
 
             if (currentWeekInMonth < 0) {
@@ -3158,10 +3488,10 @@ function navigateUnit(direction) {
                 currentWeekInMonth = 0;
             }
             break;
-            
+
         case 7: // Week view - navigate days
             currentDayInWeek += direction;
-            
+
             if (currentDayInWeek < 0) {
                 selectedDayOffset--;
                 currentDayInWeek = 6;
@@ -3170,11 +3500,11 @@ function navigateUnit(direction) {
                 currentDayInWeek = 0;
             }
             break;
-            
+
         case 8: // Day view - navigate hours
         case 9: // Clock view - navigate hours
             currentHourInDay += direction;
-            
+
             if (currentHourInDay < 0) {
                 selectedHourOffset--;
                 currentHourInDay = 23;
@@ -3183,11 +3513,27 @@ function navigateUnit(direction) {
                 currentHourInDay = 0;
             }
             break;
+        default:
+            break;
     }
-    
-    // Recreate planets and markers to show new selection
+}
+
+/**
+ * Navigate within the current zoom level's units (A/D keys use one step).
+ * @param {number} direction -1 previous, +1 next
+ * @param {number} [stepCount=1] repeat steps (capped); XR uses xrTimeScale for multi-step.
+ */
+function navigateUnit(direction, stepCount) {
+    if (currentZoom === 0) return;
+    const n =
+        stepCount === undefined || stepCount === null
+            ? 1
+            : Math.max(1, Math.min(32, Math.floor(Number(stepCount))));
+    for (let i = 0; i < n; i++) {
+        navigateUnitStep(direction);
+    }
     createPlanets(currentZoom);
-    updateTimeDisplays(); // Update time displays after navigation
+    updateTimeDisplays();
 }
 
 function clampCameraRotationPitch() {
@@ -3675,6 +4021,46 @@ function animate(time, frame) {
     }
     if (typeof timeMarkersGroup !== 'undefined' && timeMarkersGroup && typeof focusPoint !== 'undefined' && focusPoint) {
         applyFlattenToGroup(timeMarkersGroup, currentTimeMarkerFlattenAmount, false);
+    }
+
+    // Smooth context-ring radius/height transitions across zoom and selected-time changes.
+    if (listHorizonEarthRingMesh &&
+        listHorizonEarthRingTargetRadius != null &&
+        listHorizonEarthRingTargetHeight != null &&
+        listHorizonEarthRingCurrentRadius != null &&
+        listHorizonEarthRingCurrentHeight != null &&
+        listHorizonEarthRingEarthDistance != null &&
+        listHorizonEarthRingTargetZoom != null) {
+        const lerp = 0.14;
+        const nextR = listHorizonEarthRingCurrentRadius +
+            (listHorizonEarthRingTargetRadius - listHorizonEarthRingCurrentRadius) * lerp;
+        const nextY = listHorizonEarthRingCurrentHeight +
+            (listHorizonEarthRingTargetHeight - listHorizonEarthRingCurrentHeight) * lerp;
+        const dr = Math.abs(nextR - listHorizonEarthRingCurrentRadius);
+        const dy = Math.abs(nextY - listHorizonEarthRingCurrentHeight);
+        const atTargetR = Math.abs(listHorizonEarthRingTargetRadius - listHorizonEarthRingCurrentRadius) < 0.01;
+        const atTargetY = Math.abs(listHorizonEarthRingTargetHeight - listHorizonEarthRingCurrentHeight) < 0.01;
+        if (!atTargetR || !atTargetY) {
+            listHorizonEarthRingCurrentRadius = nextR;
+            listHorizonEarthRingCurrentHeight = nextY;
+            if (dr > 0.0005 || dy > 0.0005) {
+                rebuildListHorizonEarthRingMesh(
+                    listHorizonEarthRingCurrentRadius,
+                    listHorizonEarthRingCurrentHeight,
+                    listHorizonEarthRingEarthDistance,
+                    listHorizonEarthRingTargetZoom
+                );
+            }
+        } else if (dr > 0 || dy > 0) {
+            listHorizonEarthRingCurrentRadius = listHorizonEarthRingTargetRadius;
+            listHorizonEarthRingCurrentHeight = listHorizonEarthRingTargetHeight;
+            rebuildListHorizonEarthRingMesh(
+                listHorizonEarthRingCurrentRadius,
+                listHorizonEarthRingCurrentHeight,
+                listHorizonEarthRingEarthDistance,
+                listHorizonEarthRingTargetZoom
+            );
+        }
     }
 
     // Circadian wrapped ↔ straightened morph (same lerp rate as flatten for a consistent feel).

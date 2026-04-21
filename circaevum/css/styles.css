@@ -1331,6 +1331,64 @@ body.viewer-no-nav .loading {
     flex-shrink: 0;
 }
 
+/* Cyan ring = same time scope as the Event List (blue/cyan reads as “scope”; red reads as error). */
+.event-list-horizon-ring-row {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 16px 10px;
+    flex-shrink: 0;
+    border-bottom: 1px solid rgba(0, 180, 216, 0.12);
+}
+
+.event-list-horizon-ring {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+}
+
+.event-list-horizon-ring-track {
+    stroke: rgba(148, 163, 184, 0.4);
+}
+
+.event-list-horizon-ring-arc {
+    stroke: #22d3ee;
+}
+
+.event-list-horizon-ring-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.event-list-horizon-ring-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(142, 202, 230, 0.75);
+}
+
+.event-list-horizon-ring-caption {
+    font-size: 10px;
+    line-height: 1.35;
+    color: rgba(142, 202, 230, 0.65);
+}
+
+body.light-mode .event-list-horizon-ring-track {
+    stroke: rgba(100, 116, 139, 0.45);
+}
+
+body.light-mode .event-list-horizon-ring-arc {
+    stroke: #0891b2;
+}
+
+body.light-mode .event-list-horizon-ring-title,
+body.light-mode .event-list-horizon-ring-caption {
+    color: rgba(51, 65, 85, 0.85);
+}
+
 .events-nearby-lines-header {
     font-size: 11px;
     font-weight: 700;

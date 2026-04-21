@@ -174,7 +174,7 @@ const Worldlines = (function() {
      * @param {Object} planetData - Planet data with orbitalPeriod, startAngle, distance, color, name
      * @param {number} timeYears - Time span in years
      * @param {number} zoomLevel - Current zoom level
-     * @returns {THREE.Line} THREE.js Line object
+     * @returns {THREE.Mesh|THREE.Line} Ribbon mesh (preferred) or line fallback
      */
     function createWorldline(planetData, timeYears, zoomLevel) {
         // Safety check: ensure module is initialized
@@ -296,26 +296,46 @@ const Worldlines = (function() {
             }
         }
         
-        // Create THREE.js geometry and material
+        const isEarth = planetData.name === 'Earth';
+        const opacityVal = (isEarth && zoomLevel >= 3) ? 0.9 : SCENE_CONFIG.worldlineOpacity;
+        // Ribbon half-width in scene units (LineBasicMaterial.linewidth is ignored in WebGL).
+        let halfWidth = Math.max(0.55, Math.min(5.8, planetData.distance * 0.027));
+        if (zoomLevel === 1) halfWidth = Math.min(8.2, halfWidth * 1.82);
+        else if (zoomLevel === 2) halfWidth *= 1.38;
+        if (isEarth && zoomLevel >= 3) halfWidth *= 1.2;
+        if (isLightMode) halfWidth *= 1.12;
+
+        const worldlineColor = adjustColorForLightMode(planetData.color, isLightMode);
+        const centerFlat = Float32Array.from(points);
+        const ribbonGeo = createRibbonStripGeometry(centerFlat, halfWidth);
+        if (ribbonGeo) {
+            const material = new THREE.MeshBasicMaterial({
+                color: worldlineColor,
+                transparent: true,
+                opacity: isLightMode ? 0.95 : opacityVal,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                polygonOffset: true,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1
+            });
+            const mesh = new THREE.Mesh(ribbonGeo, material);
+            mesh.renderOrder = 8;
+            mesh.userData = { type: 'PlanetWorldlineRibbon', planet: planetData.name };
+            return mesh;
+        }
+
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-        
-        // Make Earth's worldline more prominent at higher zoom levels
-        const isEarth = planetData.name === 'Earth';
-        const opacity = (isEarth && zoomLevel >= 3) ? 0.9 : SCENE_CONFIG.worldlineOpacity;
-        const lineWidth = (isEarth && zoomLevel >= 3) ? 3 : 2;
-        
-        // Adjust colors for light mode visibility
-        const worldlineColor = adjustColorForLightMode(planetData.color, isLightMode);
-        
-        const material = new THREE.LineBasicMaterial({
+        let lineWidth = (isEarth && zoomLevel >= 3) ? 3 : 2;
+        if (zoomLevel === 1) lineWidth += 4.5;
+        const lineMat = new THREE.LineBasicMaterial({
             color: worldlineColor,
             transparent: true,
-            opacity: isLightMode ? 0.95 : opacity,
+            opacity: isLightMode ? 0.95 : opacityVal,
             linewidth: isLightMode ? lineWidth + 1 : lineWidth
         });
-        
-        return new THREE.Line(geometry, material);
+        return new THREE.Line(geometry, lineMat);
     }
     
     /**
@@ -323,7 +343,7 @@ const Worldlines = (function() {
      * @param {Object} planetData - Planet data
      * @param {number} currentHeight - Current date height
      * @param {number} selectedHeight - Selected date height
-     * @returns {THREE.Line} THREE.js Line object
+     * @returns {THREE.Mesh|THREE.Line} Ribbon mesh or line fallback
      */
     function createConnectorWorldline(planetData, currentHeight, selectedHeight) {
         // Validate inputs
@@ -365,16 +385,32 @@ const Worldlines = (function() {
             }
         }
         
+        const halfWidth = Math.max(0.42, Math.min(4.5, planetData.distance * 0.021));
+        const ribbonGeo = createRibbonStripGeometry(Float32Array.from(points), halfWidth);
+        if (ribbonGeo) {
+            const material = new THREE.MeshBasicMaterial({
+                color: getSelectedTimeColor(),
+                transparent: true,
+                opacity: 0.5,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                polygonOffset: true,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1
+            });
+            const mesh = new THREE.Mesh(ribbonGeo, material);
+            mesh.renderOrder = 8;
+            mesh.userData = { type: 'ConnectorWorldlineRibbon', planet: planetData.name };
+            return mesh;
+        }
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-        
         const material = new THREE.LineBasicMaterial({
             color: getSelectedTimeColor(),
             transparent: true,
             opacity: 0.5,
             linewidth: 2
         });
-        
         return new THREE.Line(geometry, material);
     }
     

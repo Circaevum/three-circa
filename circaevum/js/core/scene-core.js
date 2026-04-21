@@ -23,6 +23,10 @@ function initScene(dependencies = {}) {
         currentYear = window.currentYear
     } = dependencies;
 
+    if (typeof window !== 'undefined' && THREE && !window.THREE) {
+        window.THREE = THREE;
+    }
+
     // Initialize THREE.Vector3 objects now that THREE is loaded
     if (typeof window.focusPoint === 'undefined') {
         window.focusPoint = new THREE.Vector3(0, 0, 0);

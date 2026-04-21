@@ -513,6 +513,8 @@ class CircaevumGL {
         end,
         layerId,
         category: category || 'Default',
+        isTrip: e.isTrip === true,
+        isWorkEvent: e.isWorkEvent === true,
         color: color || undefined,
         key: e.key,
         description: e.description,

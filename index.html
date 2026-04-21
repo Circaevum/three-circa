@@ -91,6 +91,16 @@
             <button type="button" id="event-list-close" class="event-list-close-btn" aria-label="Close">×</button>
         </div>
         <p class="event-list-panel-context" id="events-panel-context"></p>
+        <div class="event-list-horizon-ring-row" id="event-list-horizon-ring-row">
+          <svg id="event-list-horizon-ring" class="event-list-horizon-ring" viewBox="0 0 40 40" aria-hidden="true">
+            <circle class="event-list-horizon-ring-track" cx="20" cy="20" r="15.915" pathLength="100" fill="none" stroke-width="4" />
+            <circle id="event-list-horizon-arc" class="event-list-horizon-ring-arc" cx="20" cy="20" r="15.915" pathLength="100" fill="none" stroke-width="4" stroke-linecap="round" transform="rotate(-90 20 20)" stroke-dasharray="0 100" />
+          </svg>
+          <div class="event-list-horizon-ring-text">
+            <span class="event-list-horizon-ring-title">List window</span>
+            <span class="event-list-horizon-ring-caption" id="event-list-horizon-ring-caption"></span>
+          </div>
+        </div>
         <div class="event-list-panel-header-actions">
             <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
             <button type="button" id="events-panel-draw-all" class="strip-btn">Draw all</button>
@@ -347,6 +357,13 @@
                 <h2 id="landing-h-prototype">About this build</h2>
                 <p>
                     You’re using an active prototype: zoom levels from wide spans down to day-scale views, personal events on layers, optional circadian helix views where implemented. Imports and polish are early; rough edges are normal.
+                </p>
+            </section>
+
+            <section class="landing-section" aria-labelledby="landing-h-support">
+                <h2 id="landing-h-support">Support the project</h2>
+                <p>
+                    Circaevum can be supported by sending funds to <strong>Circaevum.ETH</strong>, <strong>Circaevum.SOL</strong>, or via Venmo: <strong>Adam-Sauer-2</strong>.
                 </p>
             </section>
 
@@ -926,16 +943,71 @@
           }
 
           function eventTextLabelsMinZoomForDurationDaysLocal(durationDays) {
-            if (durationDays < 1) return 8;
-            if (durationDays < 7) return 7;
-            if (durationDays < 31) return 5;
-            return 4;
+            if (typeof EventRenderer !== 'undefined' && typeof EventRenderer.eventTextLabelsMinZoomForDurationDays === 'function') {
+              return EventRenderer.eventTextLabelsMinZoomForDurationDays(durationDays);
+            }
+            var d = typeof durationDays === 'number' && !isNaN(durationDays) ? durationDays : 0;
+            if (d > 31) return 3;
+            if (d > 7) return 4;
+            if (d > 0) return 5;
+            return 7;
           }
 
           function shouldShowEventTextAtZoomLocal(start, end, zoom) {
             var z = typeof zoom === 'number' && !isNaN(zoom) ? zoom : (typeof currentZoom !== 'undefined' ? currentZoom : 2);
             var days = durationDaysBetweenLocal(start, end);
+            if (typeof EventRenderer !== 'undefined' && typeof EventRenderer.eventDurationEligibleForFullListAtZoom === 'function') {
+              return EventRenderer.eventDurationEligibleForFullListAtZoom(days, z);
+            }
             return z >= eventTextLabelsMinZoomForDurationDaysLocal(days);
+          }
+
+          function eventDurationDaysForListItem(ev) {
+            var start = ev.start;
+            if (!start || !(start instanceof Date) || isNaN(start.getTime())) return 0;
+            var end = ev.end && ev.end > start ? ev.end : oneDayLater(start);
+            if (!end || !(end instanceof Date) || isNaN(end.getTime())) end = start;
+            return durationDaysBetweenLocal(start, end);
+          }
+
+          function eventMeetsFocusedDurationForList(item, z) {
+            var ev = item.ev;
+            if (!ev) return false;
+            var days = eventDurationDaysForListItem(ev);
+            if (typeof EventRenderer !== 'undefined' && typeof EventRenderer.eventDurationEligibleForFullListAtZoom === 'function') {
+              return EventRenderer.eventDurationEligibleForFullListAtZoom(days, z);
+            }
+            var Y = 365.25;
+            if (z <= 0 || z >= 9) return days >= 0 && days < 1;
+            if (z === 1) return days > 10 * Y && days <= 100 * Y;
+            if (z === 2) return days > Y && days <= 10 * Y;
+            if (z === 3) return days > 92 && days < Y;
+            if (z === 4) return days > 31 && days <= 92;
+            if (z === 5 || z === 6) return days > 7 && days <= 31;
+            if (z === 7) return days > 1 && days <= 7;
+            if (z === 8) return days > 0 && days <= 1;
+            return true;
+          }
+
+          function lineMeetsFocusedDurationForList(line, z) {
+            var s = line.start;
+            var e = line.end;
+            if (!s || !(s instanceof Date) || isNaN(s.getTime())) return false;
+            if (!e || !(e instanceof Date) || isNaN(e.getTime()) || e <= s) e = new Date(s.getTime() + 86400000);
+            var days = durationDaysBetweenLocal(s, e);
+            if (typeof EventRenderer !== 'undefined' && typeof EventRenderer.eventDurationEligibleForFullListAtZoom === 'function') {
+              return EventRenderer.eventDurationEligibleForFullListAtZoom(days, z);
+            }
+            var Y = 365.25;
+            if (z <= 0 || z >= 9) return days >= 0 && days < 1;
+            if (z === 1) return days > 10 * Y && days <= 100 * Y;
+            if (z === 2) return days > Y && days <= 10 * Y;
+            if (z === 3) return days > 92 && days < Y;
+            if (z === 4) return days > 31 && days <= 92;
+            if (z === 5 || z === 6) return days > 7 && days <= 31;
+            if (z === 7) return days > 1 && days <= 7;
+            if (z === 8) return days > 0 && days <= 1;
+            return true;
           }
 
           function rangesOverlap(a0, a1, b0, b1) {
@@ -980,10 +1052,68 @@
             return rangesOverlap(s, e, yStart.getTime(), yEnd.getTime());
           }
 
+          var EVENT_LIST_RING_C = 100;
+
+          function updateEventListHorizonRing(drawAll, z, halfMs, ref) {
+            var row = document.getElementById('event-list-horizon-ring-row');
+            var arc = document.getElementById('event-list-horizon-arc');
+            var cap = document.getElementById('event-list-horizon-ring-caption');
+            if (!row || !arc || !cap) return;
+            if (drawAll) {
+              row.style.display = 'none';
+              return;
+            }
+            row.style.display = 'flex';
+            var frac;
+            if (z === 3 || z === 4) {
+              frac = 1;
+              cap.textContent = 'Full ring = calendar ' + ref.getFullYear() + ' (same scope as the list). Cyan matches the timeline accent; red would read as an error.';
+            } else {
+              frac = Math.min(1, (2 * halfMs) / (365 * 86400000));
+              cap.textContent = 'Cyan arc ≈ list time window vs one year (~±' + Math.round(halfMs / 86400000) + 'd half-span at zoom ' + z + ').';
+            }
+            var len = Math.max(1.5, frac * EVENT_LIST_RING_C);
+            arc.setAttribute('stroke-dasharray', len + ' ' + (EVENT_LIST_RING_C - len));
+          }
+
+          function eventColorToRgbaPanelBackground(color, layerHex, alphaStrong, alphaWeak, inList) {
+            var raw = color || layerHex || '#00b4d8';
+            var t = String(raw).trim();
+            var r = 0, g = 180, b = 216;
+            var m6 = t.match(/^#([0-9a-f]{6})$/i);
+            var m3 = t.match(/^#([0-9a-f]{3})$/i);
+            if (m6) {
+              r = parseInt(m6[1].slice(0, 2), 16);
+              g = parseInt(m6[1].slice(2, 4), 16);
+              b = parseInt(m6[1].slice(4, 6), 16);
+            } else if (m3) {
+              r = parseInt(m3[1][0] + m3[1][0], 16);
+              g = parseInt(m3[1][1] + m3[1][1], 16);
+              b = parseInt(m3[1][2] + m3[1][2], 16);
+            } else if (/^rgba?\(/i.test(t)) {
+              var nums = t.replace(/rgba?\(/i, '').replace(/\)/, '').split(',');
+              if (nums.length >= 3) {
+                r = parseInt(nums[0], 10) || 0;
+                g = parseInt(nums[1], 10) || 0;
+                b = parseInt(nums[2], 10) || 0;
+              }
+            }
+            var a = inList ? alphaStrong : alphaWeak;
+            return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+          }
+
         function refreshEventsList(drawAll) {
             var listEl = document.getElementById('events-panel-list');
             var ctxEl = document.getElementById('events-panel-context');
             if (!listEl) return;
+            if (typeof window !== 'undefined') {
+              window.eventsListHorizonRingActive = !drawAll;
+              try {
+                if (typeof window.updateListHorizonEarthRingScene === 'function') {
+                  window.updateListHorizonEarthRingScene();
+                }
+              } catch (eRing) {}
+            }
             listEl.innerHTML = '';
             var gl = window.circaevumGL;
             if (!gl && window.CircaevumGL) {
@@ -1008,9 +1138,11 @@
               if (drawAll) {
                 ctxEl.textContent = 'Showing all loaded events and lines (Draw all).';
               } else if (z === 3 || z === 4) {
-                ctxEl.textContent = 'Events in calendar year ' + ref.getFullYear() + ' (Year / Quarter zoom). Use Draw all for every loaded item.';
+                ctxEl.textContent = z === 3
+                  ? ('Year zoom: calendar ' + ref.getFullYear() + '. List only includes spans longer than 31 days; shorter events stay gray in-scene. Draw all shows every loaded item.')
+                  : ('Quarter zoom: calendar ' + ref.getFullYear() + '. List includes spans longer than 7 days; shorter events stay gray in-scene. Draw all shows every loaded item.');
               } else {
-                ctxEl.textContent = 'Near selected time ' + formatDate(ref) + ' — about ±' + Math.max(1, Math.round(halfMs / 86400000)) + ' days at zoom ' + z + '.';
+                ctxEl.textContent = 'Near selected time ' + formatDate(ref) + ' — ±' + Math.max(1, Math.round(halfMs / 86400000)) + 'd at zoom ' + z + '. Month (5)+: sub-week multi-day in list; week (7)+: instant / sub-day.';
               }
             }
 
@@ -1052,16 +1184,11 @@
                 events = events.filter(function(item) { return eventItemOverlapsSelectedTime(item, ref, halfMs); });
                 lines = lines.filter(function(line) { return lineOverlapsSelectedTime(line, ref, halfMs); });
               }
+              events = events.filter(function(item) { return eventMeetsFocusedDurationForList(item, z); });
+              lines = lines.filter(function(line) { return lineMeetsFocusedDurationForList(line, z); });
             }
 
-            if (!drawAll) {
-              events = events.filter(function(item) {
-                var ev = item && item.ev ? item.ev : null;
-                if (!ev || !(ev.start instanceof Date) || isNaN(ev.start.getTime())) return false;
-                var end = ev.end && ev.end > ev.start ? ev.end : null;
-                return shouldShowEventTextAtZoomLocal(ev.start, end, z);
-              });
-            }
+            updateEventListHorizonRing(drawAll, z, halfMs, ref);
 
             if (events.length === 0 && lines.length === 0) {
               listEl.innerHTML = '<p class="event-horizon-empty">Nothing in this time window (' + totalEv + ' event(s), ' + totalLn + ' line(s) loaded overall). Move <strong>selected time</strong> or zoom, use <strong>Draw all</strong>, or switch the 1Y / all-time events control, then Refresh.</p>';
@@ -1079,7 +1206,7 @@
               return as - bs;
             });
 
-            function appendEventRow(container, item, layerHex) {
+            function appendEventRow(container, item, layerHex, inList) {
               var ev = item.ev;
               var start = ev.start;
               var end = ev.end;
@@ -1088,13 +1215,15 @@
               var endForNav = end && end > start ? end : endForLine;
               var name = ev.summary || ev.uid || 'Event';
               var row = document.createElement('div');
-              row.className = 'event-row';
+              row.className = 'event-row' + (inList ? ' event-row--in-list' : ' event-row--outside-list');
               var color = ev.color || ev.colorId || null;
               var borderColor = color || layerHex || 'rgba(0, 180, 216, 0.5)';
-              var bgColor = color ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 180, 216, 0.08)';
-              row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:6px;cursor:pointer;' +
-                'border-left:3px solid ' + borderColor + ';background:' + bgColor + ';';
-              row.title = 'Click to focus on this event';
+              var bgColor = eventColorToRgbaPanelBackground(color, layerHex, 0.22, 0.09, inList);
+              var borderW = inList ? '4px' : '3px';
+              row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:8px;cursor:pointer;' +
+                'border-left:' + borderW + ' solid ' + borderColor + ';background:' + bgColor + ';' +
+                (inList ? '' : 'opacity:0.5;filter:saturate(0.4) brightness(0.92);');
+              row.title = inList ? 'Click to focus on this event' : 'In the time window but hidden until you zoom in (same dimming as the 3D view). Click to focus.';
               var detParts = [];
               if (ev.location) detParts.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
               if (ev.description) detParts.push('<div class="event-detail event-description">' + linkifyText(ev.description) + '</div>');
@@ -1124,7 +1253,9 @@
                     color: ev.color || ev.colorId || null,
                     layerId: item.layerId || 'user-events',
                     dtstart: ev.dtstart || { dateTime: start.toISOString() },
-                    dtend: ev.dtend || (end && end > start ? { dateTime: end.toISOString() } : { dateTime: new Date(start.getTime() + 86400000).toISOString() })
+                    dtend: ev.dtend || (end && end > start ? { dateTime: end.toISOString() } : { dateTime: new Date(start.getTime() + 86400000).toISOString() }),
+                    isTrip: ev.isTrip === true,
+                    isWorkEvent: ev.isWorkEvent === true
                   };
                   window.parent.postMessage({ type: 'CIRCAEVUM_EDIT_EVENT', event: payload }, '*');
                 };
@@ -1134,7 +1265,13 @@
 
             events.forEach(function(item) {
               var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
-              appendEventRow(listEl, item, layerSwatchColor(layer));
+              var ev = item && item.ev ? item.ev : null;
+              var inList = !!drawAll;
+              if (!drawAll && ev && ev.start instanceof Date && !isNaN(ev.start.getTime())) {
+                var evEnd = ev.end && ev.end > ev.start ? ev.end : null;
+                inList = shouldShowEventTextAtZoomLocal(ev.start, evEnd, z);
+              }
+              appendEventRow(listEl, item, layerSwatchColor(layer), inList);
             });
 
             var selectedTimeDivider = document.createElement('div');

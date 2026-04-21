@@ -1,9 +1,9 @@
 /**
  * XR UI – in-scene panel for hand/controller interaction (e.g. Apple Vision Pro)
  *
- * Renders a floating panel with a zoom slider (1–9) that can be used via
- * hand tracking or controllers: raycast from the primary input source,
- * select (pinch/trigger) to drag the slider.
+ * Renders a floating panel with a zoom slider (1–9), time-scale (− / +)
+ * with a live n× label, and « / » to step selected time by that many
+ * calendar units at the current zoom.
  *
  * Uses WebXR selectstart/selectend and frame.getPose(targetRaySpace) for
  * raycasting; works when inputSource.gamepad is absent (hand tracking).
@@ -27,6 +27,10 @@
   const ICON_GAP = 0.03;
   const LABEL_HEIGHT_PX = 32;
   const CANVAS_DPI = 2;
+  /** Row below zoom track: coarser/finer multi-step for XR time navigation (see main.js xrTimeScale). */
+  const TIME_SCALE_ROW_Y = 0.088;
+  const TIME_SCALE_BTN_W = 0.068;
+  const TIME_SCALE_BTN_H = 0.068;
   const LAYER_ROW_HEIGHT = 0.055;
   const LAYER_ROW_WIDTH = 0.64;
   const LAYER_ROW_GAP = 0.01;
@@ -87,6 +91,30 @@
     return tex;
   }
 
+  function makeTimeScaleLabelTexture(scale) {
+    var w = 256;
+    var h = 72;
+    var canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f172a';
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 2;
+    roundRect(ctx, 4, 4, w - 8, h - 8, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 32px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var n = typeof scale === 'number' && !isNaN(scale) ? Math.max(1, Math.min(99, Math.floor(scale))) : 1;
+    ctx.fillText(String(n) + '\u00d7', w / 2, h / 2);
+    var tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
   function makeLayerRowTexture(label, isOn, colorHex) {
     var w = 256;
     var h = 64;
@@ -142,7 +170,7 @@
   /**
    * @param {THREE.Scene} scene
    * @param {object} xrAdapter - WebXRAdapter instance (session, referenceSpace)
-   * @param {object} callbacks - { setZoomLevel, getZoomLevel, iconActions?, getLayerState?, getEventLayers? (Calendar Layers), setEventLayerVisibility? }
+   * @param {object} callbacks - { setZoomLevel, getZoomLevel, iconActions?, getLayerState?, getEventLayers?, setEventLayerVisibility?, getTimeScale?, adjustTimeScale?, navigateTimeScaled? }
    */
   function XRUI(scene, xrAdapter, callbacks) {
     this.scene = scene;
@@ -153,10 +181,15 @@
     this.getLayerState = callbacks.getLayerState || {};
     this.getEventLayers = typeof callbacks.getEventLayers === 'function' ? callbacks.getEventLayers : function () { return []; };
     this.setEventLayerVisibility = typeof callbacks.setEventLayerVisibility === 'function' ? callbacks.setEventLayerVisibility : function () {};
+    this.getTimeScale = typeof callbacks.getTimeScale === 'function' ? callbacks.getTimeScale : function () { return 1; };
+    this.adjustTimeScale = typeof callbacks.adjustTimeScale === 'function' ? callbacks.adjustTimeScale : function () {};
+    this.navigateTimeScaled =
+      typeof callbacks.navigateTimeScaled === 'function' ? callbacks.navigateTimeScaled : function () {};
 
     this.group = null;
     this.trackMesh = null;
     this.thumbMesh = null;
+    this.timeScaleLabelMesh = null;
     this.buttonMeshes = [];
     this.layerRows = [];
     this.trackHalfWidth = TRACK_WIDTH / 2;
@@ -247,6 +280,75 @@
     label.position.set(0, SLIDER_Y + 0.04, 0.001);
     g.add(label);
 
+    var tsMinusTex = makeButtonTexture('\u2212', 0x0ea5e9);
+    var tsMinusGeom = new THREE.PlaneGeometry(TIME_SCALE_BTN_W, TIME_SCALE_BTN_H);
+    var tsMinusMat = new THREE.MeshBasicMaterial({
+      map: tsMinusTex,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide
+    });
+    var tsMinus = new THREE.Mesh(tsMinusGeom, tsMinusMat);
+    tsMinus.position.set(-0.13, TIME_SCALE_ROW_Y, 0.003);
+    tsMinus.userData.hitTarget = true;
+    tsMinus.userData.xrTimeScaleDelta = -1;
+    g.add(tsMinus);
+
+    var tsLabelGeom = new THREE.PlaneGeometry(0.1, 0.042);
+    var tsLabelMat = new THREE.MeshBasicMaterial({
+      map: makeTimeScaleLabelTexture(self.getTimeScale()),
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide
+    });
+    var tsLabel = new THREE.Mesh(tsLabelGeom, tsLabelMat);
+    tsLabel.position.set(0, TIME_SCALE_ROW_Y, 0.003);
+    tsLabel.userData.hitTarget = true;
+    g.add(tsLabel);
+    self.timeScaleLabelMesh = tsLabel;
+
+    var tsPlusTex = makeButtonTexture('+', 0x0ea5e9);
+    var tsPlusGeom = new THREE.PlaneGeometry(TIME_SCALE_BTN_W, TIME_SCALE_BTN_H);
+    var tsPlusMat = new THREE.MeshBasicMaterial({
+      map: tsPlusTex,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide
+    });
+    var tsPlus = new THREE.Mesh(tsPlusGeom, tsPlusMat);
+    tsPlus.position.set(0.13, TIME_SCALE_ROW_Y, 0.003);
+    tsPlus.userData.hitTarget = true;
+    tsPlus.userData.xrTimeScaleDelta = 1;
+    g.add(tsPlus);
+
+    var tnPrevTex = makeButtonTexture('\u00ab', 0x22c55e);
+    var tnPrevGeom = new THREE.PlaneGeometry(TIME_SCALE_BTN_W * 0.85, TIME_SCALE_BTN_H * 0.85);
+    var tnPrevMat = new THREE.MeshBasicMaterial({
+      map: tnPrevTex,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide
+    });
+    var tnPrev = new THREE.Mesh(tnPrevGeom, tnPrevMat);
+    tnPrev.position.set(-0.26, TIME_SCALE_ROW_Y, 0.003);
+    tnPrev.userData.hitTarget = true;
+    tnPrev.userData.xrTimeNav = -1;
+    g.add(tnPrev);
+
+    var tnNextTex = makeButtonTexture('\u00bb', 0x22c55e);
+    var tnNextGeom = new THREE.PlaneGeometry(TIME_SCALE_BTN_W * 0.85, TIME_SCALE_BTN_H * 0.85);
+    var tnNextMat = new THREE.MeshBasicMaterial({
+      map: tnNextTex,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide
+    });
+    var tnNext = new THREE.Mesh(tnNextGeom, tnNextMat);
+    tnNext.position.set(0.26, TIME_SCALE_ROW_Y, 0.003);
+    tnNext.userData.hitTarget = true;
+    tnNext.userData.xrTimeNav = 1;
+    g.add(tnNext);
+
     var layersHeaderGeom = new THREE.PlaneGeometry(LAYER_ROW_WIDTH, LAYERS_HEADER_HEIGHT);
     var layersHeaderMat = new THREE.MeshBasicMaterial({
       map: makeEventLayersHeaderTexture(),
@@ -297,6 +399,14 @@
     return g;
   };
 
+  XRUI.prototype.refreshTimeScaleLabel = function () {
+    if (!this.timeScaleLabelMesh || !this.timeScaleLabelMesh.material) return;
+    var oldTex = this.timeScaleLabelMesh.material.map;
+    if (oldTex) oldTex.dispose();
+    this.timeScaleLabelMesh.material.map = makeTimeScaleLabelTexture(this.getTimeScale());
+    this.timeScaleLabelMesh.material.needsUpdate = true;
+  };
+
   XRUI.prototype.updateLayerDisplay = function () {
     this.layerRows.forEach(function (row) {
       var isOn = row.getState ? row.getState() : false;
@@ -337,6 +447,18 @@
         var visible = row && row.getState ? !row.getState() : true;
         this.setEventLayerVisibility(layerId, visible);
         this.updateLayerDisplay();
+      } else if (this._pressedButton.userData.xrTimeNav === -1 || this._pressedButton.userData.xrTimeNav === 1) {
+        try {
+          this.navigateTimeScaled(this._pressedButton.userData.xrTimeNav);
+        } catch (err) {
+          console.warn('XR time nav error', err);
+        }
+      } else if (this._pressedButton.userData.xrTimeScaleDelta) {
+        try {
+          this.adjustTimeScale(this._pressedButton.userData.xrTimeScaleDelta);
+        } catch (err) {
+          console.warn('XR time scale error', err);
+        }
       } else if (this._pressedButton.userData.action && this.iconActions[this._pressedButton.userData.action]) {
         try { this.iconActions[this._pressedButton.userData.action](); } catch (err) { console.warn('XR button action error', err); }
       }
@@ -358,6 +480,7 @@
       session.addEventListener('selectend', this._selectEnd);
     }
     this.updateThumbFromZoom(this.getZoomLevel());
+    this.refreshTimeScaleLabel();
     if (this.layerRows.length) this.updateLayerDisplay();
   };
 
@@ -421,7 +544,13 @@
         const current = this.getZoomLevel();
         if (zoom !== current) this.setZoomLevel(zoom);
         this.updateThumbFromZoom(zoom);
-      } else if ((obj.userData.xrButton && obj.userData.action) || obj.userData.xrLayerRow) {
+      } else if (
+        (obj.userData.xrButton && obj.userData.action) ||
+        obj.userData.xrLayerRow ||
+        obj.userData.xrTimeScaleDelta ||
+        obj.userData.xrTimeNav === -1 ||
+        obj.userData.xrTimeNav === 1
+      ) {
         this._pressedButton = obj;
       }
     }
