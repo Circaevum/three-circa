@@ -1548,9 +1548,49 @@ const TimeMarkers = (function() {
         currentHourInDay = newOffsets.currentHourInDay; // Update currentHourInDay when A/D is pressed
     }
 
+    /**
+     * List-context hoop radius: **outer** curve of the RADII band for this zoom (same frame as time markers).
+     * z3 Year: quarter.outer (W/4). z4: month.outer. z5–6: week.outer. z7: week-style day.outer (3W/4).
+     * z8 Day / z9 Clock: Earth orbit radius W (hoop meets Earth’s worldline).
+     * z1–2: coarse quarter.outer (SYSTEMS.quarter for zoom < 3). z0: day.inner (outer edge of spiral→day-inner band).
+     */
+    function getListContextRingRadiusForZoom(zoomLevel, earthDistance) {
+        const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
+        const monthOuter = RADII_CONFIG.month.outer(W);
+        const weekOuter = RADII_CONFIG.week.outer(W);
+        const dayInner = RADII_CONFIG.day.inner(W);
+        const dayOuter = RADII_CONFIG.day.outer(W);
+        const qOuter = RADII_CONFIG.quarter.outer(W);
+
+        let rOuter;
+        if (z <= 0) {
+            rOuter = dayInner;
+        } else if (z <= 2) {
+            const qr = SYSTEMS.quarter.getRadii(z, W);
+            rOuter = qr.outer;
+        } else if (z === 3) {
+            rOuter = qOuter;
+        } else if (z === 4) {
+            rOuter = monthOuter;
+        } else if (z <= 6) {
+            rOuter = weekOuter;
+        } else if (z === 7) {
+            rOuter = dayOuter;
+        } else {
+            rOuter = W;
+        }
+
+        let r = rOuter;
+        const rMax = z >= 8 ? W * 0.998 : W * 0.92;
+        r = Math.max(W * 0.08, Math.min(r, rMax));
+        return r;
+    }
+
     return {
         init,
         createTimeMarkers,
-        updateOffsets
+        updateOffsets,
+        getListContextRingRadiusForZoom
     };
 })();

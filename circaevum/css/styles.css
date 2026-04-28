@@ -1331,6 +1331,64 @@ body.viewer-no-nav .loading {
     flex-shrink: 0;
 }
 
+/* Cyan ring = same time scope as the Event List (blue/cyan reads as “scope”; red reads as error). */
+.event-list-horizon-ring-row {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 16px 10px;
+    flex-shrink: 0;
+    border-bottom: 1px solid rgba(0, 180, 216, 0.12);
+}
+
+.event-list-horizon-ring {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+}
+
+.event-list-horizon-ring-track {
+    stroke: rgba(148, 163, 184, 0.4);
+}
+
+.event-list-horizon-ring-arc {
+    stroke: #22d3ee;
+}
+
+.event-list-horizon-ring-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.event-list-horizon-ring-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(142, 202, 230, 0.75);
+}
+
+.event-list-horizon-ring-caption {
+    font-size: 10px;
+    line-height: 1.35;
+    color: rgba(142, 202, 230, 0.65);
+}
+
+body.light-mode .event-list-horizon-ring-track {
+    stroke: rgba(100, 116, 139, 0.45);
+}
+
+body.light-mode .event-list-horizon-ring-arc {
+    stroke: #0891b2;
+}
+
+body.light-mode .event-list-horizon-ring-title,
+body.light-mode .event-list-horizon-ring-caption {
+    color: rgba(51, 65, 85, 0.85);
+}
+
 .events-nearby-lines-header {
     font-size: 11px;
     font-weight: 700;
@@ -1668,6 +1726,40 @@ body.sky-theme .scene-icon-btn#light-mode-toggle .icon-sun {
 }
 body.sky-theme .scene-icon-btn#light-mode-toggle .icon-sky {
     display: flex;
+}
+
+/* Ephemeris status badge */
+.scene-ephemeris-status {
+    margin-top: 4px;
+    width: 100%;
+    min-height: 22px;
+    border-radius: 6px;
+    border: 1px solid rgba(0, 180, 216, 0.26);
+    background: rgba(0, 8, 20, 0.65);
+    color: var(--orbit-silver);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-transform: uppercase;
+    user-select: none;
+    padding: 4px 2px;
+    box-sizing: border-box;
+}
+
+.scene-ephemeris-status.is-on {
+    color: var(--cosmic-cyan);
+    border-color: rgba(0, 180, 216, 0.55);
+    background: rgba(0, 180, 216, 0.16);
+}
+
+.scene-ephemeris-status.is-fallback {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.55);
+    background: rgba(251, 191, 36, 0.14);
 }
 
 /* Sound toggle: show muted icon by default, speaker when .active */
@@ -2048,6 +2140,37 @@ body.light-mode .harmony-symbol {
     bottom: 0;
     pointer-events: none;
     z-index: 10;
+}
+
+.circaevum-attribution {
+    position: fixed;
+    left: 14px;
+    bottom: 12px;
+    z-index: 120;
+    pointer-events: auto;
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: rgba(0, 8, 20, 0.56);
+    border: 1px solid rgba(0, 180, 216, 0.28);
+    color: rgba(173, 232, 244, 0.92);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    text-decoration: none;
+    backdrop-filter: blur(3px);
+}
+
+.circaevum-attribution:hover,
+.circaevum-attribution:focus-visible {
+    color: #caf0f8;
+    border-color: rgba(144, 224, 239, 0.65);
+    background: rgba(0, 20, 40, 0.72);
+}
+
+body.light-mode .circaevum-attribution {
+    background: rgba(255, 255, 255, 0.82);
+    border-color: rgba(0, 119, 163, 0.28);
+    color: rgba(0, 60, 90, 0.88);
 }
 
 .scene-sliders-stack {
@@ -3047,6 +3170,13 @@ body.zoom-level-0 .info-panel {
 
     .registration-form {
         padding: 18px;
+    }
+
+    .circaevum-attribution {
+        left: 10px;
+        bottom: 8px;
+        font-size: 10px;
+        padding: 5px 8px;
     }
 }
 

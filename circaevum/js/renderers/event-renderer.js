@@ -159,6 +159,13 @@
   }
 
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  /** ~calendar month / quarter for context bands (days). */
+  const CONTEXT_MONTH_DAYS = 31;
+  const CONTEXT_QUARTER_DAYS = 92;
+  /** Mean tropical year (days); “sub-year” uses strict `<` this. */
+  const CONTEXT_YEAR_DAYS = 365.25;
+  const CONTEXT_DECADE_DAYS = CONTEXT_YEAR_DAYS * 10;
+  const CONTEXT_CENTURY_DAYS = CONTEXT_YEAR_DAYS * 100;
 
   /** Span length in days (fractional). Zero if missing or non-positive span. */
   function durationDaysBetween(start, end) {
@@ -167,20 +174,118 @@
   }
 
   /**
-   * Minimum zoom level (main.js 0–9) at which we draw event text sprites (titles and MM/DD ticks).
-   * Longer spans appear at coarser zoom; short spans require Week / Day / Clock.
+   * Each zoom’s “focused” spans are one step **smaller** than the view unit (sub outer / super inner).
+   * Moment (0) / Clock (9): sub-day [0, 1). Century (1): (decade, century]. Decade (2): (year, decade].
+   * Year (3): (quarter, year). Quarter (4): (month, quarter]. Month (5) / Lunar (6): (week, month].
+   * Week (7): (day, week]. Day (8): (0, 1d].
+   * Keep in sync with `yang/web/index.html` list filter.
+   */
+  function eventDurationEligibleForFullListAtZoom(durationDays, zl) {
+    const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : 5;
+    const d = typeof durationDays === 'number' && !isNaN(durationDays) ? durationDays : 0;
+    if (z <= 0 || z >= 9) return d >= 0 && d < 1;
+    if (z === 1) return d > CONTEXT_DECADE_DAYS && d <= CONTEXT_CENTURY_DAYS;
+    if (z === 2) return d > CONTEXT_YEAR_DAYS && d <= CONTEXT_DECADE_DAYS;
+    if (z === 3) return d > CONTEXT_QUARTER_DAYS && d < CONTEXT_YEAR_DAYS;
+    if (z === 4) return d > CONTEXT_MONTH_DAYS && d <= CONTEXT_QUARTER_DAYS;
+    if (z === 5 || z === 6) return d > 7 && d <= CONTEXT_MONTH_DAYS;
+    if (z === 7) return d > 1 && d <= 7;
+    if (z === 8) return d > 0 && d <= 1;
+    return true;
+  }
+
+  /**
+   * Smallest zoom at which this span is in the focused band (for legacy callers).
    */
   function eventTextLabelsMinZoomForDurationDays(durationDays) {
-    if (durationDays < 1) return 8; // sub-day → Zoom 8+
-    if (durationDays < 7) return 7; // super-day, sub-week → Zoom 7+
-    if (durationDays < 31) return 5; // super-week, sub-month → Zoom 5+
-    return 4; // ~1 month and longer (incl. several-month) → Zoom 4+
+    const d = typeof durationDays === 'number' && !isNaN(durationDays) ? durationDays : 0;
+    for (let zz = 1; zz <= 9; zz++) {
+      if (eventDurationEligibleForFullListAtZoom(d, zz)) return zz;
+    }
+    if (eventDurationEligibleForFullListAtZoom(d, 0)) return 0;
+    return 9;
+  }
+
+  /**
+   * Pull ribbon geometry sun-ward into [~0.26W, 0.44W] so unit labels / list-context hoop (frame outer curve) can sit outside.
+   * `rank01` 0 = shortest span in layer (sun-ward), 1 = longest (Earth-ward within sector).
+   */
+  function applyConcentricEventRibbonRadii(earthDist, rInner, rOuter, rank01) {
+    const W = earthDist;
+    const zoneA = W * 0.26;
+    const zoneB = W * 0.44;
+    const baseTh = Math.max(W * 0.018, Math.min(((rOuter - rInner) || W * 0.04) * 0.9, W * 0.055));
+    let t;
+    if (rank01 != null && isFinite(rank01)) {
+      t = Math.max(0, Math.min(1, rank01));
+    } else {
+      const midOld = (rInner + rOuter) / 2;
+      t = Math.max(0, Math.min(1, (midOld - W * 0.26) / (W * 0.34)));
+    }
+    const mid = zoneA + (zoneB - zoneA) * (0.06 + 0.88 * t);
+    let ri = mid - baseTh / 2;
+    let ro = mid + baseTh / 2;
+    ri = Math.max(W * 0.22, Math.min(ri, W * 0.45));
+    ro = Math.max(ri + W * 0.014, Math.min(ro, W * 0.48));
+    return { rInner: ri, rOuter: ro };
+  }
+
+  function shouldApplyConcentricEventRibbonLayout(zl) {
+    const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : 5;
+    if (z <= 1) return false;
+    if (z >= 8) return false;
+    return true;
+  }
+
+  function buildDurationRankMapForEvents(events, zl) {
+    const ranks = new Map();
+    if (!events || !events.length) return ranks;
+    const items = [];
+    for (let i = 0; i < events.length; i++) {
+      const s = getEventStart(events[i]);
+      let e = getEventEnd(events[i]);
+      if (!s || isNaN(s.getTime())) continue;
+      if (!e || e <= s) e = new Date(s.getTime() + MS_PER_DAY);
+      const d = durationDaysBetween(s, e);
+      if (!eventDurationEligibleForFullListAtZoom(d, zl)) continue;
+      items.push({ i, d: Math.max(d, 1e-4) });
+    }
+    if (items.length === 0) return ranks;
+    items.sort((a, b) => a.d - b.d);
+    const n = items.length;
+    for (let k = 0; k < n; k++) {
+      ranks.set(items[k].i, n === 1 ? 0.5 : k / (n - 1));
+    }
+    return ranks;
+  }
+
+  function buildDurationRankMapForLines(lines, zl) {
+    const ranks = new Map();
+    if (!lines || !lines.length) return ranks;
+    const items = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const s = line.start instanceof Date ? line.start : null;
+      let e = line.end instanceof Date ? line.end : null;
+      if (!s || isNaN(s.getTime())) continue;
+      if (!e || e <= s) e = new Date(s.getTime() + MS_PER_DAY);
+      const d = durationDaysBetween(s, e);
+      if (!eventDurationEligibleForFullListAtZoom(d, zl)) continue;
+      items.push({ i, d: Math.max(d, 1e-4) });
+    }
+    if (items.length === 0) return ranks;
+    items.sort((a, b) => a.d - b.d);
+    const n = items.length;
+    for (let k = 0; k < n; k++) {
+      ranks.set(items[k].i, n === 1 ? 0.5 : k / (n - 1));
+    }
+    return ranks;
   }
 
   function areEventTextLabelsVisibleAtCurrentZoom(start, end) {
     const zl = getZoomLevelForEvents();
     const days = durationDaysBetween(start, end);
-    return zl >= eventTextLabelsMinZoomForDurationDays(days);
+    return eventDurationEligibleForFullListAtZoom(days, zl);
   }
 
   function isSub24HourSpan(start, end) {
@@ -205,10 +310,17 @@
   }
 
   function getRadiusForDailyEventDot(earthDist, midDate, indexOffset) {
+    let r;
     if (shouldUseDayBandDotPlacement()) {
-      return earthDist * DAY_EVENT_DOT_RADIUS_FRAC;
+      r = earthDist * DAY_EVENT_DOT_RADIUS_FRAC;
+    } else {
+      r = getRadiusForTimeOfDay(midDate, earthDist, indexOffset);
     }
-    return getRadiusForTimeOfDay(midDate, earthDist, indexOffset);
+    const zl = getZoomLevelForEvents();
+    if (shouldApplyConcentricEventRibbonLayout(zl)) {
+      r = Math.min(r, earthDist * 0.42);
+    }
+    return r;
   }
 
   /**
@@ -688,13 +800,55 @@
   /**
    * Human-readable title for label sprites (ingested events / VEVENT).
    */
-  function getEventSummaryText(event) {
+  function hasCategoryValue(event, value) {
+    if (!event || !value) return false;
+    const target = String(value).trim().toLowerCase();
+    const source = event.category ?? event.categories;
+    if (Array.isArray(source)) {
+      return source.some((entry) => String(entry).trim().toLowerCase() === target);
+    }
+    if (source != null) {
+      return String(source).trim().toLowerCase() === target;
+    }
+    return false;
+  }
+
+  function isTripEvent(event) {
+    if (!event) return false;
+    if (event.isTrip === true) return true;
+    if (event.meta && event.meta.isTrip === true) return true;
+    return hasCategoryValue(event, 'trip');
+  }
+
+  function isWorkTaggedEvent(event) {
+    if (!event) return false;
+    if (event.isWorkEvent === true) return true;
+    if (event.meta && event.meta.isWorkEvent === true) return true;
+    return hasCategoryValue(event, 'work');
+  }
+
+  function getLongTermEventMarkers(event, start, end) {
+    if (!start || !end || end <= start) return '';
+    if (durationDaysBetween(start, end) < 1) return '';
+    const markers = [];
+    if (isTripEvent(event)) markers.push('[TRIP]');
+    if (isWorkTaggedEvent(event)) markers.push('[WORK]');
+    return markers.length ? markers.join(' ') : '';
+  }
+
+  function getEventSummaryText(event, start, end) {
     if (typeof VEvent !== 'undefined' && event instanceof VEvent) {
       const s = event.summary;
-      return s && String(s).trim() ? String(s).trim() : null;
+      const base = s && String(s).trim() ? String(s).trim() : null;
+      const markers = getLongTermEventMarkers(event, start, end);
+      if (!markers) return base;
+      return base ? `${markers} ${base}` : markers;
     }
     const s = event.summary || event.title;
-    return s && String(s).trim() ? String(s).trim() : null;
+    const base = s && String(s).trim() ? String(s).trim() : null;
+    const markers = getLongTermEventMarkers(event, start, end);
+    if (!markers) return base;
+    return base ? `${markers} ${base}` : markers;
   }
 
   /**
@@ -722,7 +876,7 @@
 
     const labelRadius = r + EVENT_LINE_LABEL_RADIUS_OFFSET;
     const midHeight = (startHeight + endHeight) / 2;
-    const nameStr = getEventSummaryText(event);
+    const nameStr = getEventSummaryText(event, start, end);
     const dayNumberScale = 1.5;
     const startEndScale = dayNumberScale * 2;
     const nameScale = dayNumberScale * 3;
@@ -1023,28 +1177,73 @@
     return 0;
   }
 
+  /** Local calendar year [Jan 1 .. Dec 31] for `ref` — matches Event List year / quarter zoom. */
+  function getCalendarYearBoundsLocal(ref) {
+    if (!ref || isNaN(ref.getTime())) ref = new Date();
+    const y = ref.getFullYear();
+    const start = new Date(y, 0, 1, 0, 0, 0, 0);
+    const end = new Date(y, 11, 31, 23, 59, 59, 999);
+    return { start, end };
+  }
+
+  /** ms gap from interval [s,e] to calendar-year window; 0 if overlap. */
+  function getPeripheralSeparationMsYearMode(spanStart, spanEnd, yStart, yEnd) {
+    if (!spanStart || isNaN(spanStart.getTime())) return 0;
+    const s = spanStart.getTime();
+    const e = spanEnd && !isNaN(spanEnd.getTime()) && spanEnd.getTime() > s ? spanEnd.getTime() : s;
+    const y0 = yStart.getTime();
+    const y1 = yEnd.getTime();
+    if (e < y0) return y0 - e;
+    if (s > y1) return s - y1;
+    return 0;
+  }
+
   /**
-   * At Zoom 5+ (month/week/day/clock), ease saturation down for events outside the zoom’s time window.
-   * Stronger at 7–9; smooth band just outside the window.
+   * Desaturate events outside the Event List time horizon (selected ± half-span, or calendar year at zoom 3–4).
+   * Also dims events inside the horizon that the list hides for zoom (long spans until you zoom in).
+   * Cyan ring in the Event List panel shows the same window; blue/cyan matches the timeline accent (red reads as errors).
    */
   function getPeripheralVividness01(spanStart, spanEnd) {
     const zl = getZoomLevelForEvents();
-    if (zl < 5) return 1;
     const selFn = getSelectedDateTimeFn();
     if (!selFn) return 1;
     if (!spanStart || isNaN(spanStart.getTime())) return 1;
-    const centerMs = selFn().getTime();
-    const halfMs = getFocusHalfSpanMsForZoom(zl);
-    const sep = getPeripheralSeparationMs(spanStart, spanEnd, centerMs, halfMs);
-    if (sep <= 0) return 1;
-    const fadeMs = Math.max(halfMs * 0.24, MS_PER_DAY * 0.85);
-    const u = temporalFadeSmoothstep(0, fadeMs, sep);
+    const ref = selFn();
+    const spanEndEff = spanEnd && spanEnd > spanStart ? spanEnd : new Date(spanStart.getTime() + MS_PER_DAY);
+    const textOk = areEventTextLabelsVisibleAtCurrentZoom(spanStart, spanEndEff);
+    const TEXT_OUTSIDE_LIST = 0.36;
+
+    let sep = 0;
+    if (zl === 3 || zl === 4) {
+      const b = getCalendarYearBoundsLocal(ref);
+      sep = getPeripheralSeparationMsYearMode(spanStart, spanEndEff, b.start, b.end);
+    } else {
+      const centerMs = ref.getTime();
+      const halfMs = getFocusHalfSpanMsForZoom(zl);
+      sep = getPeripheralSeparationMs(spanStart, spanEndEff, centerMs, halfMs);
+    }
+
+    if (sep <= 0) {
+      return textOk ? 1 : TEXT_OUTSIDE_LIST;
+    }
+
+    let fadeMs;
     let floor;
-    if (zl >= 9) floor = 0.16;
-    else if (zl >= 8) floor = 0.22;
-    else if (zl >= 7) floor = 0.3;
-    else floor = 0.45;
-    return floor + (1 - floor) * (1 - u);
+    if (zl === 3 || zl === 4) {
+      fadeMs = Math.max(20 * MS_PER_DAY, MS_PER_DAY * 45);
+      floor = zl === 4 ? 0.22 : 0.28;
+    } else {
+      const halfMs = getFocusHalfSpanMsForZoom(zl);
+      fadeMs = Math.max(halfMs * 0.24, MS_PER_DAY * 0.85);
+      if (zl >= 9) floor = 0.16;
+      else if (zl >= 8) floor = 0.22;
+      else if (zl >= 7) floor = 0.3;
+      else if (zl >= 5) floor = 0.45;
+      else floor = 0.38;
+    }
+    const u = temporalFadeSmoothstep(0, fadeMs, sep);
+    const vp = floor + (1 - floor) * (1 - u);
+    return vp;
   }
 
   /**
@@ -1255,6 +1454,11 @@
       const ribbonSpine = applyLayerRibbonWidthScale(rInnerSpine, rOuterSpine, earthDist, layerConfig);
       rInnerSpine = ribbonSpine.rInner;
       rOuterSpine = ribbonSpine.rOuter;
+      if (shouldApplyConcentricEventRibbonLayout(getZoomLevelForEvents())) {
+        const sp = applyConcentricEventRibbonRadii(earthDist, rInnerSpine, rOuterSpine, null);
+        rInnerSpine = sp.rInner;
+        rOuterSpine = sp.rOuter;
+      }
 
       const pair = buildHelixPair(startHeight, endHeight, rInnerSpine, rOuterSpine, currentHeight, segCount);
       if (!pair.innerFlat || !pair.outerFlat || pair.innerFlat.length < 6) continue;
@@ -1547,7 +1751,7 @@
             start.getFullYear() === end.getFullYear() &&
             start.getMonth() === end.getMonth() &&
             start.getDate() === end.getDate();
-          const nameStr = getEventSummaryText(event);
+          const nameStr = getEventSummaryText(event, start, end);
           const midLabelText = nameStr || formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end));
           const nameScale = 4.5;
           if (areEventTextLabelsVisibleAtCurrentZoom(start, end)) {
@@ -1597,6 +1801,12 @@
     const ribbonScaled = applyLayerRibbonWidthScale(rInner, rOuter, earthDist, layerConfig);
     rInner = ribbonScaled.rInner;
     rOuter = ribbonScaled.rOuter;
+    if (shouldApplyConcentricEventRibbonLayout(getZoomLevelForEvents())) {
+      const rank01 = layerConfig._durationRank01 != null ? layerConfig._durationRank01 : null;
+      const conc = applyConcentricEventRibbonRadii(earthDist, rInner, rOuter, rank01);
+      rInner = conc.rInner;
+      rOuter = conc.rOuter;
+    }
 
     const segments = 32;
     const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, currentHeight, segments);
@@ -1746,6 +1956,8 @@
     if (!lines || !Array.isArray(lines) || !layerConfig) return objects;
     const group = sceneContentGroup || null;
     const worldGroup = worldSpaceGroup || null;
+    const lineZl = getZoomLevelForEvents();
+    const lineDurationRanks = buildDurationRankMapForLines(lines, lineZl);
 
     function addToFlattenOrWorld(root) {
       if (!root) return;
@@ -2011,6 +2223,12 @@
       const ribbonScaled = applyLayerRibbonWidthScale(rInner, rOuter, earthDist, outlineLayerCfg);
       rInner = ribbonScaled.rInner;
       rOuter = ribbonScaled.rOuter;
+      if (shouldApplyConcentricEventRibbonLayout(lineZl)) {
+        const rank01 = lineDurationRanks.has(i) ? lineDurationRanks.get(i) : null;
+        const conc = applyConcentricEventRibbonRadii(earthDist, rInner, rOuter, rank01);
+        rInner = conc.rInner;
+        rOuter = conc.rOuter;
+      }
       const labelRadius = rOuter + EVENT_LINE_LABEL_RADIUS_OFFSET;
 
       const plotType = lineStyle.plotType ?? layerConfig.plotType ?? firstStyle.plotType ?? 'polygon3d';
@@ -2189,15 +2407,18 @@
     const worldGroup = worldSpaceGroup || null;
     const byCategory = layerConfig.layerStylesByCategory || {};
     const eventTimeRange = getTimeRange(events);
+    const zl = getZoomLevelForEvents();
+    const durationRanks = buildDurationRankMapForEvents(events, zl);
 
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
       const category = getEventCategory(event);
       const styleOverride = byCategory[category];
       if (styleOverride && styleOverride.visible === false) continue;
+      const rank01 = durationRanks.has(i) ? durationRanks.get(i) : null;
       const effectiveConfig = styleOverride
-        ? { ...layerConfig, ...styleOverride, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange }
-        : { ...layerConfig, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange };
+        ? { ...layerConfig, ...styleOverride, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange, _durationRank01: rank01 }
+        : { ...layerConfig, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange, _durationRank01: rank01 };
       const hasEnd = !!getEventEnd(event);
       const obj = hasEnd ? createEventWorldline(event, effectiveConfig) : createEventMarker(event, effectiveConfig);
       if (obj) {
@@ -2224,7 +2445,13 @@
     createEventMarker,
     createEventWorldline,
     getEventStart,
-    getEventEnd
+    getEventEnd,
+    /** Same inner/outer radii as multi-day event ribbons (used by list-horizon shell in main.js). */
+    getEventBandRadii,
+    /** Log-scaled radius vs span length (list-horizon hoop in main.js). */
+    getRadiusForDuration,
+    eventTextLabelsMinZoomForDurationDays,
+    eventDurationEligibleForFullListAtZoom
   };
 
   if (typeof module !== 'undefined' && module.exports) {
