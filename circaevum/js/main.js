@@ -76,9 +76,14 @@ let artemisMissionObjects = [];
 let circadianWorldlines = []; // Circadian rhythm helix (hour-hand), shown at day/clock zoom
 let circadianSelectedDayLabels = []; // Sprite(s) with selected calendar day, day/clock zoom only
 let circadianHelixMarkerGroups = []; // Week/month ticks along circadian helix (LineSegments)
-/** Thick Sun↔Earth cylinders: actual now (red) vs selected time (blue); sceneContentGroup space. */
+/** Sun Hands: Sun↔Earth cylinders for current/selected time; sceneContentGroup space. */
 let sunEarthTimeRadialCurrent = null;
 let sunEarthTimeRadialSelected = null;
+/** Earth Hands: Earth-center→surface hour vectors + square markers at hit points (zoom 0). */
+let earthHandCurrent = null;
+let earthHandSelected = null;
+let earthHandMarkerCurrent = null;
+let earthHandMarkerSelected = null;
 /** List-context circle: sky-filled disks to Sun axis + rim wall; Day/Clock outer radius to Earth orbit. */
 let listHorizonEarthRingMesh = null;
 let listHorizonEarthRingCurrentRadius = null;
@@ -445,6 +450,7 @@ function updateTimeDisplays() {
     
     const currentTimeEl = document.getElementById('current-time');
     const selectedTimeEl = document.getElementById('selected-time');
+    const facingTimeEl = document.getElementById('camera-facing-time');
     const ephemerisDebugEl = document.getElementById('ephemeris-debug');
     
     if (currentTimeEl) {
@@ -453,9 +459,25 @@ function updateTimeDisplays() {
     if (selectedTimeEl) {
         selectedTimeEl.textContent = formatDateTime(selected);
     }
+    if (facingTimeEl) {
+        facingTimeEl.textContent = getCameraTemporalFacingText();
+    }
     if (ephemerisDebugEl) {
         ephemerisDebugEl.textContent = getEphemerisDebugText(selected);
     }
+}
+
+function getCameraTemporalFacingText() {
+    if (typeof THREE === 'undefined' || !focusPoint) return '--';
+    const inXRWindowed = xrAdapter && xrAdapter.isPresenting() && xrAdapter.windowedMode;
+    const cam = (inXRWindowed && contentCamera) ? contentCamera : camera;
+    if (!cam || !cam.position) return '--';
+    const toFocus = new THREE.Vector3().subVectors(focusPoint, cam.position);
+    if (toFocus.lengthSq() < 1e-10) return '--';
+    toFocus.normalize();
+    if (toFocus.y > 0.12) return 'Future ↑';
+    if (toFocus.y < -0.12) return 'Past ↓';
+    return 'Lateral ↔';
 }
 
 function normalizeSelectedDateForEphemeris(selectedDate, currentDateHeight, selectedDateHeight) {
@@ -503,6 +525,7 @@ let currentCameraUp = null; // Current camera up vector - initialized in initSce
 let targetCameraPosition = null; // Target camera position offset - initialized in initScene
 let polarViewDir = null; // Unit offset focus→camera in polar zooms; updated by drag, not rebuilt from scratch
 let needPolarOrbitInit = true; // After non-polar → polar, seed polarViewDir from camera or default
+let forcePolarDefaultOnInit = false; // Force default Earth-pole entry orientation on zoom handoff
 let isPolarView = false; // Track if in polar view mode
 if (typeof window !== 'undefined') {
     window.requestCircaevumPolarReseed = function () {
@@ -512,6 +535,12 @@ if (typeof window !== 'undefined') {
 /** Scene Z roll (R key) in radians; scene.rotation.z eases toward this so the pivot is animated. */
 let sceneRollTargetRad = 0;
 const sceneRollSmoothSpeed = 0.16;
+
+function isEarthZoomRig(zoomLevel) {
+    // Keep Earth zoom rig on 9/0 for now; 8 stays on legacy orbit controls
+    // until dedicated handoff tuning is complete.
+    return zoomLevel === 9 || zoomLevel === 0;
+}
 
 // Initialize scene
 function initScene() {
@@ -752,8 +781,41 @@ function getPlanetXZAtSelectedDate(planetData, selectedDate, currentDateHeight, 
     };
 }
 
+function getEarthHourHandSurfaceFocus(earthPos, selectedDateHeight, selectedDate, earthSurfaceRadius) {
+    const safeDate = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date();
+    const sunToEarthAngle = Math.atan2(earthPos.z, earthPos.x);
+    const hourFrac = (safeDate.getHours() + (safeDate.getMinutes() / 60) + (safeDate.getSeconds() / 3600)) / 24;
+    const hourAngleFromEarth = sunToEarthAngle - hourFrac * Math.PI * 2;
+    const r = Number.isFinite(earthSurfaceRadius) && earthSurfaceRadius > 0 ? earthSurfaceRadius : 1.95;
+    return {
+        x: earthPos.x + Math.cos(hourAngleFromEarth) * r,
+        y: selectedDateHeight,
+        z: earthPos.z + Math.sin(hourAngleFromEarth) * r
+    };
+}
+
+function getEarthHourHandPointAtRadius(earthPos, selectedDateHeight, selectedDate, radialDistance) {
+    const safeDate = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date();
+    const sunToEarthAngle = Math.atan2(earthPos.z, earthPos.x);
+    const hourFrac = (safeDate.getHours() + (safeDate.getMinutes() / 60) + (safeDate.getSeconds() / 3600)) / 24;
+    const hourAngleFromEarth = sunToEarthAngle - hourFrac * Math.PI * 2;
+    const r = Number.isFinite(radialDistance) && radialDistance > 0 ? radialDistance : 1.95;
+    return {
+        x: earthPos.x + Math.cos(hourAngleFromEarth) * r,
+        y: selectedDateHeight,
+        z: earthPos.z + Math.sin(hourAngleFromEarth) * r
+    };
+}
+
 function disposeSunEarthTimeRadials() {
-    [sunEarthTimeRadialCurrent, sunEarthTimeRadialSelected].forEach((mesh) => {
+    [
+        sunEarthTimeRadialCurrent,
+        sunEarthTimeRadialSelected,
+        earthHandCurrent,
+        earthHandSelected,
+        earthHandMarkerCurrent,
+        earthHandMarkerSelected
+    ].forEach((mesh) => {
         if (!mesh) return;
         if (mesh.parent) mesh.parent.remove(mesh);
         if (mesh.geometry) mesh.geometry.dispose();
@@ -761,6 +823,10 @@ function disposeSunEarthTimeRadials() {
     });
     sunEarthTimeRadialCurrent = null;
     sunEarthTimeRadialSelected = null;
+    earthHandCurrent = null;
+    earthHandSelected = null;
+    earthHandMarkerCurrent = null;
+    earthHandMarkerSelected = null;
 }
 
 const EVENT_LIST_MS_PER_DAY = 86400000;
@@ -804,8 +870,10 @@ function resetListHorizonEarthRingAnimationState() {
 }
 
 function resolveListHorizonRingRadius(z, W) {
+    // Landing camera (0) should share the same context ring envelope as clock (9).
+    const zr = z === 0 ? 9 : z;
     if (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getListContextRingRadiusForZoom === 'function') {
-        return TimeMarkers.getListContextRingRadiusForZoom(z, W);
+        return TimeMarkers.getListContextRingRadiusForZoom(zr, W);
     }
     const monthOuter = W / 2;
     const weekOuter = W * 5 / 8;
@@ -813,14 +881,14 @@ function resolveListHorizonRingRadius(z, W) {
     const dayOuter = W * 3 / 4;
     const qOuter = W / 4;
     let ro;
-    if (z <= 0) ro = dayInner;
-    else if (z <= 2) ro = W * 0.5;
-    else if (z === 3) ro = qOuter;
-    else if (z === 4) ro = monthOuter;
-    else if (z <= 6) ro = weekOuter;
-    else if (z === 7) ro = dayOuter;
+    if (zr <= 0) ro = dayInner;
+    else if (zr <= 2) ro = W * 0.5;
+    else if (zr === 3) ro = qOuter;
+    else if (zr === 4) ro = monthOuter;
+    else if (zr <= 6) ro = weekOuter;
+    else if (zr === 7) ro = dayOuter;
     else ro = W;
-    const rMax = z >= 8 ? W * 0.998 : W * 0.92;
+    const rMax = zr >= 8 ? W * 0.998 : W * 0.92;
     return Math.max(W * 0.08, Math.min(ro, rMax));
 }
 
@@ -1094,6 +1162,47 @@ function buildSunEarthRadialTube(p0, p1, radius, colorHex, renderOrder) {
     return mesh;
 }
 
+function buildEarthHandSurfaceArcEdge(p0, p1, sphereCenter, sphereRadius, edgeRadius, colorHex, renderOrder) {
+    if (typeof THREE === 'undefined') return null;
+    const center = sphereCenter.clone ? sphereCenter.clone() : new THREE.Vector3(sphereCenter.x, sphereCenter.y, sphereCenter.z);
+    const a = p0.clone ? p0.clone() : new THREE.Vector3(p0.x, p0.y, p0.z);
+    const b = p1.clone ? p1.clone() : new THREE.Vector3(p1.x, p1.y, p1.z);
+    const ua = new THREE.Vector3().subVectors(a, center).normalize();
+    const ub = new THREE.Vector3().subVectors(b, center).normalize();
+    const points = [];
+    const segments = 10;
+    for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const u = new THREE.Vector3().copy(ua).lerp(ub, t).normalize();
+        points.push(new THREE.Vector3().copy(center).addScaledVector(u, sphereRadius));
+    }
+    const curve = new THREE.CatmullRomCurve3(points);
+    const geom = new THREE.TubeGeometry(curve, 14, edgeRadius, 10, false);
+    const mat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.92,
+        depthTest: true,
+        depthWrite: false
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.renderOrder = renderOrder != null ? renderOrder : 12;
+    return mesh;
+}
+
+function buildEarthHandSquareMarker(corners, sphereCenter, sphereRadius, edgeRadius, colorHex, renderOrder) {
+    if (typeof THREE === 'undefined' || !Array.isArray(corners) || corners.length < 4) return null;
+    const group = new THREE.Group();
+    group.userData = { type: 'EarthHandMarker' };
+    for (let i = 0; i < corners.length; i++) {
+        const a = corners[i];
+        const b = corners[(i + 1) % corners.length];
+        const edge = buildEarthHandSurfaceArcEdge(a, b, sphereCenter, sphereRadius, edgeRadius, colorHex, renderOrder);
+        if (edge) group.add(edge);
+    }
+    return group;
+}
+
 function updateSunEarthTimeRadials(zoomLevel) {
     if (typeof THREE === 'undefined' || !sceneContentGroup || !PLANET_DATA || !PLANET_DATA.length) return;
     const earth = PLANET_DATA.find((p) => p.name === 'Earth');
@@ -1109,9 +1218,13 @@ function updateSunEarthTimeRadials(zoomLevel) {
     const earthAngleSelected = earth.startAngle - angleFromCurrentToSelected;
     const earthAngleCurrent = earth.startAngle;
 
-    // Thinner than earlier tubes, still well above hairline time-marker strokes (WebGL line width ~1px).
-    const tubeRSelected = Math.max(0.055, d * 0.0042);
-    const tubeRCurrent = tubeRSelected * 0.7;
+    // Sun Hands intentionally thin/subtle.
+    let tubeRSelected = Math.max(0.036, d * 0.0032);
+    let tubeRCurrent = tubeRSelected * 0.52;
+    if (zoomLevel === 0) {
+        tubeRSelected = Math.max(0.018, d * 0.0017);
+        tubeRCurrent = tubeRSelected * 0.7;
+    }
 
     const sunSel = { x: 0, y: selectedDateHeight, z: 0 };
     const earthSel = {
@@ -1132,16 +1245,92 @@ function updateSunEarthTimeRadials(zoomLevel) {
     }
     const sameRadial = near3(sunSel, sunCur) && near3(earthSel, earthCur);
 
-    if (sameRadial) {
-        // Selected === current: only the red “now” radial (no duplicate blue).
-        sunEarthTimeRadialCurrent = buildSunEarthRadialTube(sunCur, earthCur, tubeRSelected, 0xff0000, 10);
-        if (sunEarthTimeRadialCurrent) sceneContentGroup.add(sunEarthTimeRadialCurrent);
-    } else {
-        // Blue (selected) wider; red (current) thinner and drawn on top (higher renderOrder).
-        sunEarthTimeRadialSelected = buildSunEarthRadialTube(sunSel, earthSel, tubeRSelected, getSelectedTimeColor(), 8);
-        if (sunEarthTimeRadialSelected) sceneContentGroup.add(sunEarthTimeRadialSelected);
-        sunEarthTimeRadialCurrent = buildSunEarthRadialTube(sunCur, earthCur, tubeRCurrent, 0xff0000, 10);
-        if (sunEarthTimeRadialCurrent) sceneContentGroup.add(sunEarthTimeRadialCurrent);
+    // In landing/clock zoom, hide Sun Hands so Earth Hands communicate local hour.
+    if (zoomLevel !== 0 && zoomLevel !== 9) {
+        if (sameRadial) {
+            // Selected === current: only the red “now” radial (no duplicate blue).
+            sunEarthTimeRadialCurrent = buildSunEarthRadialTube(sunCur, earthCur, tubeRSelected, 0xff0000, 10);
+            if (sunEarthTimeRadialCurrent) sceneContentGroup.add(sunEarthTimeRadialCurrent);
+        } else {
+            // Blue (selected) wider; red (current) thinner and drawn on top (higher renderOrder).
+            sunEarthTimeRadialSelected = buildSunEarthRadialTube(sunSel, earthSel, tubeRSelected, getSelectedTimeColor(), 8);
+            if (sunEarthTimeRadialSelected) sceneContentGroup.add(sunEarthTimeRadialSelected);
+            sunEarthTimeRadialCurrent = buildSunEarthRadialTube(sunCur, earthCur, tubeRCurrent, 0xff0000, 10);
+            if (sunEarthTimeRadialCurrent) sceneContentGroup.add(sunEarthTimeRadialCurrent);
+        }
+    }
+
+    if (zoomLevel === 0 || zoomLevel === 9) {
+        const selectedDate = getSelectedDateTime();
+        const currentDate = new Date();
+        const earthMesh = planetMeshes.find(p => p.userData && p.userData.name === 'Earth');
+        const earthCenterSel = earthMesh ? earthMesh.position.clone() : new THREE.Vector3(earthSel.x, selectedDateHeight, earthSel.z);
+        earthCenterSel.y = selectedDateHeight;
+        const earthCenterCur = earthCenterSel.clone();
+        const earthSurfaceRadius = earthMesh && earthMesh.geometry && earthMesh.geometry.parameters && typeof earthMesh.geometry.parameters.radius === 'number'
+            ? earthMesh.geometry.parameters.radius
+            : (earth && typeof earth.size === 'number' ? earth.size : 6.5) * 0.3;
+        const earthPosForHands = { x: earthCenterSel.x, z: earthCenterSel.z };
+        const hitSel = getEarthHourHandSurfaceFocus(earthPosForHands, selectedDateHeight, selectedDate, earthSurfaceRadius);
+        const hitCur = getEarthHourHandSurfaceFocus(earthPosForHands, selectedDateHeight, currentDate, earthSurfaceRadius);
+        const hourNumberRadius = earthSurfaceRadius * 2.2;
+        const handSelEnd = getEarthHourHandPointAtRadius(earthPosForHands, selectedDateHeight, selectedDate, hourNumberRadius);
+        const handCurEnd = getEarthHourHandPointAtRadius(earthPosForHands, selectedDateHeight, currentDate, hourNumberRadius);
+
+        // Earth Hand lines: axis centered at Earth origin, extending outward only.
+        const earthHandRadius = Math.max(0.022, earthSurfaceRadius * 0.024);
+        earthHandSelected = buildSunEarthRadialTube(
+            { x: earthCenterSel.x, y: earthCenterSel.y, z: earthCenterSel.z },
+            handSelEnd,
+            earthHandRadius,
+            0x2d8cff,
+            13
+        );
+        if (earthHandSelected) sceneContentGroup.add(earthHandSelected);
+        earthHandCurrent = buildSunEarthRadialTube(
+            { x: earthCenterCur.x, y: earthCenterCur.y, z: earthCenterCur.z },
+            handCurEnd,
+            earthHandRadius,
+            0xff0000,
+            14
+        );
+        if (earthHandCurrent) sceneContentGroup.add(earthHandCurrent);
+
+        function buildEarthHandSquareAtHit(hit, earthCenter, colorHex, renderOrder) {
+            const hitVec = new THREE.Vector3(hit.x, hit.y, hit.z);
+            const normal = new THREE.Vector3().subVectors(hitVec, earthCenter).normalize(); // perpendicular to Earth Hand
+            let tangentA = new THREE.Vector3(0, 1, 0).addScaledVector(normal, -normal.y);
+            if (tangentA.lengthSq() < 1e-10) tangentA = new THREE.Vector3(1, 0, 0);
+            tangentA.normalize();
+            const tangentB = new THREE.Vector3().crossVectors(normal, tangentA).normalize();
+            const markerSpan = Math.max(0.04, earthSurfaceRadius * 0.065);
+            const markerRadius = earthSurfaceRadius + 0.006;
+            const markerCenter = hitVec.clone().addScaledVector(normal, markerRadius - earthSurfaceRadius);
+            const cornerOffsets = [
+                [1, 1],
+                [-1, 1],
+                [-1, -1],
+                [1, -1]
+            ];
+            const squareCorners = [];
+            cornerOffsets.forEach((pair) => {
+                const dir = new THREE.Vector3()
+                    .copy(normal)
+                    .addScaledVector(tangentA, pair[0] * markerSpan)
+                    .addScaledVector(tangentB, pair[1] * markerSpan)
+                    .normalize();
+                const p = new THREE.Vector3()
+                    .copy(earthCenter)
+                    .addScaledVector(dir, markerRadius);
+                squareCorners.push(p);
+            });
+            const edgeRadius = Math.max(0.012, earthSurfaceRadius * 0.015);
+            return buildEarthHandSquareMarker(squareCorners, earthCenter, markerRadius, edgeRadius, colorHex, renderOrder);
+        }
+        earthHandMarkerSelected = buildEarthHandSquareAtHit(hitSel, earthCenterSel, 0x2d8cff, 15);
+        if (earthHandMarkerSelected) sceneContentGroup.add(earthHandMarkerSelected);
+        earthHandMarkerCurrent = buildEarthHandSquareAtHit(hitCur, earthCenterCur, 0xff4d4d, 16);
+        if (earthHandMarkerCurrent) sceneContentGroup.add(earthHandMarkerCurrent);
     }
 }
 
@@ -1176,6 +1365,10 @@ function applyLightTimeScrubUpdate(zoomLevel) {
         if (effectiveFocusTarget === 'mid') {
             const midFrac = getFocusMidRadialFrac(zoomLevel);
             targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
+        } else if (zoomLevel === 0) {
+            const earthSurfaceRadius = (earth && typeof earth.size === 'number' ? earth.size : 6.5) * 0.3;
+            const p = getEarthHourHandSurfaceFocus(earthPos, selectedDateHeight, selectedDate, earthSurfaceRadius);
+            targetFocusPoint.set(p.x, p.y, p.z);
         } else {
             targetFocusPoint.set(earthX, selectedDateHeight, earthZ);
         }
@@ -1413,6 +1606,10 @@ function createPlanets(zoomLevel) {
         if (effectiveFocusTarget === 'mid') {
             const midFrac = getFocusMidRadialFrac(zoomLevel);
             targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
+        } else if (zoomLevel === 0) {
+            const earthSurfaceRadius = (earth && typeof earth.size === 'number' ? earth.size : 6.5) * 0.3;
+            const p = getEarthHourHandSurfaceFocus(earthPos, selectedDateHeight, selectedDate, earthSurfaceRadius);
+            targetFocusPoint.set(p.x, p.y, p.z);
         } else {
             targetFocusPoint.set(earthX, selectedDateHeight, earthZ);
         }
@@ -2262,7 +2459,7 @@ function initControls() {
             const deltaX = e.clientX - previousMousePosition.x;
             const deltaY = e.clientY - previousMousePosition.y;
 
-            if (currentZoom === 0 || currentZoom === 9) {
+            if (isEarthZoomRig(currentZoom)) {
                 applyPolarOrbitDelta(deltaX, deltaY);
             } else {
                 cameraRotation.y -= deltaX * 0.005;
@@ -2347,7 +2544,7 @@ function initControls() {
             const deltaX = e.touches[0].clientX - previousMousePosition.x;
             const deltaY = e.touches[0].clientY - previousMousePosition.y;
 
-            if (currentZoom === 0 || currentZoom === 9) {
+            if (isEarthZoomRig(currentZoom)) {
                 applyPolarOrbitDelta(deltaX, deltaY);
             } else {
                 cameraRotation.y -= deltaX * 0.005;
@@ -2387,7 +2584,7 @@ function initControls() {
     function getNextKeyboardZoomLevel(direction) {
         // Keep W/S zoom stepping on stable calendar scales.
         // This avoids jumps into lunar (6) and landing camera (0) unless explicitly selected.
-        const sequence = [1, 2, 3, 4, 5, 7, 8, 9];
+        const sequence = [1, 2, 3, 4, 5, 7, 8, 9, 0];
         const currentIdx = sequence.indexOf(currentZoom);
         const nextIdx = currentIdx === -1
             ? (direction > 0 ? 0 : sequence.length - 1)
@@ -2440,10 +2637,10 @@ function initControls() {
             e.preventDefault();
             nudgeSelectedWallTime(60 * 60 * 1000);
             if (typeof playTickSound === 'function') playTickSound(Math.min(9, currentZoom + 1));
-        } else if (e.key.toLowerCase() === 'a' && !isLandingPage) {
+        } else if (e.key.toLowerCase() === 'a') {
             navigateUnit(-1); // Navigate down one unit (previous week, day, hour, etc.)
             if (typeof playTickSound === 'function') playTickSound(currentZoom);
-        } else if (e.key.toLowerCase() === 'd' && !isLandingPage) {
+        } else if (e.key.toLowerCase() === 'd') {
             navigateUnit(1); // Navigate up one unit (next week, day, hour, etc.)
             if (typeof playTickSound === 'function') playTickSound(currentZoom);
         } else if (e.key.toLowerCase() === 'n' && !isLandingPage) {
@@ -2493,18 +2690,16 @@ function initControls() {
     const handleZoomIn = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (currentZoom < 9) {
-            setZoomLevel(currentZoom + 1);
-        }
+        const nextZoom = getNextKeyboardZoomLevel(1);
+        if (typeof nextZoom === 'number') setZoomLevel(nextZoom);
     };
     
     // Zoom out function
     const handleZoomOut = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (currentZoom > 1) {
-            setZoomLevel(currentZoom - 1);
-        }
+        const nextZoom = getNextKeyboardZoomLevel(-1);
+        if (typeof nextZoom === 'number') setZoomLevel(nextZoom);
     };
     
     if (zoomInBtn) {
@@ -3545,6 +3740,7 @@ function navigateUnitStep(direction) {
             }
             break;
 
+        case 0: // Landing view - navigate hours
         case 8: // Day view - navigate hours
         case 9: // Clock view - navigate hours
             currentHourInDay += direction;
@@ -3568,7 +3764,6 @@ function navigateUnitStep(direction) {
  * @param {number} [stepCount=1] repeat steps (capped); XR uses xrTimeScale for multi-step.
  */
 function navigateUnit(direction, stepCount) {
-    if (currentZoom === 0) return;
     const n =
         stepCount === undefined || stepCount === null
             ? 1
@@ -3607,28 +3802,68 @@ function buildDefaultPolarViewDirection() {
             (sel.getHours() + sel.getMinutes() / 60 + sel.getSeconds() / 3600) / 24;
         hourAngleFromEarth = sunToEarthAngle - hourFrac * Math.PI * 2;
     }
-    const baseTilt = currentZoom === 0 ? 0.5 : 0.24;
+    let baseTilt = 0.24;
+    if (currentZoom === 0) {
+        baseTilt = 0.5;
+    } else if (currentZoom === 9) {
+        // Start zoom 9 almost straight toward Earth's south-pole-facing view.
+        baseTilt = 0.035;
+    } else if (currentZoom === 8) {
+        // Zoom 8 starts with a friendlier oblique Earth view.
+        baseTilt = 1.02;
+    }
     const hourDirX = Math.cos(hourAngleFromEarth);
     const hourDirZ = Math.sin(hourAngleFromEarth);
     v.set(hourDirX * Math.sin(baseTilt), -Math.cos(baseTilt), hourDirZ * Math.sin(baseTilt));
     return v.normalize();
 }
 
-/** Incremental polar orbit: world Y yaw, then pitch about axis ⟂ both Y and view (stable for steady drags). */
+function getEarthZoomOrbitUpAxis() {
+    if (isEarthZoomRig(currentZoom)) {
+        const earthMesh = planetMeshes.find(p => p.userData && p.userData.name === 'Earth');
+        const earthDef = PLANET_DATA.find(p => p.name === 'Earth');
+        let sunToEarthAngle = 0;
+        if (earthMesh) {
+            sunToEarthAngle = Math.atan2(earthMesh.position.z, earthMesh.position.x);
+        } else if (earthDef) {
+            sunToEarthAngle = earthDef.startAngle;
+        }
+        return new THREE.Vector3(
+            -Math.cos(sunToEarthAngle),
+            0,
+            -Math.sin(sunToEarthAngle)
+        ).normalize();
+    }
+    return new THREE.Vector3(0, 1, 0);
+}
+
+/** Incremental Earth-zoom orbit: yaw about active up axis, pitch about right axis. */
 function applyPolarOrbitDelta(deltaX, deltaY) {
     if (!polarViewDir) return;
     const sens = 0.005;
-    polarViewDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * sens);
-    const pitchAxis = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), polarViewDir);
+    const upAxis = getEarthZoomOrbitUpAxis();
+    polarViewDir.applyAxisAngle(upAxis, -deltaX * sens);
+    const pitchAxis = new THREE.Vector3().crossVectors(upAxis, polarViewDir);
     if (pitchAxis.lengthSq() > 1e-14) {
         pitchAxis.normalize();
         polarViewDir.applyAxisAngle(pitchAxis, -deltaY * sens);
     }
     polarViewDir.normalize();
-    // Stay mostly below the focal slab (clock / landing are under Earth in +Y time)
-    if (polarViewDir.y > -0.06) {
-        polarViewDir.y = -0.06;
-        polarViewDir.normalize();
+    // Keep camera from crossing singularity axis (prevents flip/erratic drag).
+    const minDot = currentZoom === 8 ? -0.9 : -0.98;
+    // 9/0: allow crossing farther toward the illuminated side while still
+    // preventing singularity flips near the orbit-up axis.
+    const maxDot = currentZoom === 8 ? 0.84 : 0.58;
+    const dot = polarViewDir.dot(upAxis);
+    if (dot > maxDot || dot < minDot) {
+        const clamped = Math.max(minDot, Math.min(maxDot, dot));
+        const lateral = new THREE.Vector3().copy(polarViewDir).addScaledVector(upAxis, -dot);
+        if (lateral.lengthSq() < 1e-10) {
+            polarViewDir.copy(buildDefaultPolarViewDirection());
+        } else {
+            lateral.normalize().multiplyScalar(Math.sqrt(Math.max(0, 1 - (clamped * clamped))));
+            polarViewDir.copy(lateral).addScaledVector(upAxis, clamped).normalize();
+        }
     }
 }
 
@@ -3669,16 +3904,21 @@ function setZoomLevel(level, overrideDate) {
     const selectedDate = overrideDate instanceof Date ? overrideDate : getSelectedDateTime();
 
     const prevZoom = currentZoom;
-    const prevPolar = prevZoom === 0 || prevZoom === 9;
+    const prevPolar = isEarthZoomRig(prevZoom);
 
     // Now change the zoom level
     currentZoom = level;
-    const nextPolar = level === 0 || level === 9;
+    const nextPolar = isEarthZoomRig(level);
     if (nextPolar && !prevPolar) {
+        needPolarOrbitInit = true;
+    }
+    if (level === 9 && prevZoom !== 9) {
+        forcePolarDefaultOnInit = true;
         needPolarOrbitInit = true;
     }
     if (!nextPolar) {
         needPolarOrbitInit = true;
+        forcePolarDefaultOnInit = false;
     }
     if (focusTargetOverride === 'mid' && !keepMidFocusOverrideAtZoom(level)) {
         focusTargetOverride = null;
@@ -3955,6 +4195,14 @@ function getFocusPoint() {
                 const midFrac = getFocusMidRadialFrac(currentZoom);
                 return new THREE.Vector3(earthPos.x * midFrac, earthPos.y, earthPos.z * midFrac);
             }
+            if (currentZoom === 0) {
+                const sel = getSelectedDateTime();
+                const meshRadius = earthPlanet.geometry && earthPlanet.geometry.parameters && typeof earthPlanet.geometry.parameters.radius === 'number'
+                    ? earthPlanet.geometry.parameters.radius
+                    : 1.95;
+                const p = getEarthHourHandSurfaceFocus(earthPos, earthPos.y, sel, meshRadius);
+                return new THREE.Vector3(p.x, p.y, p.z);
+            }
             return earthPos;
         }
     }
@@ -3977,6 +4225,20 @@ function getFocusPoint() {
     }
 
     return new THREE.Vector3(0, verticalOffset, 0);
+}
+
+function updateHourHandMarkerPulse(time) {
+    if (!earthHandMarkerCurrent && !earthHandMarkerSelected) return;
+    const pulseOpacity = 0.9;
+    [earthHandMarkerCurrent, earthHandMarkerSelected].forEach((marker) => {
+        if (!marker) return;
+        marker.scale.set(1, 1, 1);
+        marker.traverse((child) => {
+            if (child && child.material && typeof child.material.opacity === 'number') {
+                child.material.opacity = pulseOpacity;
+            }
+        });
+    });
 }
 
 function animate(time, frame) {
@@ -4186,17 +4448,20 @@ function animate(time, frame) {
         isPolarView = true;
 
         if (needPolarOrbitInit && polarViewDir && camForPos) {
-            polarViewDir.subVectors(camForPos.position, focusPoint);
-            if (polarViewDir.lengthSq() < 1e-8) {
+            if (forcePolarDefaultOnInit) {
                 polarViewDir.copy(buildDefaultPolarViewDirection());
             } else {
-                polarViewDir.normalize();
-                if (polarViewDir.y > -0.06) {
-                    polarViewDir.y = -0.06;
+                polarViewDir.subVectors(camForPos.position, focusPoint);
+                if (polarViewDir.lengthSq() < 1e-8) {
+                    polarViewDir.copy(buildDefaultPolarViewDirection());
+                } else {
                     polarViewDir.normalize();
+                // No hard world-Y clamp here; dot-limit guard in applyPolarOrbitDelta
+                // now controls safe angular range for Earth zoom rigs.
                 }
             }
             needPolarOrbitInit = false;
+            forcePolarDefaultOnInit = false;
         }
 
         const earthMesh = planetMeshes.find(p => p.userData && p.userData.name === 'Earth');
@@ -4214,11 +4479,15 @@ function animate(time, frame) {
             targetCameraPosition.copy(buildDefaultPolarViewDirection()).multiplyScalar(distance);
         }
 
-        targetCameraUp.set(
-            -Math.cos(sunToEarthAngle),
-            0,
-            -Math.sin(sunToEarthAngle)
-        );
+        if (currentZoom === 8) {
+            targetCameraUp.set(0, 1, 0);
+        } else {
+            targetCameraUp.set(
+                -Math.cos(sunToEarthAngle),
+                0,
+                -Math.sin(sunToEarthAngle)
+            );
+        }
 
         if (Math.floor(time) % 100 === 0 && currentZoom === 9) {
             console.log('Zoom 9 - Camera distance:', distance, 'Focus point:', focusPoint.y, 'Markers visible:', timeMarkers.length);
@@ -4243,7 +4512,7 @@ function animate(time, frame) {
         camForPos.position.z - focusPoint.z
     );
 
-    const polarCam = currentZoom === 0 || currentZoom === 9;
+    const polarCam = isEarthZoomRig(currentZoom);
     const camLerp = polarCam ? 1 : cameraTransitionSpeed;
     currentPos.lerp(targetCameraPosition, camLerp);
 
@@ -4258,6 +4527,8 @@ function animate(time, frame) {
         cam.up.copy(currentCameraUp);
         cam.lookAt(focusPoint);
     }
+
+    updateHourHandMarkerPulse(time);
     
     if (inXRWindowed && contentCamera && xrAdapter._roomScene) {
         xrAdapter.renderWindowed(renderer, scene, contentCamera, camera);
