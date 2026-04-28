@@ -10,7 +10,6 @@ const CircaevumAstro = (function() {
     let initialized = false;
     const HEIGHT_PER_YEAR_LOCAL = 100;
     const MS_PER_TROPICAL_YEAR = 365.2425 * 86400000;
-    const STORAGE_KEY = 'circaevum.ephemeris.enabled';
 
     function nowDate() {
         return new Date();
@@ -28,12 +27,6 @@ const CircaevumAstro = (function() {
             enabled: !!config.enabled,
             provider: config.provider || 'kepler'
         };
-        if (typeof localStorage !== 'undefined') {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved === '1' || saved === '0') {
-                runtimeConfig.enabled = saved === '1';
-            }
-        }
         selectProvider(runtimeConfig.provider);
         initialized = true;
     }
@@ -63,12 +56,7 @@ const CircaevumAstro = (function() {
         return !!runtimeConfig.enabled;
     }
 
-    function persistEnabled() {
-        if (typeof localStorage === 'undefined') return;
-        try {
-            localStorage.setItem(STORAGE_KEY, runtimeConfig.enabled ? '1' : '0');
-        } catch (e) {}
-    }
+    function persistEnabled() {}
 
     function setEnabled(enabled) {
         ensureInit();
