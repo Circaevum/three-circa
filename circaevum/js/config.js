@@ -65,8 +65,8 @@ const PLANET_DATA = [
 // EPHEMERIS / ASTRO CONFIG
 // ============================================
 const EPHEMERIS_CONFIG = {
-    // Keep disabled until we complete parity checks.
-    enabled: false,
+    // Default ON so ephemeris starts enabled on load.
+    enabled: true,
     // Preferred provider when enabled.
     // Default to local Kepler fallback to avoid third-party availability risk.
     provider: 'kepler',
