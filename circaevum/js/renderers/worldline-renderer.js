@@ -279,7 +279,8 @@ const Worldlines = (function() {
             currentDateHeight,
             planetData.orbitalPeriod,
             planetData.startAngle,
-            segments
+            segments,
+            planetData.name
         );
         
         // Validate points array before creating geometry
@@ -368,7 +369,8 @@ const Worldlines = (function() {
             currentHeight,
             planetData.orbitalPeriod,
             planetData.startAngle,
-            segments
+            segments,
+            planetData.name
         );
         
         // Validate points before creating geometry

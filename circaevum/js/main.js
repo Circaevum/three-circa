@@ -445,6 +445,7 @@ function updateTimeDisplays() {
     
     const currentTimeEl = document.getElementById('current-time');
     const selectedTimeEl = document.getElementById('selected-time');
+    const ephemerisDebugEl = document.getElementById('ephemeris-debug');
     
     if (currentTimeEl) {
         currentTimeEl.textContent = formatDateTime(now);
@@ -452,6 +453,47 @@ function updateTimeDisplays() {
     if (selectedTimeEl) {
         selectedTimeEl.textContent = formatDateTime(selected);
     }
+    if (ephemerisDebugEl) {
+        ephemerisDebugEl.textContent = getEphemerisDebugText(selected);
+    }
+}
+
+function normalizeSelectedDateForEphemeris(selectedDate, currentDateHeight, selectedDateHeight) {
+    // Selected calendar time is already the authoritative reference.
+    // Do not remap it through height->date here, or it can drift toward wall-clock "now".
+    if (!(selectedDate instanceof Date) || isNaN(selectedDate.getTime())) return new Date();
+    return selectedDate;
+}
+
+function getEphemerisDebugText(selectedDate) {
+    try {
+        if (typeof window === 'undefined' || !window.CircaevumAstro || typeof window.CircaevumAstro.getStatus !== 'function') return 'off';
+        const status = window.CircaevumAstro.getStatus();
+        if (!status || !status.enabled) return 'off';
+        if (typeof window.CircaevumAstro.getHeliocentricPositionAtDate !== 'function') return 'on';
+        const earth = window.CircaevumAstro.getHeliocentricPositionAtDate('Earth', selectedDate);
+        const mars = window.CircaevumAstro.getHeliocentricPositionAtDate('Mars', selectedDate);
+        if (!earth || !mars) return 'on';
+        const sunToEarth = earth;
+        const sunToMars = mars;
+        const earthToSun = { x: -earth.x, y: -earth.y, z: -earth.z };
+        const earthToMars = { x: mars.x - earth.x, y: mars.y - earth.y, z: mars.z - earth.z };
+        const angHelio = angleDegBetween(sunToEarth, sunToMars);
+        const angOpp = angleDegBetween(earthToSun, earthToMars);
+        const residual = Math.abs(180 - angOpp);
+        const provider = status.activeProvider === 'astronomy-engine' ? 'AE' : 'FB';
+        return provider + ' helio=' + angHelio.toFixed(1) + ' opp=' + angOpp.toFixed(1) + ' d=' + residual.toFixed(1);
+    } catch (e) {
+        return 'debug err';
+    }
+}
+
+function angleDegBetween(a, b) {
+    const am = Math.hypot(a.x, a.y, a.z) || 1;
+    const bm = Math.hypot(b.x, b.y, b.z) || 1;
+    const dot = (a.x * b.x + a.y * b.y + a.z * b.z) / (am * bm);
+    const c = Math.max(-1, Math.min(1, dot));
+    return Math.acos(c) * 180 / Math.PI;
 }
 
 let ghostEarth = null; // Ghost version of Earth at current/actual position
@@ -690,6 +732,24 @@ function computeSceneDateHeights(zoomLevel) {
 
     const selectedHeightOffset = selectedDateHeight - currentDateHeight;
     return { currentDateHeight, selectedDateHeight, selectedHeightOffset, selectedDate };
+}
+
+function getPlanetXZAtSelectedDate(planetData, selectedDate, currentDateHeight, selectedDateHeight) {
+    const selectedDateForEphemeris = normalizeSelectedDateForEphemeris(selectedDate, currentDateHeight, selectedDateHeight);
+    if (typeof window !== 'undefined' && window.CircaevumAstro && typeof window.CircaevumAstro.getPlanetScenePositionAtDate === 'function') {
+        const astroPos = window.CircaevumAstro.getPlanetScenePositionAtDate(planetData.name, selectedDateForEphemeris);
+        if (astroPos && !isNaN(astroPos.x) && !isNaN(astroPos.z)) {
+            return { x: astroPos.x, z: astroPos.z };
+        }
+    }
+    const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
+    const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / planetData.orbitalPeriod;
+    const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
+    const planetAngle = planetData.startAngle - angleFromCurrentToSelected;
+    return {
+        x: Math.cos(planetAngle) * planetData.distance,
+        z: Math.sin(planetAngle) * planetData.distance
+    };
 }
 
 function disposeSunEarthTimeRadials() {
@@ -1110,12 +1170,9 @@ function applyLightTimeScrubUpdate(zoomLevel) {
 
     if (effectiveFocusTarget === 'earth' || effectiveFocusTarget === 'mid') {
         const earth = PLANET_DATA.find((p) => p.name === 'Earth');
-        const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
-        const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / earth.orbitalPeriod;
-        const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
-        const earthAngle = earth.startAngle - angleFromCurrentToSelected;
-        const earthX = Math.cos(earthAngle) * earth.distance;
-        const earthZ = Math.sin(earthAngle) * earth.distance;
+        const earthPos = getPlanetXZAtSelectedDate(earth, selectedDate, currentDateHeight, selectedDateHeight);
+        const earthX = earthPos.x;
+        const earthZ = earthPos.z;
         if (effectiveFocusTarget === 'mid') {
             const midFrac = getFocusMidRadialFrac(zoomLevel);
             targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
@@ -1134,12 +1191,9 @@ function applyLightTimeScrubUpdate(zoomLevel) {
             const mxz = moonXZ(selectedDateHeight, currentDateHeight, earth, null, selectedDate);
             targetFocusPoint.set(mxz.x, selectedDateHeight, mxz.z);
         } else if (earth) {
-            const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
-            const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / earth.orbitalPeriod;
-            const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
-            const earthAngle = earth.startAngle - angleFromCurrentToSelected;
-            const earthX = Math.cos(earthAngle) * earth.distance;
-            const earthZ = Math.sin(earthAngle) * earth.distance;
+            const earthPos = getPlanetXZAtSelectedDate(earth, selectedDate, currentDateHeight, selectedDateHeight);
+            const earthX = earthPos.x;
+            const earthZ = earthPos.z;
             const midFrac = getFocusMidRadialFrac(zoomLevel);
             targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
         } else {
@@ -1157,14 +1211,12 @@ function applyLightTimeScrubUpdate(zoomLevel) {
     PLANET_DATA.forEach((planetData, i) => {
         const planet = planetMeshes[i];
         if (!planet) return;
-        const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
-        const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / planetData.orbitalPeriod;
-        const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
-        const planetAngle = planetData.startAngle - angleFromCurrentToSelected;
+        const posXZ = getPlanetXZAtSelectedDate(planetData, selectedDate, currentDateHeight, selectedDateHeight);
+        const planetAngle = Math.atan2(posXZ.z, posXZ.x);
         planet.position.set(
-            Math.cos(planetAngle) * planetData.distance,
+            posXZ.x,
             selectedDateHeight,
-            Math.sin(planetAngle) * planetData.distance
+            posXZ.z
         );
         planet.userData.angle = planetAngle;
         planet.userData.baseHeight = selectedDateHeight;
@@ -1186,10 +1238,12 @@ function applyLightTimeScrubUpdate(zoomLevel) {
     if (ghostEarth && needGhost) {
         const earthData = PLANET_DATA.find((p) => p.name === 'Earth');
         if (earthData) {
+            const currentDate = new Date();
+            const earthCurrentXZ = getPlanetXZAtSelectedDate(earthData, currentDate, currentDateHeight, currentDateHeight);
             ghostEarth.position.set(
-                Math.cos(earthData.startAngle) * earthData.distance,
+                earthCurrentXZ.x,
                 currentDateHeight,
-                Math.sin(earthData.startAngle) * earthData.distance
+                earthCurrentXZ.z
             );
         }
     }
@@ -1353,13 +1407,9 @@ function createPlanets(zoomLevel) {
     if (effectiveFocusTarget === 'earth' || effectiveFocusTarget === 'mid') {
         // Calculate Earth's position at selected time using exact date height
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
-        // Calculate Earth's angle at selected time using continuous height calculation
-        const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
-        const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / earth.orbitalPeriod;
-        const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
-        const earthAngle = earth.startAngle - angleFromCurrentToSelected; // Counter-clockwise
-        const earthX = Math.cos(earthAngle) * earth.distance;
-        const earthZ = Math.sin(earthAngle) * earth.distance;
+        const earthPos = getPlanetXZAtSelectedDate(earth, selectedDate, currentDateHeight, selectedDateHeight);
+        const earthX = earthPos.x;
+        const earthZ = earthPos.z;
         if (effectiveFocusTarget === 'mid') {
             const midFrac = getFocusMidRadialFrac(zoomLevel);
             targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
@@ -1378,12 +1428,9 @@ function createPlanets(zoomLevel) {
             const mxz = moonXZ(selectedDateHeight, currentDateHeight, earth, null, selectedDate);
             targetFocusPoint.set(mxz.x, selectedDateHeight, mxz.z);
         } else if (earth) {
-            const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
-            const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / earth.orbitalPeriod;
-            const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
-            const earthAngle = earth.startAngle - angleFromCurrentToSelected;
-            const earthX = Math.cos(earthAngle) * earth.distance;
-            const earthZ = Math.sin(earthAngle) * earth.distance;
+            const earthPos = getPlanetXZAtSelectedDate(earth, selectedDate, currentDateHeight, selectedDateHeight);
+            const earthX = earthPos.x;
+            const earthZ = earthPos.z;
             const midFrac = getFocusMidRadialFrac(zoomLevel);
             targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
         } else {
@@ -1422,17 +1469,13 @@ function createPlanets(zoomLevel) {
         });
         const planet = new THREE.Mesh(geometry, material);
         
-        // Calculate angle at selected height based on orbital motion
-        // Use the same calculation method as time markers: calculate from currentDateHeight to selectedDateHeight
-        const yearsFromCurrentToSelected = (selectedDateHeight - currentDateHeight) / 100;
-        const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / planetData.orbitalPeriod;
-        const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
-        const planetAngle = planetData.startAngle - angleFromCurrentToSelected; // Counter-clockwise
+        const posXZ = getPlanetXZAtSelectedDate(planetData, selectedDate, currentDateHeight, selectedDateHeight);
+        const planetAngle = Math.atan2(posXZ.z, posXZ.x);
         
         // Position planet at selected date height
-        planet.position.x = Math.cos(planetAngle) * planetData.distance;
+        planet.position.x = posXZ.x;
         planet.position.y = selectedDateHeight;
-        planet.position.z = Math.sin(planetAngle) * planetData.distance;
+        planet.position.z = posXZ.z;
         
         planet.userData = {
             distance: planetData.distance,
@@ -1458,9 +1501,10 @@ function createPlanets(zoomLevel) {
             ghostEarth = new THREE.Mesh(ghostGeometry, ghostMaterial);
             
             // Position at actual current date
-            ghostEarth.position.x = Math.cos(planetData.startAngle) * planetData.distance;
+            const earthCurrentXZ = getPlanetXZAtSelectedDate(planetData, new Date(), currentDateHeight, currentDateHeight);
+            ghostEarth.position.x = earthCurrentXZ.x;
             ghostEarth.position.y = currentDateHeight;
-            ghostEarth.position.z = Math.sin(planetData.startAngle) * planetData.distance;
+            ghostEarth.position.z = earthCurrentXZ.z;
             
             sceneContentGroup.add(ghostEarth); // Earth stays 3D (not flattened)
         }

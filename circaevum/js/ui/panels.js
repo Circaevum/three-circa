@@ -171,5 +171,50 @@
         sceneIconOverlay.classList.toggle('collapsed');
       };
     }
+
+    var ephemerisToggle = document.getElementById('ephemeris-toggle');
+    var ephemerisStatusBadge = document.getElementById('ephemeris-status-badge');
+    function updateEphemerisToggleUi() {
+      if (!ephemerisToggle) return;
+      var status = (typeof window.getEphemerisStatus === 'function') ? window.getEphemerisStatus() : null;
+      var on = status ? !!status.enabled : (typeof window.getEphemerisEnabled === 'function' ? !!window.getEphemerisEnabled() : false);
+      var provider = status && status.activeProvider ? status.activeProvider : 'circular';
+      var aeAvail = status && typeof status.astronomyEngineAvailable === 'boolean' ? status.astronomyEngineAvailable : false;
+      ephemerisToggle.classList.toggle('active', on);
+      ephemerisToggle.setAttribute('aria-label', on ? 'Disable ephemeris planetary alignment' : 'Enable ephemeris planetary alignment');
+      ephemerisToggle.title = on
+        ? ('Ephemeris alignment: on (' + provider + ')')
+        : ('Ephemeris alignment: off' + (aeAvail ? ' (astronomy provider available)' : ' (circular fallback)'));
+
+      if (ephemerisStatusBadge) {
+        var label;
+        if (!on) label = 'E OFF';
+        else if (provider === 'astronomy-engine') label = 'E AE';
+        else if (provider === 'kepler') label = 'E KP';
+        else label = 'E FB';
+        ephemerisStatusBadge.textContent = label;
+        ephemerisStatusBadge.title = on
+          ? ('Ephemeris ON via ' + provider)
+          : ('Ephemeris OFF' + (aeAvail ? ' (AE available)' : ' (fallback only)'));
+        ephemerisStatusBadge.classList.toggle('is-on', on);
+        ephemerisStatusBadge.classList.toggle('is-fallback', on && provider !== 'astronomy-engine');
+      }
+    }
+
+    if (ephemerisToggle) {
+      updateEphemerisToggleUi();
+      ephemerisToggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (typeof window.toggleEphemerisEnabled === 'function') {
+          window.toggleEphemerisEnabled();
+          updateEphemerisToggleUi();
+          // Rebuild scene geometry at current zoom so worldlines pick the new mode.
+          if (typeof window.setZoomLevel === 'function' && typeof window.getCurrentZoomLevel === 'function') {
+            window.setZoomLevel(window.getCurrentZoomLevel());
+          }
+          if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
+        }
+      });
+    }
   });
 })();

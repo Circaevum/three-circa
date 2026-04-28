@@ -169,6 +169,14 @@
                     <circle class="lunar-crater" cx="8.25" cy="14.05" r="0.52"/>
                 </svg>
             </button>
+            <button type="button" class="scene-icon-btn" id="ephemeris-toggle" title="Ephemeris alignment: off" aria-label="Toggle ephemeris planetary alignment">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="1.4"/>
+                    <circle cx="12" cy="12" r="5.2"/>
+                    <circle cx="12" cy="12" r="9"/>
+                    <circle cx="21" cy="12" r="1.3"/>
+                </svg>
+            </button>
             <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Theme: dark (L)" aria-label="Cycle appearance: dark, light, sky (L)">
                 <span class="icon-moon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
                 <span class="icon-sun" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span>
@@ -197,6 +205,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 12h2M19 12h2M3 10v4M19 10v4M6 8v8M18 8v8M6 8a4 4 0 0 1 6 0M12 8a4 4 0 0 1 6 0M6 16a4 4 0 0 0 6 0M12 16a4 4 0 0 0 6 0"/></svg>
             </button>
             </div>
+            <div class="scene-ephemeris-status" id="ephemeris-status-badge" aria-live="polite">E OFF</div>
         </div>
 
         <div class="scene-sliders-stack" id="scene-sliders-stack" style="display: none;">
@@ -223,6 +232,14 @@
             <h1>CIRCAEVUM</h1>
             <div class="subtitle">A Space for Time</div>
         </div>
+        <a
+            id="circaevum-attribution"
+            class="circaevum-attribution"
+            href="https://circaevum.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Powered by Circaevum (opens in new tab)"
+        >Powered by Circaevum</a>
     </div>
     
     <div class="info-panel">
@@ -250,6 +267,10 @@
         <div class="info-row">
             <span class="info-label">Worldline Height:</span>
             <span class="info-value" id="worldline-height">10 AU</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Ephemeris Debug:</span>
+            <span class="info-value" id="ephemeris-debug">--</span>
         </div>
     </div>
     </div>
@@ -448,6 +469,17 @@
     <!-- Circaevum Modules (load in dependency order) -->
     <script src="circaevum/js/config.js"></script>
     <script src="circaevum/js/datetime.js"></script>
+    
+    <!-- Astro scaffold (feature-flagged ephemeris pipeline) -->
+    <script src="circaevum/js/astro/time-scales.js"></script>
+    <script src="circaevum/js/vendor/astronomy-engine/astronomy.min.js"></script>
+    <script src="circaevum/js/astro/providers/circular-provider.js"></script>
+    <script src="circaevum/js/astro/providers/kepler-provider.js"></script>
+    <script src="circaevum/js/astro/providers/astronomy-engine-provider.js"></script>
+    <script src="circaevum/js/astro/earth-orbital-frame.js"></script>
+    <script src="circaevum/js/astro/state-to-scene.js"></script>
+    <script src="circaevum/js/astro/trajectory-sampler.js"></script>
+    <script src="circaevum/js/astro/ephemeris-engine.js"></script>
     
     <!-- Utils (geometry helpers) -->
     <script src="circaevum/js/utils/geometry-helpers.js"></script>

@@ -62,6 +62,21 @@ const PLANET_DATA = [
 ];
 
 // ============================================
+// EPHEMERIS / ASTRO CONFIG
+// ============================================
+const EPHEMERIS_CONFIG = {
+    // Keep disabled until we complete parity checks.
+    enabled: false,
+    // Preferred provider when enabled.
+    // Default to local Kepler fallback to avoid third-party availability risk.
+    provider: 'kepler',
+    // Scene mapping mode for planet/worldline positions.
+    // 'heliocentric' keeps Sun-centered coordinates (best match for current scene semantics).
+    // 'earth-orbital' uses Earth co-moving RTN projection (experimental).
+    frame: 'heliocentric'
+};
+
+// ============================================
 // ZOOM LEVEL CONFIGURATIONS
 // ============================================
 const ZOOM_LEVELS = {

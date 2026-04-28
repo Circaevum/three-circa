@@ -106,7 +106,7 @@ const SceneGeometry = (function() {
      * @param {number} segments - Number of segments (default: 64)
      * @returns {Array<number>} Flat array of [x, y, z, x, y, z, ...] points
      */
-    function createHelicalCurve(startHeight, endHeight, radius, currentHeight, orbitalPeriod, startAngle, segments = 64) {
+    function createHelicalCurve(startHeight, endHeight, radius, currentHeight, orbitalPeriod, startAngle, segments = 64, planetName = null) {
         // Validate inputs
         if (isNaN(startHeight) || isNaN(endHeight) || isNaN(radius) || isNaN(currentHeight) || isNaN(orbitalPeriod) || isNaN(startAngle)) {
             console.error('SceneGeometry.createHelicalCurve: Invalid input parameters', {
@@ -120,6 +120,22 @@ const SceneGeometry = (function() {
             return [];
         }
         
+        // Optional ephemeris-backed path (feature-flagged).
+        if (planetName && typeof window !== 'undefined' && window.CircaevumAstro && typeof window.CircaevumAstro.sampleWorldlineByHeight === 'function') {
+            const astroPoints = window.CircaevumAstro.sampleWorldlineByHeight({
+                planetName,
+                startHeight,
+                endHeight,
+                segments,
+                referenceHeight: currentHeight,
+                // Keep date anchor aligned to currentHeight semantics used by markers/time axes.
+                referenceDate: new Date()
+            });
+            if (Array.isArray(astroPoints) && astroPoints.length > 0) {
+                return astroPoints;
+            }
+        }
+
         const points = [];
         const totalHeight = endHeight - startHeight;
         const timeSpanYears = totalHeight / 100;
