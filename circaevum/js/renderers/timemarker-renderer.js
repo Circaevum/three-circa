@@ -1437,44 +1437,48 @@ const TimeMarkers = (function() {
             createTextLabel(hourLabel, y, labelRadius, zoomLevel, labelAngle, labelColor, false, 0.8);
         }
         
-        // Draw red line from Earth's center to the selected hour
-        // Always use selectedHour which reflects currentHourInDay (updated by A/D keys)
-        // selectedHour is calculated from timeState.selectedHourInDay which includes currentHourInDay
-        const hourToDisplay = selectedHour; // Always use selected hour (which is currentHourInDay when not shifted)
-        const currentT = hourToDisplay / 24;
-        const currentHourRadians = (hourToDisplay / 24) * Math.PI * 2;
-        // Flip direction to match label direction (counter-clockwise)
-        const currentAngleFromEarth = sunToEarthAngle - currentHourRadians;
-        const currentRadiusFromEarth = spiralRadius;
-        const currentHeight = spiralCenterY + (currentT * spiralHeight) - (spiralHeight / 2);
-        
-        // Calculate current hour position relative to Earth's center
-        const currentOffsetX = Math.cos(currentAngleFromEarth) * currentRadiusFromEarth;
-        const currentOffsetZ = Math.sin(currentAngleFromEarth) * currentRadiusFromEarth;
-        
-        // Convert to absolute position
-        const currentHourX = earthX + currentOffsetX;
-        const currentHourZ = earthZ + currentOffsetZ;
-        const currentHourY = currentHeight;
-        
-        // Create line from Earth's center to current hour
-        const lineGeometry = new THREE.BufferGeometry();
-        const linePoints = [
-            earthX, earthY, earthZ,  // Start at Earth's center
-            currentHourX, currentHourY, currentHourZ  // End at current hour position
-        ];
-        lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePoints, 3));
-        
-        const lineMaterial = new THREE.LineBasicMaterial({
-            color: 0xFF0000, // RED - matches current hour label
-            transparent: true,
-            opacity: 0.8,
-            linewidth: 2
-        });
-        const currentHourLine = new THREE.Line(lineGeometry, lineMaterial);
-        currentHourLine.renderOrder = 4;
-        scene.add(currentHourLine);
-        timeMarkers.push(currentHourLine);
+        // In landing/clock zoom, Earth Hands are rendered by main.js;
+        // suppress legacy thin red hour line to avoid duplicate indicators.
+        if (zoomLevel !== 0 && zoomLevel !== 9) {
+            // Draw red line from Earth's center to the selected hour
+            // Always use selectedHour which reflects currentHourInDay (updated by A/D keys)
+            // selectedHour is calculated from timeState.selectedHourInDay which includes currentHourInDay
+            const hourToDisplay = selectedHour; // Always use selected hour (which is currentHourInDay when not shifted)
+            const currentT = hourToDisplay / 24;
+            const currentHourRadians = (hourToDisplay / 24) * Math.PI * 2;
+            // Flip direction to match label direction (counter-clockwise)
+            const currentAngleFromEarth = sunToEarthAngle - currentHourRadians;
+            const currentRadiusFromEarth = spiralRadius;
+            const currentHeight = spiralCenterY + (currentT * spiralHeight) - (spiralHeight / 2);
+
+            // Calculate current hour position relative to Earth's center
+            const currentOffsetX = Math.cos(currentAngleFromEarth) * currentRadiusFromEarth;
+            const currentOffsetZ = Math.sin(currentAngleFromEarth) * currentRadiusFromEarth;
+
+            // Convert to absolute position
+            const currentHourX = earthX + currentOffsetX;
+            const currentHourZ = earthZ + currentOffsetZ;
+            const currentHourY = currentHeight;
+
+            // Create line from Earth's center to current hour
+            const lineGeometry = new THREE.BufferGeometry();
+            const linePoints = [
+                earthX, earthY, earthZ,  // Start at Earth's center
+                currentHourX, currentHourY, currentHourZ  // End at current hour position
+            ];
+            lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePoints, 3));
+
+            const lineMaterial = new THREE.LineBasicMaterial({
+                color: 0xFF0000, // RED - matches current hour label
+                transparent: true,
+                opacity: 0.8,
+                linewidth: 2
+            });
+            const currentHourLine = new THREE.Line(lineGeometry, lineMaterial);
+            currentHourLine.renderOrder = 4;
+            scene.add(currentHourLine);
+            timeMarkers.push(currentHourLine);
+        }
     }
 
     // ============================================
