@@ -2606,8 +2606,15 @@ function initControls() {
         if (isTyping) {
             return;
         }
-        
-    // Landing zoom (Zoom 0) is a camera/scene perspective; only disable A/D navigation on it.
+
+        // Space: smooth return to wall-clock now at every zoom (including Moment / zoom 0). Handle before digit shortcuts.
+        if (e.code === 'Space') {
+            e.preventDefault();
+            smoothReturnToPresent();
+            return;
+        }
+
+    // Zoom 0 (Moment): keep most shortcuts off to avoid accidental mode toggles; N still jumps to present (instant).
     const isLandingPage = currentZoom === 0;
         
         const key = parseInt(e.key);
@@ -2643,7 +2650,7 @@ function initControls() {
         } else if (e.key.toLowerCase() === 'd') {
             navigateUnit(1); // Navigate up one unit (next week, day, hour, etc.)
             if (typeof playTickSound === 'function') playTickSound(currentZoom);
-        } else if (e.key.toLowerCase() === 'n' && !isLandingPage) {
+        } else if (e.key.toLowerCase() === 'n') {
             returnToPresent(); // Return selection to current date/time
         } else if (e.key.toLowerCase() === 'c' && !isLandingPage) {
             toggleFocusTarget(); // Camera: toggle focus Sun/Earth
@@ -2663,9 +2670,6 @@ function initControls() {
             toggleWebXR(); // XR mode
         } else if (e.key.toLowerCase() === 'r' && !isLandingPage) {
             rotate90Right(); // Rotate system 90 degrees clockwise
-        } else if (e.code === 'Space' && !isLandingPage) {
-            e.preventDefault(); // Prevent page scroll
-            smoothReturnToPresent(); // Smoothly animate back to current time
         } else if (e.key.toLowerCase() === 'f' && !isLandingPage) {
             toggleFlattenWithKey();
         }
@@ -2859,7 +2863,12 @@ function returnToPresent() {
     // Keep per-zoom calendar decomposition consistent with getSelectedDateTime/applySelectedDateToZoomLevel.
     // This prevents a one-week jump at the end of smooth return-to-present in month/lunar zooms.
     applySelectedDateToZoomLevel(now, currentZoom);
-    
+
+    if (isEarthZoomRig(currentZoom)) {
+        forcePolarDefaultOnInit = true;
+        needPolarOrbitInit = true;
+    }
+
     // Recreate planets and markers at current position
     createPlanets(currentZoom);
     updateTimeDisplays(); // Update time displays after returning to present
@@ -3772,6 +3781,11 @@ function navigateUnit(direction, stepCount) {
         navigateUnitStep(direction);
     }
     createPlanets(currentZoom);
+    if (currentZoom === 0) {
+        // Re-seed look direction on each hour step in moment view.
+        forcePolarDefaultOnInit = true;
+        needPolarOrbitInit = true;
+    }
     updateTimeDisplays();
 }
 
@@ -3804,7 +3818,8 @@ function buildDefaultPolarViewDirection() {
     }
     let baseTilt = 0.24;
     if (currentZoom === 0) {
-        baseTilt = 0.5;
+        // Slightly more downward look toward Earth's center.
+        baseTilt = 0.42;
     } else if (currentZoom === 9) {
         // Start zoom 9 almost straight toward Earth's south-pole-facing view.
         baseTilt = 0.035;
