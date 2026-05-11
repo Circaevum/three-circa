@@ -478,7 +478,20 @@
     
     <!-- Astro scaffold (feature-flagged ephemeris pipeline) -->
     <script src="circaevum/js/astro/time-scales.js"></script>
+    <!-- astronomy.min.js is a CommonJS build: needs `exports` in browser; provider expects global `Astronomy`. -->
+    <script>
+        (function () {
+            var g = typeof globalThis !== 'undefined' ? globalThis : window;
+            if (typeof g.exports === 'undefined') g.exports = {};
+        })();
+    </script>
     <script src="circaevum/js/vendor/astronomy-engine/astronomy.min.js"></script>
+    <script>
+        (function () {
+            var g = typeof globalThis !== 'undefined' ? globalThis : window;
+            if (g.exports && typeof g.Astronomy === 'undefined') g.Astronomy = g.exports;
+        })();
+    </script>
     <script src="circaevum/js/astro/providers/circular-provider.js"></script>
     <script src="circaevum/js/astro/providers/kepler-provider.js"></script>
     <script src="circaevum/js/astro/providers/astronomy-engine-provider.js"></script>
