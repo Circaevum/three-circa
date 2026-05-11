@@ -27,6 +27,24 @@
       };
     }
 
+    var eeW1Btn = document.getElementById('edge-esmeralda-w1-btn');
+    function runLoadEdgeEsmeraldaW1() {
+      if (typeof window.loadEdgeEsmeraldaWeek1Samples !== 'function') {
+        console.warn('edge-esmeralda-week1-samples.js not loaded');
+        return 0;
+      }
+      var n = window.loadEdgeEsmeraldaWeek1Samples({});
+      if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
+      return n;
+    }
+    if (eeW1Btn) {
+      eeW1Btn.onclick = function() {
+        var n = runLoadEdgeEsmeraldaW1();
+        eeW1Btn.textContent = n ? ('Loaded ' + n) : 'GL not ready';
+        setTimeout(function() { eeW1Btn.textContent = 'Edge Esmeralda W1'; }, 3500);
+      };
+    }
+
     function openCalendarsLeftPanel() {
       if (window.self !== window.top && window.parent && typeof window.parent.postMessage === 'function') {
         try { window.parent.postMessage({ type: 'CIRCAEVUM_OPEN_ACCOUNT' }, '*'); } catch (err) {}
@@ -154,6 +172,7 @@
           if (action === 'login' && fullAppUrl) window.location.href = buildFullAppUrl(true);
           if (action === 'keyboard-controls') openKeyboardControlsPanel();
           if (action === 'about') toggleAboutPanel();
+          if (action === 'edge-esmeralda-w1') runLoadEdgeEsmeraldaW1();
         };
       });
       document.addEventListener('click', function() {

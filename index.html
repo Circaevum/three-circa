@@ -22,6 +22,7 @@
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="login">Log in</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w1">Load Edge Esmeralda W1 samples</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="keyboard-controls">Keyboard Controls</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="about">About</button>
                 </div>
@@ -77,6 +78,7 @@
             <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
             <button type="button" id="events-panel-draw-all" class="strip-btn">Draw all</button>
             <button type="button" id="test-event-lines-btn" class="strip-btn">Test event lines</button>
+            <button type="button" id="edge-esmeralda-w1-btn" class="strip-btn" title="~160 parallel-friendly sessions, June 1–7 2026 PDT">Edge Esmeralda W1</button>
         </div>
         <div id="events-panel-list" class="event-list-panel-list"></div>
         <div id="event-list-panel-footer" class="event-list-panel-footer" style="display: none;">
@@ -503,6 +505,7 @@
     
     <!-- Models (VEVENT format) -->
     <script src="circaevum/js/models/vevent.js"></script>
+    <script src="circaevum/js/data/edge-esmeralda-week1-samples.js"></script>
     
     <!-- html2canvas for XR in-scene UI panel (capture DOM to texture) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>

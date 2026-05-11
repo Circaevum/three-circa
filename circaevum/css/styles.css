@@ -1480,6 +1480,15 @@ body.light-mode .event-list-horizon-ring-caption {
     border-left: 3px solid rgba(0, 180, 216, 0.5);
 }
 
+.event-list-panel-list .event-row.event-row--focus-selected {
+    box-shadow: 0 0 0 2px rgba(0, 180, 216, 0.78), 0 0 18px rgba(0, 180, 216, 0.22);
+    filter: saturate(1.06) brightness(1.04);
+}
+.event-list-panel-list .event-row.event-row--focus-dim {
+    opacity: 0.4 !important;
+    filter: saturate(0.48) brightness(0.86) !important;
+}
+
 .event-list-panel-list .line-row {
     background: rgba(142, 202, 230, 0.06);
     border-left-color: rgba(142, 202, 230, 0.4);
@@ -1555,6 +1564,13 @@ body.light-mode .event-list-panel-list .event-row,
 body.light-mode .event-list-panel-list .line-row {
     background: rgba(0, 119, 163, 0.08);
     border-left-color: rgba(0, 119, 163, 0.5);
+}
+body.light-mode .event-list-panel-list .event-row.event-row--focus-selected {
+    box-shadow: 0 0 0 2px rgba(0, 119, 163, 0.7), 0 0 14px rgba(0, 119, 163, 0.18);
+}
+body.light-mode .event-list-panel-list .event-row.event-row--focus-dim {
+    opacity: 0.45 !important;
+    filter: saturate(0.52) brightness(0.9) !important;
 }
 body.light-mode .event-list-panel-list .line-row {
     background: rgba(42, 95, 127, 0.08);

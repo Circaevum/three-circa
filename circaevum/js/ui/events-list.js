@@ -266,6 +266,24 @@
     return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
   }
 
+  function syncEventListFocusHighlightRows() {
+    var gl = window.circaevumGL || (window.getGL && window.getGL());
+    var evFocus = gl && typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
+    var listEl = document.getElementById('events-panel-list');
+    if (!listEl) return;
+    var rows = listEl.querySelectorAll('.event-row');
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      row.classList.remove('event-row--focus-selected', 'event-row--focus-dim');
+      if (!evFocus || !evFocus.uid) continue;
+      var lid = row.getAttribute('data-event-layer');
+      var uid = row.getAttribute('data-event-uid');
+      if (lid === evFocus.layerId && uid === String(evFocus.uid)) row.classList.add('event-row--focus-selected');
+      else row.classList.add('event-row--focus-dim');
+    }
+  }
+  window.syncEventListFocusHighlightRows = syncEventListFocusHighlightRows;
+
   function refreshEventsList(drawAll) {
     var listEl = document.getElementById('events-panel-list');
     var ctxEl = document.getElementById('events-panel-context');
@@ -378,6 +396,8 @@
       return as - bs;
     });
 
+    var evFocus = (typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null);
+
     events.forEach(function(item) {
       var ev = item.ev;
       var start = ev.start;
@@ -389,6 +409,14 @@
       var row = document.createElement('div');
       var inList = !!drawAll || shouldShowEventTextAtZoomLocal(ev.start, ev.end && ev.end > ev.start ? ev.end : null, z);
       row.className = 'event-row' + (inList ? ' event-row--in-list' : ' event-row--outside-list');
+      var rowUidStr = String(ev.uid || ev.id || '');
+      row.setAttribute('data-event-layer', item.layerId || '');
+      row.setAttribute('data-event-uid', rowUidStr);
+      if (evFocus && evFocus.uid) {
+        var matchFocus = evFocus.layerId === item.layerId && String(evFocus.uid) === rowUidStr;
+        if (matchFocus) row.classList.add('event-row--focus-selected');
+        else row.classList.add('event-row--focus-dim');
+      }
       var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
       var borderColor = ev.color || ev.colorId || layerSwatchColor(layer) || 'rgba(0, 180, 216, 0.5)';
       row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:8px;cursor:pointer;border-left:' + (inList ? '4px' : '3px') + ' solid ' + borderColor + ';background:' + eventColorToRgbaPanelBackground(ev.color || ev.colorId, layerSwatchColor(layer), 0.22, 0.09, inList) + ';' + (inList ? '' : 'opacity:0.5;filter:saturate(0.4) brightness(0.92);');
@@ -400,6 +428,9 @@
       row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
       row.onclick = function() {
         setCircaevumSelectedLayerId(item.layerId || USER_EVENTS_LAYER);
+        if (rowUidStr && typeof gl.setEventHighlight === 'function') {
+          gl.setEventHighlight(item.layerId || USER_EVENTS_LAYER, rowUidStr);
+        }
         navigateToEvent(start, endForNav);
       };
       row.querySelectorAll('a').forEach(function(a) { a.onclick = function(e) { e.stopPropagation(); }; });

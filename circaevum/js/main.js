@@ -73,7 +73,7 @@ let lagrangeMarkerObjects = []; // Sun–Earth L1–L5 at selected time (orbital
 let moonMechanicObjects = [];
 /** Artemis II trajectory + labels; shown when moon layer is effective (see missions/artemis-ii-mission.js). */
 let artemisMissionObjects = [];
-let circadianWorldlines = []; // Circadian rhythm helix (hour-hand), shown at day/clock zoom
+let circadianWorldlines = []; // Circadian: one disk outline per day in span (day/clock zoom)
 let circadianSelectedDayLabels = []; // Sprite(s) with selected calendar day, day/clock zoom only
 let circadianHelixMarkerGroups = []; // Week/month ticks along circadian helix (LineSegments)
 /** Sun Hands: Sun↔Earth cylinders for current/selected time; sceneContentGroup space. */
@@ -93,9 +93,9 @@ let listHorizonEarthRingTargetHeight = null;
 let listHorizonEarthRingEarthDistance = null;
 let listHorizonEarthRingTargetZoom = null;
 /** Short (<24h) circadian-scoped events: 'day' = selected calendar day only, 'year' = whole selected year. */
-let circadianShortEventScope = 'day';
-/** Default off so the daily helix frame is not on until the user enables it. */
-let circadianState = 'off';
+let circadianShortEventScope = 'year';
+/** Default on so the circadian frame is visible at helix-capable zoom levels. */
+let circadianState = 'wrapped';
 /** false = show calendar events only in selected year; true = all time (see scene calendar icon) */
 let showAllTimelineEvents = false;
 /** 'alpha' keeps hue for long-term events and fades fill opacity out-of-window; 'desaturate' uses prior gray blend behavior. */
@@ -763,6 +763,35 @@ function computeSceneDateHeights(zoomLevel) {
     return { currentDateHeight, selectedDateHeight, selectedHeightOffset, selectedDate };
 }
 
+/**
+ * Circadian daily disks: orbit phase from “now” (currentDateHeight), timeline Y + Earth XZ from navigation (selected).
+ * Keeps event arcs on the same worldline frame as the Earth mesh.
+ */
+function getCircadianSceneTimeContext() {
+    if (typeof currentZoom === 'undefined') {
+        return null;
+    }
+    try {
+        const { currentDateHeight, selectedDateHeight, selectedDate } = computeSceneDateHeights(currentZoom);
+        const earth = typeof PLANET_DATA !== 'undefined' ? PLANET_DATA.find((p) => p.name === 'Earth') : null;
+        let earthX = 0;
+        let earthZ = 0;
+        if (earth && typeof getPlanetXZAtSelectedDate === 'function') {
+            const xz = getPlanetXZAtSelectedDate(earth, selectedDate, currentDateHeight, selectedDateHeight);
+            if (xz && !isNaN(xz.x) && !isNaN(xz.z)) {
+                earthX = xz.x;
+                earthZ = xz.z;
+            }
+        }
+        return { currentDateHeight, selectedDateHeight, selectedDate, earthX, earthZ };
+    } catch (e) {
+        return null;
+    }
+}
+if (typeof window !== 'undefined') {
+    window.getCircadianSceneTimeContext = getCircadianSceneTimeContext;
+}
+
 function getPlanetXZAtSelectedDate(planetData, selectedDate, currentDateHeight, selectedDateHeight) {
     const selectedDateForEphemeris = normalizeSelectedDateForEphemeris(selectedDate, currentDateHeight, selectedDateHeight);
     if (typeof window !== 'undefined' && window.CircaevumAstro && typeof window.CircaevumAstro.getPlanetScenePositionAtDate === 'function') {
@@ -794,6 +823,28 @@ function getEarthHourHandSurfaceFocus(earthPos, selectedDateHeight, selectedDate
     };
 }
 
+/** Matches `hourNumberRadius` in {@link updateSunEarthTimeRadials}: outer end of the Earth hour hand for zoom 0/9. */
+function getEarthHourHandOuterExtentRadius(earthSurfaceRadius) {
+    const r = Number.isFinite(earthSurfaceRadius) && earthSurfaceRadius > 0 ? earthSurfaceRadius : 1.95;
+    return r * 2.2;
+}
+
+/**
+ * Zoom 0 polar focus: midpoint on the selected-time hour spoke between Earth surface and the hand tip
+ * (same outer radius as the rendered Earth hour hand).
+ */
+function getEarthHourHandZoom0FocusPoint(earthPos, selectedDateHeight, selectedDate, earthSurfaceRadius) {
+    const rSurf = Number.isFinite(earthSurfaceRadius) && earthSurfaceRadius > 0 ? earthSurfaceRadius : 1.95;
+    const rTip = getEarthHourHandOuterExtentRadius(rSurf);
+    const surface = getEarthHourHandPointAtRadius(earthPos, selectedDateHeight, selectedDate, rSurf);
+    const tip = getEarthHourHandPointAtRadius(earthPos, selectedDateHeight, selectedDate, rTip);
+    return {
+        x: (surface.x + tip.x) * 0.5,
+        y: (surface.y + tip.y) * 0.5,
+        z: (surface.z + tip.z) * 0.5
+    };
+}
+
 function getEarthHourHandPointAtRadius(earthPos, selectedDateHeight, selectedDate, radialDistance) {
     const safeDate = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date();
     const sunToEarthAngle = Math.atan2(earthPos.z, earthPos.x);
@@ -808,6 +859,17 @@ function getEarthHourHandPointAtRadius(earthPos, selectedDateHeight, selectedDat
 }
 
 function disposeSunEarthTimeRadials() {
+    function disposeObject3D(obj) {
+        if (!obj) return;
+        if (obj.parent) obj.parent.remove(obj);
+        obj.traverse((child) => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+                if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+                else child.material.dispose();
+            }
+        });
+    }
     [
         sunEarthTimeRadialCurrent,
         sunEarthTimeRadialSelected,
@@ -815,12 +877,7 @@ function disposeSunEarthTimeRadials() {
         earthHandSelected,
         earthHandMarkerCurrent,
         earthHandMarkerSelected
-    ].forEach((mesh) => {
-        if (!mesh) return;
-        if (mesh.parent) mesh.parent.remove(mesh);
-        if (mesh.geometry) mesh.geometry.dispose();
-        if (mesh.material) mesh.material.dispose();
-    });
+    ].forEach(disposeObject3D);
     sunEarthTimeRadialCurrent = null;
     sunEarthTimeRadialSelected = null;
     earthHandCurrent = null;
@@ -1162,6 +1219,56 @@ function buildSunEarthRadialTube(p0, p1, radius, colorHex, renderOrder) {
     return mesh;
 }
 
+/**
+ * Sun→Earth “time hand”: cylinder from Sun to just outside the local hour-marker band, plus a thin torus around Earth
+ * so landing/clock zoom does not stack a second Earth-anchored spoke on top of the daily hour hands.
+ */
+function buildSunEarthRadialWithEndRing(sun, earthCenter, tubeRadius, colorHex, renderOrder, ringRadius) {
+    if (typeof THREE === 'undefined') return null;
+    const S = new THREE.Vector3(sun.x, sun.y, sun.z);
+    const E = earthCenter.clone ? earthCenter.clone() : new THREE.Vector3(earthCenter.x, earthCenter.y, earthCenter.z);
+    const dir = new THREE.Vector3().subVectors(E, S);
+    const len = dir.length();
+    if (len < 1e-5) return null;
+    dir.normalize();
+    const ringR = Math.max(Number(ringRadius) || 0, 1e-3);
+    const minor = Math.max(tubeRadius * 0.22, 0.004);
+    const stemLen = len - ringR;
+    const minStem = Math.min(len * 0.04, Math.max(ringR * 0.08, 0.35));
+
+    const group = new THREE.Group();
+    group.userData = { type: 'SunEarthTimeRadialWithRing' };
+
+    if (stemLen > minStem) {
+        const end = new THREE.Vector3().copy(S).addScaledVector(dir, stemLen);
+        const tube = buildSunEarthRadialTube(
+            { x: S.x, y: S.y, z: S.z },
+            { x: end.x, y: end.y, z: end.z },
+            tubeRadius,
+            colorHex,
+            renderOrder
+        );
+        if (tube) group.add(tube);
+    }
+
+    const torusGeom = new THREE.TorusGeometry(ringR, minor, 8, 56);
+    const torusMat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: true,
+        depthWrite: false
+    });
+    const torus = new THREE.Mesh(torusGeom, torusMat);
+    torus.position.copy(E);
+    torus.rotation.x = Math.PI / 2;
+    torus.renderOrder = renderOrder != null ? renderOrder + 1 : 9;
+    torus.userData = { type: 'SunEarthTimeRadialRing' };
+    group.add(torus);
+
+    return group;
+}
+
 function buildEarthHandSurfaceArcEdge(p0, p1, sphereCenter, sphereRadius, edgeRadius, colorHex, renderOrder) {
     if (typeof THREE === 'undefined') return null;
     const center = sphereCenter.clone ? sphereCenter.clone() : new THREE.Vector3(sphereCenter.x, sphereCenter.y, sphereCenter.z);
@@ -1218,12 +1325,12 @@ function updateSunEarthTimeRadials(zoomLevel) {
     const earthAngleSelected = earth.startAngle - angleFromCurrentToSelected;
     const earthAngleCurrent = earth.startAngle;
 
-    // Sun Hands intentionally thin/subtle.
-    let tubeRSelected = Math.max(0.036, d * 0.0032);
-    let tubeRCurrent = tubeRSelected * 0.52;
-    if (zoomLevel === 0) {
-        tubeRSelected = Math.max(0.018, d * 0.0017);
-        tubeRCurrent = tubeRSelected * 0.7;
+    // Sun Hands: thinner than before so day/time markers stay readable under them.
+    let tubeRSelected = Math.max(0.022, d * 0.00205);
+    let tubeRCurrent = tubeRSelected * 0.48;
+    if (zoomLevel === 0 || zoomLevel === 9) {
+        tubeRSelected = Math.max(0.0095, d * 0.00095);
+        tubeRCurrent = tubeRSelected * 0.62;
     }
 
     const sunSel = { x: 0, y: selectedDateHeight, z: 0 };
@@ -1239,41 +1346,73 @@ function updateSunEarthTimeRadials(zoomLevel) {
         z: Math.sin(earthAngleCurrent) * d
     };
 
+    const earthMesh = planetMeshes.find((p) => p.userData && p.userData.name === 'Earth');
+    const earthSurfaceRadius =
+        earthMesh && earthMesh.geometry && earthMesh.geometry.parameters && typeof earthMesh.geometry.parameters.radius === 'number'
+            ? earthMesh.geometry.parameters.radius
+            : (earth && typeof earth.size === 'number' ? earth.size : 6.5) * 0.3;
+    const hourNumberRadius = earthSurfaceRadius * 2.2;
+    const ringPad = Math.max(tubeRSelected * 0.35, 0.012);
+    const sunHandRingRadius = hourNumberRadius * 1.2 + ringPad;
+
+    const sunRingEarthCenterSel = new THREE.Vector3(
+        earthMesh ? earthMesh.position.x : earthSel.x,
+        selectedDateHeight,
+        earthMesh ? earthMesh.position.z : earthSel.z
+    );
+    const sunRingEarthCenterCur = new THREE.Vector3(
+        earthMesh ? earthMesh.position.x : earthCur.x,
+        currentDateHeight,
+        earthMesh ? earthMesh.position.z : earthCur.z
+    );
+
     const eps = 0.2;
     function near3(a, b) {
         return Math.abs(a.x - b.x) < eps && Math.abs(a.y - b.y) < eps && Math.abs(a.z - b.z) < eps;
     }
     const sameRadial = near3(sunSel, sunCur) && near3(earthSel, earthCur);
 
-    // In landing/clock zoom, hide Sun Hands so Earth Hands communicate local hour.
-    if (zoomLevel !== 0 && zoomLevel !== 9) {
-        if (sameRadial) {
-            // Selected === current: only the red “now” radial (no duplicate blue).
-            sunEarthTimeRadialCurrent = buildSunEarthRadialTube(sunCur, earthCur, tubeRSelected, 0xff0000, 10);
-            if (sunEarthTimeRadialCurrent) sceneContentGroup.add(sunEarthTimeRadialCurrent);
-        } else {
-            // Blue (selected) wider; red (current) thinner and drawn on top (higher renderOrder).
-            sunEarthTimeRadialSelected = buildSunEarthRadialTube(sunSel, earthSel, tubeRSelected, getSelectedTimeColor(), 8);
-            if (sunEarthTimeRadialSelected) sceneContentGroup.add(sunEarthTimeRadialSelected);
-            sunEarthTimeRadialCurrent = buildSunEarthRadialTube(sunCur, earthCur, tubeRCurrent, 0xff0000, 10);
-            if (sunEarthTimeRadialCurrent) sceneContentGroup.add(sunEarthTimeRadialCurrent);
-        }
+    // Stem stops before Earth; torus sits outside hour numerals (avoids doubling Earth hour hands at zoom 0/9).
+    if (sameRadial) {
+        sunEarthTimeRadialCurrent = buildSunEarthRadialWithEndRing(
+            sunCur,
+            sunRingEarthCenterCur,
+            tubeRSelected,
+            0xff0000,
+            10,
+            sunHandRingRadius
+        );
+        if (sunEarthTimeRadialCurrent) sceneContentGroup.add(sunEarthTimeRadialCurrent);
+    } else {
+        sunEarthTimeRadialSelected = buildSunEarthRadialWithEndRing(
+            sunSel,
+            sunRingEarthCenterSel,
+            tubeRSelected,
+            getSelectedTimeColor(),
+            8,
+            sunHandRingRadius
+        );
+        if (sunEarthTimeRadialSelected) sceneContentGroup.add(sunEarthTimeRadialSelected);
+        sunEarthTimeRadialCurrent = buildSunEarthRadialWithEndRing(
+            sunCur,
+            sunRingEarthCenterCur,
+            tubeRCurrent,
+            0xff0000,
+            10,
+            sunHandRingRadius
+        );
+        if (sunEarthTimeRadialCurrent) sceneContentGroup.add(sunEarthTimeRadialCurrent);
     }
 
     if (zoomLevel === 0 || zoomLevel === 9) {
         const selectedDate = getSelectedDateTime();
         const currentDate = new Date();
-        const earthMesh = planetMeshes.find(p => p.userData && p.userData.name === 'Earth');
         const earthCenterSel = earthMesh ? earthMesh.position.clone() : new THREE.Vector3(earthSel.x, selectedDateHeight, earthSel.z);
         earthCenterSel.y = selectedDateHeight;
         const earthCenterCur = earthCenterSel.clone();
-        const earthSurfaceRadius = earthMesh && earthMesh.geometry && earthMesh.geometry.parameters && typeof earthMesh.geometry.parameters.radius === 'number'
-            ? earthMesh.geometry.parameters.radius
-            : (earth && typeof earth.size === 'number' ? earth.size : 6.5) * 0.3;
         const earthPosForHands = { x: earthCenterSel.x, z: earthCenterSel.z };
         const hitSel = getEarthHourHandSurfaceFocus(earthPosForHands, selectedDateHeight, selectedDate, earthSurfaceRadius);
         const hitCur = getEarthHourHandSurfaceFocus(earthPosForHands, selectedDateHeight, currentDate, earthSurfaceRadius);
-        const hourNumberRadius = earthSurfaceRadius * 2.2;
         const handSelEnd = getEarthHourHandPointAtRadius(earthPosForHands, selectedDateHeight, selectedDate, hourNumberRadius);
         const handCurEnd = getEarthHourHandPointAtRadius(earthPosForHands, selectedDateHeight, currentDate, hourNumberRadius);
 
@@ -1367,7 +1506,7 @@ function applyLightTimeScrubUpdate(zoomLevel) {
             targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
         } else if (zoomLevel === 0) {
             const earthSurfaceRadius = (earth && typeof earth.size === 'number' ? earth.size : 6.5) * 0.3;
-            const p = getEarthHourHandSurfaceFocus(earthPos, selectedDateHeight, selectedDate, earthSurfaceRadius);
+            const p = getEarthHourHandZoom0FocusPoint(earthPos, selectedDateHeight, selectedDate, earthSurfaceRadius);
             targetFocusPoint.set(p.x, p.y, p.z);
         } else {
             targetFocusPoint.set(earthX, selectedDateHeight, earthZ);
@@ -1596,7 +1735,7 @@ function createPlanets(zoomLevel) {
     // For earth-focused zooms, focus on Earth's X,Z position at selected height
     // For sun-focused zooms, focus on the Sun at selected height (x=z=0)
     // Landing (0) and clock (9) both use earth focus so the worldline stays visually
-    // anchored; framing toward the circadian helix is handled in the polar camera rig only.
+    // anchored; zoom 0 focus sits midway on the selected-time hour hand (surface→tip).
     if (effectiveFocusTarget === 'earth' || effectiveFocusTarget === 'mid') {
         // Calculate Earth's position at selected time using exact date height
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
@@ -1608,7 +1747,7 @@ function createPlanets(zoomLevel) {
             targetFocusPoint.set(earthX * midFrac, selectedDateHeight, earthZ * midFrac);
         } else if (zoomLevel === 0) {
             const earthSurfaceRadius = (earth && typeof earth.size === 'number' ? earth.size : 6.5) * 0.3;
-            const p = getEarthHourHandSurfaceFocus(earthPos, selectedDateHeight, selectedDate, earthSurfaceRadius);
+            const p = getEarthHourHandZoom0FocusPoint(earthPos, selectedDateHeight, selectedDate, earthSurfaceRadius);
             targetFocusPoint.set(p.x, p.y, p.z);
         } else {
             targetFocusPoint.set(earthX, selectedDateHeight, earthZ);
@@ -1853,7 +1992,7 @@ function createPlanets(zoomLevel) {
     // Circadian rhythm worldline (hour-hand helix): landing, month, week, day, clock — when not off.
     // Geometry morphs wrapped ↔ straight via currentCircadianStraightenAmount (updated in animate).
     if (isCircadianHelixZoom(zoomLevel) && typeof circadianState !== 'undefined' && circadianState !== 'off') {
-        if (typeof CircadianRenderer !== 'undefined' && CircadianRenderer.createAnimatedHelixLine) {
+        if (typeof CircadianRenderer !== 'undefined' && CircadianRenderer.createDayDiskOutlinesGroup) {
             const currentHeight = typeof selectedDateHeight !== 'undefined' && !isNaN(selectedDateHeight)
                 ? selectedDateHeight
                 : currentDateHeight;
@@ -1861,29 +2000,17 @@ function createPlanets(zoomLevel) {
             const circLineOpts = typeof window.getCircadianHelixVisualStyle === 'function'
                 ? window.getCircadianHelixVisualStyle()
                 : {};
-            const circadianLine = CircadianRenderer.createAnimatedHelixLine(currentHeight, {
+            const diskGroup = CircadianRenderer.createDayDiskOutlinesGroup(currentHeight, {
+                spanDays,
+                rimRadius: (typeof CircadianRenderer.getHandLength === 'function'
+                    ? CircadianRenderer.getHandLength() * 1.08
+                    : null),
                 color: circLineOpts.helixColor != null ? circLineOpts.helixColor : 0xffaa44,
-                opacity: circLineOpts.helixOpacity != null ? circLineOpts.helixOpacity : 0.82,
-                spanDays
+                opacity: circLineOpts.helixOpacity != null ? circLineOpts.helixOpacity : 0.82
             });
-            if (circadianLine) {
-                sceneContentGroup.add(circadianLine);
-                circadianWorldlines.push(circadianLine);
-            }
-            if (typeof CircadianRenderer.createHelixStructureMarkersGroup === 'function') {
-                const mk = CircadianRenderer.createHelixStructureMarkersGroup(spanDays);
-                if (mk) {
-                    sceneContentGroup.add(mk);
-                    circadianHelixMarkerGroups.push(mk);
-                    if (typeof CircadianRenderer.refreshHelixStructureMarkersGroup === 'function') {
-                        CircadianRenderer.refreshHelixStructureMarkersGroup(
-                            mk,
-                            currentCircadianStraightenAmount,
-                            currentHeight,
-                            getSelectedDateTime()
-                        );
-                    }
-                }
+            if (diskGroup) {
+                sceneContentGroup.add(diskGroup);
+                circadianWorldlines.push(diskGroup);
             }
         }
     }
@@ -2328,6 +2455,11 @@ function applyTimeMarkerVisibility() {
 // Week view - daily radial markers
 function initControls() {
     const pickRaycaster = new THREE.Raycaster();
+    if (pickRaycaster.params) {
+        pickRaycaster.params.Line = { threshold: 10 };
+        pickRaycaster.params.LineSegments = { threshold: 10 };
+        pickRaycaster.params.Points = { threshold: 8 };
+    }
     const pickPointer = new THREE.Vector2();
     let dragStartPos = null;
 
@@ -2434,13 +2566,28 @@ function initControls() {
         }
         if (!target || !target.userData || !target.userData.vevent) return;
         const ve = target.userData.vevent;
-        const startRaw = ve.start || ve.startTime || ve.date || ve.dtstart?.dateTime || ve.dtstart?.date || null;
-        const endRaw = ve.end || ve.endTime || ve.dtend?.dateTime || ve.dtend?.date || null;
+        let startRaw = ve.start || ve.startTime || ve.date || ve.dtstart?.dateTime || ve.dtstart?.date || null;
+        let endRaw = ve.end || ve.endTime || ve.dtend?.dateTime || ve.dtend?.date || null;
+        if (!startRaw && typeof ve.getStartDate === 'function') {
+            const sd = ve.getStartDate();
+            if (sd instanceof Date && !isNaN(sd.getTime())) startRaw = sd;
+        }
+        if (!endRaw && typeof ve.getEndDate === 'function') {
+            const ed = ve.getEndDate();
+            if (ed instanceof Date && !isNaN(ed.getTime())) endRaw = ed;
+        }
         const start = startRaw instanceof Date ? startRaw : (startRaw ? new Date(startRaw) : null);
         const end = endRaw instanceof Date ? endRaw : (endRaw ? new Date(endRaw) : null);
         if (!start || isNaN(start.getTime())) return;
         if (typeof window.setCircaevumSelectedLayerId === 'function' && target.userData.layerId) {
             window.setCircaevumSelectedLayerId(target.userData.layerId);
+        }
+        const pickUid = ve.uid != null ? ve.uid : ve.id;
+        if (pickUid != null && String(pickUid).trim() !== '' && target.userData.layerId) {
+            const glPick = typeof window !== 'undefined' ? (window.circaevumGL || (window.getGL && window.getGL())) : null;
+            if (glPick && typeof glPick.setEventHighlight === 'function') {
+                glPick.setEventHighlight(target.userData.layerId, String(pickUid));
+            }
         }
         if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
         if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
@@ -2505,12 +2652,16 @@ function initControls() {
     let touchStartX = 0;
     let touchStartY = 0;
     let touchStartTime = 0;
-    
+    let touchPickMoved = false;
+    let touchSessionMulti = false;
+
     renderer.domElement.addEventListener('touchstart', (e) => {
+        if (e.touches.length >= 2) touchSessionMulti = true;
         if (e.touches.length === 1) {
             touchStartX = e.touches[0].clientX;
             touchStartY = e.touches[0].clientY;
             touchStartTime = Date.now();
+            touchPickMoved = false;
         }
     }, { passive: true });
     
@@ -2568,10 +2719,25 @@ function initControls() {
             }
             lastTouchDistance = distance;
         }
+        if (e.touches.length === 1) {
+            const dx = e.touches[0].clientX - touchStartX;
+            const dy = e.touches[0].clientY - touchStartY;
+            if (Math.hypot(dx, dy) > 10) touchPickMoved = true;
+        }
         e.preventDefault();
     }, { passive: false });
     
     renderer.domElement.addEventListener('touchend', (e) => {
+        if (!touchSessionMulti && e.changedTouches.length === 1 && !touchPickMoved) {
+            const t = e.changedTouches[0];
+            const dt = Date.now() - touchStartTime;
+            const dx = t.clientX - touchStartX;
+            const dy = t.clientY - touchStartY;
+            if (dt < 700 && Math.hypot(dx, dy) < 14) {
+                trySelectEventObjectAtClientPoint(t.clientX, t.clientY);
+            }
+        }
+        if (e.touches.length === 0) touchSessionMulti = false;
         isDragging = false;
         lastTouchDistance = 0;
     });
@@ -4215,7 +4381,7 @@ function getFocusPoint() {
                 const meshRadius = earthPlanet.geometry && earthPlanet.geometry.parameters && typeof earthPlanet.geometry.parameters.radius === 'number'
                     ? earthPlanet.geometry.parameters.radius
                     : 1.95;
-                const p = getEarthHourHandSurfaceFocus(earthPos, earthPos.y, sel, meshRadius);
+                const p = getEarthHourHandZoom0FocusPoint(earthPos, earthPos.y, sel, meshRadius);
                 return new THREE.Vector3(p.x, p.y, p.z);
             }
             return earthPos;
@@ -4253,6 +4419,16 @@ function updateHourHandMarkerPulse(time) {
                 child.material.opacity = pulseOpacity;
             }
         });
+    });
+}
+
+function applyCircadianEventNameBillboards(root, camRef) {
+    if (!root || !camRef || !root.traverse) return;
+    root.traverse((obj) => {
+        if (!obj || !obj.userData || obj.userData.circadianBillboardLabel !== true) return;
+        if (typeof obj.quaternion !== 'undefined' && camRef.quaternion) {
+            obj.quaternion.copy(camRef.quaternion);
+        }
     });
 }
 
@@ -4303,7 +4479,7 @@ function animate(time, frame) {
                     obj.position.y = obj.userData.staggerLogical / yScaleLocal;
                 }
                 const hasBaseScale = obj.userData && obj.userData.baseScale;
-                const isBillboard = obj.isSprite || obj.userData.type === 'EventLineLabel';
+                const isBillboard = obj.isSprite || (obj.userData.type === 'EventLineLabel' && !obj.userData.isRibbonSurfaceLabel);
                 if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
                     const b = obj.userData.baseScale;
                     const mul = getEventNameLabelScaleMultiplier(obj, selectedMsForLabelScale);
@@ -4318,7 +4494,7 @@ function animate(time, frame) {
                     obj.position.y = obj.userData.staggerLogical;
                 }
                 const hasBaseScale = obj.userData && obj.userData.baseScale;
-                const isBillboard = obj.isSprite || obj.userData.type === 'EventLineLabel';
+                const isBillboard = obj.isSprite || (obj.userData.type === 'EventLineLabel' && !obj.userData.isRibbonSurfaceLabel);
                 if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
                     const b = obj.userData.baseScale;
                     const mul = getEventNameLabelScaleMultiplier(obj, selectedMsForLabelScale);
@@ -4394,8 +4570,7 @@ function animate(time, frame) {
     }
     currentCircadianStraightenAmount +=
         (circadianStraightenTarget - currentCircadianStraightenAmount) * 0.08;
-    if (typeof CircadianRenderer !== 'undefined' && CircadianRenderer.refreshCircadianHelixLine &&
-        circadianWorldlines && circadianWorldlines.length) {
+    if (typeof CircadianRenderer !== 'undefined' && circadianWorldlines && circadianWorldlines.length) {
         const sdHel = getSelectedDateTime();
         const chHel = calculateDateHeight(
             sdHel.getFullYear(),
@@ -4404,7 +4579,18 @@ function animate(time, frame) {
             sdHel.getHours()
         );
         circadianWorldlines.forEach(function (ln) {
-            if (ln && ln.userData && ln.userData.circadianHelixAnim) {
+            if (!ln || !ln.userData) return;
+            if (ln.userData.circadianDayDisksAnim && CircadianRenderer.refreshDayDiskOutlinesGroup) {
+                CircadianRenderer.refreshDayDiskOutlinesGroup(
+                    ln,
+                    currentCircadianStraightenAmount,
+                    chHel,
+                    sdHel,
+                    ln.userData.spanDays,
+                    ln.userData.rimRadius,
+                    ln.userData.segmentsPerLoop
+                );
+            } else if (ln.userData.circadianHelixAnim && CircadianRenderer.refreshCircadianHelixLine) {
                 CircadianRenderer.refreshCircadianHelixLine(
                     ln,
                     currentCircadianStraightenAmount,
@@ -4541,6 +4727,10 @@ function animate(time, frame) {
         currentCameraUp.lerp(targetCameraUp, camLerp);
         cam.up.copy(currentCameraUp);
         cam.lookAt(focusPoint);
+        if (typeof circadianState !== 'undefined' && circadianState !== 'off') {
+            applyCircadianEventNameBillboards(flattenableGroup, cam);
+            applyCircadianEventNameBillboards(sceneContentGroup, cam);
+        }
     }
 
     updateHourHandMarkerPulse(time);

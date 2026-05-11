@@ -348,9 +348,12 @@ const TimeMarkers = (function() {
     const SYSTEMS = {
         quarter: {
             name: 'quarter',
-            getRadii: (zoom, dist) => zoom >= 3 
-                ? { outer: RADII_CONFIG.quarter.outer(dist), inner: RADII_CONFIG.quarter.inner(), label: RADII_CONFIG.quarter.label(dist) }
-                : { outer: dist*0.5, inner: null, label: dist*0.25 },
+            /** Zoom-invariant: same rings at all zoom levels; only which units render changes. */
+            getRadii: (_zoom, dist) => ({
+                outer: RADII_CONFIG.quarter.outer(dist),
+                inner: RADII_CONFIG.quarter.inner(),
+                label: RADII_CONFIG.quarter.label(dist)
+            }),
             // For zoom 3+ always show all 4 quarters of the selected year
             getUnits: (zoom, state) => {
                 const year = state.selectedYear;
@@ -375,9 +378,12 @@ const TimeMarkers = (function() {
         },
         month: {
             name: 'month',
-            getRadii: (zoom, dist) => zoom >= 3
-                ? { outer: RADII_CONFIG.month.outer(dist), inner: RADII_CONFIG.month.inner(dist), label: RADII_CONFIG.month.label(dist) }
-                : { outer: dist*0.75, inner: dist*0.5, label: dist*0.75 },
+            /** Zoom-invariant: same rings at all zoom levels; only which units render changes. */
+            getRadii: (_zoom, dist) => ({
+                outer: RADII_CONFIG.month.outer(dist),
+                inner: RADII_CONFIG.month.inner(dist),
+                label: RADII_CONFIG.month.label(dist)
+            }),
             // For zoom 3+ always show all 12 months of the selected year
             getUnits: (zoom, state) => {
                 const year = state.selectedYear;
@@ -434,8 +440,8 @@ const TimeMarkers = (function() {
     // ============================================
     
     function createTimeFrame(config) {
-        const { unitType, zoomLevel, outerRadius, innerRadius, earthDistance, timeState, 
-                unitNames, getUnitsToShow, getUnitDate, isCurrentUnit, isSelectedUnit, 
+        const { unitType, zoomLevel, outerRadius, innerRadius, timeState,
+                unitNames, getUnitsToShow, getUnitDate, isCurrentUnit, isSelectedUnit,
                 skipLabels = false, labelRadius = null, getUnitCenterDate } = config;
         
         // Label visibility is controlled purely by zoom level; the full-year toggle
@@ -447,7 +453,6 @@ const TimeMarkers = (function() {
             (unitType === 'day' && zoomLevel >= 7)
         );
         
-        const earth = PLANET_DATA.find(p => p.name === 'Earth');
         const unitsToShow = getUnitsToShow(zoomLevel, timeState);
         
         // Create lines and labels
@@ -496,17 +501,11 @@ const TimeMarkers = (function() {
                 prevHasOffset = calculateOffset(unitType, zoomLevel, timeState);
             }
             
-            // Line radii - Zoom 3 now uses same system as Zoom 4+
+            // Spoke radii: fixed to this unit's ring. Quarter-boundary month ticks from Sun (0) to month.outer only.
             let startRadius = innerRadius || 0;
-            let endRadius = outerRadius;
-            if (zoomLevel >= 3) {
-                if (unitType === 'month' && typeof unitIndex === 'number' && unitIndex % 3 === 0 && unitIndex > 0) {
-                    startRadius = 0; // Quarter boundaries (end of previous quarter)
-                    endRadius = earthDistance; // Extend to Earth's worldline
-                }
-                if (unitType === 'week' && zoomLevel >= 7) {
-                    endRadius = earthDistance;
-                }
+            const endRadius = outerRadius;
+            if (unitType === 'month' && typeof unitIndex === 'number' && unitIndex % 3 === 0 && unitIndex > 0) {
+                startRadius = 0;
             }
             
             // Create line using SceneGeometry
@@ -646,7 +645,6 @@ const TimeMarkers = (function() {
             zoomLevel,
             outerRadius: radii.outer,
             innerRadius: radii.inner,
-            earthDistance,
             timeState,
             unitNames: system.names,
             getUnitsToShow: system.getUnits,
@@ -725,7 +723,6 @@ const TimeMarkers = (function() {
             zoomLevel,
             outerRadius: radii.outer,
             innerRadius: radii.inner,
-            earthDistance,
             timeState,
             unitNames: system.names,
             getUnitsToShow: system.getUnits,
@@ -884,7 +881,6 @@ const TimeMarkers = (function() {
             zoomLevel,
             outerRadius,
             innerRadius,
-            earthDistance,
             timeState,
             unitNames: getWeekLabelText,
             getUnitsToShow: getWeeksToShow,
@@ -1115,7 +1111,6 @@ const TimeMarkers = (function() {
             zoomLevel,
             outerRadius,
             innerRadius,
-            earthDistance,
             timeState,
             unitNames: getDayLabelText,
             getUnitsToShow: getDaysToShow,
@@ -1553,10 +1548,43 @@ const TimeMarkers = (function() {
     }
 
     /**
+     * Numeric radii for all marker bands at Earth distance W (single source for event-renderer and list UI).
+     */
+    function getCanonicalRadialZones(earthDistance) {
+        const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        return {
+            quarter: {
+                outer: RADII_CONFIG.quarter.outer(W),
+                inner: RADII_CONFIG.quarter.inner(),
+                label: RADII_CONFIG.quarter.label(W)
+            },
+            month: {
+                outer: RADII_CONFIG.month.outer(W),
+                inner: RADII_CONFIG.month.inner(W),
+                label: RADII_CONFIG.month.label(W)
+            },
+            week: {
+                outer: RADII_CONFIG.week.outer(W),
+                inner: RADII_CONFIG.week.inner(W),
+                label: RADII_CONFIG.week.label(W)
+            },
+            day: {
+                outer: RADII_CONFIG.day.outer(W),
+                inner: RADII_CONFIG.day.inner(W),
+                label: RADII_CONFIG.day.label(W),
+                dayName: RADII_CONFIG.day.dayName(W)
+            },
+            hour: {
+                spiral: RADII_CONFIG.hour.spiral(W)
+            }
+        };
+    }
+
+    /**
      * List-context hoop radius: **outer** curve of the RADII band for this zoom (same frame as time markers).
-     * z3 Year: quarter.outer (W/4). z4: month.outer. z5–6: week.outer. z7: week-style day.outer (3W/4).
+     * z3 Year: quarter.outer (W/4). z4: month.outer. z5–6: week.outer. z7: day.outer (3W/4).
      * z8 Day / z9 Clock: Earth orbit radius W (hoop meets Earth’s worldline).
-     * z1–2: coarse quarter.outer (SYSTEMS.quarter for zoom < 3). z0: day.inner (outer edge of spiral→day-inner band).
+     * z1–2: quarter.outer (same rings as all zooms). z0: day.inner (outer edge of spiral→day-inner band).
      */
     function getListContextRingRadiusForZoom(zoomLevel, earthDistance) {
         const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
@@ -1571,8 +1599,7 @@ const TimeMarkers = (function() {
         if (z <= 0) {
             rOuter = dayInner;
         } else if (z <= 2) {
-            const qr = SYSTEMS.quarter.getRadii(z, W);
-            rOuter = qr.outer;
+            rOuter = qOuter;
         } else if (z === 3) {
             rOuter = qOuter;
         } else if (z === 4) {
@@ -1595,6 +1622,7 @@ const TimeMarkers = (function() {
         init,
         createTimeMarkers,
         updateOffsets,
-        getListContextRingRadiusForZoom
+        getListContextRingRadiusForZoom,
+        getCanonicalRadialZones
     };
 })();
