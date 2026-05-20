@@ -80,7 +80,7 @@ const EPHEMERIS_CONFIG = {
 // ZOOM LEVEL CONFIGURATIONS
 // ============================================
 const ZOOM_LEVELS = {
-    0: { name: 'MOMENT', span: 'Welcome', distance: 6.5, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025, isPolar: true },
+    0: { name: 'MOMENT', span: 'Hour', distance: 4.25, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025, isPolar: true },
     1: { name: 'CENTURY', span: '100 years', distance: 10000, height: 5000, timeYears: 100, focusTarget: 'sun', centerYear: 2050 },
     2: { name: 'DECADE', span: '10 years', distance: 800, height: 1600, timeYears: 10, focusTarget: 'sun', centerYear: 2025 },
     3: { name: 'YEAR', span: '1 year', distance: 140, height: 500, timeYears: 1, focusTarget: 'sun', centerYear: 2025 },
@@ -124,6 +124,40 @@ const SCENE_CONFIG = {
         colors: {
             collinear: 0x8ab4d8,
             triangular: 0x7bc4a8
+        },
+        /**
+         * One dot per calendar day whose Earth lies in the Sun–L4–L5 “through Earth” sector (~120°, ~⅓ yr),
+         * placed sunward along that day’s Sun→Earth line (pedagogical radius: true CRTBP L1 is ~0.99R and
+         * visually merges with Earth). Hover: connector to the circadian day-ring stack; click sets SELECTED TIME.
+         */
+        l1DayArc: {
+            enabled: true,
+            /** Calendar-day scan radius (±) around selected day before filtering by sector. */
+            daySearchRadius: 95,
+            /** Dot radius as a fraction of the L1 Lagrange marker sphere radius. */
+            dotRadiusMul: 0.48,
+            /** Hover line (selected-time color). */
+            connectorOpacity: 0.55,
+            /**
+             * Sun→Earth distance from Sun as a fraction of that day’s ephemeris Earth distance (XZ).
+             * ~0.76 keeps dots clearly sunward of the Earth mesh; ~0.99 matches true L1 and risks overlap.
+             */
+            radialFractionFromSun: 0.76,
+            /** Stay at least this many Earth-sphere radii sunward of Earth’s center (along Sun–Earth). */
+            clearanceEarthRadii: 2.85,
+            /** World-space distance falloff for “mouse near dot” pick scale (smaller = tighter hotspot). */
+            pickProximityFalloff: 26,
+            /** Max uniform scale on dots when the view ray passes near them (easier to click). */
+            pickScaleMaxMul: 4.2,
+            /**
+             * If the ray misses all sphere meshes, pick the dot whose center is within this multiple of its
+             * (scaled) radius from the view ray (reduces “click does nothing” near edges).
+             */
+            pickMissMaxRayRadiusRatio: 1.42,
+            /** Max pointer movement (px) on mouseup to still attempt a Lagrange day-dot pick (jitter-tolerant). */
+            pickMaxDragPx: 26,
+            /** Duration (ms) for smooth selected-time transition when a dot is chosen. */
+            navigateDurationMs: 1180
         }
     },
     /**

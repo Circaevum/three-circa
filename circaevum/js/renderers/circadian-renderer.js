@@ -1,16 +1,16 @@
 /**
- * Circadian Rhythm Worldline Renderer
+ * Circadian rhythm renderer — daily disks + optional legacy helix helpers.
  *
- * Draws a helix traced by the "hour hand" extending from Earth as it rotates
- * while moving along its orbital path. Two modes:
- * 1. Straightened: helix center aligned with current Earth position; moves with Earth; noon/midnight stay fixed.
- * 2. Wrapped: helix fixed in space around Earth's worldline; each segment shows hour-hand direction at that time.
+ * Short events sit on one **disk per calendar day** (center at local noon on Earth’s orbit).
+ * Time-of-day maps to angle; overlapping slots stack in **concentric annuli** (see event-renderer lane packer).
+ * Wrapped / straightened blend still morphs disk placement like the old hour-hand frame.
  *
  * Dependencies: SceneGeometry, calculateDateHeight, PLANET_DATA (Earth), THREE
  */
 (function (global) {
   const HOURS_PER_DAY = 24;
   const HEIGHT_PER_YEAR = 100;
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
   let SceneGeometry;
   let calculateDateHeight;
@@ -191,6 +191,42 @@
     };
   }
 
+  function sameLocalCalendarDay(a, b) {
+    return !!(a && b && !isNaN(a.getTime()) && !isNaN(b.getTime()) &&
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate());
+  }
+
+  /**
+   * Orbit phase ref = actual “now” height; timeline pivot + Earth XZ = navigation (matches main.js planets).
+   */
+  function readCircadianSceneTimeContext(fallbackHeight) {
+    if (typeof global.getCircadianSceneTimeContext === 'function') {
+      const ctx = global.getCircadianSceneTimeContext();
+      if (ctx &&
+          ctx.currentDateHeight != null && !isNaN(ctx.currentDateHeight) &&
+          ctx.selectedDateHeight != null && !isNaN(ctx.selectedDateHeight)) {
+        return ctx;
+      }
+    }
+    return {
+      currentDateHeight: fallbackHeight,
+      selectedDateHeight: fallbackHeight,
+      selectedDate: typeof global.getSelectedDateTime === 'function' ? global.getSelectedDateTime() : new Date(),
+      earthX: NaN,
+      earthZ: NaN
+    };
+  }
+
+  /** Helix guide + structure ticks are visual only; keep them out of event picking. */
+  function disableDecorationRaycast(root) {
+    if (!root) return;
+    root.traverse(function (o) {
+      o.raycast = function () {};
+    });
+  }
+
   /**
    * Week starts (Monday) and month starts along the helix — ticks outward from hand tip at local midnights.
    */
@@ -261,6 +297,7 @@
       spanDays,
       lineSegments
     };
+    disableDecorationRaycast(group);
     return group;
   }
 
@@ -355,6 +392,7 @@
       spanDays
     };
     applyStyleToLineMaterial(line);
+    disableDecorationRaycast(line);
     return line;
   }
 
@@ -493,24 +531,188 @@
    * Hour-hand tip at scene height — for sub-day event labels and connectors.
    * @param {number|boolean} [straightenBlendOrLegacyBool] - 0–1 wrapped→straight, or legacy true = full straight
    */
-  function getWrappedHandTipAtHeight(height, currentHeight, straightenBlendOrLegacyBool) {
-    if (!SceneGeometry || !SceneGeometry.getAngle || !SceneGeometry.getPosition3D || typeof height !== 'number') {
-      return null;
-    }
+  function parseStraightenBlend(straightenBlendOrLegacyBool) {
     let b = 0;
     if (typeof straightenBlendOrLegacyBool === 'number' && !isNaN(straightenBlendOrLegacyBool)) {
       b = Math.min(1, Math.max(0, straightenBlendOrLegacyBool));
     } else if (straightenBlendOrLegacyBool === true) {
       b = 1;
     }
-    const pW = tipWrappedAtHeight(height, currentHeight);
-    const pS = tipStraightAtHeight(height, currentHeight);
+    return b;
+  }
+
+  /**
+   * Approximate wall-clock instant from a scene height (for connectors / legacy height-only callers).
+   */
+  function approxDateFromSceneHeight(height, refDate, calculateDateHeightFn) {
+    if (!refDate || !calculateDateHeightFn || typeof height !== 'number') return refDate || new Date();
+    const refH = heightForDate(refDate, calculateDateHeightFn);
+    if (refH == null || isNaN(refH)) return refDate;
+    const HY = HEIGHT_PER_YEAR;
+    const deltaH = height - refH;
+    const msPerYear = 365.25 * 24 * 3600000;
+    return new Date(refDate.getTime() + (deltaH / HY) * msPerYear);
+  }
+
+  /**
+   * One point on the daily disk: calendar day fixed at local noon for center; angle from wall-clock time.
+   */
+  function diskPointWrappedAtDate(date, r, currentHeight, calculateDateHeightFn) {
+    if (!SceneGeometry || !date || !calculateDateHeightFn) return null;
+    const y = date.getFullYear();
+    const mo = date.getMonth();
+    const d = date.getDate();
+    const hNoon = calculateDateHeightFn(y, mo, d, 12);
+    if (hNoon == null || isNaN(hNoon)) return null;
+    const stretch =
+      typeof global.getCircadianHelixYStretchMult === 'function' ? global.getCircadianHelixYStretchMult() : 1;
+    const ctx = readCircadianSceneTimeContext(currentHeight);
+    const orbitRef = ctx.currentDateHeight;
+    const timelineRef = ctx.selectedDateHeight;
+    const orbitAngle = SceneGeometry.getAngle(hNoon, orbitRef);
+    const earthPos0 = SceneGeometry.getPosition3D(hNoon, orbitAngle, earthDistance);
+    const earthPos = {
+      x: earthPos0.x,
+      y: timelineRef + (hNoon - timelineRef) * stretch,
+      z: earthPos0.z
+    };
+    if (ctx.selectedDate && sameLocalCalendarDay(date, ctx.selectedDate) &&
+        Number.isFinite(ctx.earthX) && Number.isFinite(ctx.earthZ)) {
+      earthPos.x = ctx.earthX;
+      earthPos.z = ctx.earthZ;
+    }
+    const frac =
+      (date.getHours() +
+        date.getMinutes() / 60 +
+        date.getSeconds() / 3600 +
+        date.getMilliseconds() / 3600000) /
+      HOURS_PER_DAY;
+    const dayAngle = frac * Math.PI * 2;
+    const sunToEarthAngle = Math.atan2(earthPos.z, earthPos.x);
+    const handAngle = sunToEarthAngle - dayAngle;
+    return {
+      x: earthPos.x + r * Math.cos(handAngle),
+      y: earthPos.y,
+      z: earthPos.z + r * Math.sin(handAngle)
+    };
+  }
+
+  function diskPointStraightAtDate(date, r, currentHeight, calculateDateHeightFn) {
+    if (!SceneGeometry || !date || !calculateDateHeightFn) return null;
+    const y = date.getFullYear();
+    const mo = date.getMonth();
+    const d = date.getDate();
+    const hNoon = calculateDateHeightFn(y, mo, d, 12);
+    if (hNoon == null || isNaN(hNoon)) return null;
+    const stretch =
+      typeof global.getCircadianHelixYStretchMult === 'function' ? global.getCircadianHelixYStretchMult() : 1;
+    const ctx = readCircadianSceneTimeContext(currentHeight);
+    const orbitRef = ctx.currentDateHeight;
+    const timelineRef = ctx.selectedDateHeight;
+    const orbitAngleNow = SceneGeometry.getAngle(timelineRef, orbitRef);
+    let earthRef = SceneGeometry.getPosition3D(timelineRef, orbitAngleNow, earthDistance);
+    if (Number.isFinite(ctx.earthX) && Number.isFinite(ctx.earthZ)) {
+      earthRef = { x: ctx.earthX, y: timelineRef, z: ctx.earthZ };
+    }
+    const frac =
+      (date.getHours() +
+        date.getMinutes() / 60 +
+        date.getSeconds() / 3600 +
+        date.getMilliseconds() / 3600000) /
+      HOURS_PER_DAY;
+    const dayAngle = frac * Math.PI * 2;
+    const xLocal = r * Math.cos(-dayAngle);
+    const zLocal = r * Math.sin(-dayAngle);
+    const yLocal = (hNoon - timelineRef) * stretch;
+    const c = Math.cos(-orbitAngleNow);
+    const s = Math.sin(-orbitAngleNow);
+    return {
+      x: earthRef.x + c * xLocal + s * zLocal,
+      y: earthRef.y + yLocal,
+      z: earthRef.z - s * xLocal + c * zLocal
+    };
+  }
+
+  function getCircadianDayStackSpacing() {
+    const stretch =
+      typeof global.getCircadianHelixYStretchMult === 'function' ? global.getCircadianHelixYStretchMult() : 1;
+    return (HEIGHT_PER_YEAR / 365.25) * Math.max(0.32, stretch * 0.82);
+  }
+
+  /**
+   * One point on a flat day ring in the vertical stack anchored at selected Earth (not helix Y per day).
+   */
+  function diskPointOnSelectedTimeStack(date, r, currentHeight, calculateDateHeightFn) {
+    if (!SceneGeometry || !date || !calculateDateHeightFn) return null;
+    const ctx = readCircadianSceneTimeContext(currentHeight);
+    const sel =
+      ctx.selectedDate ||
+      (typeof global.getSelectedDateTime === 'function' ? global.getSelectedDateTime() : new Date());
+    const timelineRef = ctx.selectedDateHeight;
+    const selMidnight = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
+    const dayMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+    const k = Math.round((dayMidnight.getTime() - selMidnight.getTime()) / MS_PER_DAY);
+    const yPos = timelineRef + k * getCircadianDayStackSpacing();
+    let earthX = ctx.earthX;
+    let earthZ = ctx.earthZ;
+    if (!Number.isFinite(earthX) || !Number.isFinite(earthZ)) {
+      const orbitAngle = SceneGeometry.getAngle(timelineRef, ctx.currentDateHeight);
+      const ep = SceneGeometry.getPosition3D(timelineRef, orbitAngle, earthDistance);
+      earthX = ep.x;
+      earthZ = ep.z;
+    }
+    const frac =
+      (date.getHours() +
+        date.getMinutes() / 60 +
+        date.getSeconds() / 3600 +
+        date.getMilliseconds() / 3600000) /
+      HOURS_PER_DAY;
+    const dayAngle = frac * Math.PI * 2;
+    const sunToEarthAngle = Math.atan2(earthZ, earthX);
+    const handAngle = sunToEarthAngle - dayAngle;
+    return {
+      x: earthX + r * Math.cos(handAngle),
+      y: yPos,
+      z: earthZ + r * Math.sin(handAngle)
+    };
+  }
+
+  /** Sub-day events + connectors: stack at selected time (blend kept for legacy callers only). */
+  function blendedDiskPointAtDate(date, r, currentHeight, calculateDateHeightFn, blend) {
+    const stacked = diskPointOnSelectedTimeStack(date, r, currentHeight, calculateDateHeightFn);
+    if (stacked) return stacked;
+    const b = parseStraightenBlend(blend);
+    const pW = diskPointWrappedAtDate(date, r, currentHeight, calculateDateHeightFn);
+    const pS = diskPointStraightAtDate(date, r, currentHeight, calculateDateHeightFn);
+    if (!pW) return pS;
+    if (!pS) return pW;
     const om = 1 - b;
     return {
       x: pW.x * om + pS.x * b,
       y: pW.y * om + pS.y * b,
       z: pW.z * om + pS.z * b
     };
+  }
+
+  function getWrappedHandTipAtHeight(height, currentHeight, straightenBlendOrLegacyBool) {
+    if (!SceneGeometry || !SceneGeometry.getAngle || !SceneGeometry.getPosition3D || typeof height !== 'number') {
+      return null;
+    }
+    const b = parseStraightenBlend(straightenBlendOrLegacyBool);
+    const ref =
+      typeof global.getSelectedDateTime === 'function' ? global.getSelectedDateTime() : new Date();
+    if (typeof calculateDateHeight !== 'function') {
+      const pW = tipWrappedAtHeight(height, currentHeight);
+      const pS = tipStraightAtHeight(height, currentHeight);
+      const om = 1 - b;
+      return { x: pW.x * om + pS.x * b, y: pW.y * om + pS.y * b, z: pW.z * om + pS.z * b };
+    }
+    const d = approxDateFromSceneHeight(height, ref, calculateDateHeight);
+    return blendedDiskPointAtDate(d, handLength, currentHeight, calculateDateHeight, b);
+  }
+
+  function getHandLength() {
+    return handLength;
   }
 
   /**
@@ -527,98 +729,159 @@
   }
 
   /**
-   * Inner/outer polylines wrapping the circadian helix between two Dates (short / sub-day events).
-   * Radii are distances from Earth center in the orbital plane, along the hour-hand direction.
+   * Inner/outer polylines on per-day disks (concentric arcs). Same calendar day shares one disk center (local noon).
    * @param {Date} start
    * @param {Date} end
+   * @param {number} rIn
+   * @param {number} rOut
    * @param {number} currentHeight
    * @param {function(number,number,number,number):number} calculateDateHeightFn
    * @param {number} segments
-   * @param {number|boolean} [straightenBlendOrLegacyBool] - 0–1 morph wrapped→straight ribbon, or legacy true = straight
+   * @param {number|boolean} [straightenBlendOrLegacyBool]
    * @returns {{ innerFlat: number[], outerFlat: number[] }|null}
    */
-  function buildHelixRibbonBetween(start, end, currentHeight, calculateDateHeightFn, segments, straightenBlendOrLegacyBool) {
+  function buildDiskRibbonBetween(start, end, rIn, rOut, currentHeight, calculateDateHeightFn, segments, straightenBlendOrLegacyBool) {
     if (
       !SceneGeometry ||
-      !SceneGeometry.getAngle ||
-      !SceneGeometry.getPosition3D ||
       typeof calculateDateHeightFn !== 'function' ||
       !start ||
       !end ||
-      !(end > start)
+      !(end > start) ||
+      !(rOut > rIn)
     ) {
       return null;
     }
     const t0 = start.getTime();
     const t1 = end.getTime();
     const n = Math.max(4, Math.min(64, segments != null ? Math.round(segments) : Math.ceil((t1 - t0) / (3600000 / 2))));
-    // Sub-day event ribbons: thin annulus around the circadian hand tip (was ~14% of handLength each side).
-    const halfRadial = Math.max(handLength * 0.028, 0.18);
-    const rIn = Math.max(handLength * 0.72, handLength - halfRadial);
-    const rOut = handLength + halfRadial;
     const innerFlat = [];
     const outerFlat = [];
-    const stretch =
-      typeof global.getCircadianHelixYStretchMult === 'function' ? global.getCircadianHelixYStretchMult() : 1;
-    let blend = 0;
-    if (typeof straightenBlendOrLegacyBool === 'number' && !isNaN(straightenBlendOrLegacyBool)) {
-      blend = Math.min(1, Math.max(0, straightenBlendOrLegacyBool));
-    } else if (straightenBlendOrLegacyBool === true) {
-      blend = 1;
-    }
-    const orbitAngleRef = SceneGeometry.getAngle(currentHeight, currentHeight);
-    const earthRef = SceneGeometry.getPosition3D(currentHeight, orbitAngleRef, earthDistance);
-    const cOrb = Math.cos(-orbitAngleRef);
-    const sOrb = Math.sin(-orbitAngleRef);
-    const om = 1 - blend;
+    const blend = parseStraightenBlend(straightenBlendOrLegacyBool);
 
     for (let i = 0; i <= n; i++) {
       const u = i / n;
       const tMs = t0 + (t1 - t0) * u;
       const d = new Date(tMs);
-      const h = heightForDate(d, calculateDateHeightFn);
-      if (h == null || isNaN(h)) continue;
-      const HY = HEIGHT_PER_YEAR;
-      const remainder = ((h % HY) + HY) % HY / HY;
-      const dayOfYear = remainder * 365.25;
-      const hourFrac = (dayOfYear - Math.floor(dayOfYear)) * HOURS_PER_DAY;
-      const dayAngle = (hourFrac / HOURS_PER_DAY) * Math.PI * 2;
-
-      const xIn = rIn * Math.cos(-dayAngle);
-      const zIn = rIn * Math.sin(-dayAngle);
-      const xOu = rOut * Math.cos(-dayAngle);
-      const zOu = rOut * Math.sin(-dayAngle);
-      const yLocal = (h - currentHeight) * stretch;
-      const siX = earthRef.x + cOrb * xIn + sOrb * zIn;
-      const siY = earthRef.y + yLocal;
-      const siZ = earthRef.z - sOrb * xIn + cOrb * zIn;
-      const soX = earthRef.x + cOrb * xOu + sOrb * zOu;
-      const soY = earthRef.y + yLocal;
-      const soZ = earthRef.z - sOrb * xOu + cOrb * zOu;
-
-      const orbitAngle = SceneGeometry.getAngle(h, currentHeight);
-      const earthPos0 = SceneGeometry.getPosition3D(h, orbitAngle, earthDistance);
-      const earthPos = {
-        x: earthPos0.x,
-        y: currentHeight + (h - currentHeight) * stretch,
-        z: earthPos0.z
-      };
-      const sunToEarthAngle = Math.atan2(earthPos.z, earthPos.x);
-      const handAngle = sunToEarthAngle - dayAngle;
-      const cx = Math.cos(handAngle);
-      const cz = Math.sin(handAngle);
-      const wiX = earthPos.x + rIn * cx;
-      const wiY = earthPos.y;
-      const wiZ = earthPos.z + rIn * cz;
-      const woX = earthPos.x + rOut * cx;
-      const woY = earthPos.y;
-      const woZ = earthPos.z + rOut * cz;
-
-      innerFlat.push(wiX * om + siX * blend, wiY * om + siY * blend, wiZ * om + siZ * blend);
-      outerFlat.push(woX * om + soX * blend, woY * om + soY * blend, woZ * om + soZ * blend);
+      const pi = blendedDiskPointAtDate(d, rIn, currentHeight, calculateDateHeightFn, blend);
+      const po = blendedDiskPointAtDate(d, rOut, currentHeight, calculateDateHeightFn, blend);
+      if (!pi || !po) continue;
+      innerFlat.push(pi.x, pi.y, pi.z);
+      outerFlat.push(po.x, po.y, po.z);
     }
     if (innerFlat.length < 6) return null;
     return { innerFlat, outerFlat };
+  }
+
+  /**
+   * Legacy helix ribbon (spiral hour-hand). Kept for callers/tests; main UI uses {@link buildDiskRibbonBetween}.
+   */
+  function buildHelixRibbonBetween(start, end, currentHeight, calculateDateHeightFn, segments, straightenBlendOrLegacyBool) {
+    const halfRadial = Math.max(handLength * 0.028, 0.18);
+    const rIn = Math.max(handLength * 0.72, handLength - halfRadial);
+    const rOut = handLength + halfRadial;
+    return buildDiskRibbonBetween(start, end, rIn, rOut, currentHeight, calculateDateHeightFn, segments, straightenBlendOrLegacyBool);
+  }
+
+  /** Lightweight day ring: LineLoop in local XZ (32 segments), not mesh/torus fill. */
+  function buildFlatDayRingPositions(radius, segments) {
+    const n = segments != null ? segments : 32;
+    const flat = [];
+    for (let s = 0; s <= n; s++) {
+      const t = (s / n) * Math.PI * 2;
+      flat.push(Math.cos(t) * radius, 0, Math.sin(t) * radius);
+    }
+    return flat;
+  }
+
+  /**
+   * Discrete day rings: LineLoop per calendar day, vertical stack at selected Earth XZ (not helix Y).
+   */
+  function createDayDiskOutlinesGroup(currentHeight, options) {
+    if (!SceneGeometry || !global.THREE || typeof calculateDateHeight !== 'function') return null;
+    const THREE = global.THREE;
+    const spanDays = options && options.spanDays != null ? options.spanDays : 2;
+    const rimR = (options && options.rimRadius != null) ? options.rimRadius : handLength * 1.08;
+    const segmentsPerLoop = 32;
+    const st = readCircadianHelixStyle();
+    const group = new THREE.Group();
+    group.userData = { circadianDayDisksAnim: true, spanDays, rimRadius: rimR, segmentsPerLoop };
+    const baseOp = st.helixOpacity != null ? st.helixOpacity * 0.92 : 0.72;
+    const color = st.helixColor != null ? st.helixColor : 0xffaa44;
+    const circleFlat = buildFlatDayRingPositions(rimR, segmentsPerLoop);
+    const circleGeo = new THREE.BufferGeometry();
+    circleGeo.setAttribute('position', new THREE.Float32BufferAttribute(circleFlat, 3));
+    for (let i = 0; i < spanDays; i++) {
+      const loop = new THREE.LineLoop(
+        circleGeo,
+        new THREE.LineBasicMaterial({
+          color,
+          transparent: true,
+          opacity: baseOp,
+          depthWrite: false
+        })
+      );
+      loop.userData.circadianDayDiskLoop = true;
+      loop.userData.daySlotIndex = i;
+      group.add(loop);
+    }
+    disableDecorationRaycast(group);
+    const blend =
+      typeof global.getCircadianStraightenBlend === 'function' ? global.getCircadianStraightenBlend() : 0;
+    const centerDate =
+      typeof global.getSelectedDateTime === 'function' ? global.getSelectedDateTime() : new Date();
+    refreshDayDiskOutlinesGroup(group, blend, currentHeight, centerDate, spanDays, rimR);
+    return group;
+  }
+
+  function refreshDayDiskOutlinesGroup(group, straightenBlend, currentHeight, centerDate, spanDays, rimRadius) {
+    if (!group || !group.userData || !group.userData.circadianDayDisksAnim || !global.THREE) {
+      return;
+    }
+    const rimR = rimRadius != null ? rimRadius : group.userData.rimRadius || handLength * 1.08;
+    const span = spanDays != null ? spanDays : group.userData.spanDays || 2;
+    const cd = centerDate instanceof Date ? new Date(centerDate.getTime()) : new Date();
+    const halfLo = Math.floor(span / 2);
+    const halfHi = span - halfLo;
+    const ctx = readCircadianSceneTimeContext(currentHeight);
+    const timelineRef = ctx.selectedDateHeight;
+    const stretch =
+      typeof global.getCircadianHelixYStretchMult === 'function' ? global.getCircadianHelixYStretchMult() : 1;
+    const heightPerDay = HEIGHT_PER_YEAR / 365.25;
+    const daySpacing = heightPerDay * Math.max(0.32, stretch * 0.82);
+    let earthX = ctx.earthX;
+    let earthZ = ctx.earthZ;
+    if (!Number.isFinite(earthX) || !Number.isFinite(earthZ)) {
+      const orbitAngle = SceneGeometry.getAngle(timelineRef, ctx.currentDateHeight);
+      const ep = SceneGeometry.getPosition3D(timelineRef, orbitAngle, earthDistance);
+      earthX = ep.x;
+      earthZ = ep.z;
+    }
+    const stOp = readCircadianHelixStyle();
+    let childIdx = 0;
+    for (let k = -halfLo; k < halfHi; k++) {
+      const d0 = new Date(cd.getFullYear(), cd.getMonth(), cd.getDate() + k, 0, 0, 0, 0);
+      const ring = group.children[childIdx];
+      childIdx++;
+      if (!ring) continue;
+      ring.position.set(earthX, timelineRef + k * daySpacing, earthZ);
+      // Geometry is built in local XZ (ecliptic); do not apply torus-era rotation.x = π/2.
+      ring.rotation.set(0, 0, 0);
+      let opRing = stOp.helixOpacity != null ? stOp.helixOpacity * 0.92 : 0.72;
+      const zlDisk = typeof global.getCurrentZoomLevel === 'function' ? global.getCurrentZoomLevel() : 5;
+      if (sameLocalCalendarDay(d0, cd)) {
+        opRing *= zlDisk === 0 ? 0.52 : 1;
+      } else {
+        opRing *= zlDisk === 0 ? 0.11 : 0.3;
+      }
+      const fade =
+        typeof global.getCircadianDayRingDistanceFade === 'function'
+          ? global.getCircadianDayRingDistanceFade(d0, cd)
+          : 1;
+      opRing *= fade;
+      if (ring.material && typeof ring.material.opacity === 'number') {
+        ring.material.opacity = Math.max(0.035, Math.min(1, opRing));
+      }
+    }
   }
 
   const CircadianRenderer = {
@@ -631,7 +894,13 @@
     createWrappedHelix,
     createStraightenedHelix,
     getWrappedHandTipAtHeight,
+    getHandLength,
     buildHelixRibbonBetween,
+    buildDiskRibbonBetween,
+    blendedDiskPointAtDate,
+    diskPointOnSelectedTimeStack,
+    createDayDiskOutlinesGroup,
+    refreshDayDiskOutlinesGroup,
     heightForDate,
     createHelixStructureMarkersGroup,
     refreshHelixStructureMarkersGroup

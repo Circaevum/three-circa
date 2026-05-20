@@ -11,7 +11,8 @@
  *
  * EventObjects (web): Each event is rendered as a scene object (mesh or line) with
  * userData.vevent, userData.layerId, userData.type === 'EventObject'. For API
- * consumption use getEventObjects(layerId). To push event data from an account-
+ * consumption use getEventObjects(layerId); use getEventFocus() / setEventHighlight(layerId, uid)
+ * for click focus (3D + list). To push event data from an account-
  * managed React page use ingestEvents(layerId, events, { sessionId: '26Q1W01' }).
  *
  * Reference: spec/schemas/vevent-rfc5545.md
@@ -67,6 +68,8 @@ class CircaevumGL {
     this.flattenableGroup = null; // Group that is scaled when flatten view is on (from main.js)
     /** @type {THREE.Line|null} */
     this._moonWorldlineMesh = null;
+    /** When set, 3D EventObjects in the list time window dim except this one (layerId + uid). */
+    this._eventFocus = null;
 
     // Initialize the scene
     this._initialize();
@@ -100,6 +103,9 @@ class CircaevumGL {
       }
       this._setupEventListeners();
       this._refreshMoonWorldline();
+      if (this.layers && this.layers.size > 0) {
+        this.refreshAllEventLayers();
+      }
       return;
     }
     
@@ -183,6 +189,7 @@ class CircaevumGL {
 
     // Remove all event objects from scene
     this._removeLayerObjects(layerId);
+    this._reapplyStoredEventFocus();
 
     this.layers.delete(layerId);
     this.events.delete(layerId);
@@ -405,7 +412,19 @@ class CircaevumGL {
    * @param {Array} events - Updated events
    */
   updateEvents(layerId, events) {
-    this.events.set(layerId, Array.isArray(events) ? events : [events]);
+    if (!this.layers.has(layerId)) {
+      this.addLayer(layerId);
+    }
+    const incoming = Array.isArray(events) ? events : [events];
+    const vevents = incoming.map((e) => {
+      if (typeof VEvent !== 'undefined') {
+        if (e instanceof VEvent) return e;
+        if (e.uid && e.dtstart) return VEvent.fromJSON(e);
+        if (e.id && (e.start || e.startTime)) return VEvent.fromGoogleEvent(e);
+      }
+      return e;
+    });
+    this.events.set(layerId, vevents);
     this._renderLayer(layerId);
   }
 
@@ -429,9 +448,19 @@ class CircaevumGL {
     if (options.layerStyles && typeof options.layerStyles === 'object') {
       this.layerStylesByCategory = options.layerStyles;
     }
+    if (options.timelineEventFilter === 'all' || options.timelineEventFilter === 'year') {
+      this.setTimelineEventFilter(options.timelineEventFilter);
+    }
+    if (options.circadianShortEventScope === 'year' || options.circadianShortEventScope === 'day') {
+      if (typeof window !== 'undefined' && typeof window.setCircadianShortEventScope === 'function') {
+        window.setCircadianShortEventScope(options.circadianShortEventScope);
+      }
+    }
     if (!this.layers.has(layerId)) {
       this.addLayer(layerId, {
         name: options.sessionId ? `Session ${options.sessionId}` : layerId,
+        plotType: 'polygon3d',
+        visible: true,
         ...(options.sessionId && { sessionId: options.sessionId })
       });
     }
@@ -439,6 +468,8 @@ class CircaevumGL {
     if (options.sessionId) {
       layer.sessionId = options.sessionId;
     }
+    layer.visible = true;
+    if (!layer.plotType) layer.plotType = 'polygon3d';
     this.updateEvents(layerId, Array.isArray(events) ? events : [events]);
     this._emit('eventsIngested', { layerId, count: (Array.isArray(events) ? events : [events]).length, sessionId: options.sessionId });
   }
@@ -809,10 +840,31 @@ class CircaevumGL {
    * Render a layer's events
    * @private
    */
+  _syncSceneGroupsFromHost() {
+    if (typeof scene !== 'undefined' && scene) {
+      this.scene = scene;
+    }
+    if (typeof camera !== 'undefined' && camera) {
+      this.camera = camera;
+    }
+    if (typeof renderer !== 'undefined' && renderer) {
+      this.renderer = renderer;
+    }
+    if (typeof sceneContentGroup !== 'undefined' && sceneContentGroup) {
+      this.sceneContentGroup = sceneContentGroup;
+    }
+    if (typeof flattenableGroup !== 'undefined' && flattenableGroup) {
+      this.flattenableGroup = flattenableGroup;
+    }
+  }
+
   _renderLayer(layerId) {
+    this._syncSceneGroupsFromHost();
+
     const layer = this.layers.get(layerId);
     if (!layer || !layer.visible) {
       this._removeLayerObjects(layerId);
+      this._reapplyStoredEventFocus();
       return;
     }
 
@@ -830,10 +882,14 @@ class CircaevumGL {
 
     const allObjects = [];
 
-    // Decide which scene group to attach to: flattenableGroup flattens with time markers, else fallback.
-    const targetGroup = this.flattenableGroup || this.sceneContentGroup;
+    const targetGroup =
+      this.flattenableGroup ||
+      (typeof flattenableGroup !== 'undefined' ? flattenableGroup : null) ||
+      this.sceneContentGroup ||
+      (typeof sceneContentGroup !== 'undefined' ? sceneContentGroup : null);
     const worldSpaceGroup =
-      this.flattenableGroup && this.sceneContentGroup ? this.sceneContentGroup : null;
+      this.sceneContentGroup ||
+      (typeof sceneContentGroup !== 'undefined' ? sceneContentGroup : null);
 
     // Per-category styles from wrapper (layer name -> style); apply when rendering each event
     const layerConfigWithStyles = {
@@ -872,8 +928,16 @@ class CircaevumGL {
         this._layerObjects = new Map();
       }
       this._layerObjects.set(layerId, allObjects);
+    } else if (filteredEvents.length > 0 && typeof console !== 'undefined' && console.warn) {
+      console.warn(
+        '[CircaevumGL] Layer has',
+        filteredEvents.length,
+        'events but 0 meshes (check scope, dates, scene groups). layerId=',
+        layerId
+      );
     }
-    if (filteredEvents.length === 0 && lines.length === 0 && typeof EventRenderer === 'undefined') {
+    this._reapplyStoredEventFocus();
+    if (filteredEvents.length > 0 && typeof EventRenderer === 'undefined') {
       console.warn('EventRenderer not available. Events will not be rendered.');
     }
   }
@@ -968,14 +1032,26 @@ class CircaevumGL {
     return s <= rangeEnd && e >= rangeStart;
   }
 
+  /**
+   * Month zoom (5) and finer always clip to selected calendar year, even when timeline scope is “all time”.
+   * @private
+   */
+  _timelineYearScopeForcedByZoom() {
+    return typeof currentZoom === 'number' && currentZoom >= 5;
+  }
+
+  _shouldApplyTimelineYearScope() {
+    return this.timelineEventFilter === 'year' || this._timelineYearScopeForcedByZoom();
+  }
+
   _applyTimelineScopeFilter(events) {
-    if (this.timelineEventFilter !== 'year') return events;
+    if (!this._shouldApplyTimelineYearScope()) return events;
     const y = this._getTimelineFilterYear();
     return events.filter(e => this._eventOverlapsYear(e, y));
   }
 
   _filterEventLinesForTimeline(lines) {
-    if (this.timelineEventFilter !== 'year') return lines;
+    if (!this._shouldApplyTimelineYearScope()) return lines;
     const y = this._getTimelineFilterYear();
     return lines.filter(ln => this._lineOverlapsYear(ln, y));
   }
@@ -1002,6 +1078,20 @@ class CircaevumGL {
 
   getTimelineEventFilter() {
     return this.timelineEventFilter;
+  }
+
+  /**
+   * Visit each rendered event root (for lightweight scrub updates).
+   * @param {function(import('three').Object3D):void} callback
+   */
+  forEachLayerObjectRoot(callback) {
+    if (!callback || !this._layerObjects) return;
+    for (const roots of this._layerObjects.values()) {
+      if (!Array.isArray(roots)) continue;
+      for (let i = 0; i < roots.length; i++) {
+        if (roots[i]) callback(roots[i]);
+      }
+    }
   }
 
   /**
@@ -1085,29 +1175,146 @@ class CircaevumGL {
   }
 
   /**
-   * Highlight one event in a layer (e.g. while editing). Pass uid or null to clear.
+   * Time window for “nearby” dimming (matches Event List horizon: selected time ± half-span, or calendar year at quarter/year zoom).
+   * @private
+   * @returns {{ t0: number, t1: number }|null}
+   */
+  _getEventFocusNearbyWindowMs() {
+    if (typeof getSelectedDateTime !== 'function') return null;
+    let ref;
+    try {
+      ref = getSelectedDateTime();
+    } catch (e) {
+      return null;
+    }
+    if (!ref || !(ref instanceof Date) || isNaN(ref.getTime())) return null;
+    const z = typeof currentZoom === 'number' && !isNaN(currentZoom) ? currentZoom : 2;
+    const day = 86400000;
+    if (z === 3 || z === 4 || z >= 5) {
+      const y = ref.getFullYear();
+      const t0 = new Date(y, 0, 1, 0, 0, 0, 0).getTime();
+      const t1 = new Date(y, 11, 31, 23, 59, 59, 999).getTime();
+      if (z >= 5) {
+        let halfMs = 30 * day;
+        if (z >= 9) halfMs = day;
+        else if (z >= 8) halfMs = 2 * day;
+        else if (z >= 7) halfMs = 7 * day;
+        const mid = ref.getTime();
+        return { t0: Math.max(t0, mid - halfMs), t1: Math.min(t1, mid + halfMs) };
+      }
+      return { t0, t1 };
+    }
+    let halfMs;
+    if (z >= 9) halfMs = day;
+    else if (z >= 8) halfMs = 2 * day;
+    else if (z >= 7) halfMs = 7 * day;
+    else if (z >= 5) halfMs = 30 * day;
+    else if (z >= 3) halfMs = 120 * day;
+    else halfMs = 365 * day;
+    const mid = ref.getTime();
+    return { t0: mid - halfMs, t1: mid + halfMs };
+  }
+
+  /**
+   * @private
+   */
+  _eventOverlapsFocusWindow(vevent, win) {
+    if (!vevent || !win) return true;
+    const { start, end } = this._getEventDateBounds(vevent);
+    if (!start || isNaN(start.getTime())) return false;
+    const s = start.getTime();
+    const e = (end && !isNaN(end.getTime()) && end.getTime() > s) ? end.getTime() : s + 86400000;
+    return e >= win.t0 && s <= win.t1;
+  }
+
+  /**
+   * @private
+   * @param {'restore'|'highlight'|'dim'} mode
+   */
+  _applyMaterialsFocusRecursive(obj, mode) {
+    const DIM_MUL = 0.26;
+    const HI_MUL = 1.07;
+    const walk = (o) => {
+      if (o.material) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if (!m || typeof m.opacity !== 'number') continue;
+          if (m.userData._focusBaseOpacity == null) m.userData._focusBaseOpacity = m.opacity;
+          const base = m.userData._focusBaseOpacity;
+          if (mode === 'restore') m.opacity = base;
+          else if (mode === 'highlight') m.opacity = Math.min(1, base * HI_MUL);
+          else if (mode === 'dim') m.opacity = Math.max(0.06, base * DIM_MUL);
+        }
+      }
+      if (o.children && o.children.length) o.children.forEach(walk);
+    };
+    walk(obj);
+  }
+
+  /**
+   * Apply stored focus to every rendered EventObject (all layers). Non–event objects unchanged except restored when clearing.
+   * @private
+   */
+  _applyEventFocusToAllObjects() {
+    if (!this._layerObjects) return;
+    const focus = this._eventFocus;
+    const win = focus && focus.uid ? this._getEventFocusNearbyWindowMs() : null;
+    for (const [, roots] of this._layerObjects) {
+      for (const root of roots) {
+        const ud = root.userData;
+        if (!ud || ud.type !== 'EventObject' || !ud.vevent) {
+          continue;
+        }
+        if (!focus || !focus.uid) {
+          this._applyMaterialsFocusRecursive(root, 'restore');
+          continue;
+        }
+        const uidRoot = ud.eventUid != null ? String(ud.eventUid) : '';
+        const isSel = ud.layerId === focus.layerId && uidRoot === String(focus.uid);
+        const inWin = !win || this._eventOverlapsFocusWindow(ud.vevent, win);
+        if (isSel) this._applyMaterialsFocusRecursive(root, 'highlight');
+        else if (inWin) this._applyMaterialsFocusRecursive(root, 'dim');
+        else this._applyMaterialsFocusRecursive(root, 'restore');
+      }
+    }
+  }
+
+  /** Re-run focus styling after a layer re-render (new materials). */
+  _reapplyStoredEventFocus() {
+    this._applyEventFocusToAllObjects();
+  }
+
+  /**
+   * Highlight one event across all layers; other events in the current list time window fade. Pass uid null to clear.
    * @param {string} layerId - Layer id (e.g. 'user-events')
    * @param {string|null} uid - Event uid to highlight, or null to clear highlight
    */
   setEventHighlight(layerId, uid) {
-    if (!this._layerObjects || !this._layerObjects.has(layerId)) return
-    const objects = this._layerObjects.get(layerId)
-    const highlight = uid != null && String(uid).trim() !== ''
-    function setHighlight(o, match, highlight) {
-      if (o.material) {
-        if (o.material.emissiveIntensity !== undefined) {
-          o.material.emissiveIntensity = match && highlight ? 1 : 0.4
+    if (uid == null || String(uid).trim() === '') {
+      this._eventFocus = null;
+      this._applyEventFocusToAllObjects();
+      try {
+        if (typeof window !== 'undefined' && typeof window.syncEventListFocusHighlightRows === 'function') {
+          window.syncEventListFocusHighlightRows();
         }
-        if (o.material.opacity !== undefined) {
-          o.material.opacity = match && highlight ? 1 : (o.userData._baseOpacity != null ? o.userData._baseOpacity : 0.7)
-        }
-      }
-      if (o.children) o.children.forEach((c) => setHighlight(c, match, highlight))
+      } catch (e) { /* ignore */ }
+      return;
     }
-    objects.forEach((obj) => {
-      const match = obj.userData && obj.userData.eventUid === uid
-      setHighlight(obj, match, highlight)
-    })
+    if (!layerId) return;
+    this._eventFocus = { layerId, uid: String(uid) };
+    this._applyEventFocusToAllObjects();
+    try {
+      if (typeof window !== 'undefined' && typeof window.syncEventListFocusHighlightRows === 'function') {
+        window.syncEventListFocusHighlightRows();
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  /**
+   * @returns {{ layerId: string, uid: string }|null}
+   */
+  getEventFocus() {
+    return this._eventFocus ? { layerId: this._eventFocus.layerId, uid: this._eventFocus.uid } : null;
   }
 
   /**

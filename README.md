@@ -20,6 +20,43 @@ The GL maps **timestamps to 3D coordinates** so you can see and navigate time as
 - **`circaevum/`** — Core GL: styles, JS (main, renderers, adapters, pipeline). No account/Nakama in this repo; login lives in the wrapper.
 - **`docs/`** — [VIEWER-AND-WRAPPER.md](./docs/VIEWER-AND-WRAPPER.md), [NAKAMA-CONNECT.md](./docs/NAKAMA-CONNECT.md) (for backend wiring when needed).
 
+## Intro tour (startup, opt-out, embed)
+
+The GL can show a **first-visit prompt** (“Take the tour?” / “Skip”) and a **guided tour** with play/pause, scrub, step dots, and scripted camera/time/zoom beats. The first beat uses **`tourMinimalOrbitMode`** (no helical worldlines, ghost “now” orbit, or Lagrange extras) so the scene opens as a **near–top-down year view** with **Earth sweeping one calendar year** along its orbit ring. Startup and persistence live in [`circaevum/js/presentation/intro.js`](./circaevum/js/presentation/intro.js); the tour timeline is [`circaevum/js/presentation/intro-tour.js`](./circaevum/js/presentation/intro-tour.js). Scene hooks (`applyCircaevumTourScene` including `tourMinimalOrbitMode` / `moonLayer`, `captureCircaevumTourSnapshot`, `restoreCircaevumTourSnapshot`) are on `window` from [`circaevum/js/main.js`](./circaevum/js/main.js) after `setSelectedDateTime`.
+
+**Persistence**
+
+- `localStorage` key **`circaevum_intro_v1`**: JSON `{ "status": "dismissed" | "completed" | "accepted", "updatedAt": "<ISO>" }`. Plain string values written by older experiments are still read if they match those statuses.
+- **`sessionStorage` key `circaevum_intro_v1_prompt_shown_session`**: once the prompt has been shown in a tab session, a reload does not show it again until the user finishes the flow or you clear storage (reduces nag on refresh).
+
+**URL query parameters** (highest priority for “leave me alone” / demos)
+
+| Param | Effect |
+|-------|--------|
+| `skipIntro=1` or `intro=0` | No prompt and no tour start from this load; does **not** write `localStorage` (safe for support links). |
+| `intro=1` | Force the prompt even if the user previously dismissed (unless `skipIntro` / `intro=0` is also set). |
+| `present=1` | Skip the prompt and start the guided tour immediately (unless skipped by the row above). |
+
+**Public / shared calendar segment**
+
+If the URL looks like a **public** view (`view=public`, or `bundle` + `owner`, or `calendar` + `owner`), the intro prompt **does not** run by default so shared links stay focused on the calendar. Use **`?intro=1`** (or `present=1`) on those URLs when you want the tour anyway.
+
+**Replay**
+
+- Menu: **Replay intro tour** (navbar). In **viewer / iframe** mode the navbar is hidden; use the **play** icon added to the scene tool strip (bottom-right cluster) to reset intro state and show the prompt again.
+
+**Parent page `postMessage`** (see [`circaevum/js/ui/embed-api.js`](./circaevum/js/ui/embed-api.js))
+
+- `{ type: 'CIRCAEVUM_INTRO_SET', mode: 'dismissed' | 'completed' | 'accepted' | 'reset' }` — `reset` clears intro `localStorage` and intro session flags.
+- `{ type: 'CIRCAEVUM_INTRO_PROMPT', show: true }` — show the prompt (still respects `skipIntro` / `intro=0` on the iframe URL).
+- `{ type: 'CIRCAEVUM_INTRO_START' }` — start the guided tour.
+
+**JavaScript helpers on `window`**
+
+- `CircaevumIntro` — `runStartupGate`, `getIntroDecision`, `clearStoredIntro`, etc.
+- `CircaevumIntroTour` — `start({ onComplete })`, `stop(completed)`, `isActive()`.
+- `showCircaevumIntroPrompt({ force: true })`, `startCircaevumIntroTour()`, `applyCircaevumIntroEmbedCommand(data)`.
+
 ## Run locally
 
 Serve this folder (e.g. port 8080) so the wrapper can load it:

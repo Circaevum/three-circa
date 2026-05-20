@@ -104,9 +104,11 @@ const SceneGeometry = (function() {
      * @param {number} orbitalPeriod - Orbital period in years
      * @param {number} startAngle - Starting angle offset
      * @param {number} segments - Number of segments (default: 64)
+     * @param {string|null} [planetName] - Optional body name for ephemeris sampling
+     * @param {object|null} [curveExtra] - Optional `{ referenceDate: Date }` for ephemeris height→date alignment
      * @returns {Array<number>} Flat array of [x, y, z, x, y, z, ...] points
      */
-    function createHelicalCurve(startHeight, endHeight, radius, currentHeight, orbitalPeriod, startAngle, segments = 64, planetName = null) {
+    function createHelicalCurve(startHeight, endHeight, radius, currentHeight, orbitalPeriod, startAngle, segments = 64, planetName = null, curveExtra = null) {
         // Validate inputs
         if (isNaN(startHeight) || isNaN(endHeight) || isNaN(radius) || isNaN(currentHeight) || isNaN(orbitalPeriod) || isNaN(startAngle)) {
             console.error('SceneGeometry.createHelicalCurve: Invalid input parameters', {
@@ -122,14 +124,17 @@ const SceneGeometry = (function() {
         
         // Optional ephemeris-backed path (feature-flagged).
         if (planetName && typeof window !== 'undefined' && window.CircaevumAstro && typeof window.CircaevumAstro.sampleWorldlineByHeight === 'function') {
+            const astroRefDate =
+                curveExtra && curveExtra.referenceDate instanceof Date && !isNaN(curveExtra.referenceDate.getTime())
+                    ? curveExtra.referenceDate
+                    : new Date();
             const astroPoints = window.CircaevumAstro.sampleWorldlineByHeight({
                 planetName,
                 startHeight,
                 endHeight,
                 segments,
                 referenceHeight: currentHeight,
-                // Keep date anchor aligned to currentHeight semantics used by markers/time axes.
-                referenceDate: new Date()
+                referenceDate: astroRefDate
             });
             if (Array.isArray(astroPoints) && astroPoints.length > 0) {
                 return astroPoints;

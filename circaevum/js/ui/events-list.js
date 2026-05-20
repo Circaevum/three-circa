@@ -155,13 +155,24 @@
 
   function nearbyHalfSpanMs(zoom) {
     var day = 86400000;
+    var hour = 3600000;
     var z = typeof zoom === 'number' && !isNaN(zoom) ? zoom : (typeof currentZoom !== 'undefined' ? currentZoom : 2);
+    if (z === 0) return hour / 2;
     if (z >= 9) return day;
     if (z >= 8) return 2 * day;
     if (z >= 7) return 7 * day;
     if (z >= 5) return 30 * day;
     if (z >= 3) return 120 * day;
     return 365 * day;
+  }
+
+  function getSelectedHourLocalBounds(ref) {
+    if (!ref || !(ref instanceof Date) || isNaN(ref.getTime())) ref = new Date();
+    var start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), ref.getHours(), 0, 0, 0);
+    return {
+      start: start,
+      end: new Date(start.getTime() + 3600000)
+    };
   }
 
   function durationDaysBetweenLocal(start, end) {
@@ -218,9 +229,32 @@
     return a1 >= b0 && a0 <= b1;
   }
 
+  function filterEventsByTimeRange(events, t0, t1) {
+    return events.filter(function(item) {
+      var s = item.ev.start;
+      if (!s || isNaN(s.getTime())) return false;
+      var e = item.ev.end && item.ev.end > s ? item.ev.end : oneDayLater(s);
+      if (!e || isNaN(e.getTime())) e = s;
+      return rangesOverlap(s.getTime(), e.getTime(), t0, t1);
+    });
+  }
+
+  function filterLinesByTimeRange(lines, t0, t1, defaultSpanMs) {
+    return lines.filter(function(line) {
+      var s = line.start instanceof Date ? line.start.getTime() : NaN;
+      var e = line.end instanceof Date ? line.end.getTime() : NaN;
+      if (isNaN(s)) return false;
+      if (isNaN(e)) e = s + (defaultSpanMs || 86400000);
+      return rangesOverlap(s, e, t0, t1);
+    });
+  }
+
+  var EVENT_LIST_RING_TRACK_R = 15.915;
+
   function updateEventListHorizonRing(drawAll, z, halfMs, ref) {
     var row = document.getElementById('event-list-horizon-ring-row');
     var arc = document.getElementById('event-list-horizon-arc');
+    var arcInner = document.getElementById('event-list-horizon-arc-inner');
     var cap = document.getElementById('event-list-horizon-ring-caption');
     if (!row || !arc || !cap) return;
     if (drawAll) {
@@ -228,13 +262,26 @@
       return;
     }
     row.style.display = 'flex';
-    var frac;
-    if (z === 3 || z === 4) {
-      frac = 1;
-      cap.textContent = 'Full ring = calendar ' + ref.getFullYear() + ' (same scope as the list). Cyan matches the timeline accent; red would read as an error.';
+    var radii = (typeof window.getListContextDiscRadiiForPanel === 'function')
+      ? window.getListContextDiscRadiiForPanel(z)
+      : null;
+    var innerFrac = radii && radii.innerFrac > 0 ? radii.innerFrac : 0.42;
+    if (arcInner) {
+      arcInner.setAttribute('r', String((EVENT_LIST_RING_TRACK_R * innerFrac).toFixed(3)));
+      arcInner.setAttribute('stroke-dasharray', EVENT_LIST_RING_C + ' 0');
+    }
+    var spanHint = ' Dashed inner ring = spans not in the list at this zoom (context disc optional).';
+    var dayMs = 86400000;
+    var yearMs = 365 * dayMs;
+    var frac = Math.min(1, (2 * halfMs) / yearMs);
+    if (z === 0) {
+      frac = Math.min(1, 3600000 / dayMs);
+      cap.textContent = 'Outer arc ≈ selected hour (' + ref.getHours() + ':00–' + ((ref.getHours() + 1) % 24) + ':00).' + spanHint;
+    } else if (z === 3 || z === 4) {
+      cap.textContent = 'Outer arc ≈ list window near selected time (±' + Math.max(1, Math.round(halfMs / dayMs))
+        + 'd) within ' + ref.getFullYear() + '.' + spanHint;
     } else {
-      frac = Math.min(1, (2 * halfMs) / (365 * 86400000));
-      cap.textContent = 'Cyan arc ≈ list time window vs one year (~±' + Math.round(halfMs / 86400000) + 'd half-span at zoom ' + z + ').';
+      cap.textContent = 'Outer arc ≈ list time window near selected time (±' + Math.max(1, Math.round(halfMs / dayMs)) + 'd).' + spanHint;
     }
     var len = Math.max(1.5, frac * EVENT_LIST_RING_C);
     arc.setAttribute('stroke-dasharray', len + ' ' + (EVENT_LIST_RING_C - len));
@@ -266,12 +313,33 @@
     return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
   }
 
+  function syncEventListFocusHighlightRows() {
+    var gl = window.circaevumGL || (window.getGL && window.getGL());
+    var evFocus = gl && typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
+    var listEl = document.getElementById('events-panel-list');
+    if (!listEl) return;
+    var rows = listEl.querySelectorAll('.event-row');
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      row.classList.remove('event-row--focus-selected', 'event-row--focus-dim');
+      if (!evFocus || !evFocus.uid) continue;
+      var lid = row.getAttribute('data-event-layer');
+      var uid = row.getAttribute('data-event-uid');
+      if (lid === evFocus.layerId && uid === String(evFocus.uid)) row.classList.add('event-row--focus-selected');
+      else row.classList.add('event-row--focus-dim');
+    }
+  }
+  window.syncEventListFocusHighlightRows = syncEventListFocusHighlightRows;
+
   function refreshEventsList(drawAll) {
     var listEl = document.getElementById('events-panel-list');
     var ctxEl = document.getElementById('events-panel-context');
     if (!listEl) return;
     window.eventsListHorizonRingActive = !drawAll;
     try {
+      if (typeof window.syncContextDiscButton === 'function') {
+        window.syncContextDiscButton();
+      }
       if (typeof window.updateListHorizonEarthRingScene === 'function') {
         window.updateListHorizonEarthRingScene();
       }
@@ -291,12 +359,19 @@
     var yearBounds = getSelectedCalendarYearLocalBounds(ref);
     if (ctxEl) {
       if (drawAll) ctxEl.textContent = 'Showing all loaded events and lines (Draw all).';
-      else if (z === 3 || z === 4) {
+      else if (z === 0) {
+        var hourCtx = getSelectedHourLocalBounds(ref);
+        ctxEl.textContent = 'Hour zoom: ' + hourCtx.start.getHours() + ':00–' + hourCtx.end.getHours() + ':00 on '
+          + formatDate(ref) + '. List shows sub-day spans in that hour only.';
+      } else if (z === 3 || z === 4) {
         ctxEl.textContent = z === 3
           ? ('Year zoom: calendar ' + ref.getFullYear() + '. List only includes spans longer than 31 days; shorter events stay gray in-scene. Draw all shows every loaded item.')
           : ('Quarter zoom: calendar ' + ref.getFullYear() + '. List includes spans longer than 7 days; shorter events stay gray in-scene. Draw all shows every loaded item.');
+      } else if (z >= 5) {
+        ctxEl.textContent = 'Calendar ' + ref.getFullYear() + ' only at month zoom and finer — ±'
+          + Math.max(1, Math.round(halfMs / 86400000)) + 'd near selected time. Span band matches zoom (no longer-scale items).';
       } else {
-        ctxEl.textContent = 'Near selected time ' + formatDate(ref) + ' — ±' + Math.max(1, Math.round(halfMs / 86400000)) + 'd at zoom ' + z + '. Month (5)+: sub-week multi-day in list; week (7)+: instant / sub-day.';
+        ctxEl.textContent = 'Near selected time ' + formatDate(ref) + ' — ±' + Math.max(1, Math.round(halfMs / 86400000)) + 'd at zoom ' + z + '. List matches this zoom’s span band only (no longer-scale items).';
       }
     }
 
@@ -320,7 +395,25 @@
     }
 
     if (!drawAll) {
-      if (z === 3 || z === 4) {
+      if (z === 0) {
+        var hourBounds = getSelectedHourLocalBounds(ref);
+        var h0 = hourBounds.start.getTime();
+        var h1 = hourBounds.end.getTime();
+        events = events.filter(function(item) {
+          var s = item.ev.start;
+          if (!s || isNaN(s.getTime())) return false;
+          var e = item.ev.end && item.ev.end > s ? item.ev.end : oneDayLater(s);
+          if (!e || isNaN(e.getTime())) e = s;
+          return rangesOverlap(s.getTime(), e.getTime(), h0, h1);
+        });
+        lines = lines.filter(function(line) {
+          var s = line.start instanceof Date ? line.start.getTime() : NaN;
+          var e = line.end instanceof Date ? line.end.getTime() : NaN;
+          if (isNaN(s)) return false;
+          if (isNaN(e)) e = s + 3600000;
+          return rangesOverlap(s, e, h0, h1);
+        });
+      } else if (z === 3 || z === 4) {
         events = events.filter(function(item) {
           var s = item.ev.start;
           if (!s || isNaN(s.getTime())) return false;
@@ -336,20 +429,16 @@
           return rangesOverlap(s, e, yearBounds.start.getTime(), yearBounds.end.getTime());
         });
       } else {
-        events = events.filter(function(item) {
-          var s = item.ev.start;
-          if (!s || isNaN(s.getTime())) return false;
-          var e = item.ev.end && item.ev.end > s ? item.ev.end : oneDayLater(s);
-          if (!e || isNaN(e.getTime())) e = s;
-          return rangesOverlap(s.getTime(), e.getTime(), ref.getTime() - halfMs, ref.getTime() + halfMs);
-        });
-        lines = lines.filter(function(line) {
-          var s = line.start instanceof Date ? line.start.getTime() : NaN;
-          var e = line.end instanceof Date ? line.end.getTime() : NaN;
-          if (isNaN(s)) return false;
-          if (isNaN(e)) e = s + 86400000;
-          return rangesOverlap(s, e, ref.getTime() - halfMs, ref.getTime() + halfMs);
-        });
+        var t0 = ref.getTime() - halfMs;
+        var t1 = ref.getTime() + halfMs;
+        if (z >= 5) {
+          var y0 = yearBounds.start.getTime();
+          var y1 = yearBounds.end.getTime();
+          t0 = Math.max(t0, y0);
+          t1 = Math.min(t1, y1);
+        }
+        events = filterEventsByTimeRange(events, t0, t1);
+        lines = filterLinesByTimeRange(lines, t0, t1, 86400000);
       }
       events = events.filter(function(item) { return eventDurationEligible(eventDurationDaysForListItem(item.ev), z); });
       lines = lines.filter(function(line) {
@@ -378,6 +467,8 @@
       return as - bs;
     });
 
+    var evFocus = (typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null);
+
     events.forEach(function(item) {
       var ev = item.ev;
       var start = ev.start;
@@ -389,6 +480,14 @@
       var row = document.createElement('div');
       var inList = !!drawAll || shouldShowEventTextAtZoomLocal(ev.start, ev.end && ev.end > ev.start ? ev.end : null, z);
       row.className = 'event-row' + (inList ? ' event-row--in-list' : ' event-row--outside-list');
+      var rowUidStr = String(ev.uid || ev.id || '');
+      row.setAttribute('data-event-layer', item.layerId || '');
+      row.setAttribute('data-event-uid', rowUidStr);
+      if (evFocus && evFocus.uid) {
+        var matchFocus = evFocus.layerId === item.layerId && String(evFocus.uid) === rowUidStr;
+        if (matchFocus) row.classList.add('event-row--focus-selected');
+        else row.classList.add('event-row--focus-dim');
+      }
       var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
       var borderColor = ev.color || ev.colorId || layerSwatchColor(layer) || 'rgba(0, 180, 216, 0.5)';
       row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:8px;cursor:pointer;border-left:' + (inList ? '4px' : '3px') + ' solid ' + borderColor + ';background:' + eventColorToRgbaPanelBackground(ev.color || ev.colorId, layerSwatchColor(layer), 0.22, 0.09, inList) + ';' + (inList ? '' : 'opacity:0.5;filter:saturate(0.4) brightness(0.92);');
@@ -400,6 +499,9 @@
       row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
       row.onclick = function() {
         setCircaevumSelectedLayerId(item.layerId || USER_EVENTS_LAYER);
+        if (rowUidStr && typeof gl.setEventHighlight === 'function') {
+          gl.setEventHighlight(item.layerId || USER_EVENTS_LAYER, rowUidStr);
+        }
         navigateToEvent(start, endForNav);
       };
       row.querySelectorAll('a').forEach(function(a) { a.onclick = function(e) { e.stopPropagation(); }; });

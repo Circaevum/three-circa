@@ -18,6 +18,7 @@ const TimeMarkers = (function() {
     let _fullYearScope = false;
     let _fullYearYear = null;
     let currentYear, currentMonth, currentMonthInYear, currentQuarter, currentWeekInMonth, currentDayInWeek;
+    let currentDayOfMonth;
     let selectedYearOffset, selectedQuarterOffset, selectedWeekOffset, selectedDayOffset, selectedHourOffset;
     let currentHourInDay;
     let isLightMode, calculateDateHeight, getHeightForYear, calculateCurrentDateHeight;
@@ -39,6 +40,7 @@ const TimeMarkers = (function() {
         currentQuarter = dependencies.currentQuarter;
         currentWeekInMonth = dependencies.currentWeekInMonth;
         currentDayInWeek = dependencies.currentDayInWeek;
+        currentDayOfMonth = dependencies.currentDayOfMonth;
         selectedYearOffset = dependencies.selectedYearOffset;
         selectedQuarterOffset = dependencies.selectedQuarterOffset;
         selectedWeekOffset = dependencies.selectedWeekOffset;
@@ -108,8 +110,18 @@ const TimeMarkers = (function() {
             selectedDateHeight = calculateDateHeight(selectedYear, selectedMonth, actualDay, now.getHours());
         } else if (zoomLevel === 3) {
             selectedYear = actualYear + selectedYearOffset;
-            selectedQuarter = currentQuarter;
-            selectedMonth = selectedQuarter * 3;
+            selectedMonth = currentMonthInYear;
+            selectedQuarter = Math.floor(selectedMonth / 3);
+            const dom =
+                currentDayOfMonth != null && !isNaN(currentDayOfMonth) ? currentDayOfMonth : actualDay;
+            const lastDom = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+            selectedDayForReturn = Math.max(1, Math.min(dom, lastDom));
+            selectedDateHeight = calculateDateHeight(
+                selectedYear,
+                selectedMonth,
+                selectedDayForReturn,
+                currentHourInDay !== undefined ? currentHourInDay : now.getHours()
+            );
         } else if (zoomLevel === 4) {
             const systemQuarter = Math.floor(actualMonth / 3);
             const selectedQuarterValue = systemQuarter + selectedQuarterOffset;
@@ -348,9 +360,12 @@ const TimeMarkers = (function() {
     const SYSTEMS = {
         quarter: {
             name: 'quarter',
-            getRadii: (zoom, dist) => zoom >= 3 
-                ? { outer: RADII_CONFIG.quarter.outer(dist), inner: RADII_CONFIG.quarter.inner(), label: RADII_CONFIG.quarter.label(dist) }
-                : { outer: dist*0.5, inner: null, label: dist*0.25 },
+            /** Zoom-invariant: same rings at all zoom levels; only which units render changes. */
+            getRadii: (_zoom, dist) => ({
+                outer: RADII_CONFIG.quarter.outer(dist),
+                inner: RADII_CONFIG.quarter.inner(),
+                label: RADII_CONFIG.quarter.label(dist)
+            }),
             // For zoom 3+ always show all 4 quarters of the selected year
             getUnits: (zoom, state) => {
                 const year = state.selectedYear;
@@ -375,9 +390,12 @@ const TimeMarkers = (function() {
         },
         month: {
             name: 'month',
-            getRadii: (zoom, dist) => zoom >= 3
-                ? { outer: RADII_CONFIG.month.outer(dist), inner: RADII_CONFIG.month.inner(dist), label: RADII_CONFIG.month.label(dist) }
-                : { outer: dist*0.75, inner: dist*0.5, label: dist*0.75 },
+            /** Zoom-invariant: same rings at all zoom levels; only which units render changes. */
+            getRadii: (_zoom, dist) => ({
+                outer: RADII_CONFIG.month.outer(dist),
+                inner: RADII_CONFIG.month.inner(dist),
+                label: RADII_CONFIG.month.label(dist)
+            }),
             // For zoom 3+ always show all 12 months of the selected year
             getUnits: (zoom, state) => {
                 const year = state.selectedYear;
@@ -432,23 +450,59 @@ const TimeMarkers = (function() {
     // ============================================
     // SIMPLIFIED FRAME CREATION
     // ============================================
+
+    /** Year-zoom intro: only draw marker units whose calendar start is at or before selected time (Earth “draws” ticks). */
+    function tourProgressiveIncludeUnitStart(unitStartMs, progressiveMs) {
+        if (progressiveMs == null || typeof progressiveMs !== 'number' || isNaN(progressiveMs)) return true;
+        return unitStartMs <= progressiveMs;
+    }
     
     function createTimeFrame(config) {
-        const { unitType, zoomLevel, outerRadius, innerRadius, earthDistance, timeState, 
-                unitNames, getUnitsToShow, getUnitDate, isCurrentUnit, isSelectedUnit, 
-                skipLabels = false, labelRadius = null, getUnitCenterDate } = config;
-        
+        const {
+            unitType,
+            zoomLevel,
+            outerRadius,
+            innerRadius,
+            timeState,
+            unitNames,
+            getUnitsToShow,
+            getUnitDate,
+            isCurrentUnit,
+            isSelectedUnit,
+            skipLabels = false,
+            labelRadius = null,
+            getUnitCenterDate,
+            tourMarkerStaged = false,
+            tourProgressiveMarkerMs = null
+        } = config;
+
         // Label visibility is controlled purely by zoom level; the full-year toggle
         // only affects which days are generated, not which labels are allowed.
-        const showText = !skipLabels && (
-            (unitType === 'quarter' && zoomLevel >= 3) ||
-            (unitType === 'month' && zoomLevel >= 4) ||
-            (unitType === 'week' && zoomLevel >= 5) ||
-            (unitType === 'day' && zoomLevel >= 7)
-        );
+        const showText =
+            !skipLabels &&
+            ((unitType === 'quarter' && zoomLevel >= 3) ||
+                (unitType === 'month' && (zoomLevel >= 4 || (zoomLevel === 3 && tourMarkerStaged))) ||
+                (unitType === 'week' && zoomLevel >= 5) ||
+                (unitType === 'day' && zoomLevel >= 7));
         
-        const earth = PLANET_DATA.find(p => p.name === 'Earth');
-        const unitsToShow = getUnitsToShow(zoomLevel, timeState);
+        let unitsToShow = getUnitsToShow(zoomLevel, timeState);
+        if (tourProgressiveMarkerMs != null && zoomLevel === 3 && (unitType === 'quarter' || unitType === 'month')) {
+            unitsToShow = unitsToShow.filter((unitInfo) => {
+                let unitIndex, unitYear;
+                if (unitInfo instanceof Date) {
+                    unitIndex = unitInfo;
+                    unitYear = unitInfo.getFullYear();
+                } else if (typeof unitInfo === 'object' && unitInfo !== null) {
+                    unitIndex = unitInfo.unit !== undefined ? unitInfo.unit : unitInfo.index;
+                    unitYear = unitInfo.year || timeState.selectedYear;
+                } else {
+                    unitIndex = unitInfo;
+                    unitYear = timeState.selectedYear;
+                }
+                const unitStartDate = getUnitDate(unitInfo, unitIndex, unitYear);
+                return unitStartDate.getTime() <= tourProgressiveMarkerMs;
+            });
+        }
         
         // Create lines and labels
         unitsToShow.forEach((unitInfo, i) => {
@@ -496,17 +550,11 @@ const TimeMarkers = (function() {
                 prevHasOffset = calculateOffset(unitType, zoomLevel, timeState);
             }
             
-            // Line radii - Zoom 3 now uses same system as Zoom 4+
+            // Spoke radii: fixed to this unit's ring. Quarter-boundary month ticks from Sun (0) to month.outer only.
             let startRadius = innerRadius || 0;
-            let endRadius = outerRadius;
-            if (zoomLevel >= 3) {
-                if (unitType === 'month' && typeof unitIndex === 'number' && unitIndex % 3 === 0 && unitIndex > 0) {
-                    startRadius = 0; // Quarter boundaries (end of previous quarter)
-                    endRadius = earthDistance; // Extend to Earth's worldline
-                }
-                if (unitType === 'week' && zoomLevel >= 7) {
-                    endRadius = earthDistance;
-                }
+            const endRadius = outerRadius;
+            if (unitType === 'month' && typeof unitIndex === 'number' && unitIndex % 3 === 0 && unitIndex > 0) {
+                startRadius = 0;
             }
             
             // Create line using SceneGeometry
@@ -533,6 +581,10 @@ const TimeMarkers = (function() {
             
             const line = new THREE.Line(geometry, material);
             line.renderOrder = 4;
+            if (tourMarkerStaged && zoomLevel === 3 && tourProgressiveMarkerMs == null) {
+                if (unitType === 'quarter') line.userData.circaevumTourRevealTier = 4;
+                else if (unitType === 'month') line.userData.circaevumTourRevealTier = 5;
+            }
             scene.add(line);
             timeMarkers.push(line);
             
@@ -577,7 +629,15 @@ const TimeMarkers = (function() {
                     if ((zoomLevel === 8 || zoomLevel === 9) && (unitType === 'quarter' || unitType === 'month' || unitType === 'week' || unitType === 'day')) {
                     }
                     const textZoom = (unitType === 'quarter' || unitType === 'month') ? 4 : (unitType === 'week' ? 5 : zoomLevel);
-                    createTextLabel(labelText, labelHeight, calcLabelRadius, textZoom, labelAngle, labelColor, false, 0.85);
+                    const labelTier =
+                        tourMarkerStaged && zoomLevel === 3 && tourProgressiveMarkerMs == null
+                            ? unitType === 'quarter'
+                                ? 4
+                                : unitType === 'month'
+                                  ? 5
+                                  : undefined
+                            : undefined;
+                    createTextLabel(labelText, labelHeight, calcLabelRadius, textZoom, labelAngle, labelColor, false, 0.85, labelTier);
                 }
             }
         });
@@ -587,7 +647,7 @@ const TimeMarkers = (function() {
     // QUARTER SYSTEM (Simplified)
     // ============================================
     
-    function createQuarterSystem(earthDistance, timeState, zoomLevel) {
+    function createQuarterSystem(earthDistance, timeState, zoomLevel, tourMarkerStaged, tourProgressiveMs) {
         const system = SYSTEMS.quarter;
         const radii = system.getRadii(zoomLevel, earthDistance);
         
@@ -599,7 +659,9 @@ const TimeMarkers = (function() {
             quartersToShow.forEach(qInfo => {
                 const qIndex = typeof qInfo === 'object' ? qInfo.index : qInfo;
                 const qYear = typeof qInfo === 'object' ? qInfo.year : timeState.selectedYear;
-                
+                const qStartMs = new Date(qYear, qIndex * 3, 1, 0, 0, 0, 0).getTime();
+                if (!tourProgressiveIncludeUnitStart(qStartMs, tourProgressiveMs)) return;
+
                 // Use calculateDateHeight to match actual line positions
                 const quarterStartMonth = qIndex * 3;
                 const quarterStartHeight = calculateDateHeight(qYear, quarterStartMonth, 1, 0);
@@ -636,6 +698,9 @@ const TimeMarkers = (function() {
                 });
                 const curveLine = new THREE.Line(curveGeometry, curveMaterial);
                 curveLine.renderOrder = 4;
+                if (tourMarkerStaged && zoomLevel === 3 && tourProgressiveMs == null) {
+                    curveLine.userData.circaevumTourRevealTier = qIndex === 0 ? 1 : 2;
+                }
                 scene.add(curveLine);
                 timeMarkers.push(curveLine);
             });
@@ -646,14 +711,15 @@ const TimeMarkers = (function() {
             zoomLevel,
             outerRadius: radii.outer,
             innerRadius: radii.inner,
-            earthDistance,
             timeState,
             unitNames: system.names,
             getUnitsToShow: system.getUnits,
             getUnitDate: system.getDate,
             isCurrentUnit: system.isCurrent,
             isSelectedUnit: system.isSelected,
-            labelRadius: radii.label
+            labelRadius: radii.label,
+            tourMarkerStaged: !!tourMarkerStaged,
+            tourProgressiveMarkerMs: tourProgressiveMs
         });
     }
 
@@ -661,7 +727,7 @@ const TimeMarkers = (function() {
     // MONTH SYSTEM (Simplified)
     // ============================================
     
-    function createMonthSystem(earthDistance, timeState, zoomLevel) {
+    function createMonthSystem(earthDistance, timeState, zoomLevel, tourMarkerStaged, tourProgressiveMs) {
         const system = SYSTEMS.month;
         const radii = system.getRadii(zoomLevel, earthDistance);
         
@@ -673,7 +739,12 @@ const TimeMarkers = (function() {
             monthsToShow.forEach(mInfo => {
                 const mIndex = typeof mInfo === 'object' ? mInfo.index : mInfo;
                 const mYear = typeof mInfo === 'object' ? mInfo.year : timeState.selectedYear;
-                
+                const mStartMs =
+                    mIndex === 12
+                        ? new Date(mYear + 1, 0, 1, 0, 0, 0, 0).getTime()
+                        : new Date(mYear, mIndex, 1, 0, 0, 0, 0).getTime();
+                if (!tourProgressiveIncludeUnitStart(mStartMs, tourProgressiveMs)) return;
+
                 // Use calculateDateHeight to match actual line positions
                 // Handle month 12 (next year boundary)
                 let monthStartHeight, monthEndHeight;
@@ -715,6 +786,9 @@ const TimeMarkers = (function() {
                 });
                 const curveLine = new THREE.Line(curveGeometry, curveMaterial);
                 curveLine.renderOrder = 4;
+                if (tourMarkerStaged && zoomLevel === 3 && tourProgressiveMs == null) {
+                    curveLine.userData.circaevumTourRevealTier = 5;
+                }
                 scene.add(curveLine);
                 timeMarkers.push(curveLine);
             });
@@ -725,14 +799,15 @@ const TimeMarkers = (function() {
             zoomLevel,
             outerRadius: radii.outer,
             innerRadius: radii.inner,
-            earthDistance,
             timeState,
             unitNames: system.names,
             getUnitsToShow: system.getUnits,
             getUnitDate: system.getDate,
             isCurrentUnit: system.isCurrent,
             isSelectedUnit: system.isSelected,
-            labelRadius: radii.label
+            labelRadius: radii.label,
+            tourMarkerStaged: !!tourMarkerStaged,
+            tourProgressiveMarkerMs: tourProgressiveMs
         });
     }
 
@@ -884,7 +959,6 @@ const TimeMarkers = (function() {
             zoomLevel,
             outerRadius,
             innerRadius,
-            earthDistance,
             timeState,
             unitNames: getWeekLabelText,
             getUnitsToShow: getWeeksToShow,
@@ -1115,7 +1189,6 @@ const TimeMarkers = (function() {
             zoomLevel,
             outerRadius,
             innerRadius,
-            earthDistance,
             timeState,
             unitNames: getDayLabelText,
             getUnitsToShow: getDaysToShow,
@@ -1257,7 +1330,7 @@ const TimeMarkers = (function() {
         });
     }
     
-    function createYearMarker(timeState, zoomLevel) {
+    function createYearMarker(timeState, zoomLevel, tourMarkerStaged, tourProgressiveMs) {
         // Create a year marker - size varies by zoom level
         const markerConfig = ZOOM_LEVELS[zoomLevel || 3];
         const baseLineLength = markerConfig.height; // Full height span
@@ -1290,13 +1363,27 @@ const TimeMarkers = (function() {
         });
         const line = new THREE.Line(lineGeometry, lineMaterial);
         line.renderOrder = 4;
+        if (tourMarkerStaged && zoomLevel >= 3 && tourProgressiveMs == null) {
+            line.userData.circaevumTourRevealTier = 3;
+        }
         scene.add(line);
         timeMarkers.push(line);
         
         // Zoom 1 uses half text size (sizeMultiplier 1.0 instead of 2.0)
         const textSizeMultiplier = (zoomLevel === 1) ? 1.0 : 2.0;
         const textZoom = zoomLevel || 3;
-        createTextLabel(selectedYear.toString(), yearHeight, lineRadius, textZoom, 0, isCurrent ? 'red' : (isSelected ? 'blue' : false), true, textSizeMultiplier);
+        const yTier = tourMarkerStaged && zoomLevel >= 3 && tourProgressiveMs == null ? 3 : undefined;
+        createTextLabel(
+            selectedYear.toString(),
+            yearHeight,
+            lineRadius,
+            textZoom,
+            0,
+            isCurrent ? 'red' : (isSelected ? 'blue' : false),
+            true,
+            textSizeMultiplier,
+            yTier
+        );
     }
 
     // ============================================
@@ -1437,13 +1524,10 @@ const TimeMarkers = (function() {
             createTextLabel(hourLabel, y, labelRadius, zoomLevel, labelAngle, labelColor, false, 0.8);
         }
         
-        // In landing/clock zoom, Earth Hands are rendered by main.js;
-        // suppress legacy thin red hour line to avoid duplicate indicators.
-        if (zoomLevel !== 0 && zoomLevel !== 9) {
-            // Draw red line from Earth's center to the selected hour
-            // Always use selectedHour which reflects currentHourInDay (updated by A/D keys)
-            // selectedHour is calculated from timeState.selectedHourInDay which includes currentHourInDay
-            const hourToDisplay = selectedHour; // Always use selected hour (which is currentHourInDay when not shifted)
+        // Landing / day / clock: Earth hour hands (red = now, blue = selected) come from EarthGlobe in main.js.
+        if (zoomLevel !== 0 && zoomLevel !== 8 && zoomLevel !== 9) {
+            // Thin red spoke: wall-clock hour on the spiral (not navigation selected hour).
+            const hourToDisplay = currentHour;
             const currentT = hourToDisplay / 24;
             const currentHourRadians = (hourToDisplay / 24) * Math.PI * 2;
             // Flip direction to match label direction (counter-clockwise)
@@ -1488,6 +1572,10 @@ const TimeMarkers = (function() {
     function createTimeMarkers(zoomLevel, options) {
         timeMarkers.forEach(m => scene.remove(m));
         timeMarkers.length = 0;
+
+        if (options && options.tourHideAll === true) {
+            return;
+        }
         
         const fullYearScope = options && options.fullYearScope === true;
         if (fullYearScope) {
@@ -1506,20 +1594,29 @@ const TimeMarkers = (function() {
                 timeState.selectedYear = _fullYearYear;
             }
 
+            const tourMarkerStaged = options && options.tourYearMarkerStaged === true;
+            const tourProgressiveMs =
+                options && typeof options.tourProgressiveMarkerDateMs === 'number' && !isNaN(options.tourProgressiveMarkerDateMs)
+                    ? options.tourProgressiveMarkerDateMs
+                    : null;
+            const tourMarkerDensity = (options && options.tourMarkerDensity) || 'all';
+
             if (zoomLevel === 1) {
                 createCenturyMarkers(timeState);
             } else if (zoomLevel === 2) {
                 createDecadeMarkers(timeState);
             } else if (zoomLevel >= 3) {
-                createYearMarker(timeState, zoomLevel);
-                createQuarterSystem(earthDistance, timeState, zoomLevel);
-                createMonthSystem(earthDistance, timeState, zoomLevel);
+                createYearMarker(timeState, zoomLevel, tourMarkerStaged, tourProgressiveMs);
+                createQuarterSystem(earthDistance, timeState, zoomLevel, tourMarkerStaged, tourProgressiveMs);
+                if (tourMarkerDensity !== 'quarters') {
+                    createMonthSystem(earthDistance, timeState, zoomLevel, tourMarkerStaged, tourProgressiveMs);
+                }
             }
-            if (zoomLevel >= 4) {
+            if (zoomLevel >= 4 && (tourMarkerDensity === 'all' || tourMarkerDensity === 'weeks' || tourMarkerDensity === 'days')) {
                 createWeekSystem(earthDistance, timeState, zoomLevel);
             }
             // Full-year scope only affects the day system (whole-year days vs quarter/month scope).
-            if (zoomLevel >= 6 || fullYearScope) {
+            if ((zoomLevel >= 6 || fullYearScope) && (tourMarkerDensity === 'all' || tourMarkerDensity === 'days')) {
                 createDaySystem(earthDistance, timeState, fullYearScope ? 7 : zoomLevel);
             }
             if (zoomLevel === 8 || zoomLevel === 9) {
@@ -1549,14 +1646,48 @@ const TimeMarkers = (function() {
         currentWeekInMonth = newOffsets.currentWeekInMonth;
         currentQuarter = newOffsets.currentQuarter;
         currentDayInWeek = newOffsets.currentDayInWeek;
+        currentDayOfMonth = newOffsets.currentDayOfMonth !== undefined ? newOffsets.currentDayOfMonth : currentDayOfMonth;
         currentHourInDay = newOffsets.currentHourInDay; // Update currentHourInDay when A/D is pressed
     }
 
     /**
+     * Numeric radii for all marker bands at Earth distance W (single source for event-renderer and list UI).
+     */
+    function getCanonicalRadialZones(earthDistance) {
+        const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        return {
+            quarter: {
+                outer: RADII_CONFIG.quarter.outer(W),
+                inner: RADII_CONFIG.quarter.inner(),
+                label: RADII_CONFIG.quarter.label(W)
+            },
+            month: {
+                outer: RADII_CONFIG.month.outer(W),
+                inner: RADII_CONFIG.month.inner(W),
+                label: RADII_CONFIG.month.label(W)
+            },
+            week: {
+                outer: RADII_CONFIG.week.outer(W),
+                inner: RADII_CONFIG.week.inner(W),
+                label: RADII_CONFIG.week.label(W)
+            },
+            day: {
+                outer: RADII_CONFIG.day.outer(W),
+                inner: RADII_CONFIG.day.inner(W),
+                label: RADII_CONFIG.day.label(W),
+                dayName: RADII_CONFIG.day.dayName(W)
+            },
+            hour: {
+                spiral: RADII_CONFIG.hour.spiral(W)
+            }
+        };
+    }
+
+    /**
      * List-context hoop radius: **outer** curve of the RADII band for this zoom (same frame as time markers).
-     * z3 Year: quarter.outer (W/4). z4: month.outer. z5–6: week.outer. z7: week-style day.outer (3W/4).
+     * z3 Year: quarter.outer (W/4). z4: month.outer. z5–6: week.outer. z7: day.outer (3W/4).
      * z8 Day / z9 Clock: Earth orbit radius W (hoop meets Earth’s worldline).
-     * z1–2: coarse quarter.outer (SYSTEMS.quarter for zoom < 3). z0: day.inner (outer edge of spiral→day-inner band).
+     * z1–2: quarter.outer (same rings as all zooms). z0: day.inner (outer edge of spiral→day-inner band).
      */
     function getListContextRingRadiusForZoom(zoomLevel, earthDistance) {
         const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
@@ -1571,8 +1702,7 @@ const TimeMarkers = (function() {
         if (z <= 0) {
             rOuter = dayInner;
         } else if (z <= 2) {
-            const qr = SYSTEMS.quarter.getRadii(z, W);
-            rOuter = qr.outer;
+            rOuter = qOuter;
         } else if (z === 3) {
             rOuter = qOuter;
         } else if (z === 4) {
@@ -1595,6 +1725,7 @@ const TimeMarkers = (function() {
         init,
         createTimeMarkers,
         updateOffsets,
-        getListContextRingRadiusForZoom
+        getListContextRingRadiusForZoom,
+        getCanonicalRadialZones
     };
 })();

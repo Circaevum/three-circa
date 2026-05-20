@@ -90,12 +90,25 @@ const MoonMechanics = (function () {
      * Moon XZ from mean synodic phase (Sun at origin): new = toward Sun, full = away, quarters at ±90°.
      * Use for the lunar worldline ribbon so new/full markers sit on conjunction / opposition geometry.
      */
-    function moonXZSynodicAtHeight(height, currentDateHeight, earth, separation, atDate) {
+    function moonXZSynodicAtHeight(height, currentDateHeight, earth, separation, atDate, earthXZOverride) {
         const sep = separation != null ? separation : cfg().offsetFromEarth;
         const e = earth || getEarth();
-        const exz = earthXZAtHeight(height, currentDateHeight, e);
-        const ex = exz.x;
-        const ez = exz.z;
+        let ex;
+        let ez;
+        if (
+            earthXZOverride &&
+            typeof earthXZOverride.x === 'number' &&
+            typeof earthXZOverride.z === 'number' &&
+            !isNaN(earthXZOverride.x) &&
+            !isNaN(earthXZOverride.z)
+        ) {
+            ex = earthXZOverride.x;
+            ez = earthXZOverride.z;
+        } else {
+            const exz = earthXZAtHeight(height, currentDateHeight, e);
+            ex = exz.x;
+            ez = exz.z;
+        }
         const r = Math.hypot(ex, ez);
         const towardSunX = r < 1e-10 ? -1 : -ex / r;
         const towardSunZ = r < 1e-10 ? 0 : -ez / r;
@@ -122,6 +135,22 @@ const MoonMechanics = (function () {
     }
 
     /**
+     * Moon XZ on a circle around the **rendered Earth mesh** using the sidereal month from `atDate`.
+     * Matches the “Moon orbits Earth” read at lunar zoom; avoids synodic frame + ephemeris Earth mismatch.
+     */
+    function moonXZPedagogicalSiderealFromEarthMesh(earthPlanet, atDate, separation) {
+        if (!earthPlanet || !earthPlanet.position) return { x: 0, z: 0 };
+        const sep = separation != null ? separation : cfg().offsetFromEarth;
+        const ex = earthPlanet.position.x;
+        const ez = earthPlanet.position.z;
+        const theta = moonOrbitAngleRad(atDate);
+        return {
+            x: ex + sep * Math.cos(theta),
+            z: ez + sep * Math.sin(theta)
+        };
+    }
+
+    /**
      * Moon sphere + dashed Earth–Moon segment at selected time (for main Circaevum scene).
      * @returns {THREE.Object3D[]} objects added to scene (for removal on rebuild)
      */
@@ -143,14 +172,26 @@ const MoonMechanics = (function () {
 
         const earthPlanet = opts.earthPlanet;
         const earthRadius =
-            earthPlanet.geometry && earthPlanet.geometry.parameters && earthPlanet.geometry.parameters.radius != null
-                ? earthPlanet.geometry.parameters.radius
-                : earth.size * planetScaleFactor;
+            earthPlanet.userData && typeof earthPlanet.userData.globeRadius === 'number'
+                ? earthPlanet.userData.globeRadius
+                : earthPlanet.userData &&
+                    earthPlanet.userData.earthMesh &&
+                    earthPlanet.userData.earthMesh.geometry &&
+                    earthPlanet.userData.earthMesh.geometry.parameters &&
+                    earthPlanet.userData.earthMesh.geometry.parameters.radius != null
+                  ? earthPlanet.userData.earthMesh.geometry.parameters.radius
+                  : earthPlanet.geometry &&
+                      earthPlanet.geometry.parameters &&
+                      earthPlanet.geometry.parameters.radius != null
+                    ? earthPlanet.geometry.parameters.radius
+                    : earth.size * planetScaleFactor;
 
         const selDate = opts.selectedDate instanceof Date && !isNaN(opts.selectedDate.getTime())
             ? opts.selectedDate
             : new Date();
-        const { x: mex, z: mez } = moonXZSynodicAtHeight(selH, refH, earth, null, selDate);
+        const ex = earthPlanet.position.x;
+        const ez = earthPlanet.position.z;
+        const { x: mex, z: mez } = moonXZPedagogicalSiderealFromEarthMesh(earthPlanet, selDate, null);
         const moonR = Math.max(c.sphereRadiusMin, earthRadius * c.sphereRadiusEarthFraction);
         const moonGeo = new T.SphereGeometry(moonR, 24, 24);
         const moonMat = new T.MeshStandardMaterial({
@@ -166,7 +207,7 @@ const MoonMechanics = (function () {
         opts.sceneContentGroup.add(moonMesh);
         out.push(moonMesh);
 
-        const { x: eex, z: eez } = earthXZAtHeight(selH, refH, earth);
+        const { x: eex, z: eez } = { x: ex, z: ez };
         const dashGeom = new T.BufferGeometry();
         dashGeom.setAttribute('position', new T.Float32BufferAttribute([eex, selH, eez, mex, selH, mez], 3));
         const dashMat = new T.LineDashedMaterial({
@@ -192,6 +233,7 @@ const MoonMechanics = (function () {
         moonOrbitAngleRad,
         moonXZAtHeight,
         moonXZSynodicAtHeight,
+        moonXZPedagogicalSiderealFromEarthMesh,
         blendXZ,
         addPedagogicalMoon,
         getOffset: function () {

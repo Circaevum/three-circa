@@ -22,8 +22,10 @@
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="login">Log in</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w1">Load Edge Esmeralda W1 samples</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="keyboard-controls">Keyboard Controls</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="about">About</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="replay-intro">Replay intro tour</button>
                 </div>
             </div>
         </div>
@@ -66,6 +68,7 @@
         <div class="event-list-horizon-ring-row" id="event-list-horizon-ring-row">
           <svg id="event-list-horizon-ring" class="event-list-horizon-ring" viewBox="0 0 40 40" aria-hidden="true">
             <circle class="event-list-horizon-ring-track" cx="20" cy="20" r="15.915" pathLength="100" fill="none" stroke-width="4" />
+            <circle id="event-list-horizon-arc-inner" class="event-list-horizon-ring-arc-inner" cx="20" cy="20" r="8" pathLength="100" fill="none" stroke-width="3" stroke-linecap="round" transform="rotate(-90 20 20)" stroke-dasharray="100 0" />
             <circle id="event-list-horizon-arc" class="event-list-horizon-ring-arc" cx="20" cy="20" r="15.915" pathLength="100" fill="none" stroke-width="4" stroke-linecap="round" transform="rotate(-90 20 20)" stroke-dasharray="0 100" />
           </svg>
           <div class="event-list-horizon-ring-text">
@@ -77,6 +80,7 @@
             <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
             <button type="button" id="events-panel-draw-all" class="strip-btn">Draw all</button>
             <button type="button" id="test-event-lines-btn" class="strip-btn">Test event lines</button>
+            <button type="button" id="edge-esmeralda-w1-btn" class="strip-btn" title="~160 parallel-friendly sessions, June 1–7 2026 PDT">Edge Esmeralda W1</button>
         </div>
         <div id="events-panel-list" class="event-list-panel-list"></div>
         <div id="event-list-panel-footer" class="event-list-panel-footer" style="display: none;">
@@ -158,6 +162,21 @@
                     <path d="M9.25 15.2c1.2 1 3.1 1.1 4.4.15"/>
                 </svg>
             </button>
+            <button type="button" class="scene-icon-btn" id="events-plot-lines-toggle" title="Events: filled polygon ribbons. Click for simple lines (faster)." aria-label="Toggle event ribbons between filled polygons and simple lines">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 18c3-6 5-9 8-12 3 3 5 6 8 12"/>
+                    <path d="M6 16h12" opacity="0.45"/>
+                    <path d="M7 8h10v8H7z" opacity="0.35" fill="currentColor" stroke="none"/>
+                </svg>
+            </button>
+            <button type="button" class="scene-icon-btn" id="context-disc-toggle" title="Context disc: off" aria-label="Show context disc (list span annulus; inside inner hoop = not in list)" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <ellipse cx="12" cy="12" rx="9" ry="4.5" opacity="0.55"/>
+                    <ellipse cx="12" cy="12" rx="9" ry="4.5"/>
+                    <path d="M3 12h18"/>
+                    <path d="M12 3v2M12 19v2"/>
+                </svg>
+            </button>
             <button type="button" class="scene-icon-btn active" id="moon-layer-toggle" title="Moon, lunar path &amp; Artemis II (M)" aria-label="Toggle Moon mesh, lunar worldline, and Artemis II trajectory (M)">
                 <!-- Cratered disk: distinct from light/dark theme crescent moon -->
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -219,6 +238,12 @@
                         <button type="button" class="circadian-scope-btn active" id="circadian-events-scope-day" title="Show only events on the selected calendar day">Selected day</button>
                         <button type="button" class="circadian-scope-btn" id="circadian-events-scope-year" title="Show sub-day events across the whole selected year">Whole year</button>
                     </div>
+                    <div class="offday-line-dim-row">
+                        <div class="scene-slider-heading">Off-day line dim</div>
+                        <div class="scene-slider-caption"><span>Bright</span><span>Dim</span></div>
+                        <input type="range" id="off-selected-line-dim-slider" min="0" max="1" step="0.05" value="1" aria-label="Dim short event lines outside the selected day or hour" title="0 = off-day lines match selected day brightness; 100 = maximum dim">
+                        <div class="offday-line-dim-hint" id="off-selected-line-dim-hint" aria-live="polite">Off-day line dim: 100%</div>
+                    </div>
                 </div>
             </div>
             <div class="scene-slider-wrap scene-slider-wrap--timeline" id="flatten-slider-wrap" style="display: none;" aria-label="Year timeline flatten">
@@ -242,8 +267,19 @@
         >Powered by Circaevum</a>
     </div>
     
-    <div class="info-panel">
-        <h3>ORBITAL DATA</h3>
+    <div class="info-panel" id="orbital-data-panel" aria-labelledby="orbital-data-heading">
+        <div class="info-panel-head">
+            <h3 id="orbital-data-heading">ORBITAL DATA</h3>
+            <div class="info-panel-head-actions">
+                <button type="button" class="info-panel-toggle" id="orbital-data-minimize" title="Collapse orbital data" aria-label="Collapse orbital data panel" aria-expanded="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>
+                </button>
+                <button type="button" class="info-panel-toggle" id="orbital-data-hide" title="Hide orbital data" aria-label="Hide orbital data panel">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="info-panel-body" id="orbital-data-body">
         <div class="info-row">
             <span class="info-label">Current Time:</span>
             <span class="info-value" id="current-time">--</span>
@@ -276,7 +312,12 @@
             <span class="info-label">Ephemeris Debug:</span>
             <span class="info-value" id="ephemeris-debug">--</span>
         </div>
+        </div>
     </div>
+    <button type="button" class="info-panel-restore" id="orbital-data-restore" title="Show orbital data" aria-label="Show orbital data panel" hidden>
+        <span class="info-panel-restore-label">DATA</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12l7-7 7 7"/></svg>
+    </button>
     </div>
     <!-- /xr-ui-layer -->
 
@@ -448,7 +489,7 @@
             </div>
             <div class="zoom-option" data-zoom="0">
                 <div class="zoom-number">0</div>
-                <div class="zoom-desc">Moment</div>
+                <div class="zoom-desc">Hour</div>
             </div>
         </div>
     </div>
@@ -476,7 +517,20 @@
     
     <!-- Astro scaffold (feature-flagged ephemeris pipeline) -->
     <script src="circaevum/js/astro/time-scales.js"></script>
+    <!-- astronomy.min.js is a CommonJS build: needs `exports` in browser; provider expects global `Astronomy`. -->
+    <script>
+        (function () {
+            var g = typeof globalThis !== 'undefined' ? globalThis : window;
+            if (typeof g.exports === 'undefined') g.exports = {};
+        })();
+    </script>
     <script src="circaevum/js/vendor/astronomy-engine/astronomy.min.js"></script>
+    <script>
+        (function () {
+            var g = typeof globalThis !== 'undefined' ? globalThis : window;
+            if (g.exports && typeof g.Astronomy === 'undefined') g.Astronomy = g.exports;
+        })();
+    </script>
     <script src="circaevum/js/astro/providers/circular-provider.js"></script>
     <script src="circaevum/js/astro/providers/kepler-provider.js"></script>
     <script src="circaevum/js/astro/providers/astronomy-engine-provider.js"></script>
@@ -484,6 +538,7 @@
     <script src="circaevum/js/astro/state-to-scene.js"></script>
     <script src="circaevum/js/astro/trajectory-sampler.js"></script>
     <script src="circaevum/js/astro/ephemeris-engine.js"></script>
+    <script src="circaevum/js/geo/earth-globe.js"></script>
     
     <!-- Utils (geometry helpers) -->
     <script src="circaevum/js/utils/geometry-helpers.js"></script>
@@ -503,6 +558,7 @@
     
     <!-- Models (VEVENT format) -->
     <script src="circaevum/js/models/vevent.js"></script>
+    <script src="circaevum/js/data/edge-esmeralda-week1-samples.js"></script>
     
     <!-- html2canvas for XR in-scene UI panel (capture DOM to texture) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>
@@ -524,6 +580,10 @@
     <script src="circaevum/js/ui/panels.js"></script>
     <!-- Share state: get/apply for "Open full app" (Option B – same-tab navigate with state in URL) -->
     <script src="circaevum/js/ui/share-state.js"></script>
+    <!-- Intro tour: scripted steps + playbar (before intro.js) -->
+    <script src="circaevum/js/presentation/intro-tour.js"></script>
+    <!-- Intro: startup gate, prompt (uses CircaevumIntroTour when present) -->
+    <script src="circaevum/js/presentation/intro.js"></script>
     <!-- Embed API: when used as viewer (?viewer=1 or iframe), parent can send events via postMessage -->
     <script src="circaevum/js/ui/embed-api.js"></script>
     

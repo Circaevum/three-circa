@@ -12,6 +12,7 @@ const Worldlines = (function() {
     let currentYear, isLightMode, getSelectedTimeColor;
     let SceneGeometry;
     let calculateYearProgressForDate, getDaysInMonth;
+    let getSelectedDateTime;
     
     // ============================================
     // INITIALIZATION
@@ -29,7 +30,9 @@ const Worldlines = (function() {
         SceneGeometry = dependencies.SceneGeometry;
         calculateYearProgressForDate = dependencies.calculateYearProgressForDate;
         getDaysInMonth = dependencies.getDaysInMonth;
-        
+        getSelectedDateTime =
+            typeof dependencies.getSelectedDateTime === 'function' ? dependencies.getSelectedDateTime : null;
+
         // Initialize SceneGeometry if provided
         if (SceneGeometry && typeof SceneGeometry.init === 'function') {
             SceneGeometry.init({
@@ -169,6 +172,14 @@ const Worldlines = (function() {
     // WORLDLINE CREATION
     // ============================================
     
+    function setNarrativeClipYMax(meshes, yMax) {
+        if (!meshes || typeof yMax !== 'number' || isNaN(yMax)) return;
+        meshes.forEach((m) => {
+            const u = m && m.userData && m.userData.narrClipUniform;
+            if (u) u.value = yMax;
+        });
+    }
+
     /**
      * Create a worldline for a planet
      * @param {Object} planetData - Planet data with orbitalPeriod, startAngle, distance, color, name
@@ -176,54 +187,84 @@ const Worldlines = (function() {
      * @param {number} zoomLevel - Current zoom level
      * @returns {THREE.Mesh|THREE.Line} Ribbon mesh (preferred) or line fallback
      */
-    function createWorldline(planetData, timeYears, zoomLevel) {
+    function createWorldline(planetData, timeYears, zoomLevel, clipHeights) {
         // Safety check: ensure module is initialized
         if (!ZOOM_LEVELS || !SceneGeometry) {
             console.error('Worldlines module not initialized. Call Worldlines.init() first.');
             return null;
         }
-        
+
         const config = ZOOM_LEVELS[zoomLevel];
         if (!config) {
             console.error(`Invalid zoom level: ${zoomLevel}`);
             return null;
         }
-        
-        const currentDateHeight = SceneGeometry.getCurrentDateHeight(zoomLevel);
-        
-        // Validate currentDateHeight
-        if (isNaN(currentDateHeight)) {
+
+        const sceneCurrentHeight = SceneGeometry.getCurrentDateHeight(zoomLevel);
+        if (isNaN(sceneCurrentHeight)) {
             console.error('Worldlines: currentDateHeight is NaN, skipping worldline for', planetData.name);
             return null;
         }
-        
-        // Calculate worldline span based on zoom level
-        let startHeight, endHeight;
-        
-        if (zoomLevel === 1) { // Century - show full 2000-2100
+
+        const narrativeShaderClip =
+            clipHeights &&
+            clipHeights.narrativeShaderClip === true &&
+            typeof clipHeights.heightStart === 'number' &&
+            typeof clipHeights.heightEnd === 'number' &&
+            !isNaN(clipHeights.heightStart) &&
+            !isNaN(clipHeights.heightEnd);
+
+        let curveExtra = null;
+        let helicalReferenceHeight = sceneCurrentHeight;
+        if (
+            clipHeights &&
+            typeof clipHeights.phaseReferenceHeight === 'number' &&
+            !isNaN(clipHeights.phaseReferenceHeight)
+        ) {
+            helicalReferenceHeight = clipHeights.phaseReferenceHeight;
+            curveExtra = {};
+            if (typeof getSelectedDateTime === 'function') {
+                const sd = getSelectedDateTime();
+                if (sd instanceof Date && !isNaN(sd.getTime())) {
+                    curveExtra.referenceDate = sd;
+                }
+            }
+        }
+
+        let startHeight;
+        let endHeight;
+
+        if (narrativeShaderClip) {
+            let hs = clipHeights.heightStart;
+            let he = clipHeights.heightEnd;
+            if (hs > he) {
+                const tmp = hs;
+                hs = he;
+                he = tmp;
+            }
+            startHeight = hs;
+            endHeight = he;
+        } else if (zoomLevel === 1) {
             startHeight = getHeightForYear(2000, 1);
             endHeight = getHeightForYear(2100, 1);
-        } else if (zoomLevel === 2) { // Decade - span containing navigated year (not fixed 2020–2030)
+        } else if (zoomLevel === 2) {
             const y = typeof currentYear === 'number' ? currentYear : new Date().getFullYear();
             const decadeStart = Math.floor(y / 10) * 10;
             startHeight = getHeightForYear(decadeStart, 1);
             endHeight = getHeightForYear(decadeStart + 10, 1);
-        } else if (zoomLevel === 3) { // Year - show full year with current date
+        } else if (zoomLevel === 3) {
             const yearHeight = 100;
             const now = new Date();
             let yearProgress;
-            
+
             if (typeof calculateYearProgressForDate === 'function') {
                 yearProgress = calculateYearProgressForDate(now.getFullYear(), now.getMonth(), now.getDate(), 0);
             } else {
-                // Fallback calculation
-                const daysInMonth = (typeof getDaysInMonth === 'function') 
-                    ? getDaysInMonth(now.getFullYear(), now.getMonth()) 
-                    : 30;
+                const daysInMonth =
+                    typeof getDaysInMonth === 'function' ? getDaysInMonth(now.getFullYear(), now.getMonth()) : 30;
                 yearProgress = (now.getMonth() + (now.getDate() - 1) / daysInMonth) / 12;
             }
-            
-            // Validate yearProgress
+
             if (isNaN(yearProgress)) {
                 console.error('Worldlines: yearProgress is NaN for Zoom 3', {
                     year: now.getFullYear(),
@@ -232,34 +273,50 @@ const Worldlines = (function() {
                     calculateYearProgressForDate: typeof calculateYearProgressForDate,
                     getDaysInMonth: typeof getDaysInMonth
                 });
-                // Use fallback: assume middle of year
                 yearProgress = 0.5;
             }
-            
-            startHeight = currentDateHeight - (yearProgress * yearHeight);
+
+            startHeight = sceneCurrentHeight - yearProgress * yearHeight;
             endHeight = startHeight + yearHeight;
-            
-            // Validate calculated heights
+
             if (isNaN(startHeight) || isNaN(endHeight)) {
                 console.error('Worldlines: Invalid heights for Zoom 3', {
-                    currentDateHeight,
+                    sceneCurrentHeight,
                     yearProgress,
                     yearHeight,
                     startHeight,
                     endHeight
                 });
-                // Use fallback: full year around current date
-                startHeight = currentDateHeight - (yearHeight / 2);
-                endHeight = currentDateHeight + (yearHeight / 2);
+                startHeight = sceneCurrentHeight - yearHeight / 2;
+                endHeight = sceneCurrentHeight + yearHeight / 2;
             }
-        } else { // Higher zooms - show time span around current date
+        } else {
             const spanHeight = timeYears * 100;
-            const extensionFactor = 2.5; // Show 2.5x the span
-            startHeight = currentDateHeight - (spanHeight * extensionFactor / 2);
-            endHeight = currentDateHeight + (spanHeight * extensionFactor / 2);
+            const extensionFactor = 2.5;
+            startHeight = sceneCurrentHeight - (spanHeight * extensionFactor) / 2;
+            endHeight = sceneCurrentHeight + (spanHeight * extensionFactor) / 2;
         }
-        
-        // Validate heights before creating geometry
+
+        /** Intro / narrative: fixed helical span (non-shader height trim). */
+        if (
+            !narrativeShaderClip &&
+            clipHeights &&
+            typeof clipHeights.heightStart === 'number' &&
+            typeof clipHeights.heightEnd === 'number' &&
+            !isNaN(clipHeights.heightStart) &&
+            !isNaN(clipHeights.heightEnd)
+        ) {
+            let hs = clipHeights.heightStart;
+            let he = clipHeights.heightEnd;
+            if (hs > he) {
+                const tmp = hs;
+                hs = he;
+                he = tmp;
+            }
+            startHeight = hs;
+            endHeight = he;
+        }
+
         if (isNaN(startHeight) || isNaN(endHeight)) {
             console.error('Worldlines: startHeight or endHeight is NaN', {
                 startHeight,
@@ -269,47 +326,53 @@ const Worldlines = (function() {
             });
             return null;
         }
-        
-        // Generate curve points using SceneGeometry
-        const segments = zoomLevel >= 4 ? 400 : 200;
+
+        let segments = zoomLevel >= 4 ? 400 : 200;
+        if (clipHeights && clipHeights.tourLightSegments) {
+            segments = Math.min(segments, 72);
+        }
+
         const points = SceneGeometry.createHelicalCurve(
             startHeight,
             endHeight,
             planetData.distance,
-            currentDateHeight,
+            helicalReferenceHeight,
             planetData.orbitalPeriod,
             planetData.startAngle,
             segments,
-            planetData.name
+            planetData.name,
+            curveExtra
         );
-        
-        // Validate points array before creating geometry
+
         if (!points || points.length === 0) {
             console.error('Worldlines: createHelicalCurve returned empty points array');
             return null;
         }
-        
-        // Check for NaN in points array
+
         for (let i = 0; i < points.length; i++) {
             if (isNaN(points[i])) {
                 console.error('Worldlines: NaN detected in points array at index', i, 'for', planetData.name);
                 return null;
             }
         }
-        
+
         const isEarth = planetData.name === 'Earth';
-        const opacityVal = (isEarth && zoomLevel >= 3) ? 0.9 : SCENE_CONFIG.worldlineOpacity;
-        // Ribbon half-width in scene units (LineBasicMaterial.linewidth is ignored in WebGL).
+        const opacityVal = isEarth && zoomLevel >= 3 ? 0.9 : SCENE_CONFIG.worldlineOpacity;
         let halfWidth = Math.max(0.55, Math.min(5.8, planetData.distance * 0.027));
         if (zoomLevel === 1) halfWidth = Math.min(8.2, halfWidth * 1.82);
         else if (zoomLevel === 2) halfWidth *= 1.38;
         if (isEarth && zoomLevel >= 3) halfWidth *= 1.2;
+        if (clipHeights && clipHeights.tourLightSegments && !isEarth) {
+            halfWidth *= 0.92;
+        }
         if (isLightMode) halfWidth *= 1.12;
 
         const worldlineColor = adjustColorForLightMode(planetData.color, isLightMode);
         const centerFlat = Float32Array.from(points);
         const ribbonGeo = createRibbonStripGeometry(centerFlat, halfWidth);
         if (ribbonGeo) {
+            const THREE =
+                typeof global !== 'undefined' && global.THREE ? global.THREE : typeof window !== 'undefined' ? window.THREE : null;
             const material = new THREE.MeshBasicMaterial({
                 color: worldlineColor,
                 transparent: true,
@@ -320,15 +383,49 @@ const Worldlines = (function() {
                 polygonOffsetFactor: 1,
                 polygonOffsetUnits: 1
             });
+
+            let narrClipUniform = null;
+            if (narrativeShaderClip) {
+                const clipY0 =
+                    typeof clipHeights.initialClipYMax === 'number' && !isNaN(clipHeights.initialClipYMax)
+                        ? clipHeights.initialClipYMax
+                        : startHeight;
+                narrClipUniform = { value: clipY0 };
+                material.onBeforeCompile = (shader) => {
+                    shader.uniforms.uNarrClipYMax = narrClipUniform;
+                    shader.vertexShader = shader.vertexShader
+                        .replace('#include <common>', '#include <common>\nvarying float vNarrClipY;\n')
+                        .replace(
+                            '#include <project_vertex>',
+                            '{\nvec4 _narrWorldPos = modelMatrix * vec4( position, 1.0 );\nvNarrClipY = _narrWorldPos.y;\n}\n#include <project_vertex>'
+                        );
+                    if (shader.fragmentShader.includes('#include <clipping_planes_fragment>')) {
+                        shader.fragmentShader = shader.fragmentShader.replace(
+                            '#include <clipping_planes_fragment>',
+                            'uniform float uNarrClipYMax;\nvarying float vNarrClipY;\n#include <clipping_planes_fragment>\nif (vNarrClipY > uNarrClipYMax) discard;\n'
+                        );
+                    } else if (shader.fragmentShader.includes('void main() {')) {
+                        shader.fragmentShader = shader.fragmentShader.replace(
+                            'void main() {',
+                            'uniform float uNarrClipYMax;\nvarying float vNarrClipY;\nvoid main() {\n\tif (vNarrClipY > uNarrClipYMax) discard;\n'
+                        );
+                    }
+                };
+            }
+
             const mesh = new THREE.Mesh(ribbonGeo, material);
             mesh.renderOrder = 8;
-            mesh.userData = { type: 'PlanetWorldlineRibbon', planet: planetData.name };
+            mesh.userData = {
+                type: 'PlanetWorldlineRibbon',
+                planet: planetData.name,
+                narrClipUniform: narrClipUniform
+            };
             return mesh;
         }
 
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-        let lineWidth = (isEarth && zoomLevel >= 3) ? 3 : 2;
+        let lineWidth = isEarth && zoomLevel >= 3 ? 3 : 2;
         if (zoomLevel === 1) lineWidth += 4.5;
         const lineMat = new THREE.LineBasicMaterial({
             color: worldlineColor,
@@ -370,7 +467,8 @@ const Worldlines = (function() {
             planetData.orbitalPeriod,
             planetData.startAngle,
             segments,
-            planetData.name
+            planetData.name,
+            null
         );
         
         // Validate points before creating geometry
@@ -676,6 +774,7 @@ const Worldlines = (function() {
         init,
         createWorldline,
         createConnectorWorldline,
-        createMoonWorldline
+        createMoonWorldline,
+        setNarrativeClipYMax
     };
 })();
