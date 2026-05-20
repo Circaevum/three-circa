@@ -98,17 +98,241 @@
     return 5;
   }
 
+  /** Multi-day / ≥24h spans always keep filled ribbons (auto mode only affects sub-day events). */
+  function isLongTermEventSpanForPlotType(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    let endUse = end;
+    if (!endUse || !(endUse > start)) endUse = new Date(start.getTime() + 3600000);
+    return durationHoursBetween(start, endUse) >= 24;
+  }
+
+  /**
+   * Plot style per event. Auto: polygons on selected day for short events, lines on other days;
+   * long-term (≥24h) always polygons. Global HUD can force all lines or all polygons.
+   * @param {Date|null} start
+   * @param {Date|null} end
+   * @param {...Object} styleSources - layerConfig, lineStyle, etc.
+   */
+  function resolveEventPlotType(start, end) {
+    let mode = 'auto';
+    if (typeof global.getGlobalEventPlotType === 'function') {
+      mode = global.getGlobalEventPlotType();
+    }
+    if (start && !isNaN(start.getTime()) && isLongTermEventSpanForPlotType(start, end)) {
+      return 'polygon3d';
+    }
+    if (mode === 'lines') return 'lines';
+    if (mode === 'polygon3d' || mode === 'polygon2d') return 'polygon3d';
+    if (start && !isNaN(start.getTime()) && eventTouchesSelectedCalendarDay(start, end)) {
+      return 'polygon3d';
+    }
+    if (mode !== 'auto') {
+      for (let i = 2; i < arguments.length; i++) {
+        const src = arguments[i];
+        if (src && src.plotType) return src.plotType;
+      }
+    }
+    return 'lines';
+  }
+
   /** Match main.js: landing/month/week/day/clock show circadian helix ribbons and connectors. */
   function isCircadianHelixZoom(zl) {
     return zl === 0 || zl === 5 || zl === 7 || zl === 8 || zl === 9;
   }
 
-  /** While flatten squishes the annual timeline, short circadian geometry stays in world Y — parent to sceneContentGroup, not flattenableGroup. */
-  function shouldAttachShortCircadianToWorldGroup() {
-    if (typeof global.isFlattenTimeStraightenActive !== 'function' || !global.isFlattenTimeStraightenActive()) return false;
-    const circ = normalizedCircadianState();
-    if (circ === 'off') return false;
+  /** Week/day/clock zooms: short events use the vertical day-disk stack (same frame as gold rings). */
+  function isHelixZoomShortStackFrame() {
     return isCircadianHelixZoom(getZoomLevelForEvents());
+  }
+
+  /**
+   * Sub-day markers/ribbons share the same world-Y frame as {@link CircadianRenderer} day-disk rings
+   * (sceneContentGroup). flattenableGroup squashes Y and desyncs dots from the daily circles.
+   */
+  function shouldAttachShortCircadianToWorldGroup() {
+    return isHelixZoomShortStackFrame();
+  }
+
+  function resolveFlattenGroup(flattenGroup) {
+    if (flattenGroup) return flattenGroup;
+    if (typeof global.flattenableGroup !== 'undefined' && global.flattenableGroup) {
+      return global.flattenableGroup;
+    }
+    if (typeof global.sceneContentGroup !== 'undefined' && global.sceneContentGroup) {
+      return global.sceneContentGroup;
+    }
+    return null;
+  }
+
+  function resolveWorldGroup(worldGroup) {
+    if (worldGroup) return worldGroup;
+    if (typeof global.sceneContentGroup !== 'undefined' && global.sceneContentGroup) {
+      return global.sceneContentGroup;
+    }
+    return null;
+  }
+
+  /** Prefer sceneContentGroup so flatten mode does not squash timeline geometry. */
+  function resolveEventObjectParent(obj, flattenGroup, worldGroup) {
+    const flat = resolveFlattenGroup(flattenGroup);
+    const world = resolveWorldGroup(worldGroup);
+    if (!obj || !obj.userData) return flat || world || null;
+    if (obj.userData.circadianWorldSpaceLayer || obj.userData.useWorldSpaceGroup) {
+      return world || flat || null;
+    }
+    return flat || world || null;
+  }
+
+  function shouldSkipTemporalVividnessAtDayHelixZooms() {
+    const zl = getZoomLevelForEvents();
+    return zl === 0 || zl === 8 || zl === 9;
+  }
+
+  function shouldSkipTemporalVividnessForShortEvent() {
+    return shouldSkipTemporalVividnessAtDayHelixZooms();
+  }
+
+  /**
+   * Long-term ribbons stay on flattenableGroup so flatten mode can squash the timeline with them.
+   * (Short circadian stacks still use sceneContentGroup via {@link shouldAttachShortCircadianToWorldGroup}.)
+   */
+  function shouldAttachLongEventToWorldGroup() {
+    return false;
+  }
+
+  function markWorldSpaceIfNeeded(userData, start, end) {
+    if (!userData) return;
+    if (shouldAttachShortCircadianToWorldGroup()) {
+      userData.circadianWorldSpaceLayer = true;
+    } else if (shouldAttachLongEventToWorldGroup()) {
+      userData.useWorldSpaceGroup = true;
+    }
+  }
+
+  function disablePointerRaycastSubtree(root) {
+    if (!root || typeof root.traverse !== 'function') return;
+    root.traverse((child) => {
+      if (child.userData && child.userData._pointerRaycastDisabled) return;
+      if (child.userData) child.userData._pointerRaycastDisabled = true;
+      child.raycast = function () {};
+    });
+  }
+
+  /**
+   * Zoom 0 / 9: only sub-day events on the selected calendar day accept pointer picks.
+   */
+  function isShortEventPointerPickableAtCurrentZoom(start, end) {
+    const zl = getZoomLevelForEvents();
+    if (zl !== 0 && zl !== 9) return true;
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    if (!isSub24HourSpan(start, evEnd)) return true;
+    return eventTouchesSelectedCalendarDay(start, evEnd);
+  }
+
+  function markShortEventPointerPickability(root, start, end) {
+    if (!root) return;
+    const pickable = isShortEventPointerPickableAtCurrentZoom(start, end);
+    if (root.userData) root.userData.shortEventPickable = pickable;
+    if (!pickable) disablePointerRaycastSubtree(root);
+  }
+
+  /**
+   * Extra dimming for short-event **line** plot on days/hours outside the selected time.
+   * Polygons on the selected day are unchanged (auto mode uses lines off-day only).
+   */
+  function getOffSelectedTimeLineDimStrength() {
+    if (typeof global.getOffSelectedTimeLineDimStrength === 'function') {
+      const v = global.getOffSelectedTimeLineDimStrength();
+      if (typeof v === 'number' && !isNaN(v)) return Math.max(0, Math.min(1, v));
+    }
+    return 1;
+  }
+
+  /** Slider 0 = no extra off-day dim; 1 = full off-day line dim curve. */
+  function applyOffSelectedLineDimStrength(mul) {
+    const strength = getOffSelectedTimeLineDimStrength();
+    if (strength >= 1) return mul;
+    if (strength <= 0) return 1;
+    return 1 + (mul - 1) * strength;
+  }
+
+  function getOffSelectedTimeLineOpacityMul(start, end) {
+    if (!start || isNaN(start.getTime())) return 1;
+    const zl = getZoomLevelForEvents();
+    if (eventTouchesSelectedCalendarDay(start, end)) {
+      if (zl === 0 && !eventTouchesSelectedHour(start, end)) {
+        return applyOffSelectedLineDimStrength(0.52);
+      }
+      return 1;
+    }
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    let dayProx = 1;
+    const selFn = getSelectedDateTimeFn();
+    const sel = selFn ? selFn() : null;
+    if (sel) {
+      const mid = new Date((start.getTime() + evEnd.getTime()) / 2);
+      const ua = Date.UTC(mid.getFullYear(), mid.getMonth(), mid.getDate());
+      const ub = Date.UTC(sel.getFullYear(), sel.getMonth(), sel.getDate());
+      const diffDays = Math.abs(Math.round((ua - ub) / 86400000));
+      dayProx = 0.04 + 0.96 * Math.exp(-diffDays / 4);
+    }
+    if (zl === 0) return applyOffSelectedLineDimStrength(0.06);
+    if (zl === 9) return applyOffSelectedLineDimStrength(Math.max(0.04, Math.min(0.18, 0.14 * dayProx)));
+    return applyOffSelectedLineDimStrength(Math.max(0.05, Math.min(0.2, 0.16 * dayProx)));
+  }
+
+  function resolveShortCircadianLineOpacity(opacity, start, end) {
+    const base = opacity != null && !isNaN(opacity) ? opacity : 0.9;
+    const mul = start ? getOffSelectedTimeLineOpacityMul(start, end) : 1;
+    let op = Math.max(0.03, Math.min(1, base * mul));
+    const zl = getZoomLevelForEvents();
+    if (
+      zl === 9 &&
+      start &&
+      isSub24HourSpan(start, end) &&
+      eventTouchesSelectedCalendarDay(start, end)
+    ) {
+      op = Math.min(1, op * 1.32);
+    } else if (
+      zl === 0 &&
+      start &&
+      isSub24HourSpan(start, end) &&
+      eventTouchesSelectedCalendarDay(start, end) &&
+      eventTouchesSelectedHour(start, end)
+    ) {
+      op = Math.min(1, op * 1.38);
+    }
+    return op;
+  }
+
+  function getShortCircadianLineMaterialOpts(opacity, start, end) {
+    return {
+      transparent: true,
+      opacity: resolveShortCircadianLineOpacity(opacity, start, end),
+      depthTest: false,
+      depthWrite: false
+    };
+  }
+
+  const SHORT_CIRCADIAN_LINE_RENDER_ORDER = 14;
+
+  function ensureSceneGeometryInitialized() {
+    if (typeof SceneGeometry === 'undefined' || typeof SceneGeometry.init !== 'function') return;
+    if (typeof PLANET_DATA === 'undefined' || !PLANET_DATA || !PLANET_DATA.length) return;
+    SceneGeometry.init({
+      PLANET_DATA,
+      calculateDateHeight,
+      getHeightForYear,
+      calculateCurrentDateHeight,
+      CENTURY_START,
+      ZOOM_LEVELS,
+      currentYear,
+      calculateActualCurrentDateHeight,
+      calculateYearProgressForDate,
+      getDaysInMonth,
+      isLeapYear
+    });
   }
 
   function getCircadianStraightenBlendForEvents() {
@@ -133,7 +357,7 @@
     const sel = selFn();
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
 
-    if (zl === 0 || zl === 9) {
+    if (zl === 0) {
       const dayStart = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
       const dayEnd = new Date(dayStart.getTime());
       dayEnd.setDate(dayEnd.getDate() + 1);
@@ -142,7 +366,15 @@
     }
 
     if (typeof global.getCircadianShortEventScope === 'function' && global.getCircadianShortEventScope() === 'year') {
-      return false;
+      if (zl === 9 || zl === 8 || zl === 7) return false;
+    }
+
+    if (zl === 9) {
+      const dayStart = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
+      const dayEnd = new Date(dayStart.getTime());
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      const overlap = evEnd > dayStart && start < dayEnd;
+      return !overlap;
     }
 
     const circ = normalizedCircadianState();
@@ -162,10 +394,15 @@
     return !overlap;
   }
 
-  /** Zoom 0 / 9: drop multi-day (and any) geometry that does not intersect the selected local calendar day. */
+  /** Zoom 0 / 9: drop multi-day geometry outside selected day unless short-event scope is “year”. */
   function shouldHideCircadianEventOutsideSelectedDayAtClockZooms(start, end) {
     const zl = getZoomLevelForEvents();
     if (zl !== 0 && zl !== 9) return false;
+    if (zl === 9 &&
+        typeof global.getCircadianShortEventScope === 'function' &&
+        global.getCircadianShortEventScope() === 'year') {
+      return false;
+    }
     return shouldHideCircadianShortEventForDayScope(start, end);
   }
 
@@ -178,25 +415,56 @@
     const circ = normalizedCircadianState();
     const helixOn = isCircadianHelixZoom(zl) && circ !== 'off';
     if (!helixOn) return 1;
+    if (
+      (zl === 7 || zl === 8 || zl === 9) &&
+      typeof global.getCircadianShortEventScope === 'function' &&
+      global.getCircadianShortEventScope() === 'year'
+    ) {
+      return 1;
+    }
 
     let mul = 1;
     const onSelDay = eventTouchesSelectedCalendarDay(start, end);
 
+    const dayDiffProx = (function proxFade() {
+      const selFn = getSelectedDateTimeFn();
+      const sel = selFn ? selFn() : null;
+      if (!sel || !start || !end) return 1;
+      const mid = new Date((start.getTime() + end.getTime()) / 2);
+      const ua = Date.UTC(mid.getFullYear(), mid.getMonth(), mid.getDate());
+      const ub = Date.UTC(sel.getFullYear(), sel.getMonth(), sel.getDate());
+      const diffDays = Math.abs(Math.round((ua - ub) / 86400000));
+      return 0.06 + 0.94 * Math.exp(-diffDays / 5);
+    })();
+
     if (zl === 0) {
       if (!onSelDay) return 0;
-      if (!eventTouchesSelectedHour(start, end)) mul *= 0.08;
-      return Math.max(0.02, Math.min(1, mul));
+      const isShort = isSub24HourSpan(start, end);
+      if (eventTouchesSelectedHour(start, end)) {
+        if (isShort) mul = Math.min(1, mul * 1.42);
+        return Math.max(isShort ? 0.88 : 0.38, Math.min(1, mul));
+      }
+      mul *= isShort ? 0.34 : 0.1;
+      return Math.max(isShort ? 0.22 : 0.04, Math.min(0.58, mul));
     }
 
-    if (zl === 9 && !onSelDay) return 0;
+    if (zl === 9 && !onSelDay) {
+      return Math.max(0.02, Math.min(0.42, 0.38 * dayDiffProx));
+    }
+
+    if (zl === 9 && onSelDay && isSub24HourSpan(start, end)) {
+      mul = Math.min(1, mul * 1.38);
+    }
 
     if (!onSelDay) {
       if (zl === 8) mul *= 0.14;
       else if (zl === 5 || zl === 7) mul *= 0.22;
       else mul *= 0.28;
+      mul *= dayDiffProx;
     }
 
-    return Math.max(0.03, Math.min(1, mul));
+    const floor = zl === 0 || zl === 8 || zl === 9 ? 0.42 : 0.12;
+    return Math.max(floor, Math.min(1, mul));
   }
 
   /** Thinner outline tubes for short circadian ribbons so concentric arcs read separately. */
@@ -236,9 +504,9 @@
     return true;
   }
 
-  /** True when sub-day geometry should follow the circadian hour-hand frame (wrapped/straightened). */
+  /** True when sub-day geometry should sit on the day-disk stack (not the annual Earth helix). */
   function shouldUseCircadianNearEarthShortPlacement() {
-    return isCircadianHelixZoom(getZoomLevelForEvents()) && normalizedCircadianState() !== 'off';
+    return isHelixZoomShortStackFrame();
   }
 
   /**
@@ -249,7 +517,9 @@
     const CR = typeof global.CircadianRenderer !== 'undefined' ? global.CircadianRenderer : null;
     if (!CR || typeof CR.blendedDiskPointAtDate !== 'function' || typeof calculateDateHeight !== 'function') return null;
     if (!when || isNaN(when.getTime())) return null;
-    const r = typeof CR.getHandLength === 'function' ? CR.getHandLength() * 0.88 : 10.5;
+    const r = clampShortCircadianRadiusFromEarth(
+      typeof CR.getHandLength === 'function' ? CR.getHandLength() * 0.88 : 10.5
+    );
     return CR.blendedDiskPointAtDate(when, r, currentHeight, calculateDateHeight, getCircadianStraightenBlendForEvents());
   }
 
@@ -262,11 +532,50 @@
     if (!CR || typeof CR.blendedDiskPointAtDate !== 'function' || typeof calculateDateHeight !== 'function') return null;
     if (!start || !end || !(end > start)) return null;
     const mid = new Date((start.getTime() + end.getTime()) / 2);
-    const r =
+    const r = clampShortCircadianRadiusFromEarth(
       rOverride != null && !isNaN(rOverride)
         ? rOverride
-        : (typeof CR.getHandLength === 'function' ? CR.getHandLength() * 0.88 : 10.5);
+        : (typeof CR.getHandLength === 'function' ? CR.getHandLength() * 0.88 : 10.5)
+    );
     return CR.blendedDiskPointAtDate(mid, r, currentHeight, calculateDateHeight, getCircadianStraightenBlendForEvents());
+  }
+
+  /**
+   * Local frame on the daily disk at `date`: +X along time-of-day, +Y radial (away from Earth), +Z disk normal.
+   * @returns {{ position: {x:number,y:number,z:number}, quaternion: import('three').Quaternion }|null}
+   */
+  function sampleCircadianDiskMarkerFrame(date, r, refHeight) {
+    const THREE = global.THREE;
+    const CR = typeof global.CircadianRenderer !== 'undefined' ? global.CircadianRenderer : null;
+    if (!THREE || !CR || typeof CR.blendedDiskPointAtDate !== 'function' || typeof calculateDateHeight !== 'function') {
+      return null;
+    }
+    if (!date || isNaN(date.getTime())) return null;
+    r = clampShortCircadianRadiusFromEarth(r);
+    const blend = getCircadianStraightenBlendForEvents();
+    const p = CR.blendedDiskPointAtDate(date, r, refHeight, calculateDateHeight, blend);
+    const pT = CR.blendedDiskPointAtDate(new Date(date.getTime() + 60000), r, refHeight, calculateDateHeight, blend);
+    const pIn = CR.blendedDiskPointAtDate(date, Math.max(r * 0.2, 0.5), refHeight, calculateDateHeight, blend);
+    if (!p || !pT || !pIn) return null;
+    const tangent = new THREE.Vector3(pT.x - p.x, pT.y - p.y, pT.z - p.z);
+    if (tangent.lengthSq() < 1e-14) return { position: p, quaternion: new THREE.Quaternion() };
+    tangent.normalize();
+    const width = new THREE.Vector3(p.x - pIn.x, p.y - pIn.y, p.z - pIn.z);
+    if (width.lengthSq() < 1e-14) {
+      width.set(0, 1, 0);
+    } else {
+      width.normalize();
+    }
+    const normal = new THREE.Vector3().crossVectors(tangent, width);
+    if (normal.lengthSq() < 1e-14) {
+      return { position: p, quaternion: new THREE.Quaternion() };
+    }
+    normal.normalize();
+    width.crossVectors(normal, tangent).normalize();
+    const quat = new THREE.Quaternion().setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(tangent, width, normal)
+    );
+    return { position: p, quaternion: quat };
   }
 
   function durationHoursBetween(start, end) {
@@ -275,6 +584,7 @@
   }
 
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const MS_PER_HOUR = MS_PER_DAY / 24;
   /** ~calendar month / quarter for context bands (days). */
   const CONTEXT_MONTH_DAYS = 31;
   const CONTEXT_QUARTER_DAYS = 92;
@@ -442,6 +752,7 @@
 
   function areEventTextLabelsVisibleAtCurrentZoom(start, end) {
     if (!start || !end || !(end > start)) return false;
+    if (isSub24HourSpan(start, end) && !eventTouchesSelectedCalendarDay(start, end)) return false;
     if (!isEventLabelRadialContextSurpassesInner(start, end)) return false;
     const zl = getZoomLevelForEvents();
     const days = durationDaysBetween(start, end);
@@ -455,6 +766,7 @@
    */
   function areEventNameLabelsVisibleAtCurrentZoom(start, end) {
     if (!start || !end || !(end > start)) return false;
+    if (isSub24HourSpan(start, end) && !eventTouchesSelectedCalendarDay(start, end)) return false;
     if (!isEventLabelRadialContextSurpassesInner(start, end)) return false;
     if (areEventTextLabelsVisibleAtCurrentZoom(start, end)) return true;
     const zl = Math.floor(Number(getZoomLevelForEvents()) || 5);
@@ -544,10 +856,34 @@
   }
 
   /**
-   * Orbital phase anchor for multi-day ribbons / helices that must sit on Earth’s worldline
-   * (same as SceneGeometry.getCurrentDateHeight / Worldlines.createWorldline).
+   * Orbital phase anchor for multi-day ribbons / helices — must match
+   * {@link computeSceneDateHeights} / createPlanets so calendar events sit on the same Earth helix as the scene.
    */
   function getWorldlineOrbitReferenceHeight() {
+    const zl = getZoomLevelForEvents();
+    /** Same `currentDateHeight` as createPlanets / planet XZ so long ribbons match the Earth helix at every zoom. */
+    if (typeof global.computeSceneDateHeights === 'function') {
+      try {
+        const pack = global.computeSceneDateHeights(zl);
+        if (pack && typeof pack.currentDateHeight === 'number' && !isNaN(pack.currentDateHeight)) {
+          return pack.currentDateHeight;
+        }
+      } catch (e) {
+        /* fall through */
+      }
+    }
+    if (typeof SceneGeometry !== 'undefined' && typeof SceneGeometry.getCurrentDateHeight === 'function') {
+      try {
+        const h = SceneGeometry.getCurrentDateHeight(zl);
+        if (h != null && !isNaN(h)) return h;
+      } catch (e) {
+        /* fall through */
+      }
+    }
+    if (typeof calculateActualCurrentDateHeight === 'function') {
+      const h = calculateActualCurrentDateHeight();
+      if (h != null && !isNaN(h)) return h;
+    }
     if (typeof calculateCurrentDateHeight === 'function') {
       const h = calculateCurrentDateHeight();
       if (h != null && !isNaN(h)) return h;
@@ -731,6 +1067,36 @@
   }
 
   /**
+   * Shortest span (days) still eligible for the Event List “focus band” at this zoom.
+   * Matches {@link eventDurationEligibleForFullListAtZoom} lower bounds.
+   */
+  function getListFocusMinDurationDaysForZoom(zoomLevel) {
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
+    if (z <= 0 || z >= 9) return 1 / 24;
+    if (z === 8) return 1 / 48;
+    if (z === 7) return 1 + 1e-4;
+    if (z === 5 || z === 6) return 7 + 1e-4;
+    if (z === 4) return 31 + 1e-4;
+    if (z === 3) return 92 + 1e-4;
+    if (z === 2) return CONTEXT_YEAR_DAYS + 1e-4;
+    if (z === 1) return CONTEXT_DECADE_DAYS + 1e-4;
+    return 8;
+  }
+
+  /**
+   * Inner radius of the list-context annulus: Sun-ward edge of the shortest span still in the Event List band.
+   * Spans with ribbons inside this radius are in-scene but excluded from the list at this zoom.
+   */
+  function getListContextRingInnerRadius(earthDist, zoomLevel) {
+    const W = typeof earthDist === 'number' && !isNaN(earthDist) ? earthDist : EARTH_RADIUS;
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
+    const dMin = getListFocusMinDurationDaysForZoom(z);
+    const { rInner } = getEventBandRadii(W, dMin);
+    const ro = getListContextRingOuterRadius(W, z);
+    return Math.max(W * 0.06, Math.min(rInner, ro * 0.88));
+  }
+
+  /**
    * Outer radius of the list-context / horizon hoop for this zoom (matches {@link TimeMarkers.getListContextRingRadiusForZoom}
    * and main.js `resolveListHorizonRingRadius` when TimeMarkers is present).
    */
@@ -794,6 +1160,192 @@
     root.userData.staggerLogical = staggerLogical;
     root.position.y = staggerLogical / Math.max(0.05, ys);
     return root;
+  }
+
+  function markCircadianShortScrubRoot(root, diskRibbon, isRibbon) {
+    if (!root || !root.userData) return;
+    if (!shouldUseCircadianNearEarthShortPlacement()) return;
+    if (normalizedCircadianState() === 'off') return;
+    root.userData.circadianShortScrub = true;
+    root.userData.circadianShortRibbon = !!isRibbon;
+    if (diskRibbon) root.userData._diskRibbon = diskRibbon;
+  }
+
+  function updateLineGeometryFromFlat(line, flat) {
+    if (!line || !line.geometry || !flat || flat.length < 6) return;
+    const pos = line.geometry.attributes.position;
+    if (!pos || pos.count * 3 !== flat.length) {
+      line.geometry.dispose();
+      const geo = new global.THREE.BufferGeometry();
+      geo.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
+      line.geometry = geo;
+      return;
+    }
+    pos.array.set(flat);
+    pos.needsUpdate = true;
+    if (line.geometry.computeBoundingSphere) line.geometry.computeBoundingSphere();
+  }
+
+  function updateRibbonFillMeshFromFlat(mesh, innerFlat, outerFlat) {
+    if (!mesh || !innerFlat || !outerFlat) return;
+    const geo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
+    if (!geo) return;
+    if (mesh.geometry) mesh.geometry.dispose();
+    mesh.geometry = geo;
+  }
+
+  function updateCircadianConnectorChild(line, ax, ay, az, atDate, refHeight) {
+    if (!line || !line.isLine || !line.geometry) return;
+    const CR = typeof global.CircadianRenderer !== 'undefined' ? global.CircadianRenderer : null;
+    if (!CR || typeof CR.blendedDiskPointAtDate !== 'function') return;
+    const hl = typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
+    const tip = CR.blendedDiskPointAtDate(
+      atDate,
+      hl,
+      refHeight,
+      calculateDateHeight,
+      getCircadianStraightenBlendForEvents()
+    );
+    if (!tip) return;
+    const pos = line.geometry.attributes.position;
+    if (!pos || pos.count < 2) return;
+    const arr = pos.array;
+    arr[0] = ax;
+    arr[1] = ay;
+    arr[2] = az;
+    arr[3] = tip.x;
+    arr[4] = tip.y;
+    arr[5] = tip.z;
+    pos.needsUpdate = true;
+    if (line.geometry.computeBoundingSphere) line.geometry.computeBoundingSphere();
+  }
+
+  function repositionCircadianShortEventRoot(root, refHeight) {
+    if (!root || !root.userData || !root.userData.circadianShortScrub) return;
+    const event = root.userData.vevent;
+    let start = event ? getEventStart(event) : root.userData.start;
+    let end = event ? getEventEnd(event) : root.userData.end;
+    if (!start || isNaN(start.getTime())) return;
+    if (!end || !(end > start)) end = new Date(start.getTime() + 3600000);
+    const durationH = durationHoursBetween(start, end);
+    if (durationH >= 24) return;
+
+    const CR = typeof global.CircadianRenderer !== 'undefined' ? global.CircadianRenderer : null;
+    const straightenBlend = getCircadianStraightenBlendForEvents();
+    const midDate = new Date((start.getTime() + end.getTime()) / 2);
+
+    if (root.userData.circadianShortRibbon && CR && typeof CR.buildDiskRibbonBetween === 'function') {
+      const earthDist = getEarthDistance();
+      const dr = root.userData._diskRibbon;
+      let rIn;
+      let rOut;
+      if (dr && dr.rIn != null && dr.rOut != null && dr.rOut > dr.rIn) {
+        const clamped = clampShortCircadianDiskRibbon(dr);
+        rIn = clamped.rIn;
+        rOut = clamped.rOut;
+      } else {
+        const hl = typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
+        const halfRadial = Math.max(hl * 0.028, 0.18);
+        const minR = getShortCircadianMinRadiusFromEarthCenter();
+        rIn = Math.max(hl * 0.72, hl - halfRadial, minR);
+        rOut = Math.max(hl + halfRadial, rIn + 0.12);
+      }
+      const segments = Math.max(8, Math.min(48, Math.ceil(durationH * 4)));
+      const ribbonPair = CR.buildDiskRibbonBetween(
+        start,
+        end,
+        rIn,
+        rOut,
+        refHeight,
+        calculateDateHeight,
+        segments,
+        straightenBlend
+      );
+      if (ribbonPair && ribbonPair.innerFlat && ribbonPair.outerFlat) {
+        const innerFlat = ribbonPair.innerFlat;
+        const outerFlat = ribbonPair.outerFlat;
+        let fillMesh = null;
+        let connectorAnchor = null;
+        root.traverse((child) => {
+          if (child.userData && child.userData.type === 'EventCircadianConnector' && child.isLine) {
+            /* anchor updated after traverse */
+          } else if (child.userData && child.userData.type === 'EventRibbonBandEnd') {
+            updateBandEndConnectorFromFlat(child, innerFlat, outerFlat, child.userData.capIndex);
+          } else if (child.userData && child.userData.type === 'EventRibbonArc') {
+            if (child.userData.arcEdge === 'outer') {
+              updateLineGeometryFromFlat(child, outerFlat);
+            } else {
+              updateLineGeometryFromFlat(child, innerFlat);
+            }
+            if (!connectorAnchor && child.userData.arcEdge === 'inner') {
+              connectorAnchor = { x: innerFlat[0], y: innerFlat[1], z: innerFlat[2] };
+            }
+          } else if (child.isMesh && child.geometry && child.geometry.index && !fillMesh) {
+            fillMesh = child;
+          }
+        });
+        if (!connectorAnchor) {
+          connectorAnchor = { x: innerFlat[0], y: innerFlat[1], z: innerFlat[2] };
+        }
+        root.traverse((child) => {
+          if (child.userData && child.userData.type === 'EventCircadianConnector' && child.isLine) {
+            updateCircadianConnectorChild(
+              child,
+              connectorAnchor.x,
+              connectorAnchor.y,
+              connectorAnchor.z,
+              midDate,
+              refHeight
+            );
+          }
+        });
+        if (fillMesh) updateRibbonFillMeshFromFlat(fillMesh, innerFlat, outerFlat);
+      }
+    } else {
+      const dr = root.userData._diskRibbon;
+      const rLane = clampShortCircadianRadiusFromEarth(
+        dr && dr.rMid != null
+          ? dr.rMid
+          : (CR && typeof CR.getHandLength === 'function' ? CR.getHandLength() * 0.88 : 10.5)
+      );
+      let diskFrame = sampleCircadianDiskMarkerFrame(midDate, rLane, refHeight);
+      let pos = diskFrame && diskFrame.position
+        ? diskFrame.position
+        : getShortEventCircadianNearEarthPosition(start, end, refHeight, rLane);
+      if (!pos) return;
+      root.traverse((child) => {
+        if (child.userData && child.userData.type === 'EventLineMarker') {
+          child.position.set(pos.x, pos.y, pos.z);
+          if (diskFrame && diskFrame.quaternion) child.quaternion.copy(diskFrame.quaternion);
+        } else if (child.userData && child.userData.type === 'EventCircadianConnector' && child.isLine) {
+          updateCircadianConnectorChild(child, pos.x, pos.y, pos.z, midDate, refHeight);
+        }
+      });
+    }
+
+    if (root.userData.eventStaggerRoot) {
+      const durationDays = Math.max(durationH / 24, 1e-4);
+      attachEventStaggerRoot(root, getEventBandVerticalStagger(durationDays));
+    }
+  }
+
+  /**
+   * Move short circadian disk/stack events during smooth selected-time scrub (no full layer rebuild).
+   * @param {{ forEachLayerObjectRoot?: function(function):void }|null} gl
+   * @param {number} refHeight - selectedDateHeight from computeSceneDateHeights
+   */
+  function updateCircadianShortEventsForScrub(gl, refHeight) {
+    if (!shouldUseCircadianNearEarthShortPlacement()) return;
+    if (normalizedCircadianState() === 'off') return;
+    if (refHeight == null || isNaN(refHeight)) {
+      refHeight = getEventOrbitReferenceHeight();
+    }
+    const visit = function (root) {
+      repositionCircadianShortEventRoot(root, refHeight);
+    };
+    if (gl && typeof gl.forEachLayerObjectRoot === 'function') {
+      gl.forEachLayerObjectRoot(visit);
+    }
   }
 
   /** Keep below time-marker text (main.js ~50); above default scene objects. */
@@ -905,6 +1457,46 @@
     return fillMesh;
   }
 
+  function updateBandEndConnectorFromFlat(obj, innerFlat, outerFlat, capIndex) {
+    if (!obj || !innerFlat || !outerFlat || innerFlat.length < 3) return;
+    const n = innerFlat.length / 3;
+    const si = capIndex == null ? 0 : Math.max(0, Math.min(n - 1, capIndex));
+    const ix = si * 3;
+    const ax = innerFlat[ix];
+    const ay = innerFlat[ix + 1];
+    const az = innerFlat[ix + 2];
+    const bx = outerFlat[ix];
+    const by = outerFlat[ix + 1];
+    const bz = outerFlat[ix + 2];
+    if (obj.isLine && obj.geometry) {
+      const pos = obj.geometry.attributes.position;
+      if (!pos || pos.count < 2) return;
+      const arr = pos.array;
+      arr[0] = ax;
+      arr[1] = ay;
+      arr[2] = az;
+      arr[3] = bx;
+      arr[4] = by;
+      arr[5] = bz;
+      pos.needsUpdate = true;
+      if (obj.geometry.computeBoundingSphere) obj.geometry.computeBoundingSphere();
+    } else if (obj.isMesh && obj.geometry && obj.geometry.parameters) {
+      const THREE = global.THREE;
+      const p0 = new THREE.Vector3(ax, ay, az);
+      const p1 = new THREE.Vector3(bx, by, bz);
+      const dir = new THREE.Vector3().subVectors(p1, p0);
+      const len = dir.length();
+      if (len < 1e-9) return;
+      const origH = obj.geometry.parameters.height;
+      if (typeof origH === 'number' && origH > 1e-9) {
+        obj.scale.set(1, len / origH, 1);
+      }
+      const axis = new THREE.Vector3(0, 1, 0);
+      obj.quaternion.setFromUnitVectors(axis, dir.clone().normalize());
+      obj.position.copy(p0).add(p1).multiplyScalar(0.5);
+    }
+  }
+
   function addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder, tubeRadius) {
     const n = innerFlat.length / 3;
     if (n < 1) return;
@@ -915,7 +1507,10 @@
         const p0 = new THREE.Vector3(innerFlat[ix], innerFlat[ix + 1], innerFlat[ix + 2]);
         const p1 = new THREE.Vector3(outerFlat[ix], outerFlat[ix + 1], outerFlat[ix + 2]);
         const c = cylinderBetweenPoints(p0, p1, tubeRadius * 0.92, colorHex, opacity, renderOrder);
-        if (c) group.add(c);
+        if (c) {
+          c.userData = { type: 'EventRibbonBandEnd', capIndex: si };
+          group.add(c);
+        }
       }
       cap(0);
       cap(n - 1);
@@ -936,6 +1531,7 @@
       });
       const line = new global.THREE.Line(g, m);
       line.renderOrder = renderOrder;
+      line.userData = { type: 'EventRibbonBandEnd', capIndex: si };
       group.add(line);
     }
     seg(0);
@@ -1258,6 +1854,45 @@
     return EARTH_RADIUS;
   }
 
+  const DEFAULT_EARTH_GLOBE_SURFACE_RADIUS = 1.95;
+  /** Clearance beyond the rendered globe mesh (scene units from Earth center). */
+  const SHORT_CIRCADIAN_RADIUS_PAD_OUTSIDE_GLOBE = 0.14;
+
+  function getEarthGlobeSurfaceRadiusForEvents() {
+    if (typeof global.getEarthGlobeSurfaceRadius === 'function') {
+      const r = global.getEarthGlobeSurfaceRadius();
+      if (typeof r === 'number' && r > 0 && !isNaN(r)) return r;
+    }
+    if (typeof PLANET_DATA !== 'undefined' && Array.isArray(PLANET_DATA)) {
+      const earth = PLANET_DATA.find(p => p.name === 'Earth');
+      if (earth && typeof earth.size === 'number') return earth.size * 0.3;
+    }
+    return DEFAULT_EARTH_GLOBE_SURFACE_RADIUS;
+  }
+
+  /** Minimum radial distance from Earth center for short circadian geometry (must clear the globe). */
+  function getShortCircadianMinRadiusFromEarthCenter() {
+    return getEarthGlobeSurfaceRadiusForEvents() + SHORT_CIRCADIAN_RADIUS_PAD_OUTSIDE_GLOBE;
+  }
+
+  function clampShortCircadianRadiusFromEarth(r) {
+    const minR = getShortCircadianMinRadiusFromEarthCenter();
+    if (r == null || isNaN(r)) return minR;
+    return Math.max(r, minR);
+  }
+
+  function clampShortCircadianDiskRibbon(dr) {
+    if (!dr) return dr;
+    const minR = getShortCircadianMinRadiusFromEarthCenter();
+    let rIn = clampShortCircadianRadiusFromEarth(dr.rIn);
+    let rOut = clampShortCircadianRadiusFromEarth(dr.rOut);
+    if (!(rOut > rIn)) rOut = rIn + Math.max(0.12, minR * 0.05);
+    const rMid = clampShortCircadianRadiusFromEarth(
+      dr.rMid != null && !isNaN(dr.rMid) ? dr.rMid : (rIn + rOut) * 0.5
+    );
+    return { rIn, rOut, rMid, lane: dr.lane };
+  }
+
   /** Default label text color when event/layer color is too dark (neutral visible gray). */
   const DEFAULT_LABEL_COLOR_HEX = 0x9ca3af;
 
@@ -1373,9 +2008,10 @@
 
   /**
    * Short-event dot: semi-transparent fill + edge outline (long-term ribbon look, smaller scale).
+   * @param {{ position: {x:number,y:number,z:number}, quaternion?: import('three').Quaternion }|null} [diskFrame] - when set, lays a flat disk circle on the circadian day plane
    * @returns {THREE.Group}
    */
-  function createEventLinePointMarker(x, y, z, colorHex, size, userData, startForOpacity, endForOpacity) {
+  function createEventLinePointMarker(x, y, z, colorHex, size, userData, startForOpacity, endForOpacity, diskFrame) {
     const THREE = global.THREE;
     const mul =
       startForOpacity && !isNaN(startForOpacity.getTime())
@@ -1383,30 +2019,60 @@
         : 1;
     const fillOp = Math.min(0.9, Math.max(0.16, 0.52 * mul));
     const outlineOp = Math.min(0.95, Math.max(0.24, 0.78 * mul));
-    const geo = new THREE.SphereGeometry(size * 0.94, 14, 14);
-    const fill = new THREE.Mesh(
-      geo,
-      new THREE.MeshBasicMaterial({
-        color: colorHex,
-        transparent: true,
-        opacity: fillOp,
-        depthWrite: false,
-        side: THREE.DoubleSide
-      })
-    );
-    const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geo),
-      new THREE.LineBasicMaterial({
-        color: colorHex,
-        transparent: true,
-        opacity: outlineOp,
-        depthWrite: false
-      })
-    );
-    edges.renderOrder = 2;
     const root = new THREE.Group();
-    root.add(fill);
-    root.add(edges);
+    const outerR = size * 0.94;
+    if (diskFrame && diskFrame.quaternion) {
+      const fillGeo = new THREE.CircleGeometry(outerR * 0.88, 20);
+      const fill = new THREE.Mesh(
+        fillGeo,
+        new THREE.MeshBasicMaterial({
+          color: colorHex,
+          transparent: true,
+          opacity: fillOp,
+          depthWrite: false,
+          side: THREE.DoubleSide
+        })
+      );
+      const rimGeo = new THREE.RingGeometry(outerR * 0.72, outerR, 20);
+      const rim = new THREE.Mesh(
+        rimGeo,
+        new THREE.MeshBasicMaterial({
+          color: colorHex,
+          transparent: true,
+          opacity: outlineOp,
+          depthWrite: false,
+          side: THREE.DoubleSide
+        })
+      );
+      rim.renderOrder = 2;
+      root.add(fill);
+      root.add(rim);
+      root.quaternion.copy(diskFrame.quaternion);
+    } else {
+      const geo = new THREE.SphereGeometry(outerR, 14, 14);
+      const fill = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          color: colorHex,
+          transparent: true,
+          opacity: fillOp,
+          depthWrite: false,
+          side: THREE.DoubleSide
+        })
+      );
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({
+          color: colorHex,
+          transparent: true,
+          opacity: outlineOp,
+          depthWrite: false
+        })
+      );
+      edges.renderOrder = 2;
+      root.add(fill);
+      root.add(edges);
+    }
     root.position.set(x, y, z);
     root.userData = userData || { type: 'EventLineMarker' };
     return root;
@@ -2318,12 +2984,19 @@
    */
   function getFocusHalfSpanMsForZoom(zl) {
     const z = typeof zl === 'number' && !isNaN(zl) ? zl : 5;
+    if (z === 0) return MS_PER_HOUR / 2;
     if (z >= 9) return MS_PER_DAY;
     if (z >= 8) return 2 * MS_PER_DAY;
     if (z >= 7) return 7 * MS_PER_DAY;
     if (z >= 5) return 30 * MS_PER_DAY;
     if (z >= 3) return 120 * MS_PER_DAY;
     return 365 * MS_PER_DAY;
+  }
+
+  function getSelectedHourLocalBounds(ref) {
+    if (!ref || isNaN(ref.getTime())) ref = new Date();
+    const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), ref.getHours(), 0, 0, 0);
+    return { start, end: new Date(start.getTime() + MS_PER_HOUR) };
   }
 
   /** ms gap between event [s,e] and window [center±half]; 0 if they overlap. */
@@ -2360,7 +3033,7 @@
   }
 
   /**
-   * Desaturate events outside the Event List time horizon (selected ± half-span, or calendar year at zoom 3–4).
+   * Desaturate events outside the Event List time horizon (selected ± half-span, calendar year at zoom 3–4, or year ∩ half-span at zoom 5+).
    * Also dims events inside the horizon that the list hides for zoom (long spans until you zoom in).
    * Cyan ring in the Event List panel shows the same window; blue/cyan matches the timeline accent (red reads as errors).
    */
@@ -2376,13 +3049,27 @@
     const TEXT_OUTSIDE_LIST = 0.36;
 
     let sep = 0;
-    if (zl === 3 || zl === 4) {
+    if (zl === 0) {
+      const hb = getSelectedHourLocalBounds(ref);
+      sep = getPeripheralSeparationMsYearMode(spanStart, spanEndEff, hb.start, hb.end);
+    } else if (zl === 3 || zl === 4) {
       const b = getCalendarYearBoundsLocal(ref);
-      sep = getPeripheralSeparationMsYearMode(spanStart, spanEndEff, b.start, b.end);
+      const halfMs = getFocusHalfSpanMsForZoom(zl);
+      const centerMs = ref.getTime();
+      const winStart = new Date(Math.max(b.start.getTime(), centerMs - halfMs));
+      const winEnd = new Date(Math.min(b.end.getTime(), centerMs + halfMs));
+      sep = getPeripheralSeparationMsYearMode(spanStart, spanEndEff, winStart, winEnd);
     } else {
       const centerMs = ref.getTime();
       const halfMs = getFocusHalfSpanMsForZoom(zl);
-      sep = getPeripheralSeparationMs(spanStart, spanEndEff, centerMs, halfMs);
+      const timeSep = getPeripheralSeparationMs(spanStart, spanEndEff, centerMs, halfMs);
+      if (zl >= 5) {
+        const b = getCalendarYearBoundsLocal(ref);
+        const yearSep = getPeripheralSeparationMsYearMode(spanStart, spanEndEff, b.start, b.end);
+        sep = Math.max(yearSep, timeSep);
+      } else {
+        sep = timeSep;
+      }
     }
 
     if (sep <= 0) {
@@ -2723,10 +3410,11 @@
     if (shouldUseCircadianNearEarthShortPlacement()) {
       const CR = global.CircadianRenderer;
       const dr = layerConfig._diskRibbon;
-      const rUse =
+      const rUse = clampShortCircadianRadiusFromEarth(
         dr && dr.rMid != null
           ? dr.rMid
-          : (CR && typeof CR.getHandLength === 'function' ? CR.getHandLength() * 0.88 : 10.5);
+          : (CR && typeof CR.getHandLength === 'function' ? CR.getHandLength() * 0.88 : 10.5)
+      );
       if (CR && typeof CR.blendedDiskPointAtDate === 'function' && typeof calculateDateHeight === 'function') {
         pos = CR.blendedDiskPointAtDate(
           start,
@@ -2752,36 +3440,84 @@
     const colorBase = parseColor(explicitColor ? (event.color ?? event.colorId) : fallbackGradient);
     let spanEnd = getEventEnd(event);
     if (!spanEnd || spanEnd <= start) spanEnd = start;
-    const color = applyTemporalVividnessToHex(colorBase, start.getTime(), start, spanEnd);
-    const sphereR = shouldUseDayBandDotPlacement() ? 0.28 : 0.55;
+    const color = shouldSkipTemporalVividnessForShortEvent()
+      ? colorBase
+      : applyTemporalVividnessToHex(colorBase, start.getTime(), start, spanEnd);
+    const markerR = shouldUseDayBandDotPlacement() ? 0.28 : 0.55;
     const opMul = getDailyCircadianEventOpacityMul(start, spanEnd);
     const THREE = global.THREE;
     const fillOp = Math.min(0.9, Math.max(0.16, 0.5 * opMul));
     const outlineOp = Math.min(0.95, Math.max(0.24, 0.75 * opMul));
-    const geo = new THREE.SphereGeometry(sphereR * 0.94, 16, 16);
-    const fillMesh = new THREE.Mesh(
-      geo,
-      new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: fillOp,
-        depthWrite: false,
-        side: THREE.DoubleSide
-      })
-    );
-    const edgeLines = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geo),
-      new THREE.LineBasicMaterial({
-        color,
-        transparent: true,
-        opacity: outlineOp,
-        depthWrite: false
-      })
-    );
-    edgeLines.renderOrder = 3;
+    let diskFrame = null;
+    if (shouldUseCircadianNearEarthShortPlacement()) {
+      const dr = layerConfig._diskRibbon;
+      const rLane = clampShortCircadianRadiusFromEarth(
+        dr && dr.rMid != null
+          ? dr.rMid
+          : (typeof global.CircadianRenderer !== 'undefined' &&
+              typeof global.CircadianRenderer.getHandLength === 'function'
+            ? global.CircadianRenderer.getHandLength() * 0.88
+            : 10.5)
+      );
+      diskFrame = sampleCircadianDiskMarkerFrame(start, rLane, currentHeight);
+      if (diskFrame && diskFrame.position) {
+        pos = diskFrame.position;
+      }
+    }
     const markerRoot = new THREE.Group();
-    markerRoot.add(fillMesh);
-    markerRoot.add(edgeLines);
+    const outerR = markerR * 0.94;
+    if (diskFrame && diskFrame.quaternion) {
+      const fillGeo = new THREE.CircleGeometry(outerR * 0.88, 20);
+      markerRoot.add(
+        new THREE.Mesh(
+          fillGeo,
+          new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: fillOp,
+            depthWrite: false,
+            side: THREE.DoubleSide
+          })
+        )
+      );
+      const rim = new THREE.Mesh(
+        new THREE.RingGeometry(outerR * 0.72, outerR, 20),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: outlineOp,
+          depthWrite: false,
+          side: THREE.DoubleSide
+        })
+      );
+      rim.renderOrder = 3;
+      markerRoot.add(rim);
+      markerRoot.quaternion.copy(diskFrame.quaternion);
+    } else {
+      const geo = new THREE.SphereGeometry(outerR, 16, 16);
+      const fillMesh = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: fillOp,
+          depthWrite: false,
+          side: THREE.DoubleSide
+        })
+      );
+      const edgeLines = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({
+          color,
+          transparent: true,
+          opacity: outlineOp,
+          depthWrite: false
+        })
+      );
+      edgeLines.renderOrder = 3;
+      markerRoot.add(fillMesh);
+      markerRoot.add(edgeLines);
+    }
     markerRoot.position.set(pos.x, pos.y, pos.z);
     const userData = {
       vevent: event,
@@ -2789,7 +3525,11 @@
       type: 'EventObject',
       eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
     };
-    if (shouldAttachShortCircadianToWorldGroup()) userData.circadianWorldSpaceLayer = true;
+    if (shouldUseDayBandDotPlacement()) {
+      userData.dayBandDot = true;
+      userData.logicalY = pos.y;
+    }
+    markWorldSpaceIfNeeded(userData, start, spanEnd);
     markerRoot.userData = userData;
 
     const showConn = isCircadianHelixZoom(getZoomLevelForEvents()) &&
@@ -2800,8 +3540,10 @@
       grp.userData = userData;
       grp.add(markerRoot);
       addCircadianConnectorIfApplicable(grp, pos.x, pos.y, pos.z, start, color);
+      markShortEventPointerPickability(grp, start, spanEnd);
       return grp;
     }
+    markShortEventPointerPickability(markerRoot, start, spanEnd);
     return markerRoot;
   }
 
@@ -2842,20 +3584,21 @@
       const anchorMsShort = getEventTemporalAnchorMs(start, end);
       if (shouldHideCircadianShortEventForDayScope(start, end)) return null;
       const zl = getZoomLevelForEvents();
-      const circ = normalizedCircadianState();
       const straightenBlend = getCircadianStraightenBlendForEvents();
-      const useDiskRibbon =
+      const CR = typeof global.CircadianRenderer !== 'undefined' ? global.CircadianRenderer : null;
+      const canStackRibbon =
         isCircadianHelixZoom(zl) &&
-        circ !== 'off' &&
-        typeof global.CircadianRenderer !== 'undefined' &&
-        typeof global.CircadianRenderer.buildDiskRibbonBetween === 'function' &&
+        CR &&
+        typeof CR.buildDiskRibbonBetween === 'function' &&
         typeof calculateDateHeight === 'function';
 
       const eventColorRaw = event.color ?? event.colorId ?? null;
       const explicitEventColor = hasExplicitEventColor(event);
       const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
       let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
-      eventHex = applyTemporalVividnessToHex(eventHex, anchorMsShort, start, end);
+      if (!shouldSkipTemporalVividnessForShortEvent()) {
+        eventHex = applyTemporalVividnessToHex(eventHex, anchorMsShort, start, end);
+      }
       const layerHex = parseColor(layerConfig.color || '#00b4d8');
       const userData = {
         vevent: event,
@@ -2863,23 +3606,25 @@
         type: 'EventObject',
         eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
       };
+      markWorldSpaceIfNeeded(userData, start, end);
 
-      if (useDiskRibbon) {
+      if (canStackRibbon) {
         const segments = Math.max(8, Math.min(48, Math.ceil(durationH * 4)));
-        const CR = global.CircadianRenderer;
         const dr = layerConfig._diskRibbon;
         let rIn;
         let rOut;
         if (dr && dr.rIn != null && dr.rOut != null && dr.rOut > dr.rIn) {
-          rIn = dr.rIn;
-          rOut = dr.rOut;
+          const clamped = clampShortCircadianDiskRibbon(dr);
+          rIn = clamped.rIn;
+          rOut = clamped.rOut;
         } else {
           const hl = typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
           const halfRadial = Math.max(hl * 0.028, 0.18);
-          rIn = Math.max(hl * 0.72, hl - halfRadial);
-          rOut = hl + halfRadial;
+          const minR = getShortCircadianMinRadiusFromEarthCenter();
+          rIn = Math.max(hl * 0.72, hl - halfRadial, minR);
+          rOut = Math.max(hl + halfRadial, rIn + 0.12);
         }
-        const ribbonPair = CR.buildDiskRibbonBetween(
+        let ribbonPair = CR.buildDiskRibbonBetween(
           start,
           end,
           rIn,
@@ -2889,9 +3634,23 @@
           segments,
           straightenBlend
         );
+        if (
+          (!ribbonPair || !ribbonPair.innerFlat || ribbonPair.innerFlat.length < 6) &&
+          typeof CR.blendedDiskPointAtDate === 'function'
+        ) {
+          const rMidFb = (rIn + rOut) * 0.5;
+          const p0 = CR.blendedDiskPointAtDate(start, rMidFb, refSelected, calculateDateHeight, 0);
+          const p1 = CR.blendedDiskPointAtDate(end, rMidFb, refSelected, calculateDateHeight, 0);
+          if (p0 && p1) {
+            ribbonPair = {
+              innerFlat: [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z],
+              outerFlat: [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z]
+            };
+          }
+        }
         if (ribbonPair && ribbonPair.innerFlat && ribbonPair.outerFlat && ribbonPair.innerFlat.length >= 6) {
           const durationDays = Math.max(durationH / 24, 1 / 24);
-          const plotType = layerConfig.plotType ?? 'polygon3d';
+          const plotType = resolveEventPlotType(start, end, layerConfig);
           const dailyMul = getDailyCircadianEventOpacityMul(start, end);
           const opacity = Math.min(1,
             (layerConfig.opacity != null ? layerConfig.opacity : 0.78) *
@@ -2913,29 +3672,29 @@
           const outerFlat = ribbonPair.outerFlat;
           const circTubeMul = getShortCircadianRibbonTubeScale();
 
-          function lineFromFlatShort(flat, hex, op, renderOrder, lineWidth) {
+          function lineFromFlatShort(flat, hex, op, renderOrder, lineWidth, arcEdge) {
             const lw = lineWidth != null ? lineWidth : 1;
             const geometry = new global.THREE.BufferGeometry();
             geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
             const material = new global.THREE.LineBasicMaterial({
               color: hex,
-              transparent: true,
-              opacity: op,
+              ...getShortCircadianLineMaterialOpts(op, start, end),
               linewidth: lw
             });
             const lineObj = new global.THREE.Line(geometry, material);
-            lineObj.renderOrder = renderOrder != null ? renderOrder : roLine;
+            lineObj.renderOrder = renderOrder != null ? renderOrder : SHORT_CIRCADIAN_LINE_RENDER_ORDER;
+            lineObj.userData = { type: 'EventRibbonArc', arcEdge: arcEdge || 'inner' };
             return lineObj;
           }
 
           const group = new global.THREE.Group();
           group.userData = userData;
-          if (shouldAttachShortCircadianToWorldGroup()) userData.circadianWorldSpaceLayer = true;
 
           if (plotType === 'lines') {
-            group.add(lineFromFlatShort(innerFlat, eventHex, opacity, roLine));
-            group.add(lineFromFlatShort(outerFlat, eventHex, opacity, roLine));
-            addBandEndConnectors(group, innerFlat, outerFlat, eventHex, opacity, roLine);
+            const lineOp = resolveShortCircadianLineOpacity(opacity, start, end);
+            group.add(lineFromFlatShort(innerFlat, eventHex, lineOp, roLine, 1, 'inner'));
+            group.add(lineFromFlatShort(outerFlat, eventHex, lineOp, roLine, 1, 'outer'));
+            addBandEndConnectors(group, innerFlat, outerFlat, eventHex, lineOp, roLine);
           } else if (plotType === 'polygon3d' || plotType === 'polygon2d') {
             const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
             if (ribbonGeo) {
@@ -2951,11 +3710,19 @@
               }
             }
           } else {
-            // Unknown plotType: keep the short circadian arc visible instead of falling through to dot-only fallback.
-            const tConn = getRibbonOutlineTubeRadius(earthDist, layerConfig) * circTubeMul;
-            group.add(lineFromFlatShort(innerFlat, eventHex, opacity, roLine));
-            group.add(lineFromFlatShort(outerFlat, eventHex, opacity, roLine));
-            addBandEndConnectors(group, innerFlat, outerFlat, eventHex, opacity, roLine, tConn);
+            const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
+            if (ribbonGeo) {
+              const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, 'polygon3d', roFill, durationDays);
+              group.add(fillMesh);
+              if (borderStyle !== 'none' && outlineColorHex != null) {
+                const tubeR = getRibbonOutlineTubeRadius(earthDist, layerConfig) * circTubeMul;
+                const oIn = createTubeOutlineAlongFlat(innerFlat, outlineColorHex, outlineOp, roLine, earthDist, layerConfig, circTubeMul);
+                const oOut = createTubeOutlineAlongFlat(outerFlat, outlineColorHex, outlineOp, roLine, earthDist, layerConfig, circTubeMul);
+                if (oIn) group.add(oIn);
+                if (oOut) group.add(oOut);
+                addBandEndConnectors(group, innerFlat, outerFlat, outlineColorHex, outlineOp, roLine, tubeR);
+              }
+            }
           }
 
           if (areEventTextLabelsVisibleAtCurrentZoom(start, end) || areEventNameLabelsVisibleAtCurrentZoom(start, end)) {
@@ -2978,7 +3745,11 @@
             );
           }
 
-          if (group.children.length > 0) return group;
+          if (group.children.length > 0) {
+            markCircadianShortScrubRoot(group, layerConfig._diskRibbon, true);
+            markShortEventPointerPickability(group, start, end);
+            return group;
+          }
         }
       }
 
@@ -3003,14 +3774,32 @@
         pos = getPos(midHeight, rDot);
       }
       const markerSize = Math.max(0.22, Math.min(0.5, 0.22 + 0.28 * Math.min(1, durationH / 24)));
-      const marker = createEventLinePointMarker(pos.x, pos.y, pos.z, eventHex, markerSize, userData, start, end);
+      let diskFrameDot = null;
+      if (shouldUseCircadianNearEarthShortPlacement()) {
+        const drDot = layerConfig._diskRibbon;
+        const rLaneDot = clampShortCircadianRadiusFromEarth(
+          drDot && drDot.rMid != null
+            ? drDot.rMid
+            : (typeof global.CircadianRenderer !== 'undefined' &&
+                typeof global.CircadianRenderer.getHandLength === 'function'
+              ? global.CircadianRenderer.getHandLength() * 0.88
+              : 10.5)
+        );
+        diskFrameDot = sampleCircadianDiskMarkerFrame(midDate, rLaneDot, refSelected);
+        if (diskFrameDot && diskFrameDot.position) pos = diskFrameDot.position;
+      }
+      const marker = createEventLinePointMarker(
+        pos.x, pos.y, pos.z, eventHex, markerSize, userData, start, end, diskFrameDot
+      );
       const grp = new global.THREE.Group();
       grp.userData = userData;
       grp.add(marker);
       const bdDot = getEventBandRadii(earthDist, Math.max(durationH / 24, 1e-3));
       addEventWorldlineLabelSprites(grp, event, start, end, startHeight, endHeight, bdDot.rInner, bdDot.rOuter, eventHex, refSelected, 0, undefined, undefined, midTitleAlong01);
       addCircadianConnectorIfApplicable(grp, pos.x, pos.y, pos.z, midDate, eventHex);
-      if (shouldAttachShortCircadianToWorldGroup()) grp.userData.circadianWorldSpaceLayer = true;
+      markWorldSpaceIfNeeded(grp.userData, start, end);
+      markCircadianShortScrubRoot(grp, layerConfig._diskRibbon, false);
+      markShortEventPointerPickability(grp, start, end);
       return grp;
     }
 
@@ -3037,7 +3826,7 @@
     const staggerLogical = getEventBandVerticalStagger(durationDays);
     const hasRibbon = innerFlat.length >= 6 && innerFlat.length === outerFlat.length;
 
-    const plotType = layerConfig.plotType ?? 'polygon3d'; // default filled; use 'lines' in layer style for outline-only
+    const plotType = resolveEventPlotType(start, end, layerConfig);
     const opacity = Math.min(1,
       (layerConfig.opacity != null ? layerConfig.opacity : 0.7) * getDurationOpacityScale(durationDays));
     const roBoost = getDurationRibbonRenderOrderBoost(durationDays);
@@ -3049,14 +3838,20 @@
     const explicitEventColor = hasExplicitEventColor(event);
     const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
     let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
-    eventHex = applyLongTermContextColorToHex(eventHex, anchorMsLong, start, end, durationDays);
+    if (!shouldSkipTemporalVividnessAtDayHelixZooms()) {
+      eventHex = applyLongTermContextColorToHex(eventHex, anchorMsLong, start, end, durationDays);
+    }
     const layerHex = parseColor(layerConfig.color || '#00b4d8');
     // Prefer explicit fillColor, then per-event color, then layer color.
     let fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
-    fillHex = applyLongTermContextColorToHex(fillHex, anchorMsLong, start, end, durationDays);
+    if (!shouldSkipTemporalVividnessAtDayHelixZooms()) {
+      fillHex = applyLongTermContextColorToHex(fillHex, anchorMsLong, start, end, durationDays);
+    }
     const borderStyle = layerConfig.borderStyle || 'event';
     let outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
-    if (outlineColorHex != null) outlineColorHex = applyLongTermContextColorToHex(outlineColorHex, anchorMsLong, start, end, durationDays);
+    if (outlineColorHex != null && !shouldSkipTemporalVividnessAtDayHelixZooms()) {
+      outlineColorHex = applyLongTermContextColorToHex(outlineColorHex, anchorMsLong, start, end, durationDays);
+    }
     const outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
     const fillFade = getLongTermContextFillFadeScales(anchorMsLong, start, end, durationDays);
 
@@ -3066,6 +3861,7 @@
       type: 'EventObject',
       eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
     };
+    markWorldSpaceIfNeeded(userData, start, end);
 
     function lineFromFlat(flat, hex, op, renderOrder, lineWidth) {
       const lw = lineWidth != null ? lineWidth : 1;
@@ -3186,7 +3982,7 @@
 
     function addToFlattenOrWorld(root) {
       if (!root) return;
-      const p = (worldGroup && root.userData && root.userData.circadianWorldSpaceLayer) ? worldGroup : group;
+      const p = resolveEventObjectParent(root, group, worldGroup);
       if (p) p.add(root);
     }
 
@@ -3275,7 +4071,7 @@
           );
           if (ribbonPair && ribbonPair.innerFlat && ribbonPair.outerFlat && ribbonPair.innerFlat.length >= 6) {
             const durationDaysSmall = Math.max(durationH / 24, 1 / 24);
-            const plotType = lineStyle.plotType ?? layerConfig.plotType ?? firstStyle.plotType ?? 'polygon3d';
+            const plotType = resolveEventPlotType(start, end, lineStyle, layerConfig, firstStyle);
             const dailyMulLines = getDailyCircadianEventOpacityMul(start, end);
             const opacity = Math.min(1,
               ((lineStyle.opacity != null ? lineStyle.opacity : layerConfig.opacity) ?? 0.78) *
@@ -3300,17 +4096,21 @@
             const outerFlat = ribbonPair.outerFlat;
             const circTubeMulLines = getShortCircadianRibbonTubeScale();
 
-            function evtShortLineFromFlat(flat, hex, op, lw) {
+            function evtShortLineFromFlat(flat, hex, op, lw, arcEdge) {
               const g = new global.THREE.BufferGeometry();
               g.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
               const m = new global.THREE.LineBasicMaterial({
                 color: hex,
-                transparent: true,
-                opacity: borderStyle === 'none' ? 0 : op,
+                ...getShortCircadianLineMaterialOpts(
+                  borderStyle === 'none' ? 0 : op,
+                  start,
+                  end
+                ),
                 linewidth: lw != null ? lw : 1
               });
               const lo = new global.THREE.Line(g, m);
               lo.renderOrder = roLine;
+              lo.userData = { type: 'EventRibbonArc', arcEdge: arcEdge || 'inner' };
               return lo;
             }
 
@@ -3322,14 +4122,15 @@
               label: line.label || null,
               index: i
             };
-            if (shouldAttachShortCircadianToWorldGroup()) lineUserData.circadianWorldSpaceLayer = true;
+            markWorldSpaceIfNeeded(lineUserData, start, end);
             const lineRoot = new global.THREE.Group();
             lineRoot.userData = { ...lineUserData };
 
             if (plotType === 'lines') {
-              lineRoot.add(evtShortLineFromFlat(innerFlat, eventColorHex, opacity, 1));
-              lineRoot.add(evtShortLineFromFlat(outerFlat, eventColorHex, opacity, 1));
-              addBandEndConnectors(lineRoot, innerFlat, outerFlat, eventColorHex, opacity, roLine,
+              const shortLineOp = resolveShortCircadianLineOpacity(opacity, start, end);
+              lineRoot.add(evtShortLineFromFlat(innerFlat, eventColorHex, shortLineOp, 1, 'inner'));
+              lineRoot.add(evtShortLineFromFlat(outerFlat, eventColorHex, shortLineOp, 1, 'outer'));
+              addBandEndConnectors(lineRoot, innerFlat, outerFlat, eventColorHex, shortLineOp, roLine,
                 getRibbonOutlineTubeRadius(earthDist, outlineLayerCfg) * circTubeMulLines);
             } else if (plotType === 'polygon3d' || plotType === 'polygon2d') {
               const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
@@ -3346,11 +4147,19 @@
                 }
               }
             } else {
-              // Unknown plotType: prefer visible arc lines over dot-only fallback.
-              const tConnL = getRibbonOutlineTubeRadius(earthDist, outlineLayerCfg) * circTubeMulLines;
-              lineRoot.add(evtShortLineFromFlat(innerFlat, eventColorHex, opacity, 1));
-              lineRoot.add(evtShortLineFromFlat(outerFlat, eventColorHex, opacity, 1));
-              addBandEndConnectors(lineRoot, innerFlat, outerFlat, eventColorHex, opacity, roLine, tConnL);
+              const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
+              if (ribbonGeo) {
+                const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, 'polygon3d', roFill, durationDaysSmall);
+                lineRoot.add(fillMesh);
+                if (borderStyle !== 'none' && outlineColorHexEvt != null) {
+                  const tubeR = getRibbonOutlineTubeRadius(earthDist, outlineLayerCfg) * circTubeMulLines;
+                  const oIn = createTubeOutlineAlongFlat(innerFlat, outlineColorHexEvt, outlineOpEvt, roLine, earthDist, outlineLayerCfg, circTubeMulLines);
+                  const oOut = createTubeOutlineAlongFlat(outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, earthDist, outlineLayerCfg, circTubeMulLines);
+                  if (oIn) lineRoot.add(oIn);
+                  if (oOut) lineRoot.add(oOut);
+                  addBandEndConnectors(lineRoot, innerFlat, outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, tubeR);
+                }
+              }
             }
 
             if (areEventTextLabelsVisibleAtCurrentZoom(start, end) || areEventNameLabelsVisibleAtCurrentZoom(start, end)) {
@@ -3378,6 +4187,8 @@
             }
 
             if (lineRoot.children.length > 0) {
+              markCircadianShortScrubRoot(lineRoot, layerConfig._diskRibbon, true);
+              markShortEventPointerPickability(lineRoot, start, end);
               addToFlattenOrWorld(lineRoot);
               objects.push(lineRoot);
               continue;
@@ -3393,6 +4204,11 @@
           midPos = getPosShort(midHeight, rShort);
         }
         const markerSize = Math.max(0.2, Math.min(0.48, 0.2 + 0.28 * Math.min(1, durationH / 24)));
+        let diskFrameLine = null;
+        if (shouldUseCircadianNearEarthShortPlacement()) {
+          diskFrameLine = sampleCircadianDiskMarkerFrame(midDate, rShort, refSelected);
+          if (diskFrameLine && diskFrameLine.position) midPos = diskFrameLine.position;
+        }
         const shortRoot = new global.THREE.Group();
         shortRoot.userData = {
           layerId: layerConfig.id,
@@ -3403,17 +4219,27 @@
           index: i,
           shortEvent: true
         };
-        if (shouldAttachShortCircadianToWorldGroup()) shortRoot.userData.circadianWorldSpaceLayer = true;
+        markWorldSpaceIfNeeded(shortRoot.userData, start, end);
 
-        const marker = createEventLinePointMarker(midPos.x, midPos.y, midPos.z, colorHex, markerSize, {
-          layerId: layerConfig.id,
-          type: 'EventLine',
+        const marker = createEventLinePointMarker(
+          midPos.x,
+          midPos.y,
+          midPos.z,
+          colorHex,
+          markerSize,
+          {
+            layerId: layerConfig.id,
+            type: 'EventLine',
+            start,
+            end,
+            label: line.label || null,
+            index: i,
+            shortEvent: true
+          },
           start,
           end,
-          label: line.label || null,
-          index: i,
-          shortEvent: true
-        }, start, end);
+          diskFrameLine
+        );
         shortRoot.add(marker);
 
         if (areEventTextLabelsVisibleAtCurrentZoom(start, end) || areEventNameLabelsVisibleAtCurrentZoom(start, end)) {
@@ -3441,6 +4267,8 @@
         }
 
         addCircadianConnectorIfApplicable(shortRoot, midPos.x, midPos.y, midPos.z, midDate, colorHex);
+        markCircadianShortScrubRoot(shortRoot, layerConfig._diskRibbon, false);
+        markShortEventPointerPickability(shortRoot, start, end);
         addToFlattenOrWorld(shortRoot);
         objects.push(shortRoot);
         continue;
@@ -3463,7 +4291,7 @@
         rOuter = conc.rOuter;
       }
 
-      const plotType = lineStyle.plotType ?? layerConfig.plotType ?? firstStyle.plotType ?? 'polygon3d';
+      const plotType = resolveEventPlotType(start, end, lineStyle, layerConfig, firstStyle);
       const fillColorFromStyle = lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
       const borderStyle = lineStyle.borderStyle ?? layerConfig.borderStyle ?? firstStyle.borderStyle ?? 'event';
 
@@ -3699,8 +4527,9 @@
 
     const CR = global.CircadianRenderer;
     const baseHand = CR && typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
-    const rim = baseHand * 1.08;
-    const innerMin = baseHand * 0.24;
+    const minR = getShortCircadianMinRadiusFromEarthCenter();
+    const rim = Math.max(baseHand * 1.08, minR + Math.max(baseHand * 0.04, 0.35));
+    const innerMin = Math.max(baseHand * 0.24, minR);
     const gapFrac = 0.4;
     const usable = Math.max(baseHand * 0.04, rim - innerMin);
     const laneW = usable / globalMaxLanes;
@@ -3711,7 +4540,7 @@
       const rIn = innerMin + L * laneW;
       const rOut = rIn + laneW * (1 - gapFrac);
       const rMid = (rIn + rOut) * 0.5;
-      map.set(uid, { rIn, rOut, rMid, lane: L });
+      map.set(uid, clampShortCircadianDiskRibbon({ rIn, rOut, rMid, lane: L }));
     }
     return map;
   }
@@ -3724,6 +4553,7 @@
   function createEventObjects(events, layerConfig, sceneContentGroup, scene, worldSpaceGroup) {
     const objects = [];
     if (!events || !layerConfig) return objects;
+    ensureSceneGeometryInitialized();
     const group = sceneContentGroup || null;
     const worldGroup = worldSpaceGroup || null;
     const byCategory = layerConfig.layerStylesByCategory || {};
@@ -3750,8 +4580,14 @@
       const hasEnd = !!getEventEnd(event);
       const obj = hasEnd ? createEventWorldline(event, effectiveConfig) : createEventMarker(event, effectiveConfig);
       if (obj) {
-        const parent = (worldGroup && obj.userData && obj.userData.circadianWorldSpaceLayer) ? worldGroup : group;
+        const evStart = getEventStart(event);
+        const evEnd = getEventEnd(event);
+        markShortEventPointerPickability(obj, evStart, evEnd);
+        const parent = resolveEventObjectParent(obj, group, worldGroup);
         if (parent) parent.add(obj);
+        else if (typeof console !== 'undefined' && console.warn) {
+          console.warn('EventRenderer: no scene parent for event', eventUidForDisk(event, i));
+        }
         objects.push(obj);
       }
     }
@@ -3767,13 +4603,66 @@
     return objects;
   }
 
+  /**
+   * Why short events may not appear (filters run before meshes are created).
+   * @param {Array} events
+   * @param {string} [layerId]
+   * @returns {Object}
+   */
+  function getShortEventRenderDiagnostics(events, layerId) {
+    const list = events || [];
+    const zl = getZoomLevelForEvents();
+    const circ = normalizedCircadianState();
+    const scope =
+      typeof global.getCircadianShortEventScope === 'function'
+        ? global.getCircadianShortEventScope()
+        : 'unknown';
+    const sel =
+      typeof global.getSelectedDateTime === 'function' ? global.getSelectedDateTime() : null;
+    let hiddenScope = 0;
+    let shortCount = 0;
+    let stackEligible = 0;
+    for (let i = 0; i < list.length; i++) {
+      const s = getEventStart(list[i]);
+      const e = getEventEnd(list[i]);
+      if (!s || isNaN(s.getTime())) continue;
+      const endUse = e && e > s ? e : new Date(s.getTime() + 3600000);
+      if (durationHoursBetween(s, endUse) >= 24) continue;
+      shortCount++;
+      if (shouldHideCircadianShortEventForDayScope(s, endUse)) hiddenScope++;
+      if (isHelixZoomShortStackFrame()) stackEligible++;
+    }
+    return {
+      layerId: layerId || null,
+      zoomLevel: zl,
+      helixZoom: isCircadianHelixZoom(zl),
+      circadianState: circ,
+      shortEventScope: scope,
+      selectedDate: sel ? sel.toISOString() : null,
+      stackPlacement: isHelixZoomShortStackFrame(),
+      attachToSceneContentGroup: shouldAttachShortCircadianToWorldGroup(),
+      shortEventsInLayer: shortCount,
+      hiddenByDayScopeFilter: hiddenScope,
+      wouldReachGpu: shortCount - hiddenScope,
+      sceneGeometryReady:
+        typeof SceneGeometry !== 'undefined' &&
+        typeof PLANET_DATA !== 'undefined' &&
+        !!PLANET_DATA &&
+        PLANET_DATA.length > 0
+    };
+  }
+
   const EventRenderer = {
     createEventObjects,
     createEventLineObjects,
     createEventMarker,
     createEventWorldline,
+    updateCircadianShortEventsForScrub,
     getEventStart,
     getEventEnd,
+    getShortEventRenderDiagnostics,
+    isShortEventPointerPickableAtCurrentZoom,
+    markShortEventPointerPickability,
     /** Same inner/outer radii as multi-day event ribbons (used by list-horizon shell in main.js). */
     getEventBandRadii,
     /** Log-scaled radius vs span length (list-horizon hoop in main.js). */
@@ -3782,6 +4671,8 @@
     eventDurationEligibleForFullListAtZoom,
     areEventNameLabelsVisibleAtCurrentZoom,
     isEventLabelRadialContextSurpassesInner,
+    getListFocusMinDurationDaysForZoom,
+    getListContextRingInnerRadius,
     getListContextRingOuterRadius
   };
 

@@ -24,4 +24,17 @@
   if (typeof location !== 'undefined' && location.hostname === 'circaevum.com' && !window.CIRCAEVUM_FULL_APP_URL) {
     window.CIRCAEVUM_FULL_APP_URL = 'https://app.circaevum.com';
   }
+
+  // Intro / presentation URL flags (read early; presentation/intro.js uses these + full URL rules)
+  var skipIntro =
+    params.get('skipIntro') === '1' ||
+    params.get('skipintro') === '1' ||
+    params.get('intro') === '0';
+  var introForcePrompt = params.get('intro') === '1';
+  var presentStart = params.get('present') === '1';
+  window.CIRCAEVUM_INTRO_URL_FLAGS = {
+    skipIntro: skipIntro,
+    introForcePrompt: introForcePrompt,
+    presentStart: presentStart
+  };
 })();

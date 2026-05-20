@@ -218,6 +218,23 @@ const CircaevumAstro = (function() {
         return getProviderVectorOrDisable(bodyName, d);
     }
 
+    /**
+     * Ecliptic J2000 unit vector → scene direction (matches getHeliocentricScenePosition mapping).
+     * Astro: +X vernal equinox, +Y solstice lane, +Z ecliptic north → scene +X, +Y, +Z with phase lock.
+     */
+    function eclipticDirectionToScene(ex, ey, ez) {
+        const rawX = ex;
+        const rawZ = -ey;
+        const rot = getScenePhaseLockRotationRad();
+        const cr = Math.cos(rot);
+        const sr = Math.sin(rot);
+        return {
+            x: rawX * cr - rawZ * sr,
+            y: ez,
+            z: rawX * sr + rawZ * cr
+        };
+    }
+
     return {
         ensureInit,
         isEnabled,
@@ -227,7 +244,9 @@ const CircaevumAstro = (function() {
         heightToDate,
         sampleWorldlineByHeight,
         getPlanetScenePositionAtDate,
-        getHeliocentricPositionAtDate
+        getHeliocentricPositionAtDate,
+        getScenePhaseLockRotationRad,
+        eclipticDirectionToScene
     };
 })();
 

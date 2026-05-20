@@ -633,7 +633,54 @@
     };
   }
 
+  function getCircadianDayStackSpacing() {
+    const stretch =
+      typeof global.getCircadianHelixYStretchMult === 'function' ? global.getCircadianHelixYStretchMult() : 1;
+    return (HEIGHT_PER_YEAR / 365.25) * Math.max(0.32, stretch * 0.82);
+  }
+
+  /**
+   * One point on a flat day ring in the vertical stack anchored at selected Earth (not helix Y per day).
+   */
+  function diskPointOnSelectedTimeStack(date, r, currentHeight, calculateDateHeightFn) {
+    if (!SceneGeometry || !date || !calculateDateHeightFn) return null;
+    const ctx = readCircadianSceneTimeContext(currentHeight);
+    const sel =
+      ctx.selectedDate ||
+      (typeof global.getSelectedDateTime === 'function' ? global.getSelectedDateTime() : new Date());
+    const timelineRef = ctx.selectedDateHeight;
+    const selMidnight = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
+    const dayMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+    const k = Math.round((dayMidnight.getTime() - selMidnight.getTime()) / MS_PER_DAY);
+    const yPos = timelineRef + k * getCircadianDayStackSpacing();
+    let earthX = ctx.earthX;
+    let earthZ = ctx.earthZ;
+    if (!Number.isFinite(earthX) || !Number.isFinite(earthZ)) {
+      const orbitAngle = SceneGeometry.getAngle(timelineRef, ctx.currentDateHeight);
+      const ep = SceneGeometry.getPosition3D(timelineRef, orbitAngle, earthDistance);
+      earthX = ep.x;
+      earthZ = ep.z;
+    }
+    const frac =
+      (date.getHours() +
+        date.getMinutes() / 60 +
+        date.getSeconds() / 3600 +
+        date.getMilliseconds() / 3600000) /
+      HOURS_PER_DAY;
+    const dayAngle = frac * Math.PI * 2;
+    const sunToEarthAngle = Math.atan2(earthZ, earthX);
+    const handAngle = sunToEarthAngle - dayAngle;
+    return {
+      x: earthX + r * Math.cos(handAngle),
+      y: yPos,
+      z: earthZ + r * Math.sin(handAngle)
+    };
+  }
+
+  /** Sub-day events + connectors: stack at selected time (blend kept for legacy callers only). */
   function blendedDiskPointAtDate(date, r, currentHeight, calculateDateHeightFn, blend) {
+    const stacked = diskPointOnSelectedTimeStack(date, r, currentHeight, calculateDateHeightFn);
+    if (stacked) return stacked;
     const b = parseStraightenBlend(blend);
     const pW = diskPointWrappedAtDate(date, r, currentHeight, calculateDateHeightFn);
     const pS = diskPointStraightAtDate(date, r, currentHeight, calculateDateHeightFn);
@@ -735,26 +782,44 @@
     return buildDiskRibbonBetween(start, end, rIn, rOut, currentHeight, calculateDateHeightFn, segments, straightenBlendOrLegacyBool);
   }
 
+  /** Lightweight day ring: LineLoop in local XZ (32 segments), not mesh/torus fill. */
+  function buildFlatDayRingPositions(radius, segments) {
+    const n = segments != null ? segments : 32;
+    const flat = [];
+    for (let s = 0; s <= n; s++) {
+      const t = (s / n) * Math.PI * 2;
+      flat.push(Math.cos(t) * radius, 0, Math.sin(t) * radius);
+    }
+    return flat;
+  }
+
   /**
-   * One closed loop per calendar day: disk rim guide in world space.
+   * Discrete day rings: LineLoop per calendar day, vertical stack at selected Earth XZ (not helix Y).
    */
   function createDayDiskOutlinesGroup(currentHeight, options) {
     if (!SceneGeometry || !global.THREE || typeof calculateDateHeight !== 'function') return null;
     const THREE = global.THREE;
     const spanDays = options && options.spanDays != null ? options.spanDays : 2;
     const rimR = (options && options.rimRadius != null) ? options.rimRadius : handLength * 1.08;
-    const segmentsPerLoop = 72;
+    const segmentsPerLoop = 32;
     const st = readCircadianHelixStyle();
     const group = new THREE.Group();
     group.userData = { circadianDayDisksAnim: true, spanDays, rimRadius: rimR, segmentsPerLoop };
-    const mat = new THREE.LineBasicMaterial({
-      color: st.helixColor != null ? st.helixColor : 0xffaa44,
-      transparent: true,
-      opacity: st.helixOpacity != null ? st.helixOpacity * 0.92 : 0.72,
-      depthWrite: false
-    });
+    const baseOp = st.helixOpacity != null ? st.helixOpacity * 0.92 : 0.72;
+    const color = st.helixColor != null ? st.helixColor : 0xffaa44;
+    const circleFlat = buildFlatDayRingPositions(rimR, segmentsPerLoop);
+    const circleGeo = new THREE.BufferGeometry();
+    circleGeo.setAttribute('position', new THREE.Float32BufferAttribute(circleFlat, 3));
     for (let i = 0; i < spanDays; i++) {
-      const loop = new THREE.LineLoop(new THREE.BufferGeometry(), mat.clone());
+      const loop = new THREE.LineLoop(
+        circleGeo,
+        new THREE.LineBasicMaterial({
+          color,
+          transparent: true,
+          opacity: baseOp,
+          depthWrite: false
+        })
+      );
       loop.userData.circadianDayDiskLoop = true;
       loop.userData.daySlotIndex = i;
       group.add(loop);
@@ -764,46 +829,43 @@
       typeof global.getCircadianStraightenBlend === 'function' ? global.getCircadianStraightenBlend() : 0;
     const centerDate =
       typeof global.getSelectedDateTime === 'function' ? global.getSelectedDateTime() : new Date();
-    refreshDayDiskOutlinesGroup(group, blend, currentHeight, centerDate, spanDays, rimR, segmentsPerLoop);
+    refreshDayDiskOutlinesGroup(group, blend, currentHeight, centerDate, spanDays, rimR);
     return group;
   }
 
-  function refreshDayDiskOutlinesGroup(group, straightenBlend, currentHeight, centerDate, spanDays, rimRadius, segmentsPerLoop) {
-    if (!group || !group.userData || !group.userData.circadianDayDisksAnim || !calculateDateHeight || !global.THREE) {
+  function refreshDayDiskOutlinesGroup(group, straightenBlend, currentHeight, centerDate, spanDays, rimRadius) {
+    if (!group || !group.userData || !group.userData.circadianDayDisksAnim || !global.THREE) {
       return;
     }
     const rimR = rimRadius != null ? rimRadius : group.userData.rimRadius || handLength * 1.08;
-    const nSeg = segmentsPerLoop != null ? segmentsPerLoop : group.userData.segmentsPerLoop || 72;
     const span = spanDays != null ? spanDays : group.userData.spanDays || 2;
     const cd = centerDate instanceof Date ? new Date(centerDate.getTime()) : new Date();
     const halfLo = Math.floor(span / 2);
     const halfHi = span - halfLo;
-    const blend = parseStraightenBlend(straightenBlend);
+    const ctx = readCircadianSceneTimeContext(currentHeight);
+    const timelineRef = ctx.selectedDateHeight;
+    const stretch =
+      typeof global.getCircadianHelixYStretchMult === 'function' ? global.getCircadianHelixYStretchMult() : 1;
+    const heightPerDay = HEIGHT_PER_YEAR / 365.25;
+    const daySpacing = heightPerDay * Math.max(0.32, stretch * 0.82);
+    let earthX = ctx.earthX;
+    let earthZ = ctx.earthZ;
+    if (!Number.isFinite(earthX) || !Number.isFinite(earthZ)) {
+      const orbitAngle = SceneGeometry.getAngle(timelineRef, ctx.currentDateHeight);
+      const ep = SceneGeometry.getPosition3D(timelineRef, orbitAngle, earthDistance);
+      earthX = ep.x;
+      earthZ = ep.z;
+    }
+    const stOp = readCircadianHelixStyle();
     let childIdx = 0;
     for (let k = -halfLo; k < halfHi; k++) {
       const d0 = new Date(cd.getFullYear(), cd.getMonth(), cd.getDate() + k, 0, 0, 0, 0);
-      const flat = [];
-      for (let s = 0; s < nSeg; s++) {
-        const frac = s / nSeg;
-        const d = new Date(d0.getTime() + frac * MS_PER_DAY);
-        const p = blendedDiskPointAtDate(d, rimR, currentHeight, calculateDateHeight, blend);
-        if (p) flat.push(p.x, p.y, p.z);
-      }
-      const loop = group.children[childIdx];
+      const ring = group.children[childIdx];
       childIdx++;
-      if (!loop || !loop.geometry) continue;
-      if (flat.length < 9) continue;
-      const pos = loop.geometry.getAttribute('position');
-      if (!pos || pos.array.length !== flat.length) {
-        if (loop.geometry) loop.geometry.dispose();
-        loop.geometry = new global.THREE.BufferGeometry();
-        loop.geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(new Float32Array(flat), 3));
-      } else {
-        for (let i = 0; i < flat.length; i++) pos.array[i] = flat[i];
-        pos.needsUpdate = true;
-      }
-      loop.geometry.computeBoundingSphere();
-      const stOp = readCircadianHelixStyle();
+      if (!ring) continue;
+      ring.position.set(earthX, timelineRef + k * daySpacing, earthZ);
+      // Geometry is built in local XZ (ecliptic); do not apply torus-era rotation.x = π/2.
+      ring.rotation.set(0, 0, 0);
       let opRing = stOp.helixOpacity != null ? stOp.helixOpacity * 0.92 : 0.72;
       const zlDisk = typeof global.getCurrentZoomLevel === 'function' ? global.getCurrentZoomLevel() : 5;
       if (sameLocalCalendarDay(d0, cd)) {
@@ -811,8 +873,13 @@
       } else {
         opRing *= zlDisk === 0 ? 0.11 : 0.3;
       }
-      if (loop.material && typeof loop.material.opacity === 'number') {
-        loop.material.opacity = Math.max(0.035, Math.min(1, opRing));
+      const fade =
+        typeof global.getCircadianDayRingDistanceFade === 'function'
+          ? global.getCircadianDayRingDistanceFade(d0, cd)
+          : 1;
+      opRing *= fade;
+      if (ring.material && typeof ring.material.opacity === 'number') {
+        ring.material.opacity = Math.max(0.035, Math.min(1, opRing));
       }
     }
   }
@@ -831,6 +898,7 @@
     buildHelixRibbonBetween,
     buildDiskRibbonBetween,
     blendedDiskPointAtDate,
+    diskPointOnSelectedTimeStack,
     createDayDiskOutlinesGroup,
     refreshDayDiskOutlinesGroup,
     heightForDate,

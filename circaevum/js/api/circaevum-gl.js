@@ -103,6 +103,9 @@ class CircaevumGL {
       }
       this._setupEventListeners();
       this._refreshMoonWorldline();
+      if (this.layers && this.layers.size > 0) {
+        this.refreshAllEventLayers();
+      }
       return;
     }
     
@@ -409,7 +412,19 @@ class CircaevumGL {
    * @param {Array} events - Updated events
    */
   updateEvents(layerId, events) {
-    this.events.set(layerId, Array.isArray(events) ? events : [events]);
+    if (!this.layers.has(layerId)) {
+      this.addLayer(layerId);
+    }
+    const incoming = Array.isArray(events) ? events : [events];
+    const vevents = incoming.map((e) => {
+      if (typeof VEvent !== 'undefined') {
+        if (e instanceof VEvent) return e;
+        if (e.uid && e.dtstart) return VEvent.fromJSON(e);
+        if (e.id && (e.start || e.startTime)) return VEvent.fromGoogleEvent(e);
+      }
+      return e;
+    });
+    this.events.set(layerId, vevents);
     this._renderLayer(layerId);
   }
 
@@ -433,9 +448,19 @@ class CircaevumGL {
     if (options.layerStyles && typeof options.layerStyles === 'object') {
       this.layerStylesByCategory = options.layerStyles;
     }
+    if (options.timelineEventFilter === 'all' || options.timelineEventFilter === 'year') {
+      this.setTimelineEventFilter(options.timelineEventFilter);
+    }
+    if (options.circadianShortEventScope === 'year' || options.circadianShortEventScope === 'day') {
+      if (typeof window !== 'undefined' && typeof window.setCircadianShortEventScope === 'function') {
+        window.setCircadianShortEventScope(options.circadianShortEventScope);
+      }
+    }
     if (!this.layers.has(layerId)) {
       this.addLayer(layerId, {
         name: options.sessionId ? `Session ${options.sessionId}` : layerId,
+        plotType: 'polygon3d',
+        visible: true,
         ...(options.sessionId && { sessionId: options.sessionId })
       });
     }
@@ -443,6 +468,8 @@ class CircaevumGL {
     if (options.sessionId) {
       layer.sessionId = options.sessionId;
     }
+    layer.visible = true;
+    if (!layer.plotType) layer.plotType = 'polygon3d';
     this.updateEvents(layerId, Array.isArray(events) ? events : [events]);
     this._emit('eventsIngested', { layerId, count: (Array.isArray(events) ? events : [events]).length, sessionId: options.sessionId });
   }
@@ -813,7 +840,27 @@ class CircaevumGL {
    * Render a layer's events
    * @private
    */
+  _syncSceneGroupsFromHost() {
+    if (typeof scene !== 'undefined' && scene) {
+      this.scene = scene;
+    }
+    if (typeof camera !== 'undefined' && camera) {
+      this.camera = camera;
+    }
+    if (typeof renderer !== 'undefined' && renderer) {
+      this.renderer = renderer;
+    }
+    if (typeof sceneContentGroup !== 'undefined' && sceneContentGroup) {
+      this.sceneContentGroup = sceneContentGroup;
+    }
+    if (typeof flattenableGroup !== 'undefined' && flattenableGroup) {
+      this.flattenableGroup = flattenableGroup;
+    }
+  }
+
   _renderLayer(layerId) {
+    this._syncSceneGroupsFromHost();
+
     const layer = this.layers.get(layerId);
     if (!layer || !layer.visible) {
       this._removeLayerObjects(layerId);
@@ -835,10 +882,14 @@ class CircaevumGL {
 
     const allObjects = [];
 
-    // Decide which scene group to attach to: flattenableGroup flattens with time markers, else fallback.
-    const targetGroup = this.flattenableGroup || this.sceneContentGroup;
+    const targetGroup =
+      this.flattenableGroup ||
+      (typeof flattenableGroup !== 'undefined' ? flattenableGroup : null) ||
+      this.sceneContentGroup ||
+      (typeof sceneContentGroup !== 'undefined' ? sceneContentGroup : null);
     const worldSpaceGroup =
-      this.flattenableGroup && this.sceneContentGroup ? this.sceneContentGroup : null;
+      this.sceneContentGroup ||
+      (typeof sceneContentGroup !== 'undefined' ? sceneContentGroup : null);
 
     // Per-category styles from wrapper (layer name -> style); apply when rendering each event
     const layerConfigWithStyles = {
@@ -877,9 +928,16 @@ class CircaevumGL {
         this._layerObjects = new Map();
       }
       this._layerObjects.set(layerId, allObjects);
+    } else if (filteredEvents.length > 0 && typeof console !== 'undefined' && console.warn) {
+      console.warn(
+        '[CircaevumGL] Layer has',
+        filteredEvents.length,
+        'events but 0 meshes (check scope, dates, scene groups). layerId=',
+        layerId
+      );
     }
     this._reapplyStoredEventFocus();
-    if (filteredEvents.length === 0 && lines.length === 0 && typeof EventRenderer === 'undefined') {
+    if (filteredEvents.length > 0 && typeof EventRenderer === 'undefined') {
       console.warn('EventRenderer not available. Events will not be rendered.');
     }
   }
@@ -974,14 +1032,26 @@ class CircaevumGL {
     return s <= rangeEnd && e >= rangeStart;
   }
 
+  /**
+   * Month zoom (5) and finer always clip to selected calendar year, even when timeline scope is “all time”.
+   * @private
+   */
+  _timelineYearScopeForcedByZoom() {
+    return typeof currentZoom === 'number' && currentZoom >= 5;
+  }
+
+  _shouldApplyTimelineYearScope() {
+    return this.timelineEventFilter === 'year' || this._timelineYearScopeForcedByZoom();
+  }
+
   _applyTimelineScopeFilter(events) {
-    if (this.timelineEventFilter !== 'year') return events;
+    if (!this._shouldApplyTimelineYearScope()) return events;
     const y = this._getTimelineFilterYear();
     return events.filter(e => this._eventOverlapsYear(e, y));
   }
 
   _filterEventLinesForTimeline(lines) {
-    if (this.timelineEventFilter !== 'year') return lines;
+    if (!this._shouldApplyTimelineYearScope()) return lines;
     const y = this._getTimelineFilterYear();
     return lines.filter(ln => this._lineOverlapsYear(ln, y));
   }
@@ -1008,6 +1078,20 @@ class CircaevumGL {
 
   getTimelineEventFilter() {
     return this.timelineEventFilter;
+  }
+
+  /**
+   * Visit each rendered event root (for lightweight scrub updates).
+   * @param {function(import('three').Object3D):void} callback
+   */
+  forEachLayerObjectRoot(callback) {
+    if (!callback || !this._layerObjects) return;
+    for (const roots of this._layerObjects.values()) {
+      if (!Array.isArray(roots)) continue;
+      for (let i = 0; i < roots.length; i++) {
+        if (roots[i]) callback(roots[i]);
+      }
+    }
   }
 
   /**
@@ -1106,10 +1190,18 @@ class CircaevumGL {
     if (!ref || !(ref instanceof Date) || isNaN(ref.getTime())) return null;
     const z = typeof currentZoom === 'number' && !isNaN(currentZoom) ? currentZoom : 2;
     const day = 86400000;
-    if (z === 3 || z === 4) {
+    if (z === 3 || z === 4 || z >= 5) {
       const y = ref.getFullYear();
       const t0 = new Date(y, 0, 1, 0, 0, 0, 0).getTime();
       const t1 = new Date(y, 11, 31, 23, 59, 59, 999).getTime();
+      if (z >= 5) {
+        let halfMs = 30 * day;
+        if (z >= 9) halfMs = day;
+        else if (z >= 8) halfMs = 2 * day;
+        else if (z >= 7) halfMs = 7 * day;
+        const mid = ref.getTime();
+        return { t0: Math.max(t0, mid - halfMs), t1: Math.min(t1, mid + halfMs) };
+      }
       return { t0, t1 };
     }
     let halfMs;

@@ -29,6 +29,7 @@
 
     var eeW1Btn = document.getElementById('edge-esmeralda-w1-btn');
     function runLoadEdgeEsmeraldaW1() {
+      if (typeof window.getGL === 'function') window.getGL();
       if (typeof window.loadEdgeEsmeraldaWeek1Samples !== 'function') {
         console.warn('edge-esmeralda-week1-samples.js not loaded');
         return 0;
@@ -172,6 +173,14 @@
           if (action === 'login' && fullAppUrl) window.location.href = buildFullAppUrl(true);
           if (action === 'keyboard-controls') openKeyboardControlsPanel();
           if (action === 'about') toggleAboutPanel();
+          if (action === 'replay-intro') {
+            if (window.CircaevumIntro && typeof window.CircaevumIntro.clearStoredIntro === 'function') {
+              window.CircaevumIntro.clearStoredIntro();
+            }
+            if (typeof window.showCircaevumIntroPrompt === 'function') {
+              window.showCircaevumIntroPrompt({ force: true });
+            }
+          }
           if (action === 'edge-esmeralda-w1') runLoadEdgeEsmeraldaW1();
         };
       });
@@ -189,6 +198,73 @@
         e.stopPropagation();
         sceneIconOverlay.classList.toggle('collapsed');
       };
+    }
+
+    var ORBITAL_DATA_STORAGE_KEY = 'circaevum-orbital-data-mode';
+    var orbitalPanel = document.getElementById('orbital-data-panel');
+    var orbitalMinimize = document.getElementById('orbital-data-minimize');
+    var orbitalHide = document.getElementById('orbital-data-hide');
+    var orbitalRestore = document.getElementById('orbital-data-restore');
+
+    function syncOrbitalDataMinimizeButton(collapsed) {
+      if (!orbitalMinimize) return;
+      var isCollapsed = !!collapsed;
+      orbitalMinimize.classList.toggle('is-collapsed', isCollapsed);
+      orbitalMinimize.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+      orbitalMinimize.title = isCollapsed ? 'Expand orbital data' : 'Collapse orbital data';
+      orbitalMinimize.setAttribute(
+        'aria-label',
+        isCollapsed ? 'Expand orbital data panel' : 'Collapse orbital data panel'
+      );
+      var path = orbitalMinimize.querySelector('path');
+      if (path) path.setAttribute('d', isCollapsed ? 'M12 5v14M5 12h7 7-7 7' : 'M5 12h14');
+    }
+
+    function applyOrbitalDataMode(mode) {
+      if (!orbitalPanel) return;
+      var m = mode === 'collapsed' || mode === 'hidden' ? mode : 'expanded';
+      orbitalPanel.classList.toggle('is-collapsed', m === 'collapsed');
+      orbitalPanel.classList.toggle('is-hidden', m === 'hidden');
+      syncOrbitalDataMinimizeButton(m === 'collapsed');
+      if (orbitalRestore) orbitalRestore.hidden = m !== 'hidden';
+      try {
+        localStorage.setItem(ORBITAL_DATA_STORAGE_KEY, m);
+      } catch (storageErr) { /* ignore */ }
+    }
+
+    function readOrbitalDataMode() {
+      try {
+        var stored = localStorage.getItem(ORBITAL_DATA_STORAGE_KEY);
+        if (stored === 'collapsed' || stored === 'hidden' || stored === 'expanded') return stored;
+      } catch (readErr) { /* ignore */ }
+      return 'expanded';
+    }
+
+    if (orbitalPanel) {
+      applyOrbitalDataMode(readOrbitalDataMode());
+      if (orbitalMinimize) {
+        orbitalMinimize.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var collapsed = orbitalPanel.classList.contains('is-collapsed');
+          if (orbitalPanel.classList.contains('is-hidden')) {
+            applyOrbitalDataMode('expanded');
+            return;
+          }
+          applyOrbitalDataMode(collapsed ? 'expanded' : 'collapsed');
+        });
+      }
+      if (orbitalHide) {
+        orbitalHide.addEventListener('click', function(e) {
+          e.stopPropagation();
+          applyOrbitalDataMode('hidden');
+        });
+      }
+      if (orbitalRestore) {
+        orbitalRestore.addEventListener('click', function(e) {
+          e.stopPropagation();
+          applyOrbitalDataMode('expanded');
+        });
+      }
     }
 
     var ephemerisToggle = document.getElementById('ephemeris-toggle');

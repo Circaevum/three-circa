@@ -3,6 +3,16 @@
   window.addEventListener('message', function(event) {
     var data = event.data;
     if (!data || typeof data !== 'object' || !data.type) return;
+    if (
+      data.type === 'CIRCAEVUM_INTRO_SET' ||
+      data.type === 'CIRCAEVUM_INTRO_PROMPT' ||
+      data.type === 'CIRCAEVUM_INTRO_START'
+    ) {
+      if (typeof window.applyCircaevumIntroEmbedCommand === 'function') {
+        window.applyCircaevumIntroEmbedCommand(data);
+      }
+      return;
+    }
     if (data.type === 'CIRCAEVUM_SET_FLATTEN') {
       if (typeof window.applyFlattenFromEmbed === 'function') {
         window.applyFlattenFromEmbed(!!data.flatten, typeof data.intensity === 'number' ? data.intensity : undefined);
@@ -20,6 +30,9 @@
         console.log('[Circaevum GL] Ingesting events from wrapper:', data.layerId, 'count=', data.events.length);
       } catch (e) {}
       gl.ingestEvents(data.layerId, data.events, data.options || {});
+      if (typeof gl.refreshAllEventLayers === 'function') {
+        try { gl.refreshAllEventLayers(); } catch (e2) {}
+      }
       if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
       if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
       // Do not auto fitToLayer here – it would jump selected time to earliest event (e.g. May 2025). Caller may send CIRCAEVUM_FIT_VIEW when focusing on a layer.
@@ -67,6 +80,7 @@
       if (readySent) return;
       var gl = window.circaevumGL || (window.getGL && window.getGL());
       if (!gl || typeof gl.setZoomLevel !== 'function' || typeof gl.navigateToTime !== 'function') return;
+      if (typeof sceneContentGroup === 'undefined' || !sceneContentGroup) return;
       readySent = true;
       try {
         window.parent.postMessage({ type: 'CIRCAEVUM_READY' }, '*');
