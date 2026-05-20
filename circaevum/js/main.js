@@ -97,6 +97,8 @@ function clearTourNarrativeSceneFlags() {
 }
 /** Pedagogical Moon mesh + dashed guide + lunar worldline + Artemis II overlay (scene icon / M). */
 let showMoonLayer = true;
+/** Intro tour: skip ghost Earth, extra orbit clutter, and second globe hour hand. */
+let tourMinimalOrbitMode = false;
 
 /** Moon layer is off at coarse zooms 1–4 (century → quarter); still on at 0, 5–9 when `showMoonLayer` is true. */
 function isMoonLayerEffectiveAtZoom(zl) {
@@ -1965,6 +1967,28 @@ function updateSunEarthTimeRadials(zoomLevel) {
             });
         }
     }
+
+    if (zoomLevel === 0 || zoomLevel === 8 || zoomLevel === 9) {
+        const earthMesh = planetMeshes.find((p) => p.userData && p.userData.name === 'Earth');
+        const earthSurfaceRadius = resolveEarthGlobeSurfaceRadius(earthMesh) ||
+            (earth && typeof earth.size === 'number' ? earth.size : 6.5) * 0.3;
+        const hourNumberRadius = earthSurfaceRadius * 2.2;
+        const selectedDate = getSelectedDateTime();
+        const currentDate = new Date();
+        if (typeof EarthGlobe !== 'undefined' && earthMesh && EarthGlobe.updateGlobeHands) {
+            EarthGlobe.updateGlobeHands({
+                earthGroup: earthMesh,
+                selectedDate,
+                currentDate,
+                hourNumberRadius,
+                selectedDateHeight,
+                zoomLevel,
+                sceneContentGroup,
+                tourMinimalOrbitMode,
+                getSelectedTimeColor
+            });
+        }
+    }
 }
 
 /**
@@ -2117,8 +2141,17 @@ function applyLightTimeScrubUpdate(zoomLevel) {
     }
 
     const earthMeshScrub = planetMeshes.find((p) => p && p.userData && p.userData.name === 'Earth');
-    if (earthMeshScrub && typeof EarthGlobe !== 'undefined' && EarthGlobe.updateOrientation) {
-        EarthGlobe.updateOrientation(earthMeshScrub, selectedDate);
+    if (earthMeshScrub && typeof EarthGlobe !== 'undefined') {
+        if (typeof EarthGlobe.refreshObserverForSelectedTime === 'function') {
+            EarthGlobe.refreshObserverForSelectedTime(selectedDate, zoomLevel);
+        }
+        if (typeof EarthGlobe.updateOrientation === 'function') {
+            EarthGlobe.updateOrientation(earthMeshScrub, selectedDate);
+        }
+    }
+
+    if (zoomLevel === 0 || zoomLevel === 8 || zoomLevel === 9) {
+        createTimeMarkers(zoomLevel === 0 ? 9 : zoomLevel);
     }
 
     updateSunEarthTimeRadials(zoomLevel);
