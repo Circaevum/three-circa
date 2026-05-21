@@ -97,8 +97,6 @@ function clearTourNarrativeSceneFlags() {
 }
 /** Pedagogical Moon mesh + dashed guide + lunar worldline + Artemis II overlay (scene icon / M). */
 let showMoonLayer = true;
-/** Intro tour: skip ghost Earth, extra orbit clutter, and second globe hour hand. */
-let tourMinimalOrbitMode = false;
 
 /** Moon layer is off at coarse zooms 1–4 (century → quarter); still on at 0, 5–9 when `showMoonLayer` is true. */
 function isMoonLayerEffectiveAtZoom(zl) {
