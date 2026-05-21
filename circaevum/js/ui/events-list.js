@@ -272,10 +272,10 @@
     }
     var spanHint = ' Dashed inner ring = spans not in the list at this zoom (context disc optional).';
     var dayMs = 86400000;
-    var yearMs = 365 * dayMs;
-    var frac = Math.min(1, (2 * halfMs) / yearMs);
+    var panelArc = (typeof window.getListContextDiscArcForPanel === 'function')
+      ? window.getListContextDiscArcForPanel(z)
+      : null;
     if (z === 0) {
-      frac = Math.min(1, 3600000 / dayMs);
       cap.textContent = 'Outer arc ≈ selected hour (' + ref.getHours() + ':00–' + ((ref.getHours() + 1) % 24) + ':00).' + spanHint;
     } else if (z === 3 || z === 4) {
       cap.textContent = 'Outer arc ≈ list window near selected time (±' + Math.max(1, Math.round(halfMs / dayMs))
@@ -283,8 +283,15 @@
     } else {
       cap.textContent = 'Outer arc ≈ list time window near selected time (±' + Math.max(1, Math.round(halfMs / dayMs)) + 'd).' + spanHint;
     }
-    var len = Math.max(1.5, frac * EVENT_LIST_RING_C);
-    arc.setAttribute('stroke-dasharray', len + ' ' + (EVENT_LIST_RING_C - len));
+    var len = panelArc ? panelArc.arcLen : Math.max(1.5, Math.min(100, (2 * halfMs) / (365 * dayMs) * EVENT_LIST_RING_C));
+    var gap = panelArc ? panelArc.arcGap : EVENT_LIST_RING_C - len;
+    var offset = panelArc && !panelArc.fullCircle ? panelArc.arcOffset : 0;
+    arc.setAttribute('stroke-dasharray', len + ' ' + gap);
+    arc.setAttribute('stroke-dashoffset', String(-offset));
+    if (arcInner) {
+      arcInner.setAttribute('stroke-dasharray', len + ' ' + gap);
+      arcInner.setAttribute('stroke-dashoffset', String(-offset));
+    }
   }
 
   function eventColorToRgbaPanelBackground(color, layerHex, alphaStrong, alphaWeak, inList) {

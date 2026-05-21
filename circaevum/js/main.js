@@ -140,6 +140,8 @@ let listHorizonEarthRingCurrentHeight = null;
 let listHorizonEarthRingTargetHeight = null;
 let listHorizonEarthRingEarthDistance = null;
 let listHorizonEarthRingTargetZoom = null;
+/** Cached arc span key so selected-time scrub rebuilds the context band. */
+let listHorizonEarthRingArcKey = null;
 /** Sky-filled list-context disc at the time-marker band (zoom-context hoop). */
 let showContextDisc = false;
 /** Short (<24h) circadian-scoped events: 'day' = selected calendar day only, 'year' = whole selected year. */
@@ -994,6 +996,21 @@ function getPlanetXZAtSelectedDate(planetData, selectedDate, currentDateHeight, 
     };
 }
 
+function sceneHourFractionForEarthHand(safeDate, zoomLevel) {
+    const zl = typeof zoomLevel !== 'undefined' ? zoomLevel : currentZoom;
+    if (typeof EarthGlobe !== 'undefined' && EarthGlobe.getSceneHourDecimal && EarthGlobe.getObserver) {
+        const obs = EarthGlobe.getObserver(safeDate, zl);
+        if (obs && obs.lon != null && !isNaN(obs.lon)) {
+            return EarthGlobe.getSceneHourDecimal(safeDate, obs.lon) / 24;
+        }
+    }
+    return (
+        safeDate.getHours() +
+        safeDate.getMinutes() / 60 +
+        safeDate.getSeconds() / 3600
+    ) / 24;
+}
+
 function getEarthHourHandSurfaceFocus(earthPos, selectedDateHeight, selectedDate, earthSurfaceRadius) {
     let safeDate = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date();
     if (typeof window !== 'undefined' && typeof window.getSelectedDateTime === 'function') {
@@ -1001,7 +1018,7 @@ function getEarthHourHandSurfaceFocus(earthPos, selectedDateHeight, selectedDate
         if (sel instanceof Date && !isNaN(sel.getTime())) safeDate = sel;
     }
     const sunToEarthAngle = Math.atan2(earthPos.z, earthPos.x);
-    const hourFrac = (safeDate.getHours() + (safeDate.getMinutes() / 60) + (safeDate.getSeconds() / 3600)) / 24;
+    const hourFrac = sceneHourFractionForEarthHand(safeDate, currentZoom);
     const hourAngleFromEarth = sunToEarthAngle - hourFrac * Math.PI * 2;
     const r = Number.isFinite(earthSurfaceRadius) && earthSurfaceRadius > 0 ? earthSurfaceRadius : 1.95;
     return {
@@ -1087,7 +1104,7 @@ function getEarthHourHandPointAtRadius(earthPos, selectedDateHeight, selectedDat
         if (sel instanceof Date && !isNaN(sel.getTime())) safeDate = sel;
     }
     const sunToEarthAngle = Math.atan2(earthPos.z, earthPos.x);
-    const hourFrac = (safeDate.getHours() + (safeDate.getMinutes() / 60) + (safeDate.getSeconds() / 3600)) / 24;
+    const hourFrac = sceneHourFractionForEarthHand(safeDate, zl);
     const hourAngleFromEarth = sunToEarthAngle - hourFrac * Math.PI * 2;
     const r = Number.isFinite(radialDistance) && radialDistance > 0 ? radialDistance : 1.95;
     return {
@@ -1150,6 +1167,91 @@ function getEventListHalfSpanMs(zoomLevel) {
     return 365 * EVENT_LIST_MS_PER_DAY;
 }
 
+/** Event-list time window [t0, t1] in ms (matches events-list.js filters). */
+function getListContextDiscTimeBoundsMs(zoomLevel, refDate) {
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+    const ref =
+        refDate instanceof Date && !isNaN(refDate.getTime())
+            ? refDate
+            : typeof getSelectedDateTime === 'function'
+              ? getSelectedDateTime()
+              : new Date();
+    const halfMs = getEventListHalfSpanMs(z);
+    let t0 = ref.getTime() - halfMs;
+    let t1 = ref.getTime() + halfMs;
+    if (z === 0) {
+        const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), ref.getHours(), 0, 0, 0);
+        t0 = start.getTime();
+        t1 = t0 + EVENT_LIST_MS_PER_DAY / 24;
+    } else if (z === 3 || z === 4 || z >= 5) {
+        const y0 = new Date(ref.getFullYear(), 0, 1, 0, 0, 0, 0).getTime();
+        const y1 = new Date(ref.getFullYear(), 11, 31, 23, 59, 59, 999).getTime();
+        t0 = Math.max(t0, y0);
+        t1 = Math.min(t1, y1);
+    }
+    if (t1 < t0) t1 = t0;
+    return { t0, t1, ref };
+}
+
+/**
+ * Orbital XZ arc (radians) for the selected list time span at the context hoop height.
+ * @returns {{ theta0: number, theta1: number, spanRad: number, fullCircle: boolean, thetaMid: number }}
+ */
+function getListContextDiscArcRad(zoomLevel, refDate) {
+    const TWO_PI = Math.PI * 2;
+    const earth = PLANET_DATA && PLANET_DATA.find((p) => p && p.name === 'Earth');
+    if (!earth || typeof getPlanetXZAtSelectedDate !== 'function' || typeof computeSceneDateHeights !== 'function') {
+        return { theta0: 0, theta1: TWO_PI, spanRad: TWO_PI, fullCircle: true, thetaMid: 0 };
+    }
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+    const bounds = getListContextDiscTimeBoundsMs(z, refDate);
+    let currentDateHeight;
+    let selectedDateHeight;
+    try {
+        const heights = computeSceneDateHeights(z);
+        currentDateHeight = heights.currentDateHeight;
+        selectedDateHeight = heights.selectedDateHeight;
+    } catch (e) {
+        return { theta0: 0, theta1: TWO_PI, spanRad: TWO_PI, fullCircle: true, thetaMid: 0 };
+    }
+
+    function thetaAtMs(ms) {
+        const d = new Date(ms);
+        const xz = getPlanetXZAtSelectedDate(earth, d, currentDateHeight, selectedDateHeight);
+        return Math.atan2(xz.z, xz.x);
+    }
+
+    const thetaRef = thetaAtMs(bounds.ref.getTime());
+    function unwrapNear(theta, center) {
+        let t = theta;
+        while (t - center > Math.PI) t -= TWO_PI;
+        while (t - center < -Math.PI) t += TWO_PI;
+        return t;
+    }
+
+    const u0 = unwrapNear(thetaAtMs(bounds.t0), thetaRef);
+    const u1 = unwrapNear(thetaAtMs(bounds.t1), thetaRef);
+    let theta0 = Math.min(u0, u1);
+    let theta1 = Math.max(u0, u1);
+    let spanRad = theta1 - theta0;
+    if (spanRad < 1e-4) {
+        const pad = z === 0 ? 0.04 : 0.02;
+        theta0 = thetaRef - pad;
+        theta1 = thetaRef + pad;
+        spanRad = theta1 - theta0;
+    }
+    if (spanRad >= TWO_PI - 0.02) {
+        return { theta0: 0, theta1: TWO_PI, spanRad: TWO_PI, fullCircle: true, thetaMid: thetaRef };
+    }
+    return {
+        theta0,
+        theta1,
+        spanRad,
+        fullCircle: false,
+        thetaMid: (theta0 + theta1) * 0.5
+    };
+}
+
 function disposeListHorizonEarthRing() {
     if (!listHorizonEarthRingMesh) return;
     if (listHorizonEarthRingMesh.parent) listHorizonEarthRingMesh.parent.remove(listHorizonEarthRingMesh);
@@ -1169,6 +1271,13 @@ function resetListHorizonEarthRingAnimationState() {
     listHorizonEarthRingTargetHeight = null;
     listHorizonEarthRingEarthDistance = null;
     listHorizonEarthRingTargetZoom = null;
+    listHorizonEarthRingArcKey = null;
+}
+
+function listContextDiscArcKey(zoomLevel) {
+    const arc = getListContextDiscArcRad(zoomLevel);
+    if (arc.fullCircle) return 'full';
+    return arc.theta0.toFixed(5) + ':' + arc.theta1.toFixed(5);
 }
 
 function resolveListHorizonRingInnerRadius(z, W) {
@@ -1208,6 +1317,7 @@ function rebuildListHorizonEarthRingMesh(outerRadius, innerRadius, yCenter, eart
     disposeListHorizonEarthRing();
     const extendEarth = Math.floor(z) >= 8;
     const ri = isFinite(innerRadius) ? innerRadius : resolveListHorizonRingInnerRadius(z, earthW);
+    const arc = getListContextDiscArcRad(z, typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : null);
     const mesh = buildListHorizonHoopGroup(
         T,
         outerRadius,
@@ -1216,7 +1326,7 @@ function rebuildListHorizonEarthRingMesh(outerRadius, innerRadius, yCenter, eart
         yCenter,
         getListHorizonRingColorHex(),
         7,
-        { extendToEarthOrbit: extendEarth }
+        { extendToEarthOrbit: extendEarth, arc }
     );
     if (!mesh) return;
     sceneContentGroup.add(mesh);
@@ -1295,32 +1405,57 @@ function getListHorizonSeasonSpikeThetasRad(calendarYear) {
 
 /**
  * Annulus mesh for season spikes (list-context band only — no fan to the Sun).
+ * @param {object} [arc] - from {@link getListContextDiscArcRad}; omit for full circle.
  */
-function buildListHorizonContextAnnulusGeometry(THREE, rInner, rOuter, y, nSeg) {
+function buildListHorizonContextAnnulusGeometry(THREE, rInner, rOuter, y, nSeg, arc) {
     const TWO_PI = Math.PI * 2;
     const ro = Math.max(0, rOuter);
     let ri = Math.max(0, rInner);
     if (ro < 1e-4 || !THREE) return null;
     if (ri >= ro - ro * 0.04) ri = Math.max(0, ro * 0.38);
 
-    const n = Math.max(24, Math.min(96, nSeg));
+    const fullCircle = !arc || arc.fullCircle;
+    const t0 = fullCircle ? 0 : arc.theta0;
+    const t1 = fullCircle ? TWO_PI : arc.theta1;
+    const span = fullCircle ? TWO_PI : Math.max(1e-4, t1 - t0);
+    const n = fullCircle
+        ? Math.max(24, Math.min(96, nSeg))
+        : Math.max(12, Math.min(96, Math.round(nSeg * (span / TWO_PI))));
+
     const positions = [];
     const indices = [];
-    for (let ring = 0; ring < 2; ring++) {
-        const r = ring === 0 ? ri : ro;
-        for (let i = 0; i < n; i++) {
-            const theta = (i / n) * TWO_PI;
-            positions.push(Math.cos(theta) * r, y, Math.sin(theta) * r);
+    if (fullCircle) {
+        for (let ring = 0; ring < 2; ring++) {
+            const r = ring === 0 ? ri : ro;
+            for (let i = 0; i < n; i++) {
+                const theta = (i / n) * TWO_PI;
+                positions.push(Math.cos(theta) * r, y, Math.sin(theta) * r);
+            }
         }
-    }
-    for (let i = 0; i < n; i++) {
-        const i0 = i;
-        const i1 = (i + 1) % n;
-        const a = i0;
-        const b = i1;
-        const c = n + i1;
-        const d = n + i0;
-        indices.push(a, b, c, a, c, d);
+        for (let i = 0; i < n; i++) {
+            const i1 = (i + 1) % n;
+            const a = i;
+            const b = i1;
+            const c = n + i1;
+            const d = n + i;
+            indices.push(a, b, c, a, c, d);
+        }
+    } else {
+        for (let ring = 0; ring < 2; ring++) {
+            const r = ring === 0 ? ri : ro;
+            for (let i = 0; i <= n; i++) {
+                const theta = t0 + (i / n) * span;
+                positions.push(Math.cos(theta) * r, y, Math.sin(theta) * r);
+            }
+        }
+        const innerCount = n + 1;
+        for (let i = 0; i < n; i++) {
+            const a = i;
+            const b = i + 1;
+            const c = innerCount + i + 1;
+            const d = innerCount + i;
+            indices.push(a, b, c, a, c, d);
+        }
     }
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
@@ -1332,12 +1467,12 @@ function buildListHorizonContextAnnulusGeometry(THREE, rInner, rOuter, y, nSeg) 
 /**
  * Soft “diffraction spike” overlay on the list-context annulus only (solstice/equinox directions).
  */
-function buildListHorizonSeasonSpikeOverlayMesh(THREE, rInner, rOuter, yCenter, nSeg, edgeColorHex, thetasRad4, renderOrderBase) {
+function buildListHorizonSeasonSpikeOverlayMesh(THREE, rInner, rOuter, yCenter, nSeg, edgeColorHex, thetasRad4, renderOrderBase, arc) {
     if (!THREE || !thetasRad4 || thetasRad4.length !== 4) return null;
     const ro = Math.max(0, rOuter);
     let ri = Math.max(0, rInner);
     if (ri >= ro - ro * 0.04) ri = Math.max(0, ro * 0.38);
-    const geom = buildListHorizonContextAnnulusGeometry(THREE, ri, ro, yCenter, nSeg);
+    const geom = buildListHorizonContextAnnulusGeometry(THREE, ri, ro, yCenter, nSeg, arc);
     if (!geom) return null;
 
     const edge = new THREE.Color(edgeColorHex != null ? edgeColorHex : 0x22d3ee);
@@ -1481,7 +1616,7 @@ function createListHorizonSkyDiskMaterial(THREE, isLight, edgeColorHex) {
  * Sky annulus in the plane y = const: inner edge = list span band (events outside list sit Sun-ward of this);
  * outer edge = zoom context hoop.
  */
-function buildListHorizonSkyDiskMesh(THREE, rInner, rOuter, y, nSeg, colorHex, opacity, renderOrder) {
+function buildListHorizonSkyDiskMesh(THREE, rInner, rOuter, y, nSeg, colorHex, opacity, renderOrder, arc) {
     void opacity;
     const TWO_PI = Math.PI * 2;
     const ro = Math.max(0, rOuter);
@@ -1489,28 +1624,54 @@ function buildListHorizonSkyDiskMesh(THREE, rInner, rOuter, y, nSeg, colorHex, o
     if (ro < 1e-4) return null;
     if (ri >= ro - ro * 0.04) ri = Math.max(0, ro * 0.38);
 
-    const n = Math.max(24, Math.min(96, nSeg));
+    const fullCircle = !arc || arc.fullCircle;
+    const t0 = fullCircle ? 0 : arc.theta0;
+    const t1 = fullCircle ? TWO_PI : arc.theta1;
+    const span = fullCircle ? TWO_PI : Math.max(1e-4, t1 - t0);
+    const n = fullCircle
+        ? Math.max(24, Math.min(96, nSeg))
+        : Math.max(12, Math.min(96, Math.round(nSeg * (span / TWO_PI))));
+
     const positions = [];
     const annulusT = [];
     const indices = [];
 
-    for (let ring = 0; ring < 2; ring++) {
-        const r = ring === 0 ? ri : ro;
-        const tAttr = ring === 0 ? 0 : 1;
-        for (let i = 0; i < n; i++) {
-            const theta = (i / n) * TWO_PI;
-            positions.push(Math.cos(theta) * r, y, Math.sin(theta) * r);
-            annulusT.push(tAttr);
+    if (fullCircle) {
+        for (let ring = 0; ring < 2; ring++) {
+            const r = ring === 0 ? ri : ro;
+            const tAttr = ring === 0 ? 0 : 1;
+            for (let i = 0; i < n; i++) {
+                const theta = (i / n) * TWO_PI;
+                positions.push(Math.cos(theta) * r, y, Math.sin(theta) * r);
+                annulusT.push(tAttr);
+            }
         }
-    }
-    for (let i = 0; i < n; i++) {
-        const i0 = i;
-        const i1 = (i + 1) % n;
-        const a = i0;
-        const b = i1;
-        const c = n + i1;
-        const d = n + i0;
-        indices.push(a, b, c, a, c, d);
+        for (let i = 0; i < n; i++) {
+            const i1 = (i + 1) % n;
+            const a = i;
+            const b = i1;
+            const c = n + i1;
+            const d = n + i;
+            indices.push(a, b, c, a, c, d);
+        }
+    } else {
+        for (let ring = 0; ring < 2; ring++) {
+            const r = ring === 0 ? ri : ro;
+            const tAttr = ring === 0 ? 0 : 1;
+            for (let i = 0; i <= n; i++) {
+                const theta = t0 + (i / n) * span;
+                positions.push(Math.cos(theta) * r, y, Math.sin(theta) * r);
+                annulusT.push(tAttr);
+            }
+        }
+        const innerCount = n + 1;
+        for (let i = 0; i < n; i++) {
+            const a = i;
+            const b = i + 1;
+            const c = innerCount + i + 1;
+            const d = innerCount + i;
+            indices.push(a, b, c, a, c, d);
+        }
     }
 
     const geom = new THREE.BufferGeometry();
@@ -1527,11 +1688,17 @@ function buildListHorizonSkyDiskMesh(THREE, rInner, rOuter, y, nSeg, colorHex, o
 }
 
 /** Vertical hoop wall at one radius (inner or outer list-context edge). */
-function buildListHorizonHoopWallMesh(THREE, radius, y0, y1, nSeg, colorHex, renderOrder, opacityMul, isInnerEdge) {
+function buildListHorizonHoopWallMesh(THREE, radius, y0, y1, nSeg, colorHex, renderOrder, opacityMul, isInnerEdge, arc) {
     const TWO_PI = Math.PI * 2;
     const ro = Math.max(0, radius);
     if (ro < 1e-4 || !THREE) return null;
-    const n = Math.max(36, Math.min(96, Math.round(52 + ro * 0.28)));
+    const fullCircle = !arc || arc.fullCircle;
+    const t0 = fullCircle ? 0 : arc.theta0;
+    const t1 = fullCircle ? TWO_PI : arc.theta1;
+    const span = fullCircle ? TWO_PI : Math.max(1e-4, t1 - t0);
+    const n = fullCircle
+        ? Math.max(36, Math.min(96, Math.round(52 + ro * 0.28)))
+        : Math.max(12, Math.min(96, Math.round((52 + ro * 0.28) * (span / TWO_PI))));
     const positions = [];
     const indices = [];
     let vi = 0;
@@ -1542,13 +1709,14 @@ function buildListHorizonHoopWallMesh(THREE, radius, y0, y1, nSeg, colorHex, ren
     function addQuad(a, b, c, d) {
         indices.push(a, b, c, a, c, d);
     }
-    for (let i = 0; i < n; i++) {
-        const t0 = (i / n) * TWO_PI;
-        const t1 = ((i + 1) / n) * TWO_PI;
-        const c0 = Math.cos(t0);
-        const s0 = Math.sin(t0);
-        const c1 = Math.cos(t1);
-        const s1 = Math.sin(t1);
+    const segCount = fullCircle ? n : n;
+    for (let i = 0; i < segCount; i++) {
+        const th0 = fullCircle ? (i / n) * TWO_PI : t0 + (i / n) * span;
+        const th1 = fullCircle ? ((i + 1) / n) * TWO_PI : t0 + ((i + 1) / n) * span;
+        const c0 = Math.cos(th0);
+        const s0 = Math.sin(th0);
+        const c1 = Math.cos(th1);
+        const s1 = Math.sin(th1);
         const a = addV(c0 * ro, y0, s0 * ro);
         const b = addV(c1 * ro, y0, s1 * ro);
         const c = addV(c1 * ro, y1, s1 * ro);
@@ -1596,17 +1764,19 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
     const y1 = yCenter + bandHalfH;
 
     const n = Math.max(36, Math.min(96, Math.round(52 + ro * 0.28)));
+    const arc =
+        opts && opts.arc ? opts.arc : getListContextDiscArcRad(typeof currentZoom !== 'undefined' ? currentZoom : 9);
 
     const group = new THREE.Group();
     group.userData = { type: 'ListHorizonEarthRing', listInnerRadius: ri, listOuterRadius: ro };
 
-    const wallInner = buildListHorizonHoopWallMesh(THREE, ri, y0, y1, n, colorHex, renderOrder, 1.65, true);
-    const wallOuter = buildListHorizonHoopWallMesh(THREE, ro, y0, y1, n, colorHex, renderOrder, 1);
+    const wallInner = buildListHorizonHoopWallMesh(THREE, ri, y0, y1, n, colorHex, renderOrder, 1.65, true, arc);
+    const wallOuter = buildListHorizonHoopWallMesh(THREE, ro, y0, y1, n, colorHex, renderOrder, 1, false, arc);
     if (wallInner) group.add(wallInner);
     if (wallOuter) group.add(wallOuter);
 
-    const bottom = buildListHorizonSkyDiskMesh(THREE, ri, ro, y0, n, colorHex, null, renderOrder);
-    const top = buildListHorizonSkyDiskMesh(THREE, ri, ro, y1, n, colorHex, null, renderOrder);
+    const bottom = buildListHorizonSkyDiskMesh(THREE, ri, ro, y0, n, colorHex, null, renderOrder, arc);
+    const top = buildListHorizonSkyDiskMesh(THREE, ri, ro, y1, n, colorHex, null, renderOrder, arc);
     if (bottom) group.add(bottom);
     if (top) group.add(top);
 
@@ -1619,8 +1789,28 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
         const thetas = getListHorizonSeasonSpikeThetasRad(sd.getFullYear());
         if (thetas && thetas.length === 4) {
             const spikeRenderBase = renderOrder != null ? renderOrder : 7;
-            const spikeB = buildListHorizonSeasonSpikeOverlayMesh(THREE, ri, ro, y0, n, colorHex, thetas, spikeRenderBase);
-            const spikeT = buildListHorizonSeasonSpikeOverlayMesh(THREE, ri, ro, y1, n, colorHex, thetas, spikeRenderBase);
+            const spikeB = buildListHorizonSeasonSpikeOverlayMesh(
+                THREE,
+                ri,
+                ro,
+                y0,
+                n,
+                colorHex,
+                thetas,
+                spikeRenderBase,
+                arc
+            );
+            const spikeT = buildListHorizonSeasonSpikeOverlayMesh(
+                THREE,
+                ri,
+                ro,
+                y1,
+                n,
+                colorHex,
+                thetas,
+                spikeRenderBase,
+                arc
+            );
             if (spikeB) group.add(spikeB);
             if (spikeT) group.add(spikeT);
         }
@@ -1685,10 +1875,18 @@ function updateListHorizonEarthRing(zoomLevel) {
     listHorizonEarthRingEarthDistance = W;
     listHorizonEarthRingTargetZoom = z;
 
-    if (listHorizonEarthRingCurrentRadius == null || listHorizonEarthRingCurrentHeight == null || !listHorizonEarthRingMesh) {
+    const arcKey = listContextDiscArcKey(z);
+    const needRebuild =
+        listHorizonEarthRingCurrentRadius == null ||
+        listHorizonEarthRingCurrentHeight == null ||
+        !listHorizonEarthRingMesh ||
+        listHorizonEarthRingArcKey !== arcKey;
+
+    if (needRebuild) {
         listHorizonEarthRingCurrentRadius = targetRadius;
         listHorizonEarthRingCurrentInnerRadius = targetInnerRadius;
         listHorizonEarthRingCurrentHeight = selectedDateHeight;
+        listHorizonEarthRingArcKey = arcKey;
         rebuildListHorizonEarthRingMesh(
             listHorizonEarthRingCurrentRadius,
             listHorizonEarthRingCurrentInnerRadius,
@@ -1707,6 +1905,20 @@ if (typeof window !== 'undefined') {
         const ro = resolveListHorizonRingRadius(z, W);
         const ri = resolveListHorizonRingInnerRadius(z, W);
         return { inner: ri, outer: ro, innerFrac: ro > 0 ? ri / ro : 0.42 };
+    };
+    /** Panel ring SVG: arc length and start offset (pathLength 100), aligned to selected list span. */
+    window.getListContextDiscArcForPanel = function (zoomLevel) {
+        const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+        const arc = getListContextDiscArcRad(z);
+        const C = 100;
+        if (arc.fullCircle) {
+            return { arcLen: C, arcGap: 0, arcOffset: 0, fullCircle: true };
+        }
+        const arcLen = Math.max(1.5, Math.min(C - 0.5, (arc.spanRad / (Math.PI * 2)) * C));
+        const arcGap = C - arcLen;
+        const midFrac = (((arc.thetaMid / (Math.PI * 2)) % 1) + 1) % 1;
+        const arcOffset = (midFrac * C - arcLen * 0.5 + C) % C;
+        return { arcLen, arcGap, arcOffset, fullCircle: false };
     };
     window.updateListHorizonEarthRingScene = function () {
         updateListHorizonEarthRing(currentZoom);
@@ -1965,6 +2177,28 @@ function updateSunEarthTimeRadials(zoomLevel) {
             });
         }
     }
+
+    if (zoomLevel === 0 || zoomLevel === 8 || zoomLevel === 9) {
+        const earthMesh = planetMeshes.find((p) => p.userData && p.userData.name === 'Earth');
+        const earthSurfaceRadius = resolveEarthGlobeSurfaceRadius(earthMesh) ||
+            (earth && typeof earth.size === 'number' ? earth.size : 6.5) * 0.3;
+        const hourNumberRadius = earthSurfaceRadius * 2.2;
+        const selectedDate = getSelectedDateTime();
+        const currentDate = new Date();
+        if (typeof EarthGlobe !== 'undefined' && earthMesh && EarthGlobe.updateGlobeHands) {
+            EarthGlobe.updateGlobeHands({
+                earthGroup: earthMesh,
+                selectedDate,
+                currentDate,
+                hourNumberRadius,
+                selectedDateHeight,
+                zoomLevel,
+                sceneContentGroup,
+                tourMinimalOrbitMode,
+                getSelectedTimeColor
+            });
+        }
+    }
 }
 
 /**
@@ -2117,8 +2351,17 @@ function applyLightTimeScrubUpdate(zoomLevel) {
     }
 
     const earthMeshScrub = planetMeshes.find((p) => p && p.userData && p.userData.name === 'Earth');
-    if (earthMeshScrub && typeof EarthGlobe !== 'undefined' && EarthGlobe.updateOrientation) {
-        EarthGlobe.updateOrientation(earthMeshScrub, selectedDate);
+    if (earthMeshScrub && typeof EarthGlobe !== 'undefined') {
+        if (typeof EarthGlobe.refreshObserverForSelectedTime === 'function') {
+            EarthGlobe.refreshObserverForSelectedTime(selectedDate, zoomLevel);
+        }
+        if (typeof EarthGlobe.updateOrientation === 'function') {
+            EarthGlobe.updateOrientation(earthMeshScrub, selectedDate);
+        }
+    }
+
+    if (zoomLevel === 0 || zoomLevel === 8 || zoomLevel === 9) {
+        createTimeMarkers(zoomLevel === 0 ? 9 : zoomLevel);
     }
 
     updateSunEarthTimeRadials(zoomLevel);
@@ -5124,8 +5367,7 @@ function buildDefaultPolarViewDirection() {
         } else if (earthDef) {
             sunToEarthAngle = earthDef.startAngle;
         }
-        const hourFrac =
-            (sel.getHours() + sel.getMinutes() / 60 + sel.getSeconds() / 3600) / 24;
+        const hourFrac = sceneHourFractionForEarthHand(sel, currentZoom);
         hourAngleFromEarth = sunToEarthAngle - hourFrac * Math.PI * 2;
     }
     let baseTilt = 0.24;
