@@ -1389,6 +1389,84 @@ const TimeMarkers = (function() {
     // ============================================
     // HOUR SYSTEM (Zoom 8 & 9)
     // ============================================
+
+    function angularDistRad(a, b) {
+        let d = a - b;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        return Math.abs(d);
+    }
+
+    /** Map an instant to the orbital-dial hour index nearest the oriented-globe hand direction. */
+    function dialHourIndexForInstant(date, lon, sunToEarthAngle, eg, earthPlanet) {
+        if (
+            !eg ||
+            !earthPlanet ||
+            typeof eg.getSceneHourAngleXZ !== 'function' ||
+            lon == null ||
+            isNaN(lon)
+        ) {
+            if (eg && typeof eg.getSceneHourDecimal === 'function') {
+                return ((Math.floor(eg.getSceneHourDecimal(date, lon)) % 24) + 24) % 24;
+            }
+            return 0;
+        }
+        const sceneAngle = eg.getSceneHourAngleXZ(
+            earthPlanet,
+            date,
+            earthPlanet.position.y,
+            lon
+        );
+        if (sceneAngle == null || isNaN(sceneAngle)) {
+            return ((Math.floor(eg.getSceneHourDecimal(date, lon)) % 24) + 24) % 24;
+        }
+        let best = 0;
+        let bestD = Infinity;
+        for (let h = 0; h < 24; h++) {
+            const dial = sunToEarthAngle - (h / 24) * Math.PI * 2;
+            const d = angularDistRad(sceneAngle, dial);
+            if (d < bestD) {
+                bestD = d;
+                best = h;
+            }
+        }
+        return best;
+    }
+
+    /** Scene-clock hour indices for label/hand highlights (observer solar when EarthGlobe has lon). */
+    function getSceneHourHighlightIndices(timeState, zoomLevel, sunToEarthAngle, earthPlanet) {
+        const now = timeState.currentDate;
+        const eg =
+            typeof window !== 'undefined' && window.EarthGlobe ? window.EarthGlobe : null;
+        const selInstant =
+            typeof window !== 'undefined' && typeof window.getSelectedDateTime === 'function'
+                ? window.getSelectedDateTime()
+                : now;
+        const obs =
+            eg && typeof eg.getObserver === 'function'
+                ? eg.getObserver(selInstant, zoomLevel)
+                : null;
+        const lon = obs && typeof obs.lon === 'number' && !isNaN(obs.lon) ? obs.lon : null;
+        if (lon != null && eg && earthPlanet && typeof sunToEarthAngle === 'number') {
+            return {
+                selectedHour: dialHourIndexForInstant(
+                    selInstant,
+                    lon,
+                    sunToEarthAngle,
+                    eg,
+                    earthPlanet
+                ),
+                currentHour: dialHourIndexForInstant(now, lon, sunToEarthAngle, eg, earthPlanet)
+            };
+        }
+        const selectedHour =
+            currentHourInDay !== undefined && currentHourInDay !== null
+                ? ((currentHourInDay % 24) + 24) % 24
+                : timeState.selectedHourInDay !== undefined
+                  ? ((timeState.selectedHourInDay % 24) + 24) % 24
+                  : now.getHours();
+        return { selectedHour, currentHour: now.getHours() };
+    }
     
     function createHourSystem(earthDistance, timeState, zoomLevel) {
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
@@ -1419,16 +1497,13 @@ const TimeMarkers = (function() {
         // Center the spiral around Earth's current Y position
         const spiralCenterY = earthY;
         
-        // Get current/selected hour
         const now = timeState.currentDate;
-        const currentHour = now.getHours();
-        // Use currentHourInDay directly (updated by A/D keys), which is the hour within the selected day
-        // If currentHourInDay is undefined, use the hour from timeState, otherwise use currentHourInDay
-        const selectedHour = (currentHourInDay !== undefined && currentHourInDay !== null) ? 
-                            ((currentHourInDay % 24) + 24) % 24 : // Ensure 0-23 range
-                            (timeState.selectedHourInDay !== undefined ? 
-                             (timeState.selectedHourInDay % 24 + 24) % 24 : 
-                             currentHour);
+        const { selectedHour, currentHour } = getSceneHourHighlightIndices(
+            timeState,
+            zoomLevel,
+            sunToEarthAngle,
+            earthPlanet
+        );
         
         // Get day offsets from timeState for blue highlighting logic
         const dayOffset = timeState.selectedDayOffset || 0;
@@ -1485,9 +1560,8 @@ const TimeMarkers = (function() {
             const hourRadians = (hour / 24) * Math.PI * 2;
             
             // Position: 0 (midnight) is opposite Sun, 12 (noon) is toward Sun
-            // Angle relative to Earth's center
-            // Flip direction: use negative hourRadians to go counter-clockwise (opposite direction)
-            const angleFromEarth = sunToEarthAngle - hourRadians; // Start at midnight (opposite Sun), go counter-clockwise
+            // Angle relative to Earth's center (orbital dial — must vary per hour)
+            const angleFromEarth = sunToEarthAngle - hourRadians;
             
             const radiusFromEarth = spiralRadius; // Slightly outside spiral for labels
             const height = spiralCenterY + (t * spiralHeight) - (spiralHeight / 2);
@@ -1530,7 +1604,6 @@ const TimeMarkers = (function() {
             const hourToDisplay = currentHour;
             const currentT = hourToDisplay / 24;
             const currentHourRadians = (hourToDisplay / 24) * Math.PI * 2;
-            // Flip direction to match label direction (counter-clockwise)
             const currentAngleFromEarth = sunToEarthAngle - currentHourRadians;
             const currentRadiusFromEarth = spiralRadius;
             const currentHeight = spiralCenterY + (currentT * spiralHeight) - (spiralHeight / 2);
