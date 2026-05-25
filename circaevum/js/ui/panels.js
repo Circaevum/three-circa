@@ -27,24 +27,40 @@
       };
     }
 
-    var eeW1Btn = document.getElementById('edge-esmeralda-w1-btn');
-    function runLoadEdgeEsmeraldaW1() {
+    function runLoadEdgeEsmeraldaWeek(week) {
       if (typeof window.getGL === 'function') window.getGL();
-      if (typeof window.loadEdgeEsmeraldaWeek1Samples !== 'function') {
-        console.warn('edge-esmeralda-week1-samples.js not loaded');
+      var w = Number(week);
+      var loaders = {
+        1: window.loadEdgeEsmeraldaWeek1Samples,
+        2: window.loadEdgeEsmeraldaWeek2Samples,
+        3: window.loadEdgeEsmeraldaWeek3Samples,
+        4: window.loadEdgeEsmeraldaWeek4Samples
+      };
+      var loadFn = loaders[w] || (typeof window.loadEdgeEsmeraldaWeek === 'function'
+        ? function (opts) { return window.loadEdgeEsmeraldaWeek(w, opts); }
+        : null);
+      if (!loadFn) {
+        console.warn('edge-esmeralda-2026.js not loaded');
         return 0;
       }
-      var n = window.loadEdgeEsmeraldaWeek1Samples({});
+      var n = loadFn({});
       if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
       return n;
     }
-    if (eeW1Btn) {
-      eeW1Btn.onclick = function() {
-        var n = runLoadEdgeEsmeraldaW1();
-        eeW1Btn.textContent = n ? ('Loaded ' + n) : 'GL not ready';
-        setTimeout(function() { eeW1Btn.textContent = 'Edge Esmeralda W1'; }, 3500);
+    function wireEdgeEsmeraldaWeekButton(btn) {
+      if (!btn) return;
+      var week = parseInt(btn.getAttribute('data-ee-week'), 10);
+      var label = btn.textContent || ('W' + week);
+      btn.onclick = function() {
+        var n = runLoadEdgeEsmeraldaWeek(week);
+        btn.textContent = n ? ('+' + n) : '…';
+        setTimeout(function() { btn.textContent = label; }, 3500);
       };
     }
+    wireEdgeEsmeraldaWeekButton(document.getElementById('edge-esmeralda-w1-btn'));
+    wireEdgeEsmeraldaWeekButton(document.getElementById('edge-esmeralda-w2-btn'));
+    wireEdgeEsmeraldaWeekButton(document.getElementById('edge-esmeralda-w3-btn'));
+    wireEdgeEsmeraldaWeekButton(document.getElementById('edge-esmeralda-w4-btn'));
 
     function openCalendarsLeftPanel() {
       if (window.self !== window.top && window.parent && typeof window.parent.postMessage === 'function') {
@@ -100,7 +116,6 @@
     function toggleAboutPanel() {
       if (!landingPage) return;
       var shouldOpen = !landingPage.classList.contains('active');
-      if (typeof setZoomLevel === 'function') setZoomLevel(0);
       landingPage.classList.toggle('active', shouldOpen);
     }
     window.toggleAboutPanel = toggleAboutPanel;
@@ -181,7 +196,10 @@
               window.showCircaevumIntroPrompt({ force: true });
             }
           }
-          if (action === 'edge-esmeralda-w1') runLoadEdgeEsmeraldaW1();
+          if (action === 'edge-esmeralda-w1') runLoadEdgeEsmeraldaWeek(1);
+          if (action === 'edge-esmeralda-w2') runLoadEdgeEsmeraldaWeek(2);
+          if (action === 'edge-esmeralda-w3') runLoadEdgeEsmeraldaWeek(3);
+          if (action === 'edge-esmeralda-w4') runLoadEdgeEsmeraldaWeek(4);
         };
       });
       document.addEventListener('click', function() {
@@ -202,57 +220,46 @@
 
     var ORBITAL_DATA_STORAGE_KEY = 'circaevum-orbital-data-mode';
     var orbitalPanel = document.getElementById('orbital-data-panel');
-    var orbitalMinimize = document.getElementById('orbital-data-minimize');
     var orbitalHide = document.getElementById('orbital-data-hide');
     var orbitalRestore = document.getElementById('orbital-data-restore');
 
-    function syncOrbitalDataMinimizeButton(collapsed) {
-      if (!orbitalMinimize) return;
-      var isCollapsed = !!collapsed;
-      orbitalMinimize.classList.toggle('is-collapsed', isCollapsed);
-      orbitalMinimize.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
-      orbitalMinimize.title = isCollapsed ? 'Expand orbital data' : 'Collapse orbital data';
-      orbitalMinimize.setAttribute(
-        'aria-label',
-        isCollapsed ? 'Expand orbital data panel' : 'Collapse orbital data panel'
-      );
-      var path = orbitalMinimize.querySelector('path');
-      if (path) path.setAttribute('d', isCollapsed ? 'M12 5v14M5 12h7 7-7 7' : 'M5 12h14');
+    function notifyOrbitalDataVisibility() {
+      var visible = !!(orbitalPanel && !orbitalPanel.classList.contains('is-hidden'));
+      if (typeof window.onOrbitalDataVisibilityChange === 'function') {
+        try {
+          window.onOrbitalDataVisibilityChange(visible);
+        } catch (notifyErr) { /* ignore */ }
+      }
     }
 
     function applyOrbitalDataMode(mode) {
       if (!orbitalPanel) return;
-      var m = mode === 'collapsed' || mode === 'hidden' ? mode : 'expanded';
-      orbitalPanel.classList.toggle('is-collapsed', m === 'collapsed');
+      var m = mode === 'hidden' ? 'hidden' : 'expanded';
+      orbitalPanel.classList.remove('is-collapsed');
       orbitalPanel.classList.toggle('is-hidden', m === 'hidden');
-      syncOrbitalDataMinimizeButton(m === 'collapsed');
       if (orbitalRestore) orbitalRestore.hidden = m !== 'hidden';
       try {
         localStorage.setItem(ORBITAL_DATA_STORAGE_KEY, m);
       } catch (storageErr) { /* ignore */ }
+      notifyOrbitalDataVisibility();
     }
 
     function readOrbitalDataMode() {
       try {
         var stored = localStorage.getItem(ORBITAL_DATA_STORAGE_KEY);
-        if (stored === 'collapsed' || stored === 'hidden' || stored === 'expanded') return stored;
+        if (stored === 'hidden') return 'hidden';
+        if (stored === 'collapsed') return 'expanded';
+        if (stored === 'expanded') return 'expanded';
       } catch (readErr) { /* ignore */ }
       return 'expanded';
     }
 
+    window.isOrbitalDataPanelVisible = function() {
+      return !!(orbitalPanel && !orbitalPanel.classList.contains('is-hidden'));
+    };
+
     if (orbitalPanel) {
       applyOrbitalDataMode(readOrbitalDataMode());
-      if (orbitalMinimize) {
-        orbitalMinimize.addEventListener('click', function(e) {
-          e.stopPropagation();
-          var collapsed = orbitalPanel.classList.contains('is-collapsed');
-          if (orbitalPanel.classList.contains('is-hidden')) {
-            applyOrbitalDataMode('expanded');
-            return;
-          }
-          applyOrbitalDataMode(collapsed ? 'expanded' : 'collapsed');
-        });
-      }
       if (orbitalHide) {
         orbitalHide.addEventListener('click', function(e) {
           e.stopPropagation();

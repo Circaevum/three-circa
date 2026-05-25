@@ -24,6 +24,9 @@ const TimeMarkers = (function() {
     let isLightMode, calculateDateHeight, getHeightForYear, calculateCurrentDateHeight;
     let planetMeshes;
     let SceneGeometry; // Shared geometry utilities
+    let getListContextDiscArcTimeBoundsMs;
+
+    const MS_PER_DAY = 86400000;
 
     function init(dependencies) {
         scene = dependencies.scene;
@@ -53,7 +56,8 @@ const TimeMarkers = (function() {
         calculateCurrentDateHeight = dependencies.calculateCurrentDateHeight;
         planetMeshes = dependencies.planetMeshes;
         SceneGeometry = dependencies.SceneGeometry;
-        
+        getListContextDiscArcTimeBoundsMs = dependencies.getListContextDiscArcTimeBoundsMs;
+
         // Initialize SceneGeometry if provided
         if (SceneGeometry) {
             SceneGeometry.init({
@@ -456,6 +460,74 @@ const TimeMarkers = (function() {
         if (progressiveMs == null || typeof progressiveMs !== 'number' || isNaN(progressiveMs)) return true;
         return unitStartMs <= progressiveMs;
     }
+
+    function resolveUnitIndexYear(unitInfo, timeState) {
+        if (unitInfo instanceof Date) {
+            return { unitIndex: unitInfo, unitYear: unitInfo.getFullYear() };
+        }
+        if (typeof unitInfo === 'object' && unitInfo !== null) {
+            return {
+                unitIndex: unitInfo.unit !== undefined ? unitInfo.unit : unitInfo.index,
+                unitYear: unitInfo.year || timeState.selectedYear
+            };
+        }
+        return { unitIndex: unitInfo, unitYear: timeState.selectedYear };
+    }
+
+    function getContextArcBoundsMs(zoomLevel) {
+        if (_fullYearScope) return null;
+        const fn =
+            getListContextDiscArcTimeBoundsMs ||
+            (typeof window !== 'undefined' ? window.getListContextDiscArcTimeBoundsMs : null);
+        if (typeof fn !== 'function') return null;
+        return fn(zoomLevel);
+    }
+
+    function unitRangeOverlapsContextArc(unitStartMs, unitEndMs, zoomLevel) {
+        const bounds = getContextArcBoundsMs(zoomLevel);
+        if (!bounds || bounds.t1 < bounds.t0) return true;
+        return unitStartMs <= bounds.t1 && bounds.t0 <= unitEndMs;
+    }
+
+    function getUnitTimeRangeMs(unitType, unitInfo, unitIndex, unitYear, getUnitDate) {
+        const start = getUnitDate(unitInfo, unitIndex, unitYear);
+        if (!start || isNaN(start.getTime())) return null;
+        const t0 = start.getTime();
+        let t1;
+        if (unitType === 'month') {
+            const idx = typeof unitIndex === 'number' ? unitIndex : start.getMonth();
+            const y = unitYear != null ? unitYear : start.getFullYear();
+            if (idx === 12) {
+                t1 = new Date(y + 1, 0, 1, 0, 0, 0, 0).getTime();
+            } else {
+                t1 = new Date(y, idx + 1, 1, 0, 0, 0, 0).getTime();
+            }
+        } else if (unitType === 'quarter') {
+            const q = typeof unitIndex === 'number' ? unitIndex : Math.floor(start.getMonth() / 3);
+            const y = unitYear != null ? unitYear : start.getFullYear();
+            const endMonth = (q + 1) * 3;
+            t1 =
+                endMonth >= 12
+                    ? new Date(y + 1, 0, 1, 0, 0, 0, 0).getTime()
+                    : new Date(y, endMonth, 1, 0, 0, 0, 0).getTime();
+        } else if (unitType === 'week') {
+            t1 = t0 + 7 * MS_PER_DAY;
+        } else if (unitType === 'day') {
+            t1 = t0 + MS_PER_DAY - 1;
+        } else {
+            t1 = t0 + MS_PER_DAY;
+        }
+        return { t0, t1 };
+    }
+
+    /** True when unit calendar span overlaps the 3D context arc window (cyan highlight only). */
+    function isUnitInContextArc(unitType, unitInfo, unitIndex, unitYear, zoomLevel, timeState, getUnitDate) {
+        if (_fullYearScope) return true;
+        if (!getContextArcBoundsMs(zoomLevel)) return true;
+        const range = getUnitTimeRangeMs(unitType, unitInfo, unitIndex, unitYear, getUnitDate);
+        if (!range) return true;
+        return unitRangeOverlapsContextArc(range.t0, range.t1, zoomLevel);
+    }
     
     function createTimeFrame(config) {
         const {
@@ -488,22 +560,11 @@ const TimeMarkers = (function() {
         let unitsToShow = getUnitsToShow(zoomLevel, timeState);
         if (tourProgressiveMarkerMs != null && zoomLevel === 3 && (unitType === 'quarter' || unitType === 'month')) {
             unitsToShow = unitsToShow.filter((unitInfo) => {
-                let unitIndex, unitYear;
-                if (unitInfo instanceof Date) {
-                    unitIndex = unitInfo;
-                    unitYear = unitInfo.getFullYear();
-                } else if (typeof unitInfo === 'object' && unitInfo !== null) {
-                    unitIndex = unitInfo.unit !== undefined ? unitInfo.unit : unitInfo.index;
-                    unitYear = unitInfo.year || timeState.selectedYear;
-                } else {
-                    unitIndex = unitInfo;
-                    unitYear = timeState.selectedYear;
-                }
+                const { unitIndex, unitYear } = resolveUnitIndexYear(unitInfo, timeState);
                 const unitStartDate = getUnitDate(unitInfo, unitIndex, unitYear);
                 return unitStartDate.getTime() <= tourProgressiveMarkerMs;
             });
         }
-        
         // Create lines and labels
         unitsToShow.forEach((unitInfo, i) => {
             let unitIndex, unitYear;
@@ -531,9 +592,13 @@ const TimeMarkers = (function() {
             
             // Previous unit for both-sides coloring
             const prevUnit = i > 0 ? unitsToShow[i-1] : null;
-            let prevIsCurrent = false, prevIsSelected = false, prevHasOffset = false;
+            let prevIsCurrent = false;
+            let prevIsSelected = false;
+            let prevHasOffset = false;
+            let prevInArc = false;
+            let prevIndex = null;
+            let prevYear = null;
             if (prevUnit) {
-                let prevIndex, prevYear;
                 if (prevUnit instanceof Date) {
                     prevIndex = prevUnit;
                     prevYear = prevUnit.getFullYear();
@@ -548,8 +613,28 @@ const TimeMarkers = (function() {
                 prevIsCurrent = isCurrentUnit(prevUnitObj, timeState);
                 prevIsSelected = isSelectedUnit(prevUnitObj, timeState);
                 prevHasOffset = calculateOffset(unitType, zoomLevel, timeState);
+                prevInArc = isUnitInContextArc(
+                    unitType,
+                    prevUnit,
+                    prevIndex,
+                    prevYear,
+                    zoomLevel,
+                    timeState,
+                    getUnitDate
+                );
             }
-            
+
+            const inArc = isUnitInContextArc(
+                unitType,
+                unitInfo,
+                unitIndex,
+                unitYear,
+                zoomLevel,
+                timeState,
+                getUnitDate
+            );
+            const highlightSelected = (isSelected && inArc) || (prevIsSelected && prevInArc);
+
             // Spoke radii: fixed to this unit's ring. Quarter-boundary month ticks from Sun (0) to month.outer only.
             let startRadius = innerRadius || 0;
             const endRadius = outerRadius;
@@ -567,8 +652,12 @@ const TimeMarkers = (function() {
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
             
-            const lineColor = getColor(isCurrent || prevIsCurrent, isSelected || prevIsSelected, hasOffset || prevHasOffset);
-            const sel = isSelected || prevIsSelected;
+            const lineColor = getColor(
+                isCurrent || prevIsCurrent,
+                highlightSelected,
+                hasOffset || prevHasOffset
+            );
+            const sel = highlightSelected;
             const cur = isCurrent || prevIsCurrent;
             let lineOp = cur || sel ? 0.9 : 0.7;
             if (isLightMode && sel && !cur) lineOp = 0.82;
@@ -576,7 +665,7 @@ const TimeMarkers = (function() {
                 color: lineColor,
                 transparent: true,
                 opacity: lineOp,
-                linewidth: (isCurrent || isSelected) ? 3 : 2
+                linewidth: (isCurrent || (isSelected && inArc)) ? 3 : 2
             });
             
             const line = new THREE.Line(geometry, material);
@@ -624,7 +713,7 @@ const TimeMarkers = (function() {
                                                            centerDate.getDate(), centerDate.getHours());
                     const labelAngle = getAngle(labelHeight, timeState.currentDateHeight);
                     const calcLabelRadius = labelRadius || (innerRadius ? (innerRadius + outerRadius) / 2 : outerRadius / 2);
-                    const labelColor = getLabelColor(isCurrent, isSelected, hasOffset);
+                    const labelColor = getLabelColor(isCurrent, isSelected && inArc, hasOffset);
                     // Debug logging for Zoom 8/9
                     if ((zoomLevel === 8 || zoomLevel === 9) && (unitType === 'quarter' || unitType === 'month' || unitType === 'week' || unitType === 'day')) {
                     }
@@ -1051,7 +1140,7 @@ const TimeMarkers = (function() {
                 
                 daysToShow.sort((a, b) => a - b);
             }
-            
+
             return daysToShow;
         }
         
@@ -1232,10 +1321,21 @@ const TimeMarkers = (function() {
                 const unit = { index: dayDate, year: dayDate.getFullYear() };
                 const isCurrent = isCurrentDay(unit, timeState);
                 const isSelected = isSelectedDayValue(unit, timeState);
-                const dayOfWeekColor = isCurrent ? 'red' : (hasDayOffset && isSelected ? 'blue' : false);
+                const dayInArc = isUnitInContextArc(
+                    'day',
+                    dayDate,
+                    dayDate,
+                    dayDate.getFullYear(),
+                    zoomLevel,
+                    timeState,
+                    getDayDate
+                );
+                const dayOfWeekColor = isCurrent
+                    ? 'red'
+                    : (hasDayOffset && isSelected && dayInArc ? 'blue' : false);
                 const dayOfWeekIndex = dayDate.getDay();
-                const dayOfWeekText = (isCurrent || (hasDayOffset && isSelected)) 
-                    ? dayOfWeekNamesFull[dayOfWeekIndex] 
+                const dayOfWeekText = (isCurrent || (hasDayOffset && isSelected && dayInArc))
+                    ? dayOfWeekNamesFull[dayOfWeekIndex]
                     : dayOfWeekNamesShort[dayOfWeekIndex];
                 
                 const dayCenterDate = getDayCenterDate(dayDate, dayDate);
@@ -1397,43 +1497,25 @@ const TimeMarkers = (function() {
         return Math.abs(d);
     }
 
-    /** Map an instant to the orbital-dial hour index nearest the oriented-globe hand direction. */
-    function dialHourIndexForInstant(date, lon, sunToEarthAngle, eg, earthPlanet) {
-        if (
-            !eg ||
-            !earthPlanet ||
-            typeof eg.getSceneHourAngleXZ !== 'function' ||
-            lon == null ||
-            isNaN(lon)
-        ) {
-            if (eg && typeof eg.getSceneHourDecimal === 'function') {
-                return ((Math.floor(eg.getSceneHourDecimal(date, lon)) % 24) + 24) % 24;
-            }
-            return 0;
-        }
-        const sceneAngle = eg.getSceneHourAngleXZ(
-            earthPlanet,
-            date,
-            earthPlanet.position.y,
-            lon
-        );
-        if (sceneAngle == null || isNaN(sceneAngle)) {
-            return ((Math.floor(eg.getSceneHourDecimal(date, lon)) % 24) + 24) % 24;
-        }
-        let best = 0;
-        let bestD = Infinity;
-        for (let h = 0; h < 24; h++) {
-            const dial = sunToEarthAngle - (h / 24) * Math.PI * 2;
-            const d = angularDistRad(sceneAngle, dial);
-            if (d < bestD) {
-                bestD = d;
-                best = h;
+    /** Hour index 0–23 on the scene clock (matches EarthGlobe hands + orbital dial labels). */
+    function sceneClockHourIndex(date, lon, eg) {
+        if (eg && typeof eg.getSceneHourDecimal === 'function') {
+            const h = eg.getSceneHourDecimal(date, lon);
+            if (typeof h === 'number' && !isNaN(h)) {
+                return ((Math.floor(h + 1e-9) % 24) + 24) % 24;
             }
         }
-        return best;
+        const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
+        return d.getHours();
     }
 
-    /** Scene-clock hour indices for label/hand highlights (observer solar when EarthGlobe has lon). */
+    /** Orbital hour-dial angle for label `hour` (0 = opposite Sun, 12 toward Sun). Fixed ring — never meridian-snapped. */
+    function hourLabelAngleFromEarth(hour, sunToEarthAngle) {
+        const hourRadians = (hour / 24) * Math.PI * 2;
+        return sunToEarthAngle - hourRadians;
+    }
+
+    /** Scene-clock hour indices for label/hand highlights (same hour math as EarthGlobe meridian hands). */
     function getSceneHourHighlightIndices(timeState, zoomLevel, sunToEarthAngle, earthPlanet) {
         const now = timeState.currentDate;
         const eg =
@@ -1442,30 +1524,15 @@ const TimeMarkers = (function() {
             typeof window !== 'undefined' && typeof window.getSelectedDateTime === 'function'
                 ? window.getSelectedDateTime()
                 : now;
-        const obs =
-            eg && typeof eg.getObserver === 'function'
-                ? eg.getObserver(selInstant, zoomLevel)
-                : null;
-        const lon = obs && typeof obs.lon === 'number' && !isNaN(obs.lon) ? obs.lon : null;
-        if (lon != null && eg && earthPlanet && typeof sunToEarthAngle === 'number') {
-            return {
-                selectedHour: dialHourIndexForInstant(
-                    selInstant,
-                    lon,
-                    sunToEarthAngle,
-                    eg,
-                    earthPlanet
-                ),
-                currentHour: dialHourIndexForInstant(now, lon, sunToEarthAngle, eg, earthPlanet)
-            };
-        }
+        // Hour dial + red/cyan hands share browser-local orbital clock (not observer-lon solar index).
         const selectedHour =
             currentHourInDay !== undefined && currentHourInDay !== null
                 ? ((currentHourInDay % 24) + 24) % 24
                 : timeState.selectedHourInDay !== undefined
                   ? ((timeState.selectedHourInDay % 24) + 24) % 24
-                  : now.getHours();
-        return { selectedHour, currentHour: now.getHours() };
+                  : sceneClockHourIndex(selInstant, null, eg);
+        const currentHour = sceneClockHourIndex(now, null, eg);
+        return { selectedHour, currentHour };
     }
     
     function createHourSystem(earthDistance, timeState, zoomLevel) {
@@ -1498,6 +1565,12 @@ const TimeMarkers = (function() {
         const spiralCenterY = earthY;
         
         const now = timeState.currentDate;
+        const eg =
+            typeof window !== 'undefined' && window.EarthGlobe ? window.EarthGlobe : null;
+        const selInstant =
+            typeof window !== 'undefined' && typeof window.getSelectedDateTime === 'function'
+                ? window.getSelectedDateTime()
+                : now;
         const { selectedHour, currentHour } = getSceneHourHighlightIndices(
             timeState,
             zoomLevel,
@@ -1557,11 +1630,8 @@ const TimeMarkers = (function() {
         for (let hour = 0; hour < 24; hour++) {
             // Calculate position along spiral for this hour
             const t = hour / 24;
-            const hourRadians = (hour / 24) * Math.PI * 2;
-            
-            // Position: 0 (midnight) is opposite Sun, 12 (noon) is toward Sun
-            // Angle relative to Earth's center (orbital dial — must vary per hour)
-            const angleFromEarth = sunToEarthAngle - hourRadians;
+            // Position on dial: observer meridian clock when lon known (matches red/cyan hands).
+            const angleFromEarth = hourLabelAngleFromEarth(hour, sunToEarthAngle);
             
             const radiusFromEarth = spiralRadius; // Slightly outside spiral for labels
             const height = spiralCenterY + (t * spiralHeight) - (spiralHeight / 2);
@@ -1757,41 +1827,50 @@ const TimeMarkers = (function() {
     }
 
     /**
-     * List-context hoop radius: **outer** curve of the RADII band for this zoom (same frame as time markers).
-     * z3 Year: quarter.outer (W/4). z4: month.outer. z5–6: week.outer. z7: day.outer (3W/4).
-     * z8 Day / z9 Clock: Earth orbit radius W (hoop meets Earth’s worldline).
-     * z1–2: quarter.outer (same rings as all zooms). z0: day.inner (outer edge of spiral→day-inner band).
+     * List-context annulus radii aligned to the active zoom’s time-marker band (inner/outer curves).
+     * z5 Month / z6 Lunar: month.inner–month.outer. z7 Week: week.inner–week.outer. z8–9: day band. etc.
      */
-    function getListContextRingRadiusForZoom(zoomLevel, earthDistance) {
+    function getListContextRingRadiiForZoom(zoomLevel, earthDistance) {
         const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
         const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
-        const monthOuter = RADII_CONFIG.month.outer(W);
-        const weekOuter = RADII_CONFIG.week.outer(W);
-        const dayInner = RADII_CONFIG.day.inner(W);
-        const dayOuter = RADII_CONFIG.day.outer(W);
-        const qOuter = RADII_CONFIG.quarter.outer(W);
-
+        const zr = z === 0 ? 9 : z;
+        const zones = getCanonicalRadialZones(W);
+        let rInner;
         let rOuter;
-        if (z <= 0) {
-            rOuter = dayInner;
-        } else if (z <= 2) {
-            rOuter = qOuter;
+        if (zr <= 0) {
+            rInner = zones.day.inner;
+            rOuter = zones.day.inner;
+        } else if (zr <= 2) {
+            rInner = zones.quarter.label;
+            rOuter = zones.quarter.outer;
         } else if (z === 3) {
-            rOuter = qOuter;
+            rInner = zones.quarter.outer;
+            rOuter = zones.month.outer;
         } else if (z === 4) {
-            rOuter = monthOuter;
-        } else if (z <= 6) {
-            rOuter = weekOuter;
+            rInner = zones.quarter.outer;
+            rOuter = zones.month.outer;
+        } else if (z === 5 || z === 6) {
+            rInner = zones.month.inner;
+            rOuter = zones.month.outer;
         } else if (z === 7) {
-            rOuter = dayOuter;
+            rInner = zones.week.inner;
+            rOuter = zones.week.outer;
         } else {
-            rOuter = W;
+            rInner = zones.day.inner;
+            rOuter = zones.day.outer;
         }
-
-        let r = rOuter;
         const rMax = z >= 8 ? W * 0.998 : W * 0.92;
-        r = Math.max(W * 0.08, Math.min(r, rMax));
-        return r;
+        rOuter = Math.max(W * 0.08, Math.min(rOuter, rMax));
+        rInner = Math.max(W * 0.06, Math.min(rInner, rOuter - W * 0.02));
+        if (rInner >= rOuter - W * 0.01) {
+            rInner = Math.max(W * 0.06, rOuter * 0.5);
+        }
+        return { rInner, rOuter };
+    }
+
+    /** @deprecated Use {@link getListContextRingRadiiForZoom}; returns outer radius only. */
+    function getListContextRingRadiusForZoom(zoomLevel, earthDistance) {
+        return getListContextRingRadiiForZoom(zoomLevel, earthDistance).rOuter;
     }
 
     return {
@@ -1799,6 +1878,7 @@ const TimeMarkers = (function() {
         createTimeMarkers,
         updateOffsets,
         getListContextRingRadiusForZoom,
+        getListContextRingRadiiForZoom,
         getCanonicalRadialZones
     };
 })();

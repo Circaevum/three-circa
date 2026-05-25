@@ -22,7 +22,10 @@
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="login">Log in</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
-                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w1">Load Edge Esmeralda W1 samples</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w1">Edge Esmeralda W1</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w2">Edge Esmeralda W2</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w3">Edge Esmeralda W3</button>
+                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w4">Edge Esmeralda W4</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="keyboard-controls">Keyboard Controls</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="about">About</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="replay-intro">Replay intro tour</button>
@@ -77,10 +80,17 @@
           </div>
         </div>
         <div class="event-list-panel-header-actions">
+            <button type="button" id="events-focus-clear-btn" class="strip-btn" title="Clear highlighted event (Esc or click empty scene)" style="display: none;">Clear selection</button>
             <button type="button" id="events-panel-refresh" class="strip-btn">Refresh</button>
             <button type="button" id="events-panel-draw-all" class="strip-btn">Draw all</button>
             <button type="button" id="test-event-lines-btn" class="strip-btn">Test event lines</button>
-            <button type="button" id="edge-esmeralda-w1-btn" class="strip-btn" title="~160 parallel-friendly sessions, June 1–7 2026 PDT">Edge Esmeralda W1</button>
+            <div class="edge-esmeralda-strip" role="group" aria-label="Edge Esmeralda 2026 sample weeks">
+                <span class="edge-esmeralda-strip-label">Edge Esmeralda:</span>
+                <button type="button" id="edge-esmeralda-w1-btn" class="strip-btn strip-btn-compact" data-ee-week="1" title="Festival + W1 span; ~160 sessions June 1–7 2026 PDT">W1</button>
+                <button type="button" id="edge-esmeralda-w2-btn" class="strip-btn strip-btn-compact" data-ee-week="2" title="Festival + Intelligence & Autonomy week span">W2</button>
+                <button type="button" id="edge-esmeralda-w3-btn" class="strip-btn strip-btn-compact" data-ee-week="3" title="Festival + Emergent Futures week span">W3</button>
+                <button type="button" id="edge-esmeralda-w4-btn" class="strip-btn strip-btn-compact" data-ee-week="4" title="Festival + Environments of Tomorrow week span">W4</button>
+            </div>
         </div>
         <div id="events-panel-list" class="event-list-panel-list"></div>
         <div id="event-list-panel-footer" class="event-list-panel-footer" style="display: none;">
@@ -99,7 +109,7 @@
                 <div class="keyboard-controls-item" role="listitem"><kbd>W</kbd> Zoom in</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>S</kbd> Zoom out</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>A</kbd> / <kbd>D</kbd> Move selected time (zoom step: day, week, hour, …)</div>
-                <div class="keyboard-controls-item" role="listitem"><kbd>Shift</kbd>+<kbd>A</kbd> / <kbd>D</kbd> Nudge 1 hour (any zoom)</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>Shift</kbd>+<kbd>A</kbd> / <kbd>D</kbd> Coarser step (e.g. 100y at zoom 1, week at zoom 7)</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>[</kbd> / <kbd>]</kbd> Nudge 15 minutes (any zoom)</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>N</kbd> Return to present</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>C</kbd> Focus target (Sun/Earth)</div>
@@ -169,7 +179,7 @@
                     <path d="M7 8h10v8H7z" opacity="0.35" fill="currentColor" stroke="none"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="context-disc-toggle" title="Context disc: off" aria-label="Show context disc (list span annulus; inside inner hoop = not in list)" aria-pressed="false">
+            <button type="button" class="scene-icon-btn active" id="context-disc-toggle" title="Context disc: on (sky annulus = Event List span band)" aria-label="Hide context disc (list span annulus)" aria-pressed="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <ellipse cx="12" cy="12" rx="9" ry="4.5" opacity="0.55"/>
                     <ellipse cx="12" cy="12" rx="9" ry="4.5"/>
@@ -271,9 +281,6 @@
         <div class="info-panel-head">
             <h3 id="orbital-data-heading">ORBITAL DATA</h3>
             <div class="info-panel-head-actions">
-                <button type="button" class="info-panel-toggle" id="orbital-data-minimize" title="Collapse orbital data" aria-label="Collapse orbital data panel" aria-expanded="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>
-                </button>
                 <button type="button" class="info-panel-toggle" id="orbital-data-hide" title="Hide orbital data" aria-label="Hide orbital data panel">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
                 </button>
@@ -558,6 +565,7 @@
     
     <!-- Models (VEVENT format) -->
     <script src="circaevum/js/models/vevent.js"></script>
+    <script src="circaevum/js/data/edge-esmeralda-2026.js"></script>
     <script src="circaevum/js/data/edge-esmeralda-week1-samples.js"></script>
     
     <!-- html2canvas for XR in-scene UI panel (capture DOM to texture) -->

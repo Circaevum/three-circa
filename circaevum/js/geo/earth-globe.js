@@ -539,7 +539,7 @@ const EarthGlobe = (function () {
         if (!THREE || !earthGroup || !obs || !sceneContentGroup) return;
         const lon = normalizeLon(obs.lon);
         const lat = Math.max(-89.5, Math.min(89.5, obs.lat));
-        const tubeR = Math.max(0.007, radius * 0.0085);
+        const tubeR = Math.max(0.009, radius * 0.01);
 
         const meridian = buildObserverGeodesicLine(
             THREE,
@@ -549,9 +549,9 @@ const EarthGlobe = (function () {
                 return { lat: -90 + t * 180, lon };
             },
             OBSERVER_GREEN,
-            0.94,
+            0.96,
             tubeR,
-            12
+            14
         );
         if (meridian) {
             sceneContentGroup.add(meridian);
@@ -614,12 +614,23 @@ const EarthGlobe = (function () {
         handObjects = [];
     }
 
-    /** Earth shell: always opaque; circadian lines sit on the surface (orientGroup). */
-    function applyGlobeMaterialStyle(mesh) {
+    /** Earth shell: opaque at all zooms; emissive lift at 0/8/9 so polar/near cameras still read it. */
+    function applyGlobeMaterialStyle(mesh, zoomLevel) {
+        const THREE = getThree();
         if (!mesh || !mesh.material) return;
+        const detail = isGlobeDetailZoom(zoomLevel);
         mesh.material.transparent = false;
         mesh.material.opacity = 1;
         mesh.material.depthWrite = true;
+        mesh.material.depthTest = true;
+        if (THREE && mesh.material.emissive) {
+            mesh.material.emissive.setHex(detail ? 0x0a2848 : 0x061018);
+            mesh.material.emissiveIntensity = zoomLevel === 0 ? 0.22 : detail ? 0.08 : 0.04;
+        }
+        if (THREE) {
+            mesh.material.side = detail ? THREE.DoubleSide : THREE.FrontSide;
+        }
+        mesh.renderOrder = detail ? 6 : 0;
         mesh.material.needsUpdate = true;
     }
 
@@ -687,13 +698,11 @@ const EarthGlobe = (function () {
         earthGroup.add(orientGroup);
 
         const geometry = new THREE.SphereGeometry(planetSize, 48, 48);
-        const material = new THREE.MeshStandardMaterial({
-            color: color || 0x2d8cff,
-            metalness: 0.25,
-            roughness: 0.72
+        const material = new THREE.MeshLambertMaterial({
+            color: color || 0x12406e
         });
         const mesh = new THREE.Mesh(geometry, material);
-        applyGlobeMaterialStyle(mesh);
+        applyGlobeMaterialStyle(mesh, zoomLevel);
         orientGroup.add(mesh);
 
         const eqTube = Math.max(0.018, planetSize * 0.032);
@@ -905,10 +914,10 @@ const EarthGlobe = (function () {
      */
     function getOrbitalPlaneMeridianHandPack(earthGroup, date, userLon, hourNumberRadius, selectedDateHeight) {
         const THREE = getThree();
-        if (!THREE || !earthGroup || userLon == null || isNaN(userLon)) return null;
+        if (!THREE || !earthGroup) return null;
         const ctx = getEarthCenterAndRadius(earthGroup);
         if (!ctx) return null;
-        const lon = normalizeLon(userLon);
+        const lon = userLon != null && !isNaN(userLon) ? normalizeLon(userLon) : null;
         const y =
             typeof selectedDateHeight === 'number' && !isNaN(selectedDateHeight)
                 ? selectedDateHeight
@@ -941,7 +950,7 @@ const EarthGlobe = (function () {
             ringMarker,
             tip,
             hour: getSceneHourDecimal(date, lon),
-            lon,
+            lon: lon,
             radius: ctx.radius
         };
     }
@@ -980,13 +989,9 @@ const EarthGlobe = (function () {
     function getSelectedHourClockDirectionXZ(earthGroup, date, selectedDateHeight, center, userLon) {
         const THREE = getThree();
         if (!THREE || !center || !earthGroup) return null;
+        // Default null → browser-local orbital hour dial (matches red/cyan hands and numerals).
         const lon =
-            userLon != null && !isNaN(userLon)
-                ? userLon
-                : (() => {
-                      const obs = getObserver(date, 9);
-                      return obs ? obs.lon : null;
-                  })();
+            userLon !== undefined && userLon !== null && !isNaN(userLon) ? userLon : null;
         const angle = getSceneHourAngleXZ(earthGroup, date, selectedDateHeight, lon);
         if (angle == null || isNaN(angle)) return null;
         return new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
@@ -1041,29 +1046,69 @@ const EarthGlobe = (function () {
     }
 
     /**
-     * If stored longitude puts the user on the wrong hemisphere vs the selected-time clock hand, flip meridian.
+     * Longitude on the oriented globe where (userLat, lon) lies on the same XZ ray as the
+     * browser-local hour dial (cyan/red hand). Searches at user latitude — not equator — to avoid 180° flips.
      */
-    function getObserverAlignedToMeridianHand(earthGroup, date, zoomLevel, selectedDateHeight) {
-        const obs = getObserver(date, zoomLevel);
-        if (!obs) return null;
+    function getLongitudeForOrbitalClockXZ(earthGroup, date, selectedDateHeight, userLat, hintLon) {
         const ctx = getEarthCenterAndRadius(earthGroup);
-        if (!ctx) return obs;
-        updateOrientation(earthGroup, date);
-        const clockDir = getSelectedHourClockDirectionXZ(earthGroup, date, selectedDateHeight, ctx.center);
-        const surf = bodyLatLonToWorld(earthGroup, obs.lat, obs.lon, 1);
-        if (!clockDir || !surf) return obs;
-        const uXZ = new THREE.Vector3(surf.x - ctx.center.x, 0, surf.z - ctx.center.z);
-        if (uXZ.lengthSq() < 1e-12) return obs;
-        uXZ.normalize();
-        if (uXZ.dot(clockDir) < 0) {
-            return { lat: obs.lat, lon: normalizeLon(obs.lon + 180), source: obs.source };
+        if (!ctx || !earthGroup) {
+            return hintLon != null && !isNaN(hintLon) ? normalizeLon(hintLon) : 0;
         }
-        return obs;
+        const safeDate = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
+        updateOrientation(earthGroup, safeDate);
+        const clockDir = getSelectedHourClockDirectionXZ(
+            earthGroup,
+            safeDate,
+            selectedDateHeight,
+            ctx.center,
+            null
+        );
+        if (!clockDir) {
+            return hintLon != null && !isNaN(hintLon) ? normalizeLon(hintLon) : 0;
+        }
+
+        const lat =
+            typeof userLat === 'number' && !isNaN(userLat)
+                ? Math.max(-89.5, Math.min(89.5, userLat))
+                : 0;
+        let bestLon = hintLon != null && !isNaN(hintLon) ? normalizeLon(hintLon) : 0;
+        let bestDot = -2;
+        for (let lon = -180; lon <= 180; lon += 1) {
+            const p = bodyLatLonToWorld(earthGroup, lat, lon, 1);
+            if (!p) continue;
+            const uXZ = new THREE.Vector3(p.x - ctx.center.x, 0, p.z - ctx.center.z);
+            if (uXZ.lengthSq() < 1e-12) continue;
+            uXZ.normalize();
+            const d = uXZ.x * clockDir.x + uXZ.z * clockDir.z;
+            if (d > bestDot) {
+                bestDot = d;
+                bestLon = lon;
+            }
+        }
+        return normalizeLon(bestLon);
     }
 
-    /** True user location (gold pin). */
+    /** User pin + green cross: lat from geo, lon snapped to hour-dial meridian at that latitude. */
+    function getObserverDisplayOnDial(earthGroup, date, zoomLevel, selectedDateHeight, obs) {
+        if (!obs || !earthGroup) return null;
+        const ctx = getEarthCenterAndRadius(earthGroup);
+        if (!ctx) return null;
+        const lon = getLongitudeForOrbitalClockXZ(
+            earthGroup,
+            date,
+            selectedDateHeight,
+            obs.lat,
+            obs.lon
+        );
+        updateOrientation(earthGroup, date);
+        const surface = bodyLatLonToWorld(earthGroup, obs.lat, lon, ctx.radius);
+        if (!surface) return null;
+        return { lat: obs.lat, lon, surface, source: obs.source };
+    }
+
+    /** True user location on the globe (geographic lat/lon — not dial-snapped). */
     function getObserverSurfaceWorld(earthGroup, date, zoomLevel, radius, hourNumberRadius, selectedDateHeight) {
-        const obs = getObserverAlignedToMeridianHand(earthGroup, date, zoomLevel, selectedDateHeight);
+        const obs = getObserver(date, zoomLevel);
         if (!obs) return null;
         updateOrientation(earthGroup, date);
         return bodyLatLonToWorld(earthGroup, obs.lat, obs.lon, radius);
@@ -1119,8 +1164,14 @@ const EarthGlobe = (function () {
      */
     function getMeridianHandGeometry(earthGroup, date, zoomLevel, hourNumberRadius, selectedDateHeight, userLon) {
         const obs = getObserver(date, zoomLevel);
-        const lon = userLon != null && !isNaN(userLon) ? userLon : obs ? obs.lon : null;
-        if (lon == null || isNaN(lon)) return null;
+        const lon =
+            userLon !== undefined && userLon !== null && !isNaN(userLon)
+                ? userLon
+                : userLon === null
+                  ? null
+                  : obs
+                    ? obs.lon
+                    : null;
 
         const pack = getOrbitalPlaneMeridianHandPack(
             earthGroup,
@@ -1133,7 +1184,10 @@ const EarthGlobe = (function () {
 
         let tip = pack.tip.clone();
         tip = ensureTipOutsideSphere(pack.center, tip, hourNumberRadius);
-        const meridianSurface = getMeridianHandSurfaceWorld(earthGroup, date, lon, pack.radius);
+        const meridianSurface =
+            lon != null && !isNaN(lon)
+                ? getMeridianHandSurfaceWorld(earthGroup, date, lon, pack.radius)
+                : null;
         const exit = hourHandExitOnSphere(pack.center, tip, pack.radius) || meridianSurface;
         return {
             center: pack.center,
@@ -1210,6 +1264,7 @@ const EarthGlobe = (function () {
             center: geom.center,
             exit: geom.exit || geom.meridianSurface,
             meridianMark: geom.meridianSurface,
+            globeSurface: geom.globeMeridian,
             tip: geom.tip,
             handLat: geom.handLat,
             subsolar: geom.subsolar
@@ -1253,13 +1308,17 @@ const EarthGlobe = (function () {
         const obs = getObserver(selectedDate, params.zoomLevel);
         if (!obs) return;
 
-        updateOrientation(earthGroup, selectedDate);
-
         const ctx = getEarthCenterAndRadius(earthGroup);
         if (!ctx) return;
 
-        const userSurface = bodyLatLonToWorld(earthGroup, obs.lat, obs.lon, ctx.radius);
-        if (!userSurface) return;
+        const display = getObserverDisplayOnDial(
+            earthGroup,
+            selectedDate,
+            params.zoomLevel,
+            selectedDateHeight,
+            obs
+        );
+        if (!display || !display.surface) return;
 
         const pinR = Math.max(0.018, ctx.radius * 0.055);
         const pinGeom = new THREE.SphereGeometry(pinR, 12, 12);
@@ -1270,38 +1329,72 @@ const EarthGlobe = (function () {
             depthWrite: false
         });
         const pin = new THREE.Mesh(pinGeom, pinMat);
-        pin.position.copy(userSurface);
+        pin.position.copy(display.surface);
         pin.renderOrder = 17;
         sceneContentGroup.add(pin);
         handObjects.push(pin);
 
-        addObserverMeridianLatitudeCross(earthGroup, obs, ctx.radius, sceneContentGroup);
-
-        const userSpokeR = Math.max(0.022, ctx.radius * 0.026);
-        const userSpoke = buildRadialTube(
-            THREE,
-            { x: ctx.center.x, y: ctx.center.y, z: ctx.center.z },
-            { x: userSurface.x, y: userSurface.y, z: userSurface.z },
-            userSpokeR,
-            OBSERVER_GREEN,
-            16,
-            1
+        addObserverMeridianLatitudeCross(
+            earthGroup,
+            { lat: display.lat, lon: display.lon, source: display.source },
+            ctx.radius,
+            sceneContentGroup
         );
-        if (userSpoke) {
-            sceneContentGroup.add(userSpoke);
-            handObjects.push(userSpoke);
+
+        // Dial-plane meridian: through Earth along cyan/red hand ray (visible outside the globe).
+        const clockDir = getSelectedHourClockDirectionXZ(
+            earthGroup,
+            selectedDate,
+            selectedDateHeight,
+            ctx.center,
+            null
+        );
+        if (clockDir) {
+            const y =
+                typeof selectedDateHeight === 'number' && !isNaN(selectedDateHeight)
+                    ? selectedDateHeight
+                    : ctx.center.y;
+            const outerR =
+                typeof hourNumberRadius === 'number' && hourNumberRadius > 0
+                    ? hourNumberRadius
+                    : ctx.radius * 2.2;
+            const innerR = ctx.radius * 1.04;
+            const dialMeridian = buildRadialTube(
+                THREE,
+                {
+                    x: ctx.center.x - clockDir.x * innerR,
+                    y,
+                    z: ctx.center.z - clockDir.z * innerR
+                },
+                {
+                    x: ctx.center.x + clockDir.x * outerR,
+                    y,
+                    z: ctx.center.z + clockDir.z * outerR
+                },
+                Math.max(0.012, ctx.radius * 0.012),
+                OBSERVER_GREEN,
+                15,
+                0.96
+            );
+            if (dialMeridian) {
+                dialMeridian.renderOrder = 15;
+                sceneContentGroup.add(dialMeridian);
+                handObjects.push(dialMeridian);
+            }
         }
 
         const handR = Math.max(0.022, ctx.radius * 0.024);
 
-        function addMeridianHand(date, colorHex, order) {
+        function addMeridianHand(date, colorHex, order, userLonOverride) {
+            const handLon =
+                userLonOverride !== undefined ? userLonOverride : obs.lon;
             const geom = getMeridianHandGeometry(
                 earthGroup,
                 date,
                 params.zoomLevel,
                 hourNumberRadius,
                 selectedDateHeight,
-                obs.lon
+                handLon
             );
             if (!geom || !geom.meridianSurface || !geom.tip) return;
 
@@ -1333,15 +1426,23 @@ const EarthGlobe = (function () {
             }
         }
 
-        addMeridianHand(selectedDate, SELECTED_TIME_HAND_CYAN, 13);
+        updateOrientation(earthGroup, selectedDate);
+        // Cyan hand: same orbital hour-dial clock as red (browser-local on `selectedDate`), not observer-lon solar.
+        addMeridianHand(selectedDate, SELECTED_TIME_HAND_CYAN, 13, null);
         if (!tourMinimalOrbitMode && currentDate) {
-            addMeridianHand(currentDate, CURRENT_TIME_HAND_RED, 14);
+            const nowDate =
+                currentDate instanceof Date && !isNaN(currentDate.getTime())
+                    ? currentDate
+                    : new Date();
+            updateOrientation(earthGroup, nowDate);
+            // null lon → browser-local wall clock (matches HUD Current Time).
+            addMeridianHand(nowDate, CURRENT_TIME_HAND_RED, 14, null);
         }
     }
 
     function setGlobeZoomAppearance(earthGroup, zoomLevel) {
         if (!earthGroup || !earthGroup.userData || !earthGroup.userData.earthMesh) return;
-        applyGlobeMaterialStyle(earthGroup.userData.earthMesh);
+        applyGlobeMaterialStyle(earthGroup.userData.earthMesh, zoomLevel);
         if (earthGroup.userData.orbitalPlaneInterior) {
             applyOrbitalPlaneInteriorStyle(earthGroup.userData.orbitalPlaneInterior, zoomLevel);
         }
@@ -1351,7 +1452,11 @@ const EarthGlobe = (function () {
             orient.traverse(function (child) {
                 if (!child.isMesh || !child.material) return;
                 if (child === earthGroup.userData.earthMesh) return;
-                if (child.material.isMeshBasicMaterial || child.material.isMeshStandardMaterial) {
+                if (
+                    child.material.isMeshBasicMaterial ||
+                    child.material.isMeshStandardMaterial ||
+                    child.material.isMeshLambertMaterial
+                ) {
                     child.material.transparent = true;
                     child.material.opacity = detail ? 0.95 : 0.9;
                     child.material.depthWrite = false;
@@ -1370,8 +1475,12 @@ const EarthGlobe = (function () {
     function getDefaultPolarHourAngleXZ(earthGroup, selectedDate, selectedDateHeight, zoomLevel) {
         if (!earthGroup) return null;
         const zl = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : 9;
-        const obs = getObserver(selectedDate, zl);
-        const lon = obs ? obs.lon : null;
+        const lon = isGlobeDetailZoom(zl)
+            ? null
+            : (() => {
+                  const obs = getObserver(selectedDate, zl);
+                  return obs ? obs.lon : null;
+              })();
         return getSceneHourAngleXZ(earthGroup, selectedDate, selectedDateHeight, lon);
     }
 

@@ -684,6 +684,16 @@ class CircaevumGL {
           ? currentZoom
           : this.options.zoomLevel;
 
+    const worldlineOk =
+      typeof window !== 'undefined' &&
+      typeof window.isMoonWorldlineVisibleAtZoom === 'function'
+        ? window.isMoonWorldlineVisibleAtZoom(zl)
+        : zl !== 0 && zl !== 9;
+    if (!worldlineOk) {
+      this._removeMoonWorldline();
+      return;
+    }
+
     this._removeMoonWorldline();
     const line = Worldlines.createMoonWorldline(refH, zl);
     if (!line) return;
@@ -1297,6 +1307,9 @@ class CircaevumGL {
         if (typeof window !== 'undefined' && typeof window.syncEventListFocusHighlightRows === 'function') {
           window.syncEventListFocusHighlightRows();
         }
+        if (typeof window !== 'undefined' && typeof window.updateEventFocusClearButton === 'function') {
+          window.updateEventFocusClearButton();
+        }
       } catch (e) { /* ignore */ }
       return;
     }
@@ -1306,6 +1319,9 @@ class CircaevumGL {
     try {
       if (typeof window !== 'undefined' && typeof window.syncEventListFocusHighlightRows === 'function') {
         window.syncEventListFocusHighlightRows();
+      }
+      if (typeof window !== 'undefined' && typeof window.updateEventFocusClearButton === 'function') {
+        window.updateEventFocusClearButton();
       }
     } catch (e) { /* ignore */ }
   }

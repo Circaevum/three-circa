@@ -258,8 +258,8 @@ const SceneGeometry = (function() {
     function getCurrentDateHeight(zoomLevel) {
         let height;
         
-        if (zoomLevel === 2 || zoomLevel === 3 || zoomLevel === 4) {
-            // Decade + Year + Quarter: same orbital phase anchor as createPlanets (wall-clock now)
+        if (zoomLevel === 1 || zoomLevel === 2 || zoomLevel === 3 || zoomLevel === 4) {
+            // Century/decade/year/quarter: orbital phase anchor is wall-clock now (not navigated currentYear)
             if (typeof calculateActualCurrentDateHeight === 'function') {
                 height = calculateActualCurrentDateHeight();
             } else if (typeof calculateCurrentDateHeight === 'function') {
