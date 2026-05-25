@@ -25,6 +25,9 @@ These documents are working drafts for business/legal review and are not legal a
 
 ## Licensing and compliance references
 
+- `INTEGRATIONS_LEGAL_NOTES.md`  
+  Third-party integration SDK terms (e.g. Muse) and pre-ship checklist.
+
 - `THIRD_PARTY_NOTICES.md`  
   Third-party software notices and attribution references.
 

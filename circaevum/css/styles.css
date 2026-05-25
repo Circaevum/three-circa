@@ -1459,6 +1459,27 @@ body.light-mode .event-list-horizon-ring-caption {
     font-family: inherit;
 }
 
+.edge-esmeralda-strip {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.edge-esmeralda-strip-label {
+    font-size: 10px;
+    color: rgba(142, 202, 230, 0.85);
+    margin-right: 2px;
+    white-space: nowrap;
+}
+
+.event-list-panel .strip-btn-compact {
+    min-width: 2.1rem;
+    padding: 6px 8px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
 .event-list-panel-footer {
     padding: 12px 16px;
     border-top: 1px solid rgba(0, 180, 216, 0.2);

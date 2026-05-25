@@ -193,19 +193,333 @@
   }
 
   /**
-   * Long-term ribbons stay on flattenableGroup so flatten mode can squash the timeline with them.
-   * (Short circadian stacks still use sceneContentGroup via {@link shouldAttachShortCircadianToWorldGroup}.)
+   * Long-term ribbons use sceneContentGroup + per-frame Y flatten (see updateTimelineHelixEventsForFlatten).
+   * flattenableGroup Y-scale alone does not keep helix verts aligned with squashed markers/worldlines.
    */
   function shouldAttachLongEventToWorldGroup() {
-    return false;
+    return true;
+  }
+
+  function getTimelineFlattenYScale(amount) {
+    const a = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
+    return Math.max(0.05, 1 - a * 0.95);
+  }
+
+  function flattenTimelineFlatArray(logicalFlat, focusY, amount) {
+    if (!logicalFlat || logicalFlat.length < 3) return logicalFlat;
+    const yScale = getTimelineFlattenYScale(amount);
+    const offset = (typeof focusY === 'number' && !isNaN(focusY) ? focusY : 0) * (1 - yScale);
+    const out = new Float32Array(logicalFlat.length);
+    for (let i = 0; i < logicalFlat.length; i += 3) {
+      out[i] = logicalFlat[i];
+      out[i + 1] = logicalFlat[i + 1] * yScale + offset;
+      out[i + 2] = logicalFlat[i + 2];
+    }
+    return out;
+  }
+
+  function flattenTimelineLogicalY(logicalY, focusY, amount) {
+    const yScale = getTimelineFlattenYScale(amount);
+    const offset = (typeof focusY === 'number' && !isNaN(focusY) ? focusY : 0) * (1 - yScale);
+    return logicalY * yScale + offset;
+  }
+
+  /** Stagger only (helix verts carry flattened world Y; root stays at 0). */
+  function getTimelineHelixStaggerOffsetY(staggerLogical, amount) {
+    if (typeof staggerLogical !== 'number' || isNaN(staggerLogical) || staggerLogical === 0) return 0;
+    return staggerLogical * getTimelineFlattenYScale(amount);
+  }
+
+  function storeTimelineHelixRef(userData, ref) {
+    if (!userData || !ref) return;
+    userData.timelineHelixRef = {
+      startHeight: ref.startHeight,
+      endHeight: ref.endHeight,
+      rInner: ref.rInner,
+      rOuter: ref.rOuter,
+      refWorldline: ref.refWorldline,
+      segments: ref.segments
+    };
+  }
+
+  function applyFlattenedHelixToRoot(root, focusY, amount) {
+    if (!root || !root.userData || !root.userData.timelineHelixRef) return;
+    const ref = root.userData.timelineHelixRef;
+    const pair = buildHelixPair(
+      ref.startHeight,
+      ref.endHeight,
+      ref.rInner,
+      ref.rOuter,
+      ref.refWorldline,
+      ref.segments
+    );
+    if (!pair.innerFlat || !pair.outerFlat || pair.innerFlat.length < 6) return;
+    const innerFlat = flattenTimelineFlatArray(pair.innerFlat, focusY, amount);
+    const outerFlat = flattenTimelineFlatArray(pair.outerFlat, focusY, amount);
+    const staggerY =
+      root.userData.eventStaggerRoot && typeof root.userData.staggerLogical === 'number'
+        ? getTimelineHelixStaggerOffsetY(root.userData.staggerLogical, amount)
+        : 0;
+    if (staggerY) {
+      offsetHelixFlatY(innerFlat, staggerY);
+      offsetHelixFlatY(outerFlat, staggerY);
+    }
+    root.position.y = 0;
+    const outlineCtx = resolveRibbonOutlineCtx(root);
+    let fillMesh = null;
+    const tubesToReplace = [];
+    root.traverse((child) => {
+      if (child.userData && child.userData.type === 'EventRibbonArc') {
+        if (child.userData.arcEdge === 'outer') {
+          updateLineGeometryFromFlat(child, outerFlat);
+        } else {
+          updateLineGeometryFromFlat(child, innerFlat);
+        }
+      } else if (child.isMesh && child.userData && child.userData.longTermFill) {
+        fillMesh = child;
+      } else if (
+        child.isMesh &&
+        child.geometry &&
+        child.geometry.attributes &&
+        child.geometry.attributes.ribbonEdge &&
+        !fillMesh
+      ) {
+        fillMesh = child;
+      } else if (child.userData && child.userData.eventRibbonTube) {
+        tubesToReplace.push(child);
+      } else if (
+        child.isLine &&
+        child.geometry &&
+        child.userData &&
+        (child.userData.type === 'EventObject' ||
+          (child.userData.type === 'EventRibbonArc' && child.userData.arcEdge === 'mid'))
+      ) {
+        const midFlat = getFlattenedRibbonFlatForEdge(
+          ref,
+          'mid',
+          innerFlat,
+          outerFlat,
+          focusY,
+          amount,
+          staggerY
+        );
+        if (midFlat) updateLineGeometryFromFlat(child, midFlat);
+      }
+    });
+    if (fillMesh) updateRibbonFillMeshFromFlat(fillMesh, innerFlat, outerFlat);
+    if (outlineCtx && tubesToReplace.length) {
+      for (let ti = 0; ti < tubesToReplace.length; ti++) {
+        const child = tubesToReplace[ti];
+        const edge = child.userData.eventRibbonTube;
+        const flat = getFlattenedRibbonFlatForEdge(
+          ref,
+          edge,
+          innerFlat,
+          outerFlat,
+          focusY,
+          amount,
+          staggerY
+        );
+        replaceRibbonTubeMeshFromFlat(child, flat, outlineCtx);
+      }
+    }
+    updateEventRibbonLabelsForFlatten(root, innerFlat, outerFlat, amount);
+    updateEventRibbonBandEndConnectors(root, innerFlat, outerFlat);
+  }
+
+  function getEventSpanDatesFromRoot(root) {
+    if (!root || !root.userData) return { start: null, end: null };
+    const ud = root.userData;
+    if (ud.start instanceof Date && ud.end instanceof Date) {
+      return { start: ud.start, end: ud.end };
+    }
+    const ev = ud.vevent;
+    if (ev) {
+      const s = getEventStart(ev);
+      const e = getEventEnd(ev);
+      return { start: s, end: e };
+    }
+    return { start: null, end: null };
+  }
+
+  function resolveRibbonOutlineCtx(root) {
+    if (!root) return null;
+    if (root.userData && root.userData._ribbonOutlineCtx) return root.userData._ribbonOutlineCtx;
+    let ctx = null;
+    root.traverse((child) => {
+      if (!ctx && child.userData && child.userData._ribbonOutlineCtx) {
+        ctx = child.userData._ribbonOutlineCtx;
+      }
+    });
+    return ctx;
+  }
+
+  /**
+   * Reposition LTE name/date labels on the flattened ribbon (surface meshes + sprite fallback).
+   */
+  function updateEventRibbonLabelsForFlatten(root, innerFlat, outerFlat, amount) {
+    if (!root || !innerFlat || !outerFlat || innerFlat.length < 6) return;
+    const n = innerFlat.length / 3;
+    if (n < 2) return;
+    const earthDist = getEarthDistance();
+    const bump = earthDist * 0.004;
+    const { start, end } = getEventSpanDatesFromRoot(root);
+    const daysForLabels = start && end ? durationDaysBetween(start, end) : 0;
+    const isWeekCorridorEvent = eventBandUsesWeekCorridor(daysForLabels);
+    const isMonthishLongTermLabel =
+      typeof daysForLabels === 'number' && !isNaN(daysForLabels) &&
+      daysForLabels >= 12 && !isWeekCorridorEvent;
+    const ribbonLabelRadialT = isWeekCorridorEvent
+      ? 0.38
+      : (isMonthishLongTermLabel ? 0.24 : 0.5);
+    const flatAmount = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
+
+    root.traverse((child) => {
+      const ud = child.userData;
+      if (!ud || (ud.type !== 'EventObjectLabel' && ud.type !== 'EventLineLabel')) return;
+      const kind = ud.kind;
+      let idx = ud.labelRibbonIdx;
+      if (idx == null || isNaN(idx)) {
+        if (kind === 'start') idx = 0;
+        else if (kind === 'end') idx = n - 1;
+        else idx = Math.round((n - 1) * 0.5);
+      }
+      idx = Math.max(0, Math.min(n - 1, Math.floor(idx)));
+      const tAlong =
+        ud.labelRibbonRadialT != null && !isNaN(ud.labelRibbonRadialT)
+          ? ud.labelRibbonRadialT
+          : ribbonLabelRadialT;
+      const fr = sampleRibbonSurfaceFrame(innerFlat, outerFlat, idx, tAlong);
+      if (!fr) return;
+
+      if (ud.isRibbonSurfaceLabel && child.isMesh) {
+        placeMeshOnRibbonFrame(child, fr, bump);
+        if (ud.circadianShortRibbonLabel && typeof orientCircadianShortRibbonLabelMesh === 'function') {
+          orientCircadianShortRibbonLabelMesh(child, fr);
+        }
+        if (ud.monthishLabelSnap && flatAmount < 0.02) {
+          snapMeshPositionXZRadius(child, getMonthOuterInnerLabelRadiusXZ(earthDist));
+        }
+      } else if (child.isSprite) {
+        child.position.copy(fr.position);
+        if (bump && fr.normal) child.position.addScaledVector(fr.normal, bump);
+        if (ud.kind === 'mid' || ud.labelIsName) {
+          clampEventNameSpriteScaleToBand(child, fr.band, 0.88);
+        }
+      }
+    });
+  }
+
+  function updateEventRibbonBandEndConnectors(root, innerFlat, outerFlat) {
+    if (!root || !innerFlat || !outerFlat) return;
+    root.traverse((child) => {
+      if (child.userData && child.userData.type === 'EventRibbonBandEnd') {
+        updateBandEndConnectorFromFlat(child, innerFlat, outerFlat, child.userData.capIndex);
+      }
+    });
+  }
+
+  function disposeOutlineNode(node) {
+    if (!node) return;
+    if (node.geometry) node.geometry.dispose();
+    if (node.material) {
+      if (Array.isArray(node.material)) node.material.forEach((m) => m.dispose());
+      else node.material.dispose();
+    }
+    if (node.children && node.children.length) {
+      for (let i = node.children.length - 1; i >= 0; i--) {
+        disposeOutlineNode(node.children[i]);
+      }
+    }
+  }
+
+  function replaceRibbonTubeMeshFromFlat(oldNode, flat, outlineCtx) {
+    if (!oldNode || !flat || flat.length < 6 || !outlineCtx) return;
+    const parent = oldNode.parent;
+    if (!parent) return;
+    const edge = oldNode.userData && oldNode.userData.eventRibbonTube;
+    const fresh = createTubeOutlineAlongFlat(
+      flat,
+      outlineCtx.outlineColorHex,
+      outlineCtx.outlineOp,
+      outlineCtx.roLine,
+      outlineCtx.earthDist,
+      outlineCtx.layerConfig,
+      outlineCtx.radiusScale
+    );
+    if (!fresh) return;
+    const idx = parent.children.indexOf(oldNode);
+    parent.remove(oldNode);
+    disposeOutlineNode(oldNode);
+    if (!fresh.userData) fresh.userData = {};
+    fresh.userData.eventRibbonTube = edge;
+    if (idx >= 0) parent.children.splice(idx, 0, fresh);
+    else parent.add(fresh);
+  }
+
+  function getFlattenedRibbonFlatForEdge(ref, edge, innerFlat, outerFlat, focusY, amount, staggerY) {
+    let flat = innerFlat;
+    if (edge === 'outer') flat = outerFlat;
+    else if (edge === 'mid' && typeof SceneGeometry !== 'undefined' && SceneGeometry.createEarthHelicalCurve) {
+      const rMid = (ref.rInner + ref.rOuter) * 0.5;
+      const points = SceneGeometry.createEarthHelicalCurve(
+        ref.startHeight,
+        ref.endHeight,
+        rMid,
+        ref.refWorldline,
+        ref.segments
+      );
+      if (points) {
+        flat = flattenTimelineFlatArray(points, focusY, amount);
+        if (staggerY) offsetHelixFlatY(flat, staggerY);
+      }
+    }
+    return flat;
+  }
+
+  /**
+   * @param {{ forEachLayerObjectRoot?: function(function):void }|null} gl
+   * @param {number} focusY
+   * @param {number} amount - 0..1 flatten intensity (matches main.js currentFlattenAmount)
+   */
+  function updateTimelineHelixEventsForFlatten(gl, focusY, amount) {
+    const seen = new Set();
+    const visit = function (root) {
+      if (!root || !root.userData || seen.has(root.uuid)) return;
+      if (root.userData.circadianShortScrub) return;
+      if (root.userData.circadianWorldSpaceLayer && !root.userData.timelineHelixRef) return;
+      if (!root.userData.timelineHelixRef) return;
+      seen.add(root.uuid);
+      applyFlattenedHelixToRoot(root, focusY, amount);
+    };
+    if (gl && typeof gl.forEachLayerObjectRoot === 'function') {
+      gl.forEachLayerObjectRoot(visit);
+    }
+    const world =
+      typeof global.sceneContentGroup !== 'undefined' && global.sceneContentGroup
+        ? global.sceneContentGroup
+        : null;
+    if (world) {
+      world.traverse((obj) => {
+        if (!obj || !obj.userData || !obj.userData.timelineHelixRef) return;
+        if (obj.parent && obj.parent.userData && obj.parent.userData.timelineHelixRef) return;
+        visit(obj);
+      });
+    }
   }
 
   function markWorldSpaceIfNeeded(userData, start, end) {
     if (!userData) return;
-    if (shouldAttachShortCircadianToWorldGroup()) {
+    const spanMs =
+      start && end && !isNaN(start.getTime()) && !isNaN(end.getTime())
+        ? end.getTime() - start.getTime()
+        : 0;
+    const isLongSpan = spanMs >= 24 * 60 * 60 * 1000;
+    if (!isLongSpan && shouldAttachShortCircadianToWorldGroup()) {
       userData.circadianWorldSpaceLayer = true;
     } else if (shouldAttachLongEventToWorldGroup()) {
       userData.useWorldSpaceGroup = true;
+      userData.immuneToFlatten = true;
     }
   }
 
@@ -1084,44 +1398,59 @@
   }
 
   /**
-   * Inner radius of the list-context annulus: Sun-ward edge of the shortest span still in the Event List band.
-   * Spans with ribbons inside this radius are in-scene but excluded from the list at this zoom.
+   * List-context annulus radii — same inner/outer curves as time markers for this zoom
+   * ({@link TimeMarkers.getListContextRingRadiiForZoom} when available).
    */
-  function getListContextRingInnerRadius(earthDist, zoomLevel) {
-    const W = typeof earthDist === 'number' && !isNaN(earthDist) ? earthDist : EARTH_RADIUS;
-    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
-    const dMin = getListFocusMinDurationDaysForZoom(z);
-    const { rInner } = getEventBandRadii(W, dMin);
-    const ro = getListContextRingOuterRadius(W, z);
-    return Math.max(W * 0.06, Math.min(rInner, ro * 0.88));
-  }
-
-  /**
-   * Outer radius of the list-context / horizon hoop for this zoom (matches {@link TimeMarkers.getListContextRingRadiusForZoom}
-   * and main.js `resolveListHorizonRingRadius` when TimeMarkers is present).
-   */
-  function getListContextRingOuterRadius(earthDist, zoomLevel) {
+  function getListContextRingRadiiForZoom(earthDist, zoomLevel) {
     const W = typeof earthDist === 'number' && !isNaN(earthDist) ? earthDist : EARTH_RADIUS;
     const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
     const zr = z === 0 ? 9 : z;
-    if (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getListContextRingRadiusForZoom === 'function') {
-      return TimeMarkers.getListContextRingRadiusForZoom(zr, W);
+    if (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getListContextRingRadiiForZoom === 'function') {
+      return TimeMarkers.getListContextRingRadiiForZoom(zr, W);
     }
     const monthOuter = W / 2;
+    const monthInner = W / 4;
     const weekOuter = W * 5 / 8;
+    const weekInner = W / 2;
     const dayInner = W * 5 / 8;
     const dayOuter = W * 3 / 4;
     const qOuter = W / 4;
-    let ro;
-    if (zr <= 0) ro = dayInner;
-    else if (zr <= 2) ro = W * 0.5;
-    else if (zr === 3) ro = qOuter;
-    else if (zr === 4) ro = monthOuter;
-    else if (zr <= 6) ro = weekOuter;
-    else if (zr === 7) ro = dayOuter;
-    else ro = W;
-    const rMax = zr >= 8 ? W * 0.998 : W * 0.92;
-    return Math.max(W * 0.08, Math.min(ro, rMax));
+    let rInner;
+    let rOuter;
+    if (zr <= 0) {
+      rInner = dayInner;
+      rOuter = dayInner;
+    } else if (zr <= 2) {
+      rInner = W / 6;
+      rOuter = qOuter;
+    } else if (z === 3) {
+      rInner = qOuter;
+      rOuter = monthOuter;
+    } else if (z === 4) {
+      rInner = qOuter;
+      rOuter = monthOuter;
+    } else if (z === 5 || z === 6) {
+      rInner = monthInner;
+      rOuter = monthOuter;
+    } else if (z === 7) {
+      rInner = weekInner;
+      rOuter = weekOuter;
+    } else {
+      rInner = dayInner;
+      rOuter = dayOuter;
+    }
+    const rMax = z >= 8 ? W * 0.998 : W * 0.92;
+    rOuter = Math.max(W * 0.08, Math.min(rOuter, rMax));
+    rInner = Math.max(W * 0.06, Math.min(rInner, rOuter - W * 0.02));
+    return { rInner, rOuter };
+  }
+
+  function getListContextRingInnerRadius(earthDist, zoomLevel) {
+    return getListContextRingRadiiForZoom(earthDist, zoomLevel).rInner;
+  }
+
+  function getListContextRingOuterRadius(earthDist, zoomLevel) {
+    return getListContextRingRadiiForZoom(earthDist, zoomLevel).rOuter;
   }
 
   /**
@@ -1155,10 +1484,19 @@
    */
   function attachEventStaggerRoot(root, staggerLogical) {
     if (!root || !staggerLogical) return root;
-    const ys = typeof global.getEventFlattenYScale === 'function' ? global.getEventFlattenYScale() : 1;
     root.userData.eventStaggerRoot = true;
     root.userData.staggerLogical = staggerLogical;
-    root.position.y = staggerLogical / Math.max(0.05, ys);
+    if (root.userData.timelineHelixRef) {
+      root.position.y = 0;
+      const focusY =
+        typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
+      const amount =
+        typeof global.currentFlattenAmount === 'number' ? global.currentFlattenAmount : 0;
+      applyFlattenedHelixToRoot(root, focusY, amount);
+    } else {
+      const ys = typeof global.getEventFlattenYScale === 'function' ? global.getEventFlattenYScale() : 1;
+      root.position.y = staggerLogical / Math.max(0.05, ys);
+    }
     return root;
   }
 
@@ -1454,6 +1792,7 @@
     const fillMesh = new global.THREE.Mesh(ribbonGeo, mat);
     if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
     fillMesh.renderOrder = roFill;
+    fillMesh.userData.longTermFill = true;
     return fillMesh;
   }
 
@@ -2567,14 +2906,18 @@
       }
       if (sy) mesh.position.y += sy;
       if (isMonthishLongTermLabel && isNameLabel && kind === 'mid' && !isShortEvent) {
+        mesh.userData.monthishLabelSnap = true;
         snapMeshPositionXZRadius(mesh, getMonthOuterInnerLabelRadiusXZ(earthDist));
       }
       attachEventLabelTiming(mesh, start, end, isNameLabel);
       Object.assign(mesh.userData, {
         type: labelType,
         kind,
+        labelRibbonIdx: idx,
+        labelRibbonRadialT: ribbonLabelRadialT,
         isRibbonSurfaceLabel: true,
         circadianBillboardLabel: false,
+        circadianShortRibbonLabel: !!circadianBillboardNames,
         immuneToFlatten: !!circadianBillboardNames
       });
       applyDailyCircadianLabelOpacity(mesh, start, end);
@@ -2708,7 +3051,13 @@
         end,
         true
       );
-      Object.assign(midSprite.userData, { type: labelType, kind: 'mid' });
+      Object.assign(midSprite.userData, {
+        type: labelType,
+        kind: 'mid',
+        labelRibbonIdx: idxMidTitle,
+        labelRibbonRadialT: ribbonLabelRadialT,
+        labelIsName: true
+      });
       applyDailyCircadianLabelOpacity(midSprite, start, end);
       clampEventNameSpriteScaleToBand(midSprite, Math.abs(rOuter - rInner), 0.88);
       parent.add(midSprite);
@@ -2719,10 +3068,20 @@
       const startPos = getPos(startHeight, rMidRibbon);
       const endPos = getPos(endHeight, rMidRibbon);
       const startSprite = createEventLineLabelSprite(formatMMDD(start), eventHex, startPos.x, startPos.y + sy, startPos.z, startEndScale, false);
-      Object.assign(startSprite.userData, { type: labelType, kind: 'start' });
+      Object.assign(startSprite.userData, {
+        type: labelType,
+        kind: 'start',
+        labelRibbonIdx: 0,
+        labelRibbonRadialT: ribbonLabelRadialT
+      });
       parent.add(startSprite);
       const endSprite = createEventLineLabelSprite(formatMMDD(end), eventHex, endPos.x, endPos.y + sy, endPos.z, startEndScale, false);
-      Object.assign(endSprite.userData, { type: labelType, kind: 'end' });
+      Object.assign(endSprite.userData, {
+        type: labelType,
+        kind: 'end',
+        labelRibbonIdx: n - 1,
+        labelRibbonRadialT: ribbonLabelRadialT
+      });
       parent.add(endSprite);
     }
     if (showName) {
@@ -2737,7 +3096,13 @@
         end,
         true
       );
-      Object.assign(midSprite.userData, { type: labelType, kind: 'mid' });
+      Object.assign(midSprite.userData, {
+        type: labelType,
+        kind: 'mid',
+        labelRibbonIdx: idxMidTitle,
+        labelRibbonRadialT: ribbonLabelRadialT,
+        labelIsName: true
+      });
       clampEventNameSpriteScaleToBand(midSprite, Math.abs(rOuter - rInner), 0.88);
       parent.add(midSprite);
     }
@@ -2751,11 +3116,19 @@
     if (!(primary instanceof global.THREE.Group)) {
       const wrapper = new global.THREE.Group();
       wrapper.userData = { ...userData };
+      if (primary.userData && primary.userData.timelineHelixRef) {
+        storeTimelineHelixRef(wrapper.userData, primary.userData.timelineHelixRef);
+      }
       primary.userData = { ...userData };
+      if (userData.timelineHelixRef) {
+        storeTimelineHelixRef(primary.userData, userData.timelineHelixRef);
+      }
       wrapper.add(primary);
       parent = wrapper;
     } else if (!primary.userData || !primary.userData.type) {
       primary.userData = { ...userData };
+    } else if (userData.timelineHelixRef && !primary.userData.timelineHelixRef) {
+      storeTimelineHelixRef(primary.userData, userData.timelineHelixRef);
     }
     addEventWorldlineLabelSprites(parent, event, start, end, startHeight, endHeight, rInner, rOuter, eventHex, currentHeight, staggerY, innerFlat, outerFlat, midTitleAlongSpan01);
     return parent;
@@ -3825,6 +4198,14 @@
     const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, refWorldline, segments);
     const staggerLogical = getEventBandVerticalStagger(durationDays);
     const hasRibbon = innerFlat.length >= 6 && innerFlat.length === outerFlat.length;
+    const helixRef = {
+      startHeight,
+      endHeight,
+      rInner,
+      rOuter,
+      refWorldline,
+      segments
+    };
 
     const plotType = resolveEventPlotType(start, end, layerConfig);
     const opacity = Math.min(1,
@@ -3862,8 +4243,9 @@
       eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
     };
     markWorldSpaceIfNeeded(userData, start, end);
+    storeTimelineHelixRef(userData, helixRef);
 
-    function lineFromFlat(flat, hex, op, renderOrder, lineWidth) {
+    function lineFromFlat(flat, hex, op, renderOrder, lineWidth, arcEdge) {
       const lw = lineWidth != null ? lineWidth : 1;
       const geometry = new global.THREE.BufferGeometry();
       geometry.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
@@ -3875,14 +4257,15 @@
       });
       const lineObj = new global.THREE.Line(geometry, material);
       lineObj.renderOrder = renderOrder != null ? renderOrder : roLine;
+      lineObj.userData = { type: 'EventRibbonArc', arcEdge: arcEdge || 'inner' };
       return lineObj;
     }
 
     if (plotType === 'lines' && hasRibbon) {
       const group = new global.THREE.Group();
       group.userData = userData;
-      group.add(lineFromFlat(innerFlat, eventHex, opacity, roLine));
-      group.add(lineFromFlat(outerFlat, eventHex, opacity, roLine));
+      group.add(lineFromFlat(innerFlat, eventHex, opacity, roLine, 1, 'inner'));
+      group.add(lineFromFlat(outerFlat, eventHex, opacity, roLine, 1, 'outer'));
       addBandEndConnectors(group, innerFlat, outerFlat, eventHex, opacity, roLine);
       return attachEventStaggerRoot(
         wrapWorldlineWithLabels(group, userData, event, start, end, startHeight, endHeight, rInner, rOuter, eventHex, refWorldline, 0, innerFlat, outerFlat, midTitleAlong01),
@@ -3900,9 +4283,25 @@
           const tubeR = getRibbonOutlineTubeRadius(earthDist, layerConfig);
           const oIn = createTubeOutlineAlongFlat(innerFlat, outlineColorHex, outlineOp, roLine, earthDist, layerConfig);
           const oOut = createTubeOutlineAlongFlat(outerFlat, outlineColorHex, outlineOp, roLine, earthDist, layerConfig);
-          if (oIn) group.add(oIn);
-          if (oOut) group.add(oOut);
+          if (oIn) {
+            if (!oIn.userData) oIn.userData = {};
+            oIn.userData.eventRibbonTube = 'inner';
+            group.add(oIn);
+          }
+          if (oOut) {
+            if (!oOut.userData) oOut.userData = {};
+            oOut.userData.eventRibbonTube = 'outer';
+            group.add(oOut);
+          }
           addBandEndConnectors(group, innerFlat, outerFlat, outlineColorHex, outlineOp, roLine, tubeR);
+          userData._ribbonOutlineCtx = {
+            earthDist,
+            layerConfig,
+            outlineColorHex,
+            outlineOp,
+            roLine,
+            radiusScale: null
+          };
         }
         return attachEventStaggerRoot(
           wrapWorldlineWithLabels(group, userData, event, start, end, startHeight, endHeight, rInner, rOuter, eventHex, refWorldline, 0, innerFlat, outerFlat, midTitleAlong01),
@@ -3937,6 +4336,18 @@
     let strokeObj = null;
     if (useOutline) {
       strokeObj = createTubeOutlineAlongFlat(points, strokeHex, strokeOp, roLine, earthDist, layerConfig);
+      if (strokeObj) {
+        if (!strokeObj.userData) strokeObj.userData = {};
+        strokeObj.userData.eventRibbonTube = 'mid';
+      }
+      userData._ribbonOutlineCtx = {
+        earthDist,
+        layerConfig,
+        outlineColorHex: strokeHex,
+        outlineOp: strokeOp,
+        roLine,
+        radiusScale: null
+      };
     }
     if (!strokeObj) {
       const geometry = new global.THREE.BufferGeometry();
@@ -4314,6 +4725,14 @@
       const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, refWorldline, 32);
       const staggerLogical = getEventBandVerticalStagger(durationDays);
       const hasRibbon = innerFlat.length >= 6 && innerFlat.length === outerFlat.length;
+      const helixRef = {
+        startHeight,
+        endHeight,
+        rInner,
+        rOuter,
+        refWorldline,
+        segments: 32
+      };
 
       const lineUserData = {
         layerId: layerConfig.id,
@@ -4321,13 +4740,16 @@
         start,
         end,
         label: line.label || null,
-        index: i
+        index: i,
+        useWorldSpaceGroup: true,
+        immuneToFlatten: true
       };
+      storeTimelineHelixRef(lineUserData, helixRef);
 
       const lineRoot = new global.THREE.Group();
       lineRoot.userData = { ...lineUserData };
 
-      function evtLineFromFlat(flat, hex, op, lineWidth) {
+      function evtLineFromFlat(flat, hex, op, lineWidth, arcEdge) {
         const lw = lineWidth != null ? lineWidth : 1;
         const g = new global.THREE.BufferGeometry();
         g.setAttribute('position', new global.THREE.Float32BufferAttribute(flat, 3));
@@ -4339,7 +4761,7 @@
         });
         const lo = new global.THREE.Line(g, m);
         lo.renderOrder = roLine;
-        lo.userData = { ...lineUserData };
+        lo.userData = { type: 'EventRibbonArc', arcEdge: arcEdge || 'inner' };
         return lo;
       }
 
@@ -4347,8 +4769,8 @@
       if (hasRibbon && plotType === 'lines') {
         const bandGroup = new global.THREE.Group();
         bandGroup.userData = { ...lineUserData };
-        bandGroup.add(evtLineFromFlat(innerFlat, eventColorHex, opacity));
-        bandGroup.add(evtLineFromFlat(outerFlat, eventColorHex, opacity));
+        bandGroup.add(evtLineFromFlat(innerFlat, eventColorHex, opacity, 1, 'inner'));
+        bandGroup.add(evtLineFromFlat(outerFlat, eventColorHex, opacity, 1, 'outer'));
         addBandEndConnectors(bandGroup, innerFlat, outerFlat, eventColorHex, opacity, roLine);
         lineRoot.add(bandGroup);
         bandAdded = true;
@@ -4364,9 +4786,26 @@
             const tubeR = getRibbonOutlineTubeRadius(earthDist, outlineLayerCfg);
             const oIn = createTubeOutlineAlongFlat(innerFlat, outlineColorHexEvt, outlineOpEvt, roLine, earthDist, outlineLayerCfg);
             const oOut = createTubeOutlineAlongFlat(outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, earthDist, outlineLayerCfg);
-            if (oIn) bandGroup.add(oIn);
-            if (oOut) bandGroup.add(oOut);
+            if (oIn) {
+              if (!oIn.userData) oIn.userData = {};
+              oIn.userData.eventRibbonTube = 'inner';
+              bandGroup.add(oIn);
+            }
+            if (oOut) {
+              if (!oOut.userData) oOut.userData = {};
+              oOut.userData.eventRibbonTube = 'outer';
+              bandGroup.add(oOut);
+            }
             addBandEndConnectors(bandGroup, innerFlat, outerFlat, outlineColorHexEvt, outlineOpEvt, roLine, tubeR);
+            lineUserData._ribbonOutlineCtx = {
+              earthDist,
+              layerConfig: outlineLayerCfg,
+              outlineColorHex: outlineColorHexEvt,
+              outlineOp: outlineOpEvt,
+              roLine,
+              radiusScale: null
+            };
+            lineRoot.userData._ribbonOutlineCtx = lineUserData._ribbonOutlineCtx;
           }
           lineRoot.add(bandGroup);
           bandAdded = true;
@@ -4398,6 +4837,19 @@
         let strokeObjFb = null;
         if (useOutFb && strokeOpFb > 0) {
           strokeObjFb = createTubeOutlineAlongFlat(points, strokeHexFb, strokeOpFb, roLine, earthDist, outlineLayerCfg);
+          if (strokeObjFb) {
+            if (!strokeObjFb.userData) strokeObjFb.userData = {};
+            strokeObjFb.userData.eventRibbonTube = 'mid';
+          }
+          lineUserData._ribbonOutlineCtx = {
+            earthDist,
+            layerConfig: outlineLayerCfg,
+            outlineColorHex: strokeHexFb,
+            outlineOp: strokeOpFb,
+            roLine,
+            radiusScale: null
+          };
+          lineRoot.userData._ribbonOutlineCtx = lineUserData._ribbonOutlineCtx;
         }
         if (!strokeObjFb) {
           const lineGeometry = new global.THREE.BufferGeometry();
@@ -4411,9 +4863,11 @@
           strokeObjFb = new global.THREE.Line(lineGeometry, lineMaterial);
           strokeObjFb.renderOrder = roLine;
         }
-        strokeObjFb.userData = lineUserData;
+        strokeObjFb.userData = { ...lineUserData, type: 'EventRibbonArc', arcEdge: 'mid' };
         lineRoot.add(strokeObjFb);
       }
+
+      lineRoot.userData = { ...lineUserData };
 
       if (areEventTextLabelsVisibleAtCurrentZoom(start, end) || areEventNameLabelsVisibleAtCurrentZoom(start, end)) {
         const pseudoLineEvent = {
@@ -4439,6 +4893,7 @@
       }
 
       attachEventStaggerRoot(lineRoot, staggerLogical);
+      lineRoot.userData.eventStaggerRoot = true;
       addToFlattenOrWorld(lineRoot);
       objects.push(lineRoot);
     }
@@ -4658,6 +5113,7 @@
     createEventMarker,
     createEventWorldline,
     updateCircadianShortEventsForScrub,
+    updateTimelineHelixEventsForFlatten,
     getEventStart,
     getEventEnd,
     getShortEventRenderDiagnostics,
@@ -4673,7 +5129,8 @@
     isEventLabelRadialContextSurpassesInner,
     getListFocusMinDurationDaysForZoom,
     getListContextRingInnerRadius,
-    getListContextRingOuterRadius
+    getListContextRingOuterRadius,
+    getListContextRingRadiiForZoom
   };
 
   if (typeof module !== 'undefined' && module.exports) {

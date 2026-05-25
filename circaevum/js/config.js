@@ -53,7 +53,7 @@ const PLANET_REFERENCE_ANGLES = {
 const PLANET_DATA = [
     { name: 'Mercury', distance: 19.5, size: 2.5, color: 0x8c7853, speed: 4.15, orbitalPeriod: 0.24, get startAngle() { return calculatePlanetStartAngle(this.orbitalPeriod, PLANET_REFERENCE_ANGLES.Mercury); } },
     { name: 'Venus', distance: 36, size: 6, color: 0xffc649, speed: 1.62, orbitalPeriod: 0.615, get startAngle() { return calculatePlanetStartAngle(this.orbitalPeriod, PLANET_REFERENCE_ANGLES.Venus); } },
-    { name: 'Earth', distance: 50, size: 6.5, color: 0x4a90e2, speed: 1.0, orbitalPeriod: 1.0, get startAngle() { return calculatePlanetStartAngle(this.orbitalPeriod, PLANET_REFERENCE_ANGLES.Earth); } },
+    { name: 'Earth', distance: 50, size: 6.5, color: 0x12406e, speed: 1.0, orbitalPeriod: 1.0, get startAngle() { return calculatePlanetStartAngle(this.orbitalPeriod, PLANET_REFERENCE_ANGLES.Earth); } },
     { name: 'Mars', distance: 76, size: 3.5, color: 0xdc4c3e, speed: 0.53, orbitalPeriod: 1.88, get startAngle() { return calculatePlanetStartAngle(this.orbitalPeriod, PLANET_REFERENCE_ANGLES.Mars); } },
     { name: 'Jupiter', distance: 260, size: 14, color: 0xc88b3a, speed: 0.084, orbitalPeriod: 11.86, get startAngle() { return calculatePlanetStartAngle(this.orbitalPeriod, PLANET_REFERENCE_ANGLES.Jupiter); } },
     { name: 'Saturn', distance: 477, size: 12, color: 0xfad5a5, speed: 0.034, orbitalPeriod: 29.46, get startAngle() { return calculatePlanetStartAngle(this.orbitalPeriod, PLANET_REFERENCE_ANGLES.Saturn); } },
@@ -103,7 +103,17 @@ const SCENE_CONFIG = {
     starFieldHeight: 12000,  // Vertical spread to cover century view
     sunSize: 5,  // Reduced from 6 so Q1 isn't engulfed
     sunGlowSize: 7,  // Reduced from 8 to match sunSize reduction
+    /** Sun mesh / glow only — warm gold (#FFD60A), not used to tint planet lighting. */
     sunColor: 0xffd60a,
+    /** Planet lighting: near-white, ~5800K (slight warm); avoids yellow×blue → green cast on Earth. */
+    sunLightColor: 0xfff9f2,
+    /** Parallel Sun→Earth rays (primary daylight on the globe). */
+    sunDirectionalIntensity: 2.65,
+    /** Soft fill from the Sun point (other planets + limb). */
+    sunPointLightIntensity: 1.15,
+    /** Dim cool space fill (earthshine / sky), not full white wash. */
+    ambientLightColor: 0x9eb4cf,
+    ambientLightIntensity: 0.34,
     orbitLineColor: 0x00b4d8,
     orbitLineOpacity: 0.3,
     worldlineOpacity: 0.6,

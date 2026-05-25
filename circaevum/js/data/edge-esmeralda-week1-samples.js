@@ -7,7 +7,7 @@
  */
 (function (global) {
   var LOC = 'Edge Esmeralda, Healdsburg, CA';
-  var LAYER_ID = 'edge-esmeralda-w1';
+  var LAYER_ID = 'edge-esmeralda-2026';
 
   /** PDT morning hour h → UTC hour for same calendar day in June */
   function z(h, m) {
@@ -420,97 +420,10 @@
     { suf: 'p-t', dur: 60, sum: 'Stack: last-night stargaze repeat', desc: 'Parallel wave.', color: C.nature, cat: 'Nature' }
   ]);
 
-  function toVEvents(raw) {
-    if (typeof VEvent === 'undefined') return raw;
-    return raw.map(function (e) {
-      return VEvent.fromJSON(e);
-    });
-  }
-
-  /**
-   * Load samples into CircaevumGL (replaces layer contents).
-   * @param {{ replace?: boolean }} opts
-   */
-  function loadEdgeEsmeraldaWeek1Samples(opts) {
-    opts = opts || {};
-    var gl = typeof global.getGL === 'function' ? global.getGL() : null;
-    if (!gl || typeof gl.ingestEvents !== 'function') {
-      console.warn('CircaevumGL not ready; try again after scene init.');
-      return 0;
-    }
-    var vevents = toVEvents(events);
-    var meshStyle = { plotType: 'polygon3d', visible: true };
-    var styles = {
-      Fitness: Object.assign({ color: C.fitness }, meshStyle),
-      Wellness: Object.assign({ color: C.wellness }, meshStyle),
-      Salon: Object.assign({ color: C.talk }, meshStyle),
-      Workshop: Object.assign({ color: C.workshop }, meshStyle),
-      Bio: Object.assign({ color: C.bio }, meshStyle),
-      Meal: Object.assign({ color: C.meal }, meshStyle),
-      Nature: Object.assign({ color: C.nature }, meshStyle),
-      Social: Object.assign({ color: C.social }, meshStyle),
-      Dance: Object.assign({ color: '#ff6b9d' }, meshStyle)
-    };
-    var mergedStyles = Object.assign(
-      {},
-      gl.layerStylesByCategory && typeof gl.layerStylesByCategory === 'object' ? gl.layerStylesByCategory : {},
-      styles
-    );
-    if (typeof gl.setTimelineEventFilter === 'function') {
-      gl.setTimelineEventFilter('all');
-    }
-    var layer = gl.getLayer && gl.getLayer(LAYER_ID);
-    if (!layer && typeof gl.addLayer === 'function') {
-      gl.addLayer(LAYER_ID, {
-        name: 'Edge Esmeralda W1',
-        plotType: 'polygon3d',
-        opacity: 0.92,
-        visible: true
-      });
-    } else if (layer) {
-      layer.plotType = 'polygon3d';
-      layer.opacity = 0.92;
-      layer.visible = true;
-    }
-    gl.ingestEvents(LAYER_ID, vevents, {
-      sessionId: 'edge-esmeralda-2026-w1',
-      layerStyles: mergedStyles,
-      timelineEventFilter: 'all',
-      circadianShortEventScope: 'year'
-    });
-    if (typeof global.setCircadianShortEventScope === 'function') {
-      global.setCircadianShortEventScope('year');
-    }
-    var anchor =
-      opts.navigateTo instanceof Date && !isNaN(opts.navigateTo.getTime())
-        ? opts.navigateTo
-        : new Date(2026, 5, 4, 10, 0, 0);
-    var zoom = opts.zoomLevel != null ? opts.zoomLevel : 8;
-    var applyZoom = typeof global.setZoomLevel === 'function' ? global.setZoomLevel : null;
-    if (applyZoom) {
-      applyZoom(zoom, anchor);
-    } else {
-      if (typeof gl.setZoomLevel === 'function') gl.setZoomLevel(zoom);
-      if (typeof gl.navigateToTime === 'function') gl.navigateToTime(anchor);
-    }
-    if (typeof global.createPlanets === 'function' && typeof global.currentZoom !== 'undefined') {
-      global.createPlanets(global.currentZoom);
-    }
-    if (typeof gl.setLayerVisibility === 'function') {
-      gl.setLayerVisibility(LAYER_ID, true);
-    }
-    if (typeof global.circaevumSelectedLayerId !== 'undefined') {
-      global.circaevumSelectedLayerId = LAYER_ID;
-    }
-    if (typeof gl.refreshAllEventLayers === 'function') {
-      gl.refreshAllEventLayers();
-    }
-    if (typeof global.refreshCalendarLayersList === 'function') global.refreshCalendarLayersList();
-    if (typeof global.refreshEventsList === 'function') global.refreshEventsList(false);
-    return vevents.length;
+  if (typeof global.registerEdgeEsmeraldaWeekSessions === 'function') {
+    global.registerEdgeEsmeraldaWeekSessions(1, events);
   }
 
   global.edgeEsmeraldaWeek1SampleEvents = events;
   global.edgeEsmeraldaWeek1LayerId = LAYER_ID;
-  global.loadEdgeEsmeraldaWeek1Samples = loadEdgeEsmeraldaWeek1Samples;
 })(typeof window !== 'undefined' ? window : this);

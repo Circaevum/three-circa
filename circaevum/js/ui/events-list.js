@@ -320,6 +320,57 @@
     return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
   }
 
+  function updateEventFocusClearButton() {
+    var btn = document.getElementById('events-focus-clear-btn');
+    if (!btn) return;
+    var gl = window.circaevumGL || (window.getGL && window.getGL());
+    var evFocus = gl && typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
+    btn.style.display = evFocus && evFocus.uid ? 'inline-block' : 'none';
+  }
+
+  function clearEventFocus() {
+    var gl = window.circaevumGL || (window.getGL && window.getGL());
+    if (!gl || typeof gl.setEventHighlight !== 'function') return;
+    var cur = typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
+    if (!cur || !cur.uid) return;
+    gl.setEventHighlight(cur.layerId, null);
+    updateEventFocusClearButton();
+  }
+  window.clearEventFocus = clearEventFocus;
+  window.updateEventFocusClearButton = updateEventFocusClearButton;
+
+  function findEventListRow(layerId, uid) {
+    var listEl = document.getElementById('events-panel-list');
+    if (!listEl || !layerId || uid == null || String(uid).trim() === '') return null;
+    var uidStr = String(uid);
+    var rows = listEl.querySelectorAll('.event-row');
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (row.getAttribute('data-event-layer') === layerId && row.getAttribute('data-event-uid') === uidStr) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  /** Scroll the event list panel so the focused event row is visible. @returns {boolean} */
+  function scrollEventListToFocusedEvent() {
+    var listEl = document.getElementById('events-panel-list');
+    if (!listEl) return false;
+    var gl = window.circaevumGL || (window.getGL && window.getGL());
+    var evFocus = gl && typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
+    if (!evFocus || !evFocus.uid) return false;
+    var row = findEventListRow(evFocus.layerId, evFocus.uid);
+    if (!row) return false;
+    var rowTop = row.offsetTop;
+    var rowH = row.offsetHeight;
+    var viewH = listEl.clientHeight;
+    var target = rowTop - Math.max(0, (viewH - rowH) / 2);
+    listEl.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+    return true;
+  }
+  window.scrollEventListToFocusedEvent = scrollEventListToFocusedEvent;
+
   function syncEventListFocusHighlightRows() {
     var gl = window.circaevumGL || (window.getGL && window.getGL());
     var evFocus = gl && typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
@@ -335,6 +386,7 @@
       if (lid === evFocus.layerId && uid === String(evFocus.uid)) row.classList.add('event-row--focus-selected');
       else row.classList.add('event-row--focus-dim');
     }
+    updateEventFocusClearButton();
   }
   window.syncEventListFocusHighlightRows = syncEventListFocusHighlightRows;
 
@@ -498,7 +550,9 @@
       var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
       var borderColor = ev.color || ev.colorId || layerSwatchColor(layer) || 'rgba(0, 180, 216, 0.5)';
       row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:8px;cursor:pointer;border-left:' + (inList ? '4px' : '3px') + ' solid ' + borderColor + ';background:' + eventColorToRgbaPanelBackground(ev.color || ev.colorId, layerSwatchColor(layer), 0.22, 0.09, inList) + ';' + (inList ? '' : 'opacity:0.5;filter:saturate(0.4) brightness(0.92);');
-      row.title = inList ? 'Click to focus on this event' : 'In the time window but hidden until you zoom in (same dimming as the 3D view). Click to focus.';
+      row.title = inList
+        ? 'Click to focus; click again or Clear selection / Esc / empty scene to unselect.'
+        : 'In the time window but hidden until you zoom in (same dimming as the 3D view). Click to focus.';
       var details = [];
       if (ev.location) details.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
       if (ev.description) details.push('<div class="event-detail event-description">' + linkifyText(ev.description) + '</div>');
@@ -506,10 +560,26 @@
       row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
       row.onclick = function() {
         setCircaevumSelectedLayerId(item.layerId || USER_EVENTS_LAYER);
-        if (rowUidStr && typeof gl.setEventHighlight === 'function') {
-          gl.setEventHighlight(item.layerId || USER_EVENTS_LAYER, rowUidStr);
+        var lid = item.layerId || USER_EVENTS_LAYER;
+        var curFocus = typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
+        if (
+          rowUidStr &&
+          typeof gl.setEventHighlight === 'function' &&
+          curFocus &&
+          curFocus.uid &&
+          curFocus.layerId === lid &&
+          String(curFocus.uid) === rowUidStr
+        ) {
+          gl.setEventHighlight(lid, null);
+          updateEventFocusClearButton();
+          return;
         }
+        if (rowUidStr && typeof gl.setEventHighlight === 'function') {
+          gl.setEventHighlight(lid, rowUidStr);
+        }
+        updateEventFocusClearButton();
         navigateToEvent(start, endForNav);
+        requestAnimationFrame(function() { scrollEventListToFocusedEvent(); });
       };
       row.querySelectorAll('a').forEach(function(a) { a.onclick = function(e) { e.stopPropagation(); }; });
       var editBtn = row.querySelector('.events-panel-edit-btn');
@@ -557,18 +627,21 @@
       listEl.appendChild(row);
     });
 
+    updateEventFocusClearButton();
     requestAnimationFrame(function() {
-      var panelBody = listEl.parentElement;
-      if (!panelBody || typeof panelBody.clientHeight !== 'number') return;
+      if (evFocus && evFocus.uid && scrollEventListToFocusedEvent()) return;
+      if (typeof listEl.clientHeight !== 'number') return;
       var dividerTop = selectedTimeDivider.offsetTop;
       var dividerCenter = dividerTop + (selectedTimeDivider.offsetHeight / 2);
-      var targetScrollTop = dividerCenter - (panelBody.clientHeight / 2);
-      panelBody.scrollTop = Math.max(0, targetScrollTop);
+      var targetScrollTop = dividerCenter - (listEl.clientHeight / 2);
+      listEl.scrollTop = Math.max(0, targetScrollTop);
     });
   }
   window.refreshEventsList = refreshEventsList;
 
   document.addEventListener('DOMContentLoaded', function() {
+    var clearFocusBtn = document.getElementById('events-focus-clear-btn');
+    if (clearFocusBtn) clearFocusBtn.onclick = function() { clearEventFocus(); };
     var refreshBtn = document.getElementById('events-panel-refresh');
     if (refreshBtn) refreshBtn.onclick = function() { refreshEventsList(false); };
     var drawAllBtn = document.getElementById('events-panel-draw-all');

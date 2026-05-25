@@ -76,7 +76,10 @@ function initScene(dependencies = {}) {
     renderer.xr.enabled = true;
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+    const ambientLight = new THREE.AmbientLight(
+        SCENE_CONFIG.ambientLightColor != null ? SCENE_CONFIG.ambientLightColor : 0x9eb4cf,
+        SCENE_CONFIG.ambientLightIntensity != null ? SCENE_CONFIG.ambientLightIntensity : 0.34
+    );
     scene.add(ambientLight); // Keep ambient light in scene (not in group)
 
     // Position sun light at current date height so it illuminates planets
@@ -90,9 +93,19 @@ function initScene(dependencies = {}) {
         validatedHeight = 2500;
     }
     
-    sunLight = new THREE.PointLight(SCENE_CONFIG.sunColor, 3, 5000);
+    const sunIllum =
+        SCENE_CONFIG.sunLightColor != null ? SCENE_CONFIG.sunLightColor : 0xfff9f2;
+    const pointInt =
+        SCENE_CONFIG.sunPointLightIntensity != null ? SCENE_CONFIG.sunPointLightIntensity : 1.15;
+    sunLight = new THREE.PointLight(sunIllum, pointInt, 5000);
     sunLight.position.set(0, validatedHeight, 0);
     sceneContentGroup.add(sunLight);
+    if (typeof window.ensureSunDirectionalLight === 'function') {
+        window.ensureSunDirectionalLight();
+        if (typeof window.updateSunLightingTowardEarth === 'function') {
+            window.updateSunLightingTowardEarth();
+        }
+    }
 
     createStarField(dependencies);
 
