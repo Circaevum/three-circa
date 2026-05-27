@@ -436,14 +436,23 @@ const Worldlines = (function() {
         return new THREE.Line(geometry, lineMat);
     }
     
+    /** Earth at day/clock/landing zoom: thin connector so the helical link does not clutter the dial. */
+    function isEarthDailyConnectorZoom(zoomLevel, planetName) {
+        return (
+            planetName === 'Earth' &&
+            (zoomLevel === 0 || zoomLevel === 8 || zoomLevel === 9)
+        );
+    }
+
     /**
      * Create a connector worldline between current and selected time
      * @param {Object} planetData - Planet data
      * @param {number} currentHeight - Current date height
      * @param {number} selectedHeight - Selected date height
+     * @param {number} [zoomLevel] - Scene zoom (0/8/9 → subtler Earth connector)
      * @returns {THREE.Mesh|THREE.Line} Ribbon mesh or line fallback
      */
-    function createConnectorWorldline(planetData, currentHeight, selectedHeight) {
+    function createConnectorWorldline(planetData, currentHeight, selectedHeight, zoomLevel) {
         // Validate inputs
         if (isNaN(currentHeight) || isNaN(selectedHeight)) {
             console.error('Worldlines: createConnectorWorldline received NaN heights', {
@@ -456,9 +465,10 @@ const Worldlines = (function() {
         
         const startHeight = Math.min(currentHeight, selectedHeight);
         const endHeight = Math.max(currentHeight, selectedHeight);
-        
+        const dailyEarth = isEarthDailyConnectorZoom(zoomLevel, planetData.name);
+
         // Generate curve points
-        const segments = 100;
+        const segments = dailyEarth ? 48 : 100;
         const points = SceneGeometry.createHelicalCurve(
             startHeight,
             endHeight,
@@ -485,6 +495,22 @@ const Worldlines = (function() {
             }
         }
         
+        if (dailyEarth) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            const material = new THREE.LineBasicMaterial({
+                color: getSelectedTimeColor(),
+                transparent: true,
+                opacity: isLightMode ? 0.34 : 0.26,
+                linewidth: 1,
+                depthWrite: false
+            });
+            const line = new THREE.Line(geometry, material);
+            line.renderOrder = 5;
+            line.userData = { type: 'ConnectorWorldline', planet: planetData.name, dailyThin: true };
+            return line;
+        }
+
         const halfWidth = Math.max(0.42, Math.min(4.5, planetData.distance * 0.021));
         const ribbonGeo = createRibbonStripGeometry(Float32Array.from(points), halfWidth);
         if (ribbonGeo) {
@@ -594,7 +620,7 @@ const Worldlines = (function() {
                 const atDate = new Date(
                     selDate.getTime() + ((height - selH) / hpy) * MS_PER_ORBIT_YEAR
                 );
-                const mxz = moonXZForWorldline.call(MM, height, refH, earth, moonSep, atDate);
+                const mxz = moonXZForWorldline.call(MM, height, refH, earth, moonSep, atDate, null, selH);
                 if (!mxz || isNaN(mxz.x) || isNaN(mxz.z)) {
                     console.error('Worldlines: Invalid moonXZ from MoonMechanics at segment', i);
                     return null;
@@ -685,7 +711,7 @@ const Worldlines = (function() {
                     const h =
                         selH + ((at.getTime() - selDate.getTime()) / MS_PER_ORBIT_YEAR) * hpy;
                     if (isNaN(h)) continue;
-                    const mxz = moonXZForWorldline.call(MM, h, refH, earth, moonSep, at);
+                    const mxz = moonXZForWorldline.call(MM, h, refH, earth, moonSep, at, null, selH);
                     if (!mxz || isNaN(mxz.x) || isNaN(mxz.z)) continue;
 
                     const markUd = {

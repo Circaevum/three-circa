@@ -20,13 +20,57 @@
     return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
   }
 
+  function zoomDisplayName(z) {
+    var names = {
+      0: 'Hour',
+      1: 'Century',
+      2: 'Decade',
+      3: 'Year',
+      4: 'Quarter',
+      5: 'Month',
+      6: 'Lunar',
+      7: 'Week',
+      8: 'Day',
+      9: 'Clock'
+    };
+    return names[z] || ('Zoom ' + z);
+  }
+
+  /** Smallest zoom where this span is in the focused list/label band (see EventRenderer). */
+  function preferredZoomForEventSpan(start, end) {
+    var s = start instanceof Date ? start : new Date(start);
+    var e = end instanceof Date ? end : new Date(end);
+    if (!s || isNaN(s.getTime())) return typeof currentZoom !== 'undefined' ? currentZoom : 5;
+    if (!e || isNaN(e.getTime()) || e <= s) e = oneDayLater(s) || s;
+    var days = durationDaysBetweenLocal(s, e);
+    return eventTextLabelsMinZoomForDurationDaysLocal(days);
+  }
+
   function navigateToEvent(start, end) {
     var s = start instanceof Date ? start : new Date(start);
     var e = end instanceof Date ? end : new Date(end);
     if (!s || isNaN(s.getTime())) return;
     if (!e || isNaN(e.getTime()) || e <= s) e = oneDayLater(s) || s;
     var mid = new Date((s.getTime() + e.getTime()) / 2);
+    var days = durationDaysBetweenLocal(s, e);
+    var zNow = typeof currentZoom !== 'undefined' ? currentZoom : 2;
+    var zTarget = eventTextLabelsMinZoomForDurationDaysLocal(days);
     try {
+      if (!eventDurationEligible(days, zNow)) {
+        if (typeof window.setZoomLevel === 'function') {
+          window.setZoomLevel(zTarget, mid);
+        } else {
+          var glZoom = window.circaevumGL || (window.getGL && window.getGL());
+          if (glZoom) {
+            if (typeof glZoom.setZoomLevel === 'function') glZoom.setZoomLevel(zTarget);
+            if (typeof glZoom.navigateToTime === 'function') glZoom.navigateToTime(mid);
+          }
+        }
+        if (typeof window.refreshEventsList === 'function') {
+          window.refreshEventsList(false);
+        }
+        return;
+      }
       if (typeof window.smoothNavigateToTime === 'function') {
         var ref = (typeof window.getSelectedDateTime === 'function')
           ? window.getSelectedDateTime()
@@ -43,6 +87,8 @@
     } catch (e2) {}
   }
   window.navigateToEvent = navigateToEvent;
+  window.preferredZoomForEventSpan = preferredZoomForEventSpan;
+  window.zoomDisplayName = zoomDisplayName;
 
   function calendarLayerVisibilityToggle(ev, gl, layerId) {
     ev.preventDefault();
@@ -396,9 +442,6 @@
     if (!listEl) return;
     window.eventsListHorizonRingActive = !drawAll;
     try {
-      if (typeof window.syncContextDiscButton === 'function') {
-        window.syncContextDiscButton();
-      }
       if (typeof window.updateListHorizonEarthRingScene === 'function') {
         window.updateListHorizonEarthRingScene();
       }
@@ -499,6 +542,9 @@
         events = filterEventsByTimeRange(events, t0, t1);
         lines = filterLinesByTimeRange(lines, t0, t1, 86400000);
       }
+    }
+    var afterTimeFilter = events.slice();
+    if (!drawAll) {
       events = events.filter(function(item) { return eventDurationEligible(eventDurationDaysForListItem(item.ev), z); });
       lines = lines.filter(function(line) {
         var s = line.start;
@@ -509,8 +555,27 @@
       });
     }
 
+    var contextArcFinerZoom = [];
+    if (!drawAll && typeof window.getListContextDiscArcTimeBoundsMs === 'function') {
+      var arcBounds = window.getListContextDiscArcTimeBoundsMs(z, ref);
+      if (arcBounds && arcBounds.t0 != null && arcBounds.t1 != null) {
+        contextArcFinerZoom = afterTimeFilter.filter(function(item) {
+          var days = eventDurationDaysForListItem(item.ev);
+          if (eventDurationEligible(days, z)) return false;
+          var s = item.ev.start;
+          if (!s || isNaN(s.getTime())) return false;
+          var e = item.ev.end && item.ev.end > s ? item.ev.end : oneDayLater(s);
+          if (!e || isNaN(e.getTime())) e = s;
+          return rangesOverlap(s.getTime(), e.getTime(), arcBounds.t0, arcBounds.t1);
+        });
+      }
+    }
+    if (ctxEl && !drawAll && contextArcFinerZoom.length > 0) {
+      ctxEl.textContent += ' ' + contextArcFinerZoom.length + ' on context arc need finer zoom (section below). Click one to jump.';
+    }
+
     updateEventListHorizonRing(drawAll, z, halfMs, ref);
-    if (events.length === 0 && lines.length === 0) {
+    if (events.length === 0 && lines.length === 0 && contextArcFinerZoom.length === 0) {
       listEl.innerHTML = '<p class="event-horizon-empty">Nothing in this time window (' + totalEv + ' event(s), ' + totalLn + ' line(s) loaded overall). Move <strong>selected time</strong> or zoom, use <strong>Draw all</strong>, or switch the 1Y / all-time events control, then Refresh.</p>';
       return;
     }
@@ -607,6 +672,83 @@
       } else if (editBtn) editBtn.style.display = 'none';
       listEl.appendChild(row);
     });
+
+    if (contextArcFinerZoom.length > 0) {
+      contextArcFinerZoom.sort(function(a, b) {
+        var as = a.ev && a.ev.start instanceof Date ? a.ev.start.getTime() : 0;
+        var bs = b.ev && b.ev.start instanceof Date ? b.ev.start.getTime() : 0;
+        return as - bs;
+      });
+      var arcHdr = document.createElement('div');
+      arcHdr.className = 'events-nearby-lines-header';
+      arcHdr.textContent = 'In context arc — click to open at finer zoom';
+      arcHdr.style.margin = '16px 0 10px';
+      arcHdr.style.borderTop = '1px solid rgba(0,180,216,0.2)';
+      arcHdr.style.paddingTop = '10px';
+      listEl.appendChild(arcHdr);
+      contextArcFinerZoom.forEach(function(item) {
+        var ev = item.ev;
+        var start = ev.start;
+        if (!start || !(start instanceof Date) || isNaN(start.getTime())) return;
+        var end = ev.end;
+        var endForLine = end && end > start ? end : oneDayLater(start);
+        var endForNav = end && end > start ? end : endForLine;
+        var name = ev.summary || ev.uid || 'Event';
+        var days = eventDurationDaysForListItem(ev);
+        var targetZ = eventTextLabelsMinZoomForDurationDaysLocal(days);
+        var row = document.createElement('div');
+        var rowUidStr = String(ev.uid || ev.id || '');
+        row.className = 'event-row event-row--outside-list event-row--context-arc-finer';
+        row.setAttribute('data-event-layer', item.layerId || '');
+        row.setAttribute('data-event-uid', rowUidStr);
+        if (evFocus && evFocus.uid) {
+          var matchFocus = evFocus.layerId === item.layerId && String(evFocus.uid) === rowUidStr;
+          if (matchFocus) row.classList.add('event-row--focus-selected');
+          else row.classList.add('event-row--focus-dim');
+        }
+        var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
+        var borderColor = ev.color || ev.colorId || layerSwatchColor(layer) || 'rgba(0, 180, 216, 0.5)';
+        row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:8px;cursor:pointer;border-left:3px solid ' + borderColor + ';background:' + eventColorToRgbaPanelBackground(ev.color || ev.colorId, layerSwatchColor(layer), 0.16, 0.08, false) + ';opacity:0.82;';
+        row.title = 'Shown in context arc at ' + zoomDisplayName(z) + '. Click to jump to ' + zoomDisplayName(targetZ) + ' and focus this span.';
+        var details = [];
+        if (ev.location) details.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
+        if (ev.description) details.push('<div class="event-detail event-description">' + linkifyText(ev.description) + '</div>');
+        row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + ' · opens at ' + zoomDisplayName(targetZ) + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
+        row.onclick = function() {
+          setCircaevumSelectedLayerId(item.layerId || USER_EVENTS_LAYER);
+          var lid = item.layerId || USER_EVENTS_LAYER;
+          if (rowUidStr && typeof gl.setEventHighlight === 'function') {
+            gl.setEventHighlight(lid, rowUidStr);
+          }
+          updateEventFocusClearButton();
+          navigateToEvent(start, endForNav);
+          requestAnimationFrame(function() { scrollEventListToFocusedEvent(); });
+        };
+        row.querySelectorAll('a').forEach(function(a) { a.onclick = function(e) { e.stopPropagation(); }; });
+        var editBtn = row.querySelector('.events-panel-edit-btn');
+        if (editBtn && window.self !== window.top && window.parent.postMessage) {
+          editBtn.onclick = function(e) {
+            e.stopPropagation();
+            window.parent.postMessage({
+              type: 'CIRCAEVUM_EDIT_EVENT',
+              event: {
+                uid: ev.uid || ev.id,
+                key: ev.key,
+                summary: ev.summary || name,
+                description: ev.description || null,
+                location: ev.location || null,
+                url: ev.url || null,
+                color: ev.color || ev.colorId || null,
+                layerId: item.layerId || USER_EVENTS_LAYER,
+                dtstart: ev.dtstart || { dateTime: start.toISOString() },
+                dtend: ev.dtend || (end && end > start ? { dateTime: end.toISOString() } : { dateTime: new Date(start.getTime() + 86400000).toISOString() })
+              }
+            }, '*');
+          };
+        } else if (editBtn) editBtn.style.display = 'none';
+        listEl.appendChild(row);
+      });
+    }
 
     var selectedTimeDivider = document.createElement('div');
     selectedTimeDivider.className = 'events-nearby-lines-header';

@@ -781,10 +781,41 @@
     return Math.max(floor, Math.min(1, mul));
   }
 
-  /** Thinner outline tubes for short circadian ribbons so concentric arcs read separately. */
+  /** Zoom 0 / day / clock: events sit on the flat day-sky plane — need thicker bands + draw above sky. */
+  function isEarthDailySkyEventZoom(zl) {
+    const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : getZoomLevelForEvents();
+    return z === 0 || z === 8 || z === 9;
+  }
+
+  function getShortCircadianRadialHalfWidth(handLen, zl) {
+    const hl = typeof handLen === 'number' && handLen > 0 ? handLen : 12;
+    if (zl === 0) {
+      return Math.max(hl * 0.034, 0.24);
+    }
+    if (isEarthDailySkyEventZoom(zl)) {
+      // Day/clock sky: keep readable but avoid lane pileups.
+      return Math.max(hl * 0.055, 0.32);
+    }
+    return Math.max(hl * 0.028, 0.18);
+  }
+
+  function getShortCircadianMinRibbonRadialSpan(handLen, zl) {
+    const hl = typeof handLen === 'number' && handLen > 0 ? handLen : 12;
+    if (zl === 0) {
+      return Math.max(hl * 0.04, 0.16);
+    }
+    if (isEarthDailySkyEventZoom(zl)) {
+      return Math.max(hl * 0.075, 0.38);
+    }
+    return Math.max(hl * 0.04, 0.12);
+  }
+
+  /** Thinner outline tubes at month/week helix; full weight on day/clock sky (not Moment). */
   function getShortCircadianRibbonTubeScale() {
     const zl = getZoomLevelForEvents();
-    return zl === 0 ? 0.32 : 0.5;
+    if (zl === 0) return 0.58;
+    if (isEarthDailySkyEventZoom(zl)) return 0.85;
+    return 0.5;
   }
 
   function applyDailyCircadianLabelOpacity(sprite, start, end) {
@@ -1583,10 +1614,12 @@
         rOut = clamped.rOut;
       } else {
         const hl = typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
-        const halfRadial = Math.max(hl * 0.028, 0.18);
+        const zlScrub = getZoomLevelForEvents();
+        const halfRadial = getShortCircadianRadialHalfWidth(hl, zlScrub);
         const minR = getShortCircadianMinRadiusFromEarthCenter();
+        const minSpan = getShortCircadianMinRibbonRadialSpan(hl, zlScrub);
         rIn = Math.max(hl * 0.72, hl - halfRadial, minR);
-        rOut = Math.max(hl + halfRadial, rIn + 0.12);
+        rOut = Math.max(hl + halfRadial, rIn + minSpan);
       }
       const segments = Math.max(8, Math.min(48, Math.ceil(durationH * 4)));
       const ribbonPair = CR.buildDiskRibbonBetween(
@@ -1710,6 +1743,47 @@
       (Math.log(1 + d) - Math.log(2)) / (Math.log(400) - Math.log(2))
     ));
     return Math.min(MAX_RIBBON_RENDER_ORDER_BOOST, Math.round((1 - t) * MAX_RIBBON_RENDER_ORDER_BOOST));
+  }
+
+  function getShortCircadianRibbonRenderOrders(durationDays, zl) {
+    const roBoost = getDurationRibbonRenderOrderBoost(durationDays);
+    const base = isEarthDailySkyEventZoom(zl) ? 9 : -4;
+    const roFill = base + roBoost;
+    return { roFill, roLine: roFill + 2 };
+  }
+
+  /** Slight Y puff + double-sided fill so arcs read from both sides of the day-sky disk (day/clock only). */
+  function puffShortCircadianRibbonFillForDailySky(fillMesh, zl) {
+    if (!fillMesh || zl === 0 || !isEarthDailySkyEventZoom(zl)) return;
+    const THREE = global.THREE;
+    fillMesh.scale.y = Math.max(fillMesh.scale.y || 1, 0.52);
+    if (fillMesh.material) {
+      fillMesh.material.side = THREE.DoubleSide;
+      fillMesh.material.depthWrite = false;
+    }
+  }
+
+  /**
+   * Day/clock sky: draw ribbon twice, slightly above and below the sky disk.
+   * This reads thicker from both camera sides, without increasing radial lane width.
+   */
+  function wrapDailySkyTwoSided(group, zl) {
+    if (!group || zl === 0 || !isEarthDailySkyEventZoom(zl)) return group;
+    const THREE = global.THREE;
+    if (!THREE) return group;
+    const handLen = global.CircadianRenderer && typeof global.CircadianRenderer.getHandLength === 'function'
+      ? global.CircadianRenderer.getHandLength()
+      : 12;
+    const puffY = Math.max(0.02, handLen * 0.004);
+    const top = group;
+    const bot = group.clone(true);
+    top.position.y += puffY;
+    bot.position.y -= puffY;
+    const wrap = new THREE.Group();
+    wrap.userData = group.userData || {};
+    wrap.add(top);
+    wrap.add(bot);
+    return wrap;
   }
 
   /**
@@ -2222,10 +2296,22 @@
 
   function clampShortCircadianDiskRibbon(dr) {
     if (!dr) return dr;
+    const zl = getZoomLevelForEvents();
     const minR = getShortCircadianMinRadiusFromEarthCenter();
     let rIn = clampShortCircadianRadiusFromEarth(dr.rIn);
     let rOut = clampShortCircadianRadiusFromEarth(dr.rOut);
-    if (!(rOut > rIn)) rOut = rIn + Math.max(0.12, minR * 0.05);
+    const minSpan = getShortCircadianMinRibbonRadialSpan(
+      typeof global.CircadianRenderer !== 'undefined' && global.CircadianRenderer.getHandLength
+        ? global.CircadianRenderer.getHandLength()
+        : 12,
+      zl
+    );
+    if (!(rOut > rIn)) rOut = rIn + minSpan;
+    if (rOut - rIn < minSpan) {
+      const mid = (rIn + rOut) * 0.5;
+      rIn = Math.max(minR, mid - minSpan * 0.5);
+      rOut = Math.max(rIn + minSpan * 0.55, mid + minSpan * 0.5);
+    }
     const rMid = clampShortCircadianRadiusFromEarth(
       dr.rMid != null && !isNaN(dr.rMid) ? dr.rMid : (rIn + rOut) * 0.5
     );
@@ -2240,6 +2326,35 @@
     const g = ((hex >> 8) & 0xff) / 255;
     const b = (hex & 0xff) / 255;
     return 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+
+  function luminanceToGrayHex(hex) {
+    const L = Math.round(luminanceForHex(hex) * 255);
+    return (L << 16) | (L << 8) | L;
+  }
+
+  /**
+   * Moment (0): full color only in the selected hour; same-day neighbors go mostly grayscale.
+   */
+  function applyMomentZoomFocusColor(hex, start, end) {
+    if (getZoomLevelForEvents() !== 0 || !start || isNaN(start.getTime())) return hex;
+    if (eventTouchesSelectedHour(start, end)) return hex;
+    return lerpHexColor(hex, luminanceToGrayHex(hex), 0.9);
+  }
+
+  /** Temporal peripheral fade (8/9+) or Moment hour focus (0). */
+  function applyEventDisplayColor(hex, anchorMs, start, end, durationDays) {
+    const zl = getZoomLevelForEvents();
+    if (zl === 0) {
+      return applyMomentZoomFocusColor(hex, start, end);
+    }
+    if (!shouldSkipTemporalVividnessAtDayHelixZooms()) {
+      if (typeof durationDays === 'number' && durationDays >= 1) {
+        return applyLongTermContextColorToHex(hex, anchorMs, start, end, durationDays);
+      }
+      return applyTemporalVividnessToHex(hex, anchorMs, start, end);
+    }
+    return hex;
   }
 
   /**
@@ -3813,9 +3928,7 @@
     const colorBase = parseColor(explicitColor ? (event.color ?? event.colorId) : fallbackGradient);
     let spanEnd = getEventEnd(event);
     if (!spanEnd || spanEnd <= start) spanEnd = start;
-    const color = shouldSkipTemporalVividnessForShortEvent()
-      ? colorBase
-      : applyTemporalVividnessToHex(colorBase, start.getTime(), start, spanEnd);
+    const color = applyEventDisplayColor(colorBase, start.getTime(), start, spanEnd);
     const markerR = shouldUseDayBandDotPlacement() ? 0.28 : 0.55;
     const opMul = getDailyCircadianEventOpacityMul(start, spanEnd);
     const THREE = global.THREE;
@@ -3969,9 +4082,7 @@
       const explicitEventColor = hasExplicitEventColor(event);
       const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
       let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
-      if (!shouldSkipTemporalVividnessForShortEvent()) {
-        eventHex = applyTemporalVividnessToHex(eventHex, anchorMsShort, start, end);
-      }
+      eventHex = applyEventDisplayColor(eventHex, anchorMsShort, start, end);
       const layerHex = parseColor(layerConfig.color || '#00b4d8');
       const userData = {
         vevent: event,
@@ -3992,10 +4103,11 @@
           rOut = clamped.rOut;
         } else {
           const hl = typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
-          const halfRadial = Math.max(hl * 0.028, 0.18);
+          const halfRadial = getShortCircadianRadialHalfWidth(hl, zl);
           const minR = getShortCircadianMinRadiusFromEarthCenter();
+          const minSpan = getShortCircadianMinRibbonRadialSpan(hl, zl);
           rIn = Math.max(hl * 0.72, hl - halfRadial, minR);
-          rOut = Math.max(hl + halfRadial, rIn + 0.12);
+          rOut = Math.max(hl + halfRadial, rIn + minSpan);
         }
         let ribbonPair = CR.buildDiskRibbonBetween(
           start,
@@ -4028,16 +4140,18 @@
           const opacity = Math.min(1,
             (layerConfig.opacity != null ? layerConfig.opacity : 0.78) *
               getDurationOpacityScale(durationDays) * dailyMul);
-          const roBoost = getDurationRibbonRenderOrderBoost(durationDays);
-          const roFill = -4 + roBoost;
-          const roLine = -2 + roBoost;
+          const roOrders = getShortCircadianRibbonRenderOrders(durationDays, zl);
+          const roFill = roOrders.roFill;
+          const roLine = roOrders.roLine;
           const fillOpacity = Math.min(0.98,
             opacity * getDurationFillOpacityFactor(durationDays) * getShortTermEventFillOpacityMul());
           let fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
-          fillHex = applyTemporalVividnessToHex(fillHex, anchorMsShort, start, end);
+          fillHex = applyEventDisplayColor(fillHex, anchorMsShort, start, end);
           const borderStyle = layerConfig.borderStyle || 'event';
           let outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
-          if (outlineColorHex != null) outlineColorHex = applyTemporalVividnessToHex(outlineColorHex, anchorMsShort, start, end);
+          if (outlineColorHex != null) {
+            outlineColorHex = applyEventDisplayColor(outlineColorHex, anchorMsShort, start, end);
+          }
           let outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
           outlineOp *= 0.74;
 
@@ -4072,6 +4186,7 @@
             const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
             if (ribbonGeo) {
               const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays);
+              puffShortCircadianRibbonFillForDailySky(fillMesh, zl);
               group.add(fillMesh);
               if (borderStyle !== 'none' && outlineColorHex != null) {
                 const tubeR = getRibbonOutlineTubeRadius(earthDist, layerConfig) * circTubeMul;
@@ -4086,6 +4201,7 @@
             const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
             if (ribbonGeo) {
               const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, 'polygon3d', roFill, durationDays);
+              puffShortCircadianRibbonFillForDailySky(fillMesh, zl);
               group.add(fillMesh);
               if (borderStyle !== 'none' && outlineColorHex != null) {
                 const tubeR = getRibbonOutlineTubeRadius(earthDist, layerConfig) * circTubeMul;
@@ -4121,7 +4237,7 @@
           if (group.children.length > 0) {
             markCircadianShortScrubRoot(group, layerConfig._diskRibbon, true);
             markShortEventPointerPickability(group, start, end);
-            return group;
+            return wrapDailySkyTwoSided(group, zl);
           }
         }
       }
@@ -4146,7 +4262,10 @@
         const rDot = getRadiusForDailyEventDot(earthDist, midDate, 0);
         pos = getPos(midHeight, rDot);
       }
-      const markerSize = Math.max(0.22, Math.min(0.5, 0.22 + 0.28 * Math.min(1, durationH / 24)));
+      let markerSize = Math.max(0.22, Math.min(0.5, 0.22 + 0.28 * Math.min(1, durationH / 24)));
+      if (isEarthDailySkyEventZoom(zl)) {
+        markerSize = Math.max(0.4, markerSize * 1.4);
+      }
       let diskFrameDot = null;
       if (shouldUseCircadianNearEarthShortPlacement()) {
         const drDot = layerConfig._diskRibbon;
@@ -4219,19 +4338,15 @@
     const explicitEventColor = hasExplicitEventColor(event);
     const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
     let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
-    if (!shouldSkipTemporalVividnessAtDayHelixZooms()) {
-      eventHex = applyLongTermContextColorToHex(eventHex, anchorMsLong, start, end, durationDays);
-    }
+    eventHex = applyEventDisplayColor(eventHex, anchorMsLong, start, end, durationDays);
     const layerHex = parseColor(layerConfig.color || '#00b4d8');
     // Prefer explicit fillColor, then per-event color, then layer color.
     let fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
-    if (!shouldSkipTemporalVividnessAtDayHelixZooms()) {
-      fillHex = applyLongTermContextColorToHex(fillHex, anchorMsLong, start, end, durationDays);
-    }
+    fillHex = applyEventDisplayColor(fillHex, anchorMsLong, start, end, durationDays);
     const borderStyle = layerConfig.borderStyle || 'event';
     let outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
-    if (outlineColorHex != null && !shouldSkipTemporalVividnessAtDayHelixZooms()) {
-      outlineColorHex = applyLongTermContextColorToHex(outlineColorHex, anchorMsLong, start, end, durationDays);
+    if (outlineColorHex != null) {
+      outlineColorHex = applyEventDisplayColor(outlineColorHex, anchorMsLong, start, end, durationDays);
     }
     const outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
     const fillFade = getLongTermContextFillFadeScales(anchorMsLong, start, end, durationDays);
@@ -4982,18 +5097,25 @@
 
     const CR = global.CircadianRenderer;
     const baseHand = CR && typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
+    const zlLanes = getZoomLevelForEvents();
+    const momentLanes = zlLanes === 0;
+    const dailySkyLanes = isEarthDailySkyEventZoom(zlLanes);
     const minR = getShortCircadianMinRadiusFromEarthCenter();
     const rim = Math.max(baseHand * 1.08, minR + Math.max(baseHand * 0.04, 0.35));
     const innerMin = Math.max(baseHand * 0.24, minR);
-    const gapFrac = 0.4;
-    const usable = Math.max(baseHand * 0.04, rim - innerMin);
-    const laneW = usable / globalMaxLanes;
+    const gapFrac = momentLanes ? 0.36 : dailySkyLanes ? 0.28 : 0.4;
+    const usable = Math.max(baseHand * (momentLanes ? 0.04 : dailySkyLanes ? 0.04 : 0.04), rim - innerMin);
+    const laneW = momentLanes
+      ? usable / globalMaxLanes
+      : Math.max(dailySkyLanes ? Math.max(baseHand * 0.045, 0.28) : baseHand * 0.04, usable / globalMaxLanes);
+    const minLaneSpan = momentLanes ? 0 : getShortCircadianMinRibbonRadialSpan(baseHand, zlLanes);
 
     for (let i = 0; i < events.length; i++) {
       const uid = eventUidForDisk(events[i], i);
       const L = uidMaxLane.has(uid) ? uidMaxLane.get(uid) : 0;
       const rIn = innerMin + L * laneW;
-      const rOut = rIn + laneW * (1 - gapFrac);
+      let rOut = rIn + laneW * (1 - gapFrac);
+      if (minLaneSpan > 0 && rOut - rIn < minLaneSpan) rOut = rIn + minLaneSpan;
       const rMid = (rIn + rOut) * 0.5;
       map.set(uid, clampShortCircadianDiskRibbon({ rIn, rOut, rMid, lane: L }));
     }

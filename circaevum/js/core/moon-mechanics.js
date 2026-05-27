@@ -70,6 +70,41 @@ const MoonMechanics = (function () {
     }
 
     /**
+     * Earth XZ for lunar geometry — ephemeris when the main scene exposes it, else legacy orbit.
+     * Keeps the Moon sphere on the same ribbon as {@link createMoonWorldline}.
+     */
+    function resolveEarthXZForMoon(height, refHeight, atDate, earthXZOverride, selectedDateHeight) {
+        if (
+            earthXZOverride &&
+            typeof earthXZOverride.x === 'number' &&
+            typeof earthXZOverride.z === 'number' &&
+            !isNaN(earthXZOverride.x) &&
+            !isNaN(earthXZOverride.z)
+        ) {
+            return { x: earthXZOverride.x, z: earthXZOverride.z };
+        }
+        const w = typeof window !== 'undefined' ? window : null;
+        const e = getEarth();
+        if (
+            w &&
+            e &&
+            atDate instanceof Date &&
+            !isNaN(atDate.getTime()) &&
+            typeof w.getPlanetXZAtSelectedDate === 'function'
+        ) {
+            const refH = typeof refHeight === 'number' && !isNaN(refHeight) ? refHeight : height;
+            const selH =
+                typeof selectedDateHeight === 'number' && !isNaN(selectedDateHeight) ? selectedDateHeight : height;
+            const xz = w.getPlanetXZAtSelectedDate(e, atDate, refH, selH);
+            if (xz && typeof xz.x === 'number' && typeof xz.z === 'number' && !isNaN(xz.x) && !isNaN(xz.z)) {
+                return { x: xz.x, z: xz.z };
+            }
+        }
+        const legacy = earthXZAtHeight(height, refHeight, e);
+        return { x: legacy.x, z: legacy.z };
+    }
+
+    /**
      * Schematic Moon center in XZ: Earth at this scene height, Moon on a circle of radius `separation`
      * in the XZ plane; angle from `atDate` (sidereal month). Y is assigned separately by callers.
      * @param {number} [separation] — orbit radius in scene units
@@ -90,25 +125,26 @@ const MoonMechanics = (function () {
      * Moon XZ from mean synodic phase (Sun at origin): new = toward Sun, full = away, quarters at ±90°.
      * Use for the lunar worldline ribbon so new/full markers sit on conjunction / opposition geometry.
      */
-    function moonXZSynodicAtHeight(height, currentDateHeight, earth, separation, atDate, earthXZOverride) {
+    function moonXZSynodicAtHeight(
+        height,
+        currentDateHeight,
+        earth,
+        separation,
+        atDate,
+        earthXZOverride,
+        selectedDateHeight
+    ) {
         const sep = separation != null ? separation : cfg().offsetFromEarth;
         const e = earth || getEarth();
-        let ex;
-        let ez;
-        if (
-            earthXZOverride &&
-            typeof earthXZOverride.x === 'number' &&
-            typeof earthXZOverride.z === 'number' &&
-            !isNaN(earthXZOverride.x) &&
-            !isNaN(earthXZOverride.z)
-        ) {
-            ex = earthXZOverride.x;
-            ez = earthXZOverride.z;
-        } else {
-            const exz = earthXZAtHeight(height, currentDateHeight, e);
-            ex = exz.x;
-            ez = exz.z;
-        }
+        const exz = resolveEarthXZForMoon(
+            height,
+            currentDateHeight,
+            atDate,
+            earthXZOverride,
+            selectedDateHeight
+        );
+        const ex = exz.x;
+        const ez = exz.z;
         const r = Math.hypot(ex, ez);
         const towardSunX = r < 1e-10 ? -1 : -ex / r;
         const towardSunZ = r < 1e-10 ? 0 : -ez / r;
@@ -136,7 +172,7 @@ const MoonMechanics = (function () {
 
     /**
      * Moon XZ on a circle around the **rendered Earth mesh** using the sidereal month from `atDate`.
-     * Matches the “Moon orbits Earth” read at lunar zoom; avoids synodic frame + ephemeris Earth mismatch.
+     * Raw sidereal only — pedagogical Moon + camera should use {@link moonXZPedagogicalFromEarthMesh}.
      */
     function moonXZPedagogicalSiderealFromEarthMesh(earthPlanet, atDate, separation) {
         if (!earthPlanet || !earthPlanet.position) return { x: 0, z: 0 };
@@ -148,6 +184,42 @@ const MoonMechanics = (function () {
             x: ex + sep * Math.cos(theta),
             z: ez + sep * Math.sin(theta)
         };
+    }
+
+    /**
+     * Pedagogical Moon XZ: synodic phase on the rendered Earth position (matches lunar worldline ribbon).
+     * @param {object} earthPlanet — Earth group/mesh with `.position`
+     * @param {Date} atDate — selected (or sample) time
+     * @param {number} [separation]
+     * @param {number} [currentDateHeight] — “now” height for Earth orbit along Y (worldline refH)
+     * @param {number} [selectedDateHeight] — selected slice Y; defaults to earthPlanet.position.y
+     */
+    function moonXZPedagogicalFromEarthMesh(
+        earthPlanet,
+        atDate,
+        separation,
+        currentDateHeight,
+        selectedDateHeight
+    ) {
+        void earthPlanet;
+        const earth = getEarth();
+        const selH =
+            typeof selectedDateHeight === 'number' && !isNaN(selectedDateHeight)
+                ? selectedDateHeight
+                : earthPlanet && earthPlanet.position
+                  ? earthPlanet.position.y
+                  : 0;
+        const refH =
+            typeof currentDateHeight === 'number' && !isNaN(currentDateHeight)
+                ? currentDateHeight
+                : selH;
+        const when =
+            atDate instanceof Date && !isNaN(atDate.getTime())
+                ? atDate
+                : typeof window !== 'undefined' && typeof window.getSelectedDateTime === 'function'
+                  ? window.getSelectedDateTime()
+                  : new Date();
+        return moonXZSynodicAtHeight(selH, refH, earth, separation, when, null, selH);
     }
 
     /**
@@ -189,9 +261,16 @@ const MoonMechanics = (function () {
         const selDate = opts.selectedDate instanceof Date && !isNaN(opts.selectedDate.getTime())
             ? opts.selectedDate
             : new Date();
-        const ex = earthPlanet.position.x;
-        const ez = earthPlanet.position.z;
-        const { x: mex, z: mez } = moonXZPedagogicalSiderealFromEarthMesh(earthPlanet, selDate, null);
+        const earthXZ = resolveEarthXZForMoon(selH, refH, selDate, null, selH);
+        const ex = earthXZ.x;
+        const ez = earthXZ.z;
+        const { x: mex, z: mez } = moonXZPedagogicalFromEarthMesh(
+            earthPlanet,
+            selDate,
+            null,
+            refH,
+            selH
+        );
         const moonR = Math.max(c.sphereRadiusMin, earthRadius * c.sphereRadiusEarthFraction);
         const moonGeo = new T.SphereGeometry(moonR, 24, 24);
         const moonMat = new T.MeshStandardMaterial({
@@ -230,10 +309,12 @@ const MoonMechanics = (function () {
         cfg,
         earthAngleAtHeight,
         earthXZAtHeight,
+        resolveEarthXZForMoon,
         moonOrbitAngleRad,
         moonXZAtHeight,
         moonXZSynodicAtHeight,
         moonXZPedagogicalSiderealFromEarthMesh,
+        moonXZPedagogicalFromEarthMesh,
         blendXZ,
         addPedagogicalMoon,
         getOffset: function () {
