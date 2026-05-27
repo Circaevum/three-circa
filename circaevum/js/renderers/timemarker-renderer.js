@@ -1509,10 +1509,104 @@ const TimeMarkers = (function() {
         return d.getHours();
     }
 
-    /** Orbital hour-dial angle for label `hour` (0 = opposite Sun, 12 toward Sun). Fixed ring — never meridian-snapped. */
-    function hourLabelAngleFromEarth(hour, sunToEarthAngle) {
-        const hourRadians = (hour / 24) * Math.PI * 2;
+    /** Orbital hour-dial angle for fractional clock time (0–24). Fixed ring — never meridian-snapped. */
+    function hourFractionAngleFromEarth(hourFraction, sunToEarthAngle) {
+        const hourRadians = (hourFraction / 24) * Math.PI * 2;
         return sunToEarthAngle - hourRadians;
+    }
+
+    /** Orbital hour-dial angle for label `hour` (0 = opposite Sun, 12 toward Sun). */
+    function hourLabelAngleFromEarth(hour, sunToEarthAngle) {
+        return hourFractionAngleFromEarth(hour, sunToEarthAngle);
+    }
+
+    /** One thick radial tick (quad in XZ); LineBasicMaterial width is ignored in WebGL. */
+    function pushRadialTickQuad(verts, indices, earthX, earthZ, y, angle, innerR, outerR, halfWidth) {
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const px = -sinA * halfWidth;
+        const pz = cosA * halfWidth;
+        const x0 = earthX + cosA * innerR;
+        const z0 = earthZ + sinA * innerR;
+        const x1 = earthX + cosA * outerR;
+        const z1 = earthZ + sinA * outerR;
+        const bi = verts.length / 3;
+        verts.push(
+            x0 + px,
+            y,
+            z0 + pz,
+            x0 - px,
+            y,
+            z0 - pz,
+            x1 - px,
+            y,
+            z1 - pz,
+            x1 + px,
+            y,
+            z1 + pz
+        );
+        indices.push(bi, bi + 1, bi + 2, bi, bi + 2, bi + 3);
+    }
+
+    /** Above earth daylight sky (main.js EARTH_DAYLIGHT_SKY_RENDER_ORDER = 7); below hour labels (50). */
+    const QUARTER_HOUR_TICK_RENDER_ORDER = 12;
+
+    /** Radial :00/:15/:30/:45 ticks just inside hour numerals on the Earth day spiral. */
+    function createQuarterHourTickMarks(
+        earthX,
+        earthY,
+        earthZ,
+        sunToEarthAngle,
+        spiralRadius,
+        spiralCenterY,
+        spiralHeight
+    ) {
+        const verts = [];
+        const indices = [];
+        const labelR = spiralRadius;
+        const tickCenterR = labelR * 0.93;
+        const tickHalfSpanHour = labelR * 0.048;
+        const tickHalfSpanHalf = labelR * 0.034;
+        const tickHalfSpanQuarter = labelR * 0.02;
+        const halfWidth = Math.max(labelR * 0.004, 0.005);
+        const quarterFracs = [0, 0.25, 0.5, 0.75];
+        for (let hour = 0; hour < 24; hour++) {
+            for (let qi = 0; qi < 4; qi++) {
+                const hourFrac = hour + quarterFracs[qi];
+                const angleFromEarth = hourFractionAngleFromEarth(hourFrac, sunToEarthAngle);
+                const t = hourFrac / 24;
+                const y = spiralCenterY + t * spiralHeight - spiralHeight / 2;
+                const tickHalfSpan =
+                    qi === 0 ? tickHalfSpanHour : qi === 2 ? tickHalfSpanHalf : tickHalfSpanQuarter;
+                pushRadialTickQuad(
+                    verts,
+                    indices,
+                    earthX,
+                    earthZ,
+                    y,
+                    angleFromEarth,
+                    tickCenterR - tickHalfSpan,
+                    tickCenterR + tickHalfSpan,
+                    halfWidth
+                );
+            }
+        }
+        const tickGeometry = new THREE.BufferGeometry();
+        tickGeometry.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+        tickGeometry.setIndex(indices);
+        tickGeometry.computeVertexNormals();
+        const tickMaterial = new THREE.MeshBasicMaterial({
+            color: getMarkerColor(),
+            transparent: true,
+            opacity: 0.92,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            depthTest: false
+        });
+        const ticks = new THREE.Mesh(tickGeometry, tickMaterial);
+        ticks.renderOrder = QUARTER_HOUR_TICK_RENDER_ORDER;
+        scene.add(ticks);
+        timeMarkers.push(ticks);
     }
 
     /** Scene-clock hour indices for label/hand highlights (same hour math as EarthGlobe meridian hands). */
@@ -1667,6 +1761,16 @@ const TimeMarkers = (function() {
             // Reduce hour label size (use 0.6 multiplier for smaller labels)
             createTextLabel(hourLabel, y, labelRadius, zoomLevel, labelAngle, labelColor, false, 0.8);
         }
+
+        createQuarterHourTickMarks(
+            earthX,
+            earthY,
+            earthZ,
+            sunToEarthAngle,
+            spiralRadius,
+            spiralCenterY,
+            spiralHeight
+        );
         
         // Landing / day / clock: Earth hour hands (red = now, blue = selected) come from EarthGlobe in main.js.
         if (zoomLevel !== 0 && zoomLevel !== 8 && zoomLevel !== 9) {
