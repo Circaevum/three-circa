@@ -28,6 +28,8 @@
    * Radius = earthDist * FRAC * (outline emphasis); ~0.005 reads clearly at Earth orbit scale (~50).
    */
   const RIBBON_OUTLINE_TUBE_RADIUS_FRAC = 0.0003;
+  /** Sample-data cap for generated parallel stacks (see edge-esmeralda-week1-samples.js). */
+  const MAX_STE_PARALLEL_LANES = 4;
 
   /** Multi-day ribbon fills at or above this span use a radial alpha gradient (opaque at Sun-ward inner edge, fading toward outer). */
   const LONG_EVENT_RIBBON_RADIAL_GRADIENT_MIN_DAYS = 1;
@@ -544,6 +546,16 @@
     return eventTouchesSelectedCalendarDay(start, evEnd);
   }
 
+  /** Zoom 0 / 9 (clock / moment): only STEs on the selected calendar day are shown. */
+  function isSteVisibleOnDailySkyClock(start, end) {
+    const zl = getZoomLevelForEvents();
+    if (zl !== 0 && zl !== 9) return true;
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    if (!isSub24HourSpan(start, evEnd)) return true;
+    return eventTouchesSelectedCalendarDay(start, evEnd);
+  }
+
   function markShortEventPointerPickability(root, start, end) {
     if (!root) return;
     const pickable = isShortEventPointerPickableAtCurrentZoom(start, end);
@@ -597,10 +609,18 @@
   }
 
   function resolveShortCircadianLineOpacity(opacity, start, end) {
+    const zl = getZoomLevelForEvents();
+    if (
+      (zl === 0 || zl === 9) &&
+      start &&
+      isSub24HourSpan(start, end) &&
+      !eventTouchesSelectedCalendarDay(start, end)
+    ) {
+      return 0;
+    }
     const base = opacity != null && !isNaN(opacity) ? opacity : 0.9;
     const mul = start ? getOffSelectedTimeLineOpacityMul(start, end) : 1;
     let op = Math.max(0.03, Math.min(1, base * mul));
-    const zl = getZoomLevelForEvents();
     if (
       zl === 9 &&
       start &&
@@ -751,9 +771,13 @@
       return 0.06 + 0.94 * Math.exp(-diffDays / 5);
     })();
 
+    const isShort = isSub24HourSpan(start, end);
+
+    if ((zl === 0 || zl === 9) && isShort && !onSelDay) {
+      return 0;
+    }
+
     if (zl === 0) {
-      if (!onSelDay) return 0;
-      const isShort = isSub24HourSpan(start, end);
       if (eventTouchesSelectedHour(start, end)) {
         if (isShort) mul = Math.min(1, mul * 1.42);
         return Math.max(isShort ? 0.88 : 0.38, Math.min(1, mul));
@@ -762,11 +786,7 @@
       return Math.max(isShort ? 0.22 : 0.04, Math.min(0.58, mul));
     }
 
-    if (zl === 9 && !onSelDay) {
-      return Math.max(0.02, Math.min(0.42, 0.38 * dayDiffProx));
-    }
-
-    if (zl === 9 && onSelDay && isSub24HourSpan(start, end)) {
+    if (zl === 9 && onSelDay && isShort) {
       mul = Math.min(1, mul * 1.38);
     }
 
@@ -777,7 +797,7 @@
       mul *= dayDiffProx;
     }
 
-    const floor = zl === 0 || zl === 8 || zl === 9 ? 0.42 : 0.12;
+    const floor = zl === 8 ? 0.42 : 0.12;
     return Math.max(floor, Math.min(1, mul));
   }
 
@@ -805,17 +825,47 @@
       return Math.max(hl * 0.04, 0.16);
     }
     if (isEarthDailySkyEventZoom(zl)) {
-      return Math.max(hl * 0.075, 0.38);
+      return Math.max(hl * 0.032, 0.14);
     }
     return Math.max(hl * 0.04, 0.12);
   }
 
-  /** Thinner outline tubes at month/week helix; full weight on day/clock sky (not Moment). */
+  /** Thinner outline tubes at month/week helix; slim on day/clock sky (not Moment). */
   function getShortCircadianRibbonTubeScale() {
     const zl = getZoomLevelForEvents();
     if (zl === 0) return 0.58;
-    if (isEarthDailySkyEventZoom(zl)) return 0.85;
+    if (isEarthDailySkyEventZoom(zl)) return 0.5;
     return 0.5;
+  }
+
+  function getShortCircadianOutlineOpacityMul(zl) {
+    if (isEarthDailySkyEventZoom(zl)) return 0.82;
+    return 1;
+  }
+
+  /** Inner edge of quarter-hour ticks — STE outer must stay inside (no tick intersection). */
+  function getDailySkySteMaxOuterRadius(handLen) {
+    const hl = typeof handLen === 'number' && handLen > 0 ? handLen : 12;
+    const tickCenterR = hl * 0.93;
+    const tickHalfSpanQuarter = hl * 0.02;
+    const margin = Math.max(hl * 0.018, 0.035);
+    return tickCenterR - tickHalfSpanQuarter - margin;
+  }
+
+  /**
+   * Pack `peakConcurrent` non-overlapping radial bands between Earth and tick inner edge.
+   * @returns {{ innerR: number, outerR: number, bandW: number, gap: number, lanes: number }}
+   */
+  function getDailySkySteAnnulusLayout(baseHand, peakConcurrent) {
+    const hl = typeof baseHand === 'number' && baseHand > 0 ? baseHand : 12;
+    const innerR = getShortCircadianMinRadiusFromEarthCenter();
+    const outerR = getDailySkySteMaxOuterRadius(hl);
+    const span = Math.max(outerR - innerR, 0.05);
+    const lanes = Math.max(1, peakConcurrent);
+    const gapRatio = 0.05;
+    const gap = lanes > 1 ? (span * gapRatio) / lanes : 0;
+    const bandW = (span - gap * (lanes - 1)) / lanes;
+    return { innerR, outerR, bandW, gap, lanes };
   }
 
   function applyDailyCircadianLabelOpacity(sprite, start, end) {
@@ -1752,37 +1802,81 @@
     return { roFill, roLine: roFill + 2 };
   }
 
-  /** Slight Y puff + double-sided fill so arcs read from both sides of the day-sky disk (day/clock only). */
+  /** Day/clock sky: double-sided fill + depth write so opposite-face labels occlude. */
   function puffShortCircadianRibbonFillForDailySky(fillMesh, zl) {
     if (!fillMesh || zl === 0 || !isEarthDailySkyEventZoom(zl)) return;
     const THREE = global.THREE;
-    fillMesh.scale.y = Math.max(fillMesh.scale.y || 1, 0.52);
     if (fillMesh.material) {
       fillMesh.material.side = THREE.DoubleSide;
-      fillMesh.material.depthWrite = false;
+      fillMesh.material.depthWrite = true;
+      fillMesh.material.depthTest = true;
     }
   }
 
   /**
-   * Day/clock sky: draw ribbon twice, slightly above and below the sky disk.
-   * This reads thicker from both camera sides, without increasing radial lane width.
+   * Day/clock sky: ribbon geometry above and below the sky plane (labels added separately per face).
    */
-  function wrapDailySkyTwoSided(group, zl) {
-    if (!group || zl === 0 || !isEarthDailySkyEventZoom(zl)) return group;
+  function wrapDailySkyTwoSidedRibbonOnly(ribbonGroup, zl) {
+    if (!ribbonGroup || zl === 0 || !isEarthDailySkyEventZoom(zl)) {
+      return { wrap: ribbonGroup, top: ribbonGroup, bot: ribbonGroup };
+    }
     const THREE = global.THREE;
-    if (!THREE) return group;
-    const handLen = global.CircadianRenderer && typeof global.CircadianRenderer.getHandLength === 'function'
-      ? global.CircadianRenderer.getHandLength()
-      : 12;
-    const puffY = Math.max(0.02, handLen * 0.004);
-    const top = group;
-    const bot = group.clone(true);
+    if (!THREE) return { wrap: ribbonGroup, top: ribbonGroup, bot: ribbonGroup };
+    const puffY = getDailySkyRibbonPuffY();
+    const top = ribbonGroup;
+    const bot = ribbonGroup.clone(true);
     top.position.y += puffY;
     bot.position.y -= puffY;
     const wrap = new THREE.Group();
-    wrap.userData = group.userData || {};
+    wrap.userData = ribbonGroup.userData || {};
     wrap.add(top);
     wrap.add(bot);
+    return { wrap, top, bot };
+  }
+
+  function finishDailySkySteRibbonRoot(ribbonGroup, zl, labelOpts) {
+    if (!ribbonGroup || ribbonGroup.children.length === 0) return null;
+    markCircadianShortScrubRoot(ribbonGroup, labelOpts.diskRibbon, true);
+    markShortEventPointerPickability(ribbonGroup, labelOpts.start, labelOpts.end);
+    if (!isEarthDailySkyEventZoom(zl)) return ribbonGroup;
+    const { wrap, top, bot } = wrapDailySkyTwoSidedRibbonOnly(ribbonGroup, zl);
+    if (labelOpts.showLabels) {
+      addEventWorldlineLabelSprites(
+        top,
+        labelOpts.event,
+        labelOpts.start,
+        labelOpts.end,
+        labelOpts.startHeight,
+        labelOpts.endHeight,
+        labelOpts.rInner,
+        labelOpts.rOuter,
+        labelOpts.eventHex,
+        labelOpts.currentHeight,
+        0,
+        labelOpts.innerFlat,
+        labelOpts.outerFlat,
+        labelOpts.midTitleAlong01,
+        'top'
+      );
+      addEventWorldlineLabelSprites(
+        bot,
+        labelOpts.event,
+        labelOpts.start,
+        labelOpts.end,
+        labelOpts.startHeight,
+        labelOpts.endHeight,
+        labelOpts.rInner,
+        labelOpts.rOuter,
+        labelOpts.eventHex,
+        labelOpts.currentHeight,
+        0,
+        labelOpts.innerFlat,
+        labelOpts.outerFlat,
+        labelOpts.midTitleAlong01,
+        'bottom'
+      );
+    }
+    markShortEventPointerPickability(wrap, labelOpts.start, labelOpts.end);
     return wrap;
   }
 
@@ -2237,6 +2331,93 @@
     mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
   }
 
+  function getDailySkyRibbonPuffY() {
+    const handLen = global.CircadianRenderer && typeof global.CircadianRenderer.getHandLength === 'function'
+      ? global.CircadianRenderer.getHandLength()
+      : 12;
+    return Math.max(0.02, handLen * 0.004);
+  }
+
+  function getEventCenterLocalHourDecimal(start, end) {
+    if (!start || isNaN(start.getTime())) return 12;
+    const tMs =
+      end && end > start ? (start.getTime() + end.getTime()) * 0.5 : start.getTime();
+    const d = new Date(tMs);
+    return (
+      d.getHours() +
+      d.getMinutes() / 60 +
+      d.getSeconds() / 3600
+    );
+  }
+
+  /** True when event midpoint is after 06:00 and before 18:00 (local). */
+  function isEventCenterInDaytimeCircadianWindow(start, end) {
+    const h = getEventCenterLocalHourDecimal(start, end);
+    return h > 6 && h < 18;
+  }
+
+  /**
+   * Day/clock sky STE labels: +X along arc; +Y is sun-up (top face) or day/night rule on underside.
+   */
+  function orientDailySkySteLabelMesh(mesh, frame, skyFace, start, end) {
+    const THREE = global.THREE;
+    if (!mesh || !frame || !frame.tangent || !frame.width) return;
+    let tangent = frame.tangent.clone();
+    tangent.y = 0;
+    if (tangent.lengthSq() < 1e-12) tangent.set(1, 0, 0);
+    else tangent.normalize();
+
+    let sunUp;
+    if (skyFace === 'bottom') {
+      const daytime = isEventCenterInDaytimeCircadianWindow(start, end);
+      sunUp = frame.width.clone();
+      if (!daytime) sunUp.multiplyScalar(-1);
+    } else {
+      sunUp = frame.width.clone().multiplyScalar(-1);
+    }
+    sunUp.y = 0;
+    if (sunUp.lengthSq() < 1e-12) sunUp.set(-tangent.z, 0, tangent.x);
+    else sunUp.normalize();
+
+    let xAxis = tangent.clone();
+    let yAxis = sunUp.clone();
+    let zAxis = new THREE.Vector3().crossVectors(xAxis, yAxis);
+    if (zAxis.lengthSq() < 1e-12) {
+      zAxis.set(0, 1, 0);
+      yAxis.crossVectors(zAxis, xAxis).normalize();
+    } else {
+      zAxis.normalize();
+    }
+
+    const wantZUp = skyFace !== 'bottom';
+    if (wantZUp && zAxis.y < 0) {
+      xAxis.multiplyScalar(-1);
+      zAxis.multiplyScalar(-1);
+    } else if (!wantZUp && zAxis.y > 0) {
+      xAxis.multiplyScalar(-1);
+      zAxis.multiplyScalar(-1);
+    }
+    yAxis.crossVectors(zAxis, xAxis).normalize();
+    xAxis.crossVectors(yAxis, zAxis).normalize();
+
+    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
+    if (mesh.material) {
+      mesh.material.side = THREE.FrontSide;
+      mesh.material.depthTest = true;
+      mesh.material.depthWrite = false;
+    }
+  }
+
+  /** Sit on ribbon surface in parent-local Y (parent ±puff already offsets the ribbon stack). */
+  function placeDailySkySteLabelMesh(mesh, frame, skyFace, start, end) {
+    if (!mesh || !frame) return;
+    const puffY = getDailySkyRibbonPuffY();
+    const surfaceEps = Math.max(0.0012, puffY * 0.12);
+    mesh.position.copy(frame.position);
+    orientDailySkySteLabelMesh(mesh, frame, skyFace, start, end);
+    mesh.position.y += skyFace === 'top' ? surfaceEps : -surfaceEps;
+  }
+
   function chordLenAlongInner(innerFlat, i0, i1) {
     const THREE = global.THREE;
     const p0 = new THREE.Vector3(innerFlat[i0 * 3], innerFlat[i0 * 3 + 1], innerFlat[i0 * 3 + 2]);
@@ -2306,11 +2487,25 @@
         : 12,
       zl
     );
-    if (!(rOut > rIn)) rOut = rIn + minSpan;
-    if (rOut - rIn < minSpan) {
-      const mid = (rIn + rOut) * 0.5;
-      rIn = Math.max(minR, mid - minSpan * 0.5);
-      rOut = Math.max(rIn + minSpan * 0.55, mid + minSpan * 0.5);
+    if (isEarthDailySkyEventZoom(zl)) {
+      const hl =
+        typeof global.CircadianRenderer !== 'undefined' && global.CircadianRenderer.getHandLength
+          ? global.CircadianRenderer.getHandLength()
+          : 12;
+      const maxOuter = getDailySkySteMaxOuterRadius(hl);
+      if (rOut > maxOuter) {
+        const w = Math.max(rOut - rIn, hl * 0.012);
+        rOut = maxOuter;
+        rIn = Math.max(minR, rOut - w);
+      }
+      if (!(rOut > rIn)) rOut = rIn + hl * 0.012;
+    } else {
+      if (!(rOut > rIn)) rOut = rIn + minSpan;
+      if (rOut - rIn < minSpan) {
+        const mid = (rIn + rOut) * 0.5;
+        rIn = Math.max(minR, mid - minSpan * 0.5);
+        rOut = Math.max(rIn + minSpan * 0.55, mid + minSpan * 0.5);
+      }
     }
     const rMid = clampShortCircadianRadiusFromEarth(
       dr.rMid != null && !isNaN(dr.rMid) ? dr.rMid : (rIn + rOut) * 0.5
@@ -2736,7 +2931,7 @@
    * Labels on ribbon surface (plane meshes, no billboards). Falls back to sprites if geometry is unusable.
    * @param {number} [midTitleAlongSpan01] - 0–1 along the span for the **name** anchor (default 0.5); dates stay at ends.
    */
-  function addEventWorldlineLabelSprites(parent, event, start, end, startHeight, endHeight, rInner, rOuter, eventHex, currentHeight, staggerY, innerFlatOpt, outerFlatOpt, midTitleAlongSpan01) {
+  function addEventWorldlineLabelSprites(parent, event, start, end, startHeight, endHeight, rInner, rOuter, eventHex, currentHeight, staggerY, innerFlatOpt, outerFlatOpt, midTitleAlongSpan01, dailySkyFace) {
     if (!parent || !start || !end || end <= start) return;
     const showDates = areEventTextLabelsVisibleAtCurrentZoom(start, end);
     const showName = areEventNameLabelsVisibleAtCurrentZoom(start, end);
@@ -2786,10 +2981,14 @@
     const dateShrink = 1 / (1 + Math.log(1 + Math.max(1, daysForLabels)) / Math.log(120));
     const dateFontPx = Math.max(6, Math.round((Math.max(7, style.fontPx - 10)) * dateShrink));
     const bump = earthDist * 0.004;
-    const circadianBillboardNames =
+    const zlLabels = getZoomLevelForEvents();
+    const isDailySkySteLabel = isShortEvent && isEarthDailySkyEventZoom(zlLabels);
+    const circadianNearEarthNames =
       isShortEvent &&
-      isCircadianHelixZoom(getZoomLevelForEvents()) &&
-      normalizedCircadianState() !== 'off';
+      isCircadianHelixZoom(zlLabels) &&
+      normalizedCircadianState() !== 'off' &&
+      !isDailySkySteLabel;
+    const circadianBillboardNames = circadianNearEarthNames || (isDailySkySteLabel && !!dailySkyFace);
 
     function planeDimsAtIndex(idx, fontPx, text, kind) {
       const spanHalf = Math.max(2, Math.floor((n - 1) / 5));
@@ -3011,10 +3210,14 @@
         useMapTan,
         ribbonNameMaxLinePx
       );
-      placeMeshOnRibbonFrame(mesh, fr, bump);
-      if (circadianBillboardNames) {
+      if (isDailySkySteLabel && dailySkyFace) {
+        placeDailySkySteLabelMesh(mesh, fr, dailySkyFace, start, end);
+        mesh.renderOrder = Math.max(mesh.renderOrder || 0, getShortCircadianRibbonRenderOrders(0.5, zlLabels).roFill + 1);
+      } else {
+        placeMeshOnRibbonFrame(mesh, fr, bump);
+      }
+      if (circadianNearEarthNames) {
         orientCircadianShortRibbonLabelMesh(mesh, fr);
-        // One Y anchor: time midpoint of the short event (keeps XZ from ribbon sample).
         if (typeof startHeight === 'number' && typeof endHeight === 'number') {
           mesh.position.y = (startHeight + endHeight) * 0.5;
         }
@@ -3033,6 +3236,7 @@
         isRibbonSurfaceLabel: true,
         circadianBillboardLabel: false,
         circadianShortRibbonLabel: !!circadianBillboardNames,
+        dailySkySteLabelFace: isDailySkySteLabel ? dailySkyFace : null,
         immuneToFlatten: !!circadianBillboardNames
       });
       applyDailyCircadianLabelOpacity(mesh, start, end);
@@ -3117,6 +3321,7 @@
     if (canSurface) {
       if (isShortEvent) {
         if (!showName && !showDates) return;
+        if (isDailySkySteLabel && !isSteVisibleOnDailySkyClock(start, end)) return;
         const midLabel = nameStr || (formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end)));
         const idxMid = idxMidTitle;
         const m = addSurfaceLabel(midLabel, idxMid, style.fontPx, 'mid', true);
@@ -3158,6 +3363,7 @@
     const nameScale = dayNumberScale * 3;
     if (isShortEvent) {
       if (!showName && !showDates) return;
+      if (isEarthDailySkyEventZoom(getZoomLevelForEvents()) && !isSteVisibleOnDailySkyClock(start, end)) return;
       const midLabel = nameStr || (formatMMDD(start) + (sameDay ? '' : ' – ' + formatMMDD(end)));
       const midPos = getPos(midHeight, rMidName);
       const midSprite = attachEventLabelTiming(
@@ -4069,6 +4275,7 @@
     if (durationH < 24) {
       const anchorMsShort = getEventTemporalAnchorMs(start, end);
       if (shouldHideCircadianShortEventForDayScope(start, end)) return null;
+      if (!isSteVisibleOnDailySkyClock(start, end)) return null;
       const zl = getZoomLevelForEvents();
       const straightenBlend = getCircadianStraightenBlendForEvents();
       const CR = typeof global.CircadianRenderer !== 'undefined' ? global.CircadianRenderer : null;
@@ -4153,7 +4360,7 @@
             outlineColorHex = applyEventDisplayColor(outlineColorHex, anchorMsShort, start, end);
           }
           let outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
-          outlineOp *= 0.74;
+          outlineOp *= 0.74 * getShortCircadianOutlineOpacityMul(zl);
 
           const innerFlat = ribbonPair.innerFlat;
           const outerFlat = ribbonPair.outerFlat;
@@ -4214,30 +4421,27 @@
             }
           }
 
-          if (areEventTextLabelsVisibleAtCurrentZoom(start, end) || areEventNameLabelsVisibleAtCurrentZoom(start, end)) {
+          if (group.children.length > 0) {
             const bdHelix = getEventBandRadii(earthDist, durationDays);
-            addEventWorldlineLabelSprites(
-              group,
-              event,
+            const showLabels =
+              areEventTextLabelsVisibleAtCurrentZoom(start, end) ||
+              areEventNameLabelsVisibleAtCurrentZoom(start, end);
+            return finishDailySkySteRibbonRoot(group, zl, {
+              diskRibbon: layerConfig._diskRibbon,
               start,
               end,
+              event,
               startHeight,
               endHeight,
-              bdHelix.rInner,
-              bdHelix.rOuter,
+              rInner: bdHelix.rInner,
+              rOuter: bdHelix.rOuter,
               eventHex,
-              refSelected,
-              0,
+              currentHeight: refSelected,
               innerFlat,
               outerFlat,
-              midTitleAlong01
-            );
-          }
-
-          if (group.children.length > 0) {
-            markCircadianShortScrubRoot(group, layerConfig._diskRibbon, true);
-            markShortEventPointerPickability(group, start, end);
-            return wrapDailySkyTwoSided(group, zl);
+              midTitleAlong01,
+              showLabels
+            });
           }
         }
       }
@@ -5103,12 +5307,29 @@
     const minR = getShortCircadianMinRadiusFromEarthCenter();
     const rim = Math.max(baseHand * 1.08, minR + Math.max(baseHand * 0.04, 0.35));
     const innerMin = Math.max(baseHand * 0.24, minR);
-    const gapFrac = momentLanes ? 0.36 : dailySkyLanes ? 0.28 : 0.4;
+    const gapFrac = momentLanes ? 0.36 : dailySkyLanes ? 0.12 : 0.4;
     const usable = Math.max(baseHand * (momentLanes ? 0.04 : dailySkyLanes ? 0.04 : 0.04), rim - innerMin);
+    const minLaneSpan = momentLanes ? 0 : getShortCircadianMinRibbonRadialSpan(baseHand, zlLanes);
+
+    if (dailySkyLanes) {
+      const layout = getDailySkySteAnnulusLayout(baseHand, globalMaxLanes);
+      const step = layout.bandW + layout.gap;
+
+      for (let i = 0; i < events.length; i++) {
+        const uid = eventUidForDisk(events[i], i);
+        const L = uidMaxLane.has(uid) ? uidMaxLane.get(uid) : 0;
+        const lane = Math.min(L, layout.lanes - 1);
+        const rIn = layout.innerR + lane * step;
+        const rOut = rIn + layout.bandW;
+        const rMid = (rIn + rOut) * 0.5;
+        map.set(uid, clampShortCircadianDiskRibbon({ rIn, rOut, rMid, lane }));
+      }
+      return map;
+    }
+
     const laneW = momentLanes
       ? usable / globalMaxLanes
-      : Math.max(dailySkyLanes ? Math.max(baseHand * 0.045, 0.28) : baseHand * 0.04, usable / globalMaxLanes);
-    const minLaneSpan = momentLanes ? 0 : getShortCircadianMinRibbonRadialSpan(baseHand, zlLanes);
+      : Math.max(baseHand * 0.04, usable / globalMaxLanes);
 
     for (let i = 0; i < events.length; i++) {
       const uid = eventUidForDisk(events[i], i);

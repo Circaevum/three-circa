@@ -277,15 +277,29 @@
     return out;
   }
 
+  /** At most four sessions start in the same overlap wave (matches GL STE lane cap). */
+  var MAX_PARALLEL_STACK = 4;
+
   function pushOlSpreadDay(day, rows) {
     var waves = overlapWaveTimesPDT(day);
     var w = waves.length;
-    var n = rows.length;
-    for (var i = 0; i < n; i++) {
-      var wi = Math.min(w - 1, Math.floor((i * w) / n));
-      var tm = waves[wi];
+    var waveCount = [];
+    for (var c = 0; c < w; c++) waveCount[c] = 0;
+    for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
-      events.push(ol(day, r.suf, tm.h, tm.m, r.dur, r.sum, r.desc, r.color, r.cat));
+      var wi0 = Math.min(w - 1, Math.floor((i * w) / rows.length));
+      var placed = false;
+      for (var t = 0; t < w; t++) {
+        var wi = (wi0 + t) % w;
+        if (waveCount[wi] < MAX_PARALLEL_STACK) {
+          waveCount[wi]++;
+          var tm = waves[wi];
+          events.push(ol(day, r.suf, tm.h, tm.m, r.dur, r.sum, r.desc, r.color, r.cat));
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) continue;
     }
   }
 
