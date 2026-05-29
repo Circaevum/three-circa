@@ -375,6 +375,9 @@
   }
 
   function clearEventFocus() {
+    if (typeof window.closeMobileEventDetailSheet === 'function') {
+      window.closeMobileEventDetailSheet();
+    }
     var gl = window.circaevumGL || (window.getGL && window.getGL());
     if (!gl || typeof gl.setEventHighlight !== 'function') return;
     var cur = typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
@@ -644,7 +647,17 @@
         }
         updateEventFocusClearButton();
         navigateToEvent(start, endForNav);
-        requestAnimationFrame(function() { scrollEventListToFocusedEvent(); });
+        if (typeof window.isMobileEventSheetViewport === 'function' && window.isMobileEventSheetViewport() &&
+            typeof window.showMobileEventDetailSheet === 'function') {
+          window.showMobileEventDetailSheet({
+            vevent: ev,
+            layerId: item.layerId || USER_EVENTS_LAYER,
+            start: start,
+            end: endForNav
+          });
+        } else {
+          requestAnimationFrame(function() { scrollEventListToFocusedEvent(); });
+        }
       };
       row.querySelectorAll('a').forEach(function(a) { a.onclick = function(e) { e.stopPropagation(); }; });
       var editBtn = row.querySelector('.events-panel-edit-btn');

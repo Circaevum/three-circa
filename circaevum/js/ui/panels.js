@@ -104,6 +104,11 @@
       document.body.classList.add('keyboard-panel-open');
       keyboardPanel.classList.add('open');
       keyboardPanel.setAttribute('aria-hidden', 'false');
+      var keysBtn = document.getElementById('nav-keys-btn');
+      if (keysBtn) {
+        keysBtn.setAttribute('aria-expanded', 'true');
+        keysBtn.classList.add('active');
+      }
     }
 
     function closeKeyboardControlsPanel() {
@@ -111,6 +116,17 @@
       document.body.classList.remove('keyboard-panel-open');
       keyboardPanel.classList.remove('open');
       keyboardPanel.setAttribute('aria-hidden', 'true');
+      var keysBtn = document.getElementById('nav-keys-btn');
+      if (keysBtn) {
+        keysBtn.setAttribute('aria-expanded', 'false');
+        keysBtn.classList.remove('active');
+      }
+    }
+
+    function toggleKeyboardControlsPanel() {
+      if (!keyboardPanel) return;
+      if (keyboardPanel.classList.contains('open')) closeKeyboardControlsPanel();
+      else openKeyboardControlsPanel();
     }
 
     function toggleAboutPanel() {
@@ -121,6 +137,15 @@
     window.toggleAboutPanel = toggleAboutPanel;
     window.openEventListPanel = openEventListPanel;
     window.openCalendarLayersPanel = openCalendarsLeftPanel;
+    window.openKeyboardControlsPanel = openKeyboardControlsPanel;
+    window.toggleKeyboardControlsPanel = toggleKeyboardControlsPanel;
+    window.closeKeyboardControlsPanel = closeKeyboardControlsPanel;
+
+    var navKeysBtn = document.getElementById('nav-keys-btn');
+    if (navKeysBtn) navKeysBtn.onclick = function(e) {
+      e.stopPropagation();
+      toggleKeyboardControlsPanel();
+    };
 
     var closeBtn = document.getElementById('event-list-close');
     if (closeBtn && panel) closeBtn.onclick = closeEventListPanel;
@@ -196,10 +221,6 @@
               window.showCircaevumIntroPrompt({ force: true });
             }
           }
-          if (action === 'edge-esmeralda-w1') runLoadEdgeEsmeraldaWeek(1);
-          if (action === 'edge-esmeralda-w2') runLoadEdgeEsmeraldaWeek(2);
-          if (action === 'edge-esmeralda-w3') runLoadEdgeEsmeraldaWeek(3);
-          if (action === 'edge-esmeralda-w4') runLoadEdgeEsmeraldaWeek(4);
         };
       });
       document.addEventListener('click', function() {
