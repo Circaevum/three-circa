@@ -16,16 +16,22 @@
         <div class="nav-left">
             <a href="#" class="nav-brand">Circaevum</a>
         </div>
+        <div class="nav-center nav-wasd-hint" aria-label="WASD keyboard navigation">
+            <span class="nav-wasd-label">WASD</span>
+            <span class="nav-wasd-keys">
+                <kbd title="Zoom in">W</kbd>
+                <kbd title="Earlier (time step)">A</kbd>
+                <kbd title="Zoom out">S</kbd>
+                <kbd title="Later (time step)">D</kbd>
+            </span>
+        </div>
         <div class="nav-right">
+            <button type="button" id="nav-keys-btn" class="nav-menu-btn nav-keys-btn" title="All keyboard shortcuts (?)" aria-label="All keyboard shortcuts" aria-expanded="false" aria-controls="keyboard-controls-panel">Keys</button>
             <div class="nav-dropdown-wrap">
                 <button type="button" id="nav-account-btn" class="nav-icon-btn" title="Menu" aria-label="Open menu" aria-expanded="false" aria-haspopup="true">☰</button>
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="login">Log in</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
-                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w1">Edge Esmeralda W1</button>
-                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w2">Edge Esmeralda W2</button>
-                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w3">Edge Esmeralda W3</button>
-                    <button type="button" class="nav-dropdown-item" role="menuitem" data-action="edge-esmeralda-w4">Edge Esmeralda W4</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="keyboard-controls">Keyboard Controls</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="about">About</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="replay-intro">Replay intro tour</button>
@@ -105,12 +111,15 @@
         </div>
         <div class="keyboard-controls-panel-body">
             <div class="keyboard-controls-grid" role="list">
+                <div class="keyboard-controls-item keyboard-controls-item-wasd" role="listitem">
+                    <span class="keyboard-controls-wasd-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>
+                    <span>Zoom (<kbd>W</kbd>/<kbd>S</kbd>) and move selected time (<kbd>A</kbd>/<kbd>D</kbd>); step size depends on zoom</span>
+                </div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>0-9</kbd> Set zoom level</div>
-                <div class="keyboard-controls-item" role="listitem"><kbd>W</kbd> Zoom in</div>
-                <div class="keyboard-controls-item" role="listitem"><kbd>S</kbd> Zoom out</div>
-                <div class="keyboard-controls-item" role="listitem"><kbd>A</kbd> / <kbd>D</kbd> Move selected time (zoom step: day, week, hour, …)</div>
-                <div class="keyboard-controls-item" role="listitem"><kbd>Shift</kbd>+<kbd>A</kbd> / <kbd>D</kbd> Coarser step (e.g. 100y at zoom 1, week at zoom 7)</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>Shift</kbd>+<kbd>A</kbd> / <kbd>D</kbd> Coarser time step (e.g. day at Moment, week at Day)</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>[</kbd> / <kbd>]</kbd> Nudge 15 minutes (any zoom)</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>Shift</kbd> (hold) Show short-term events as simple lines; full color at Moment</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>Esc</kbd> Clear selected event highlight</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>N</kbd> Return to present</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>C</kbd> Focus target (Sun/Earth)</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>L</kbd> Theme: dark / light / sky</div>
@@ -123,10 +132,31 @@
                 <div class="keyboard-controls-item" role="listitem"><kbd>F</kbd> Flatten view</div>
             </div>
             <div class="keyboard-controls-footer">
-                <strong>Mouse / touch:</strong> Wheel zoom within zoom level • Pinch to zoom
+                <strong>Mouse / touch:</strong> Wheel zoom within zoom level • Pinch to zoom<br>
+                <strong>Tip:</strong> Header <strong>Keys</strong> button or press <kbd>?</kbd> to open this list • <kbd>Esc</kbd> closes it
             </div>
         </div>
     </aside>
+    <!-- Mobile: event detail bottom sheet (max half viewport) -->
+    <div id="event-detail-sheet" class="event-detail-sheet" aria-hidden="true">
+        <button type="button" class="event-detail-sheet-backdrop" aria-label="Close event details"></button>
+        <div class="event-detail-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="event-detail-sheet-title">
+            <div class="event-detail-sheet-grab" aria-hidden="true"></div>
+            <header class="event-detail-sheet-header">
+                <div class="event-detail-sheet-heading">
+                    <h2 id="event-detail-sheet-title" class="event-detail-sheet-title">Event</h2>
+                    <p id="event-detail-sheet-meta" class="event-detail-sheet-meta"></p>
+                    <p id="event-detail-sheet-layer" class="event-detail-sheet-layer" hidden></p>
+                </div>
+                <button type="button" id="event-detail-sheet-close" class="event-detail-sheet-close" aria-label="Close">×</button>
+            </header>
+            <div id="event-detail-sheet-body" class="event-detail-sheet-body"></div>
+            <footer class="event-detail-sheet-footer">
+                <button type="button" id="event-detail-sheet-edit" class="strip-btn event-detail-sheet-edit-btn">Edit in full app</button>
+            </footer>
+        </div>
+    </div>
+
     <button type="button" id="event-list-pull-tab" class="event-list-pull-tab" aria-label="Open Event List" title="Events">
       <span class="event-list-pull-tab-inner">
         <span class="event-list-pull-tab-chevron" aria-hidden="true">◀</span>
@@ -568,6 +598,7 @@
     <script src="circaevum/js/ui/gl-api-bridge.js"></script>
     <script src="circaevum/js/ui/common.js"></script>
     <script src="circaevum/js/ui/events-list.js"></script>
+    <script src="circaevum/js/ui/event-detail-sheet.js"></script>
     <script src="circaevum/js/ui/panels.js"></script>
     <!-- Share state: get/apply for "Open full app" (Option B – same-tab navigate with state in URL) -->
     <script src="circaevum/js/ui/share-state.js"></script>

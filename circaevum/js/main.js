@@ -161,6 +161,8 @@ let listHorizonHelixTimeKey = null;
 /** Context arc always on at zoom; hidden only when Event List uses Draw all. */
 /** Short (<24h) circadian-scoped events: 'day' = selected calendar day only, 'year' = whole selected year. */
 let circadianShortEventScope = 'year';
+/** Hold Shift: show all STEs as lightweight centerlines (see event-renderer). */
+let circadianShortEventsShiftPreview = false;
 /** Default on so the circadian frame is visible at helix-capable zoom levels. */
 let circadianState = 'wrapped';
 /** false = show calendar events only in selected year; true = all time (see scene calendar icon) */
@@ -264,6 +266,18 @@ if (typeof window !== 'undefined') {
             try {
                 window.circaevumGL.refreshAllEventLayers();
             } catch (e) { /* GL may be disposing */ }
+        }
+    };
+    window.getCircadianShortEventsShiftPreview = function () {
+        return !!circadianShortEventsShiftPreview;
+    };
+    window.setCircadianShortEventsShiftPreview = function (active) {
+        const next = !!active;
+        if (next === circadianShortEventsShiftPreview) return;
+        circadianShortEventsShiftPreview = next;
+        const gl = window.circaevumGL;
+        if (gl && typeof gl.refreshAllEventLayers === 'function') {
+            try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
         }
     };
     /** Console: debugShortEventRender('edge-esmeralda-2026') — counts filters before GPU meshes. */
@@ -4929,31 +4943,45 @@ function initControls() {
             window.setCircaevumSelectedLayerId(layerId);
         }
         const glPick = typeof window !== 'undefined' ? (window.circaevumGL || (window.getGL && window.getGL())) : null;
+        const useMobileSheet = typeof window.isMobileEventSheetViewport === 'function' &&
+            window.isMobileEventSheetViewport();
         if (glPick && typeof glPick.setEventHighlight === 'function' && pickUidStr && layerId) {
             const cur = typeof glPick.getEventFocus === 'function' ? glPick.getEventFocus() : null;
             if (cur && cur.uid && cur.layerId === layerId && String(cur.uid) === pickUidStr) {
                 glPick.setEventHighlight(layerId, null);
                 if (typeof window.updateEventFocusClearButton === 'function') window.updateEventFocusClearButton();
+                if (useMobileSheet && typeof window.closeMobileEventDetailSheet === 'function') {
+                    window.closeMobileEventDetailSheet();
+                }
                 return true;
             }
             glPick.setEventHighlight(layerId, pickUidStr);
         }
-        if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
         if (typeof window.navigateToEvent === 'function') window.navigateToEvent(start, end);
-        if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
-        const scrollToRow = function () {
-            if (typeof window.scrollEventListToFocusedEvent !== 'function') return;
-            if (window.scrollEventListToFocusedEvent()) return;
-            if (typeof window.refreshEventsList === 'function') {
-                window.refreshEventsList(true);
-                requestAnimationFrame(function () {
-                    if (typeof window.scrollEventListToFocusedEvent === 'function') {
-                        window.scrollEventListToFocusedEvent();
-                    }
-                });
-            }
-        };
-        requestAnimationFrame(scrollToRow);
+        if (useMobileSheet && typeof window.showMobileEventDetailSheet === 'function') {
+            window.showMobileEventDetailSheet({
+                vevent: ve,
+                layerId: layerId,
+                start: start,
+                end: end
+            });
+        } else {
+            if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
+            if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
+            const scrollToRow = function () {
+                if (typeof window.scrollEventListToFocusedEvent !== 'function') return;
+                if (window.scrollEventListToFocusedEvent()) return;
+                if (typeof window.refreshEventsList === 'function') {
+                    window.refreshEventsList(true);
+                    requestAnimationFrame(function () {
+                        if (typeof window.scrollEventListToFocusedEvent === 'function') {
+                            window.scrollEventListToFocusedEvent();
+                        }
+                    });
+                }
+            };
+            requestAnimationFrame(scrollToRow);
+        }
         return true;
     }
 
@@ -5197,6 +5225,27 @@ function initControls() {
                 if (typeof window.clearEventFocus === 'function') window.clearEventFocus();
                 return;
             }
+            if (typeof window.closeMobileEventDetailSheet === 'function') {
+                const sheet = document.getElementById('event-detail-sheet');
+                if (sheet && sheet.classList.contains('open')) {
+                    e.preventDefault();
+                    window.closeMobileEventDetailSheet();
+                    return;
+                }
+            }
+            if (typeof window.closeKeyboardControlsPanel === 'function') {
+                window.closeKeyboardControlsPanel();
+            }
+        }
+
+        if (e.key === '?' || (e.code === 'Slash' && e.shiftKey)) {
+            e.preventDefault();
+            if (typeof window.toggleKeyboardControlsPanel === 'function') {
+                window.toggleKeyboardControlsPanel();
+            } else if (typeof window.openKeyboardControlsPanel === 'function') {
+                window.openKeyboardControlsPanel();
+            }
+            return;
         }
 
     // Zoom 0 (Moment): A/D = hour, Shift+A/D = day, [ ] = 15 min; block mode toggles that fight polar landing view.
@@ -5261,6 +5310,27 @@ function initControls() {
             rotate90Right(); // Rotate system 90 degrees clockwise
         } else if (e.key.toLowerCase() === 'f' && !blockMomentModeShortcuts) {
             toggleFlattenWithKey();
+        }
+    });
+
+    function isShiftStePreviewKey(e) {
+        return e && (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight');
+    }
+    document.addEventListener('keydown', (e) => {
+        if (!isShiftStePreviewKey(e)) return;
+        if (typeof window.setCircadianShortEventsShiftPreview === 'function') {
+            window.setCircadianShortEventsShiftPreview(true);
+        }
+    });
+    document.addEventListener('keyup', (e) => {
+        if (!isShiftStePreviewKey(e)) return;
+        if (typeof window.setCircadianShortEventsShiftPreview === 'function') {
+            window.setCircadianShortEventsShiftPreview(false);
+        }
+    });
+    window.addEventListener('blur', () => {
+        if (typeof window.setCircadianShortEventsShiftPreview === 'function') {
+            window.setCircadianShortEventsShiftPreview(false);
         }
     });
     
@@ -6469,6 +6539,7 @@ function navigateUnitStep(direction, options) {
  * @param {{ coarse?: boolean }} [options] Shift+A/D: step parent zoom unit (day, week, month, …).
  */
 function navigateUnit(direction, stepCount, options) {
+    const prevSelected = getSelectedDateTime();
     const n =
         stepCount === undefined || stepCount === null
             ? 1
@@ -6476,6 +6547,7 @@ function navigateUnit(direction, stepCount, options) {
     for (let i = 0; i < n; i++) {
         navigateUnitStep(direction, options);
     }
+    clearEventFocusIfSelectedDayChanged(prevSelected, getSelectedDateTime());
     createPlanets(currentZoom);
     if (currentZoom === 0) {
         syncZoom0CameraToSelectedHourHand('delta');
@@ -6849,6 +6921,19 @@ function setZoomLevel(level, overrideDate) {
     }
 }
 
+function selectedCalendarDayKey(d) {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+    return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+}
+
+/** Drop STE/event focus when SELECTED TIME moves to another calendar day. */
+function clearEventFocusIfSelectedDayChanged(prevDate, nextDate) {
+    const a = selectedCalendarDayKey(prevDate);
+    const b = selectedCalendarDayKey(nextDate);
+    if (a == null || b == null || a === b) return;
+    if (typeof window.clearEventFocus === 'function') window.clearEventFocus();
+}
+
 // Set the selected date/time without changing the current zoom level.
 // Used by external consumers (e.g. CircaevumGL.navigateToTime) so that
 // the Orbital Data panel, Earth position, and time markers all snap to
@@ -6857,9 +6942,13 @@ function setSelectedDateTime(date) {
     const targetDate = date instanceof Date ? date : new Date(date);
     if (!targetDate || isNaN(targetDate.getTime())) return;
 
+    const prevSelected = getSelectedDateTime();
+
     if (typeof applySelectedDateToZoomLevel === 'function') {
         applySelectedDateToZoomLevel(targetDate, currentZoom);
     }
+
+    clearEventFocusIfSelectedDayChanged(prevSelected, getSelectedDateTime());
 
     if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
         TimeMarkers.updateOffsets({
@@ -7128,14 +7217,47 @@ let isSmoothNavigatingTime = false;
  * @param {number} [durationMs]
  * @param {boolean} [snapToLivePresent] If true (Space / return-to-present), final frame uses returnToPresent() so time matches real now.
  */
+function refreshMoonWorldlineAfterTimeJump() {
+    try {
+        if (typeof window.circaevumGL !== 'undefined' && window.circaevumGL) {
+            if (isMoonWorldlineVisibleAtZoom(currentZoom) &&
+                typeof window.circaevumGL.refreshMoonWorldline === 'function') {
+                window.circaevumGL.refreshMoonWorldline();
+            } else if (typeof window.circaevumGL.clearMoonWorldline === 'function') {
+                window.circaevumGL.clearMoonWorldline();
+            }
+        }
+    } catch (e) {
+        /* optional GL wrapper */
+    }
+}
+
 function smoothNavigateToTime(targetDate, durationMs, snapToLivePresent) {
     const dur = durationMs != null ? durationMs : 1350;
     const endDate = targetDate instanceof Date ? targetDate : new Date(targetDate);
     if (!endDate || isNaN(endDate.getTime())) return;
     if (isSmoothNavigatingTime) return;
 
-    isSmoothNavigatingTime = true;
     const startDate = getSelectedDateTime();
+    clearEventFocusIfSelectedDayChanged(startDate, endDate);
+
+    // Same calendar day: snap instantly (smooth lerp rebuilds the scene every frame and feels laggy).
+    if (selectedCalendarDayKey(startDate) === selectedCalendarDayKey(endDate)) {
+        if (snapToLivePresent) {
+            returnToPresent();
+        } else {
+            setSelectedDateTime(endDate);
+        }
+        createPlanets(currentZoom);
+        if (currentZoom === 0) {
+            syncZoom0CameraToSelectedHourHand('delta');
+        }
+        updateTimeDisplays();
+        refreshMoonWorldlineAfterTimeJump();
+        return;
+    }
+
+    isSmoothNavigatingTime = true;
     const t0 = performance.now();
 
     function timeMarkersPayload() {
@@ -7178,17 +7300,7 @@ function smoothNavigateToTime(targetDate, durationMs, snapToLivePresent) {
             } else {
                 setSelectedDateTime(endDate);
             }
-            try {
-                if (typeof window.circaevumGL !== 'undefined' && window.circaevumGL) {
-                    if (isMoonWorldlineVisibleAtZoom(currentZoom) && typeof window.circaevumGL.refreshMoonWorldline === 'function') {
-                        window.circaevumGL.refreshMoonWorldline();
-                    } else if (typeof window.circaevumGL.clearMoonWorldline === 'function') {
-                        window.circaevumGL.clearMoonWorldline();
-                    }
-                }
-            } catch (e) {
-                /* optional GL wrapper */
-            }
+            refreshMoonWorldlineAfterTimeJump();
         }
     }
     requestAnimationFrame(step);
@@ -7209,9 +7321,11 @@ if (typeof window !== 'undefined') {
 function nudgeSelectedWallTime(deltaMs) {
     const d = typeof deltaMs === 'number' && !isNaN(deltaMs) ? deltaMs : 0;
     if (d === 0) return;
+    const prevSelected = getSelectedDateTime();
     const next = getSelectedDateTime();
     next.setTime(next.getTime() + d);
     applySelectedDateToZoomLevel(next, currentZoom);
+    clearEventFocusIfSelectedDayChanged(prevSelected, getSelectedDateTime());
     if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
         TimeMarkers.updateOffsets({
             selectedYearOffset,

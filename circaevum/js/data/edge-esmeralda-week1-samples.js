@@ -9,6 +9,19 @@
   var LOC = 'Edge Esmeralda, Healdsburg, CA';
   var LAYER_ID = 'edge-esmeralda-2026';
 
+  var VENUES = {
+    hub: 'The Hub',
+    loft: 'The Loft',
+    other: 'Other'
+  };
+
+  function defaultVenueForCategory(category) {
+    // Treat venues as "rings": Hub inner, Loft next, everything else floats.
+    if (category === 'Salon') return VENUES.hub;
+    if (category === 'Workshop' || category === 'Bio') return VENUES.loft;
+    return VENUES.other;
+  }
+
   /** PDT morning hour h → UTC hour for same calendar day in June */
   function z(h, m) {
     var utcH = h + 7;
@@ -25,13 +38,14 @@
     return { start: fmt(d0), end: fmt(d1) };
   }
 
-  function ev(uid, day, h0, m0, durMin, summary, description, color, category) {
+  function ev(uid, day, h0, m0, durMin, summary, description, color, category, venueOpt) {
     var t = iso(day, h0, m0, durMin);
+    var venue = venueOpt || defaultVenueForCategory(category);
     return {
       uid: 'ee26-w1-' + uid,
       summary: summary,
       description: description || '',
-      location: LOC,
+      location: LOC + ' — ' + venue,
       dtstart: { dateTime: t.start },
       dtend: { dateTime: t.end },
       color: color,

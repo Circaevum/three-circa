@@ -105,6 +105,133 @@
     }
   }
 
+  function edgeEventStartMs(e) {
+    var s = e && e.dtstart;
+    if (!s) return NaN;
+    if (s.dateTime) return new Date(s.dateTime).getTime();
+    if (s.date) return new Date(String(s.date).slice(0, 10) + 'T12:00:00').getTime();
+    return NaN;
+  }
+
+  function edgeEventEndMs(e) {
+    var x = e && e.dtend;
+    if (!x) return NaN;
+    if (x.dateTime) return new Date(x.dateTime).getTime();
+    if (x.date) return new Date(String(x.date).slice(0, 10) + 'T12:00:00').getTime();
+    return NaN;
+  }
+
+  /** Drop sub-day sessions when more than maxN overlap at once (matches GL STE lane cap). */
+  function capSubDayConcurrent(events, maxN) {
+    maxN = maxN || 4;
+    if (!events || !events.length) return events;
+    var longTerm = [];
+    var subDay = [];
+    for (var i = 0; i < events.length; i++) {
+      var e = events[i];
+      var s = edgeEventStartMs(e);
+      var end = edgeEventEndMs(e);
+      if (!isFinite(s) || !isFinite(end) || end <= s) {
+        subDay.push(e);
+        continue;
+      }
+      if ((end - s) / 3600000 >= 24) longTerm.push(e);
+      else subDay.push(e);
+    }
+    subDay.sort(function (a, b) {
+      return edgeEventStartMs(a) - edgeEventStartMs(b);
+    });
+    var kept = [];
+    var active = [];
+    for (var j = 0; j < subDay.length; j++) {
+      var ev = subDay[j];
+      var st = edgeEventStartMs(ev);
+      var en = edgeEventEndMs(ev);
+      var next = [];
+      for (var k = 0; k < active.length; k++) {
+        if (active[k].end > st) next.push(active[k]);
+      }
+      active = next;
+      if (active.length < maxN) {
+        active.push({ end: en, ev: ev });
+        kept.push(ev);
+      }
+    }
+    return longTerm.concat(kept);
+  }
+
+  function edgeEventVenueKey(e) {
+    var loc = e && e.location ? String(e.location) : '';
+    // Samples encode: "Edge Esmeralda, Healdsburg, CA — The Hub"
+    var parts = loc.split('—');
+    if (parts.length >= 2) return parts[parts.length - 1].trim() || 'Other';
+    return 'Other';
+  }
+
+  function setEdgeEventTimes(ev, startMs, endMs) {
+    function fmt(ms) {
+      return new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    }
+    if (!ev || !ev.dtstart || !ev.dtend) return;
+    ev.dtstart.dateTime = fmt(startMs);
+    ev.dtend.dateTime = fmt(endMs);
+  }
+
+  /**
+   * Add think/transit gap so events do not share borders.
+   * Applies per venue, sub-day only. Shifts later events forward.
+   */
+  function addVenueTransitGaps(events, gapMinutes) {
+    gapMinutes = gapMinutes == null ? 15 : gapMinutes;
+    var gapMs = Math.max(0, gapMinutes) * 60000;
+    if (!events || !events.length || gapMs <= 0) return events;
+
+    var longTerm = [];
+    var subDay = [];
+    for (var i = 0; i < events.length; i++) {
+      var e = events[i];
+      var s = edgeEventStartMs(e);
+      var end = edgeEventEndMs(e);
+      if (!isFinite(s) || !isFinite(end) || end <= s) {
+        subDay.push(e);
+        continue;
+      }
+      if ((end - s) / 3600000 >= 24) longTerm.push(e);
+      else subDay.push(e);
+    }
+
+    var byVenue = {};
+    for (var j = 0; j < subDay.length; j++) {
+      var ev = subDay[j];
+      var key = edgeEventVenueKey(ev);
+      if (!byVenue[key]) byVenue[key] = [];
+      byVenue[key].push(ev);
+    }
+
+    Object.keys(byVenue).forEach(function (key) {
+      var list = byVenue[key];
+      list.sort(function (a, b) {
+        return edgeEventStartMs(a) - edgeEventStartMs(b);
+      });
+      var cursorEnd = -Infinity;
+      for (var k = 0; k < list.length; k++) {
+        var ev = list[k];
+        var s = edgeEventStartMs(ev);
+        var end = edgeEventEndMs(ev);
+        if (!isFinite(s) || !isFinite(end) || end <= s) continue;
+        if (s < cursorEnd + gapMs) {
+          var shift = cursorEnd + gapMs - s;
+          s += shift;
+          end += shift;
+          setEdgeEventTimes(ev, s, end);
+        }
+        cursorEnd = Math.max(cursorEnd, end);
+      }
+    });
+
+    return longTerm.concat(subDay);
+  }
+
   function toVEvents(raw) {
     if (typeof VEvent === 'undefined') return raw;
     return raw.map(function (e) {
@@ -148,7 +275,8 @@
       return 0;
     }
 
-    var combined = longTermEvents.concat(sessionsByWeek[w] || []);
+    var combined = capSubDayConcurrent(longTermEvents.concat(sessionsByWeek[w] || []), 4);
+    combined = addVenueTransitGaps(combined, 15);
     var vevents = toVEvents(combined);
     var mergedStyles = buildLayerStyles(
       gl.layerStylesByCategory && typeof gl.layerStylesByCategory === 'object'

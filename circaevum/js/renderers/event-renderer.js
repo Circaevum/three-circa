@@ -123,6 +123,14 @@
     if (start && !isNaN(start.getTime()) && isLongTermEventSpanForPlotType(start, end)) {
       return 'polygon3d';
     }
+    if (
+      isCircadianShortEventsShiftPreview() &&
+      start &&
+      !isNaN(start.getTime()) &&
+      !isLongTermEventSpanForPlotType(start, end)
+    ) {
+      return 'lines';
+    }
     if (mode === 'lines') return 'lines';
     if (mode === 'polygon3d' || mode === 'polygon2d') return 'polygon3d';
     if (start && !isNaN(start.getTime()) && eventTouchesSelectedCalendarDay(start, end)) {
@@ -535,11 +543,11 @@
   }
 
   /**
-   * Zoom 0 / 9: only sub-day events on the selected calendar day accept pointer picks.
+   * Zoom 0 / 8 / 9: only sub-day events on the selected calendar day accept pointer picks.
    */
   function isShortEventPointerPickableAtCurrentZoom(start, end) {
     const zl = getZoomLevelForEvents();
-    if (zl !== 0 && zl !== 9) return true;
+    if (zl !== 0 && zl !== 8 && zl !== 9) return true;
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (!isSub24HourSpan(start, evEnd)) return true;
@@ -548,6 +556,12 @@
 
   /** Zoom 0 / 9 (clock / moment): only STEs on the selected calendar day are shown. */
   function isSteVisibleOnDailySkyClock(start, end) {
+    if (isCircadianShortEventsShiftPreview()) {
+      if (!start || isNaN(start.getTime())) return false;
+      const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+      if (!isSub24HourSpan(start, evEnd)) return true;
+      return true;
+    }
     const zl = getZoomLevelForEvents();
     if (zl !== 0 && zl !== 9) return true;
     if (!start || isNaN(start.getTime())) return false;
@@ -561,6 +575,18 @@
     const pickable = isShortEventPointerPickableAtCurrentZoom(start, end);
     if (root.userData) root.userData.shortEventPickable = pickable;
     if (!pickable) disablePointerRaycastSubtree(root);
+  }
+
+  /** Hold Shift: peek all STEs as one centerline per event (no ribbon fill / labels). */
+  function isCircadianShortEventsShiftPreview() {
+    return typeof global.getCircadianShortEventsShiftPreview === 'function' &&
+      !!global.getCircadianShortEventsShiftPreview();
+  }
+
+  function isCircadianShortEventScopeYear() {
+    if (isCircadianShortEventsShiftPreview()) return true;
+    return typeof global.getCircadianShortEventScope === 'function' &&
+      global.getCircadianShortEventScope() === 'year';
   }
 
   /**
@@ -611,6 +637,7 @@
   function resolveShortCircadianLineOpacity(opacity, start, end) {
     const zl = getZoomLevelForEvents();
     if (
+      !isCircadianShortEventsShiftPreview() &&
       (zl === 0 || zl === 9) &&
       start &&
       isSub24HourSpan(start, end) &&
@@ -636,6 +663,13 @@
       eventTouchesSelectedHour(start, end)
     ) {
       op = Math.min(1, op * 1.38);
+    }
+    if (isCircadianShortEventsShiftPreview() && start && isSub24HourSpan(start, end)) {
+      if (eventTouchesSelectedCalendarDay(start, end)) {
+        op = Math.max(op, 0.9);
+      } else {
+        op = Math.max(op, 0.3);
+      }
     }
     return op;
   }
@@ -685,6 +719,7 @@
 
   /** Hide events outside scoped window: Moment (0) & Clock (9) always use selected local day (even if UI scope is “year”). */
   function shouldHideCircadianShortEventForDayScope(start, end) {
+    if (isCircadianShortEventsShiftPreview()) return false;
     const zl = getZoomLevelForEvents();
     const selFn = getSelectedDateTimeFn();
     if (!selFn || !start || isNaN(start.getTime())) return false;
@@ -699,7 +734,7 @@
       return !overlap;
     }
 
-    if (typeof global.getCircadianShortEventScope === 'function' && global.getCircadianShortEventScope() === 'year') {
+    if (isCircadianShortEventScopeYear()) {
       if (zl === 9 || zl === 8 || zl === 7) return false;
     }
 
@@ -732,9 +767,7 @@
   function shouldHideCircadianEventOutsideSelectedDayAtClockZooms(start, end) {
     const zl = getZoomLevelForEvents();
     if (zl !== 0 && zl !== 9) return false;
-    if (zl === 9 &&
-        typeof global.getCircadianShortEventScope === 'function' &&
-        global.getCircadianShortEventScope() === 'year') {
+    if (zl === 9 && isCircadianShortEventScopeYear()) {
       return false;
     }
     return shouldHideCircadianShortEventForDayScope(start, end);
@@ -749,11 +782,7 @@
     const circ = normalizedCircadianState();
     const helixOn = isCircadianHelixZoom(zl) && circ !== 'off';
     if (!helixOn) return 1;
-    if (
-      (zl === 7 || zl === 8 || zl === 9) &&
-      typeof global.getCircadianShortEventScope === 'function' &&
-      global.getCircadianShortEventScope() === 'year'
-    ) {
+    if ((zl === 7 || zl === 8 || zl === 9) && isCircadianShortEventScopeYear()) {
       return 1;
     }
 
@@ -774,6 +803,9 @@
     const isShort = isSub24HourSpan(start, end);
 
     if ((zl === 0 || zl === 9) && isShort && !onSelDay) {
+      if (isCircadianShortEventsShiftPreview()) {
+        return Math.max(0.18, Math.min(0.55, 0.32 * dayDiffProx));
+      }
       return 0;
     }
 
@@ -862,9 +894,10 @@
     const outerR = getDailySkySteMaxOuterRadius(hl);
     const span = Math.max(outerR - innerR, 0.05);
     const lanes = Math.max(1, peakConcurrent);
-    const gapRatio = 0.05;
-    const gap = lanes > 1 ? (span * gapRatio) / lanes : 0;
-    const bandW = (span - gap * (lanes - 1)) / lanes;
+    /** Each inter-lane slit uses this share of the annulus (not divided by lane count). */
+    const gapSharePerSlit = 0.11;
+    const gap = lanes > 1 ? span * gapSharePerSlit : 0;
+    const bandW = Math.max((span - gap * (lanes - 1)) / lanes, span * 0.04);
     return { innerR, outerR, bandW, gap, lanes };
   }
 
@@ -2533,6 +2566,7 @@
    */
   function applyMomentZoomFocusColor(hex, start, end) {
     if (getZoomLevelForEvents() !== 0 || !start || isNaN(start.getTime())) return hex;
+    if (isCircadianShortEventsShiftPreview()) return hex;
     if (eventTouchesSelectedHour(start, end)) return hex;
     return lerpHexColor(hex, luminanceToGrayHex(hex), 0.9);
   }
@@ -2541,6 +2575,7 @@
   function applyEventDisplayColor(hex, anchorMs, start, end, durationDays) {
     const zl = getZoomLevelForEvents();
     if (zl === 0) {
+      if (isCircadianShortEventsShiftPreview()) return hex;
       return applyMomentZoomFocusColor(hex, start, end);
     }
     if (!shouldSkipTemporalVividnessAtDayHelixZooms()) {
@@ -3744,6 +3779,7 @@
 
     let sep = 0;
     if (zl === 0) {
+      if (isCircadianShortEventsShiftPreview()) return 1;
       const hb = getSelectedHourLocalBounds(ref);
       sep = getPeripheralSeparationMsYearMode(spanStart, spanEndEff, hb.start, hb.end);
     } else if (zl === 3 || zl === 4) {
@@ -4423,9 +4459,10 @@
 
           if (group.children.length > 0) {
             const bdHelix = getEventBandRadii(earthDist, durationDays);
-            const showLabels =
+            const showLabels = !isCircadianShortEventsShiftPreview() && (
               areEventTextLabelsVisibleAtCurrentZoom(start, end) ||
-              areEventNameLabelsVisibleAtCurrentZoom(start, end);
+              areEventNameLabelsVisibleAtCurrentZoom(start, end)
+            );
             return finishDailySkySteRibbonRoot(group, zl, {
               diskRibbon: layerConfig._diskRibbon,
               start,
@@ -4789,6 +4826,16 @@
           };
         };
 
+        const lineUserDataPre = {
+          layerId: layerConfig.id,
+          type: 'EventLine',
+          start,
+          end,
+          label: line.label || null,
+          index: i
+        };
+        markWorldSpaceIfNeeded(lineUserDataPre, start, end);
+
         if (useHelixRibbon) {
           const segments = Math.max(8, Math.min(48, Math.ceil(durationH * 4)));
           const ribbonPair = global.CircadianRenderer.buildHelixRibbonBetween(
@@ -4892,7 +4939,11 @@
               }
             }
 
-            if (areEventTextLabelsVisibleAtCurrentZoom(start, end) || areEventNameLabelsVisibleAtCurrentZoom(start, end)) {
+            if (
+              !isCircadianShortEventsShiftPreview() &&
+              (areEventTextLabelsVisibleAtCurrentZoom(start, end) ||
+                areEventNameLabelsVisibleAtCurrentZoom(start, end))
+            ) {
               const pseudoLineEvent = {
                 summary: (line.label && String(line.label).trim()) || null,
                 title: (line.label && String(line.label).trim()) || null
@@ -4972,7 +5023,11 @@
         );
         shortRoot.add(marker);
 
-        if (areEventTextLabelsVisibleAtCurrentZoom(start, end) || areEventNameLabelsVisibleAtCurrentZoom(start, end)) {
+        if (
+          !isCircadianShortEventsShiftPreview() &&
+          (areEventTextLabelsVisibleAtCurrentZoom(start, end) ||
+            areEventNameLabelsVisibleAtCurrentZoom(start, end))
+        ) {
           const pseudoLineEvent = {
             summary: (line.label && String(line.label).trim()) || null,
             title: (line.label && String(line.label).trim()) || null
@@ -5290,6 +5345,7 @@
           }
         }
         if (placed < 0) {
+          if (laneEnds.length >= MAX_STE_PARALLEL_LANES) continue;
           placed = laneEnds.length;
           laneEnds.push(item.e.getTime());
         }
@@ -5298,6 +5354,8 @@
       }
       globalMaxLanes = Math.max(globalMaxLanes, laneEnds.length);
     });
+
+    globalMaxLanes = Math.min(MAX_STE_PARALLEL_LANES, globalMaxLanes);
 
     const CR = global.CircadianRenderer;
     const baseHand = CR && typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
@@ -5315,10 +5373,39 @@
       const layout = getDailySkySteAnnulusLayout(baseHand, globalMaxLanes);
       const step = layout.bandW + layout.gap;
 
+      function venueKey(ev) {
+        const loc = ev && ev.location != null ? String(ev.location) : '';
+        const parts = loc.split('—');
+        if (parts.length >= 2) return parts[parts.length - 1].trim() || 'Other';
+        return 'Other';
+      }
+
+      function stableHash01(s) {
+        // Tiny stable hash → [0,1). No crypto. Good enough for lane pick.
+        let h = 2166136261;
+        for (let i = 0; i < s.length; i++) {
+          h ^= s.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return ((h >>> 0) % 100000) / 100000;
+      }
+
       for (let i = 0; i < events.length; i++) {
-        const uid = eventUidForDisk(events[i], i);
-        const L = uidMaxLane.has(uid) ? uidMaxLane.get(uid) : 0;
-        const lane = Math.min(L, layout.lanes - 1);
+        const ev = events[i];
+        const uid = eventUidForDisk(ev, i);
+
+        // Venue rings: Hub inner, Loft next, others float in remaining space.
+        const v = venueKey(ev);
+        let lane;
+        if (v === 'The Hub') lane = 0;
+        else if (v === 'The Loft') lane = 1;
+        else {
+          const maxOtherStart = Math.max(2, layout.lanes - 2);
+          const pick = stableHash01(v + '|' + uid);
+          lane = 2 + Math.floor(pick * maxOtherStart);
+        }
+        lane = Math.max(0, Math.min(layout.lanes - 1, lane));
+
         const rIn = layout.innerR + lane * step;
         const rOut = rIn + layout.bandW;
         const rMid = (rIn + rOut) * 0.5;
@@ -5436,6 +5523,7 @@
       helixZoom: isCircadianHelixZoom(zl),
       circadianState: circ,
       shortEventScope: scope,
+      shiftPreviewSte: isCircadianShortEventsShiftPreview(),
       selectedDate: sel ? sel.toISOString() : null,
       stackPlacement: isHelixZoomShortStackFrame(),
       attachToSceneContentGroup: shouldAttachShortCircadianToWorldGroup(),
