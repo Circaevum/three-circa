@@ -42,6 +42,10 @@ let orbitLines = [];
 let worldlines = [];
 let timeMarkers = [];
 let currentZoom = 5;
+// Set true while createPlanets() runs and after it refreshes event layers, so
+// callers that invoke createPlanets() can skip an immediately-following
+// refreshAllEventLayers() (a full event rebuild) instead of doing it twice.
+let eventsRefreshedDuringCreatePlanets = false;
 let isDragging = false;
 let previousMousePosition = { x: 0, y: 0 };
 let cameraRotation = { x: Math.PI / 6, y: 0 };
@@ -3492,6 +3496,7 @@ function applyLightTimeScrubUpdate(zoomLevel) {
 }
 
 function createPlanets(zoomLevel) {
+    eventsRefreshedDuringCreatePlanets = false;
     // Ensure Worldlines is initialized before use
     if (typeof Worldlines !== 'undefined' && typeof Worldlines.init === 'function') {
         // Initialize Worldlines if not already done
@@ -4017,6 +4022,7 @@ function createPlanets(zoomLevel) {
     if (typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshAllEventLayers === 'function') {
         try {
             window.circaevumGL.refreshAllEventLayers();
+            eventsRefreshedDuringCreatePlanets = true;
         } catch (err) { /* GL may be disposing */ }
     }
     if (typeof window !== 'undefined' && window.circaevumGL) {
@@ -5253,7 +5259,8 @@ function initControls() {
         
         const key = parseInt(e.key);
         if (key >= 0 && key <= 9) {
-            setZoomLevel(key);
+            if (e.repeat) return;
+            if (key !== currentZoom) setZoomLevel(key);
         } else if (e.key.toLowerCase() === 'w') {
             if (e.repeat) return;
             const nextZoom = getNextKeyboardZoomLevel(1);
@@ -5723,7 +5730,7 @@ function rebuildSceneAndEventsForFlattenChange() {
     if (typeof createPlanets === 'function') {
         createPlanets(currentZoom);
     }
-    if (typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshAllEventLayers === 'function') {
+    if (!eventsRefreshedDuringCreatePlanets && typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshAllEventLayers === 'function') {
         try {
             window.circaevumGL.refreshAllEventLayers();
         } catch (err) { /* GL may be disposing */ }
@@ -6908,7 +6915,7 @@ function setZoomLevel(level, overrideDate) {
     updateFlattenIconVisibility();
 
     const gl = typeof window !== 'undefined' ? window.circaevumGL : null;
-    if (gl && typeof gl.refreshAllEventLayers === 'function') {
+    if (!eventsRefreshedDuringCreatePlanets && gl && typeof gl.refreshAllEventLayers === 'function') {
         const wasMonthPlus = prevZoom >= 5;
         const isMonthPlus = level >= 5;
         if (wasMonthPlus !== isMonthPlus || isMonthPlus) {

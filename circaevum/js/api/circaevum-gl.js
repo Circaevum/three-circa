@@ -1344,7 +1344,7 @@ class CircaevumGL {
 
     const objects = this._layerObjects.get(layerId);
     function disposeObject(o) {
-      if (o.geometry) o.geometry.dispose();
+      if (o.geometry && !(o.geometry.userData && o.geometry.userData.__sharedCached)) o.geometry.dispose();
       if (o.material) {
         if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
         else o.material.dispose();

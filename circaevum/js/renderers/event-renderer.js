@@ -31,6 +31,56 @@
   /** Sample-data cap for generated parallel stacks (see edge-esmeralda-week1-samples.js). */
   const MAX_STE_PARALLEL_LANES = 4;
 
+  /**
+   * Adaptive tube level-of-detail. Each duration event builds two TubeGeometry
+   * outlines (inner+outer); with "all events" on, a zoom hop rebuilds hundreds of
+   * them and the TubeGeometry/Frenet-frame work (three.js `mn`/`Ro`) dominates the
+   * frame. Below the budget, quality stays at 1 (no visible change). Above it,
+   * tube segment counts fall off so total geometry work stays roughly bounded.
+   */
+  const EVENT_TUBE_BUDGET = 80;
+  const EVENT_TUBE_QUALITY_FLOOR = 0.34;
+  let _eventTubeQualityScale = 1;
+
+  /**
+   * Temporal distance LOD: events whose time is far from SELECTED TIME draw their
+   * outlines as cheap THREE.Line polylines instead of TubeGeometry (which runs
+   * expensive Frenet-frame math — the `mn`/`Ro` hotspot). Far events are already
+   * desaturated/de-emphasized, so a thin line reads fine. Threshold = this many
+   * "in-focus half spans" (zoom-aware) away from selected time. Set to 0/Infinity
+   * to disable. `_eventOutlineLineMode` is set per event before its tubes build.
+   */
+  const EVENT_LINE_LOD_FAR_FACTOR = 3;
+  let _eventOutlineLineMode = false;
+  function computeEventTubeQualityScale(eventCount) {
+    const n = Math.max(1, eventCount | 0);
+    if (n <= EVENT_TUBE_BUDGET) return 1;
+    const s = Math.sqrt(EVENT_TUBE_BUDGET / n);
+    return Math.max(EVENT_TUBE_QUALITY_FLOOR, Math.min(1, s));
+  }
+
+  /**
+   * Event-marker shapes (sphere + its edges, or disk circle/ring) are identical
+   * per shape — only position/scale/color differ. Building SphereGeometry +
+   * EdgesGeometry per marker is the `Ga` hotspot. Build each unit geometry once,
+   * flag it __sharedCached, and reuse it (mesh is scaled by radius). Disposal in
+   * _removeLayerObjects / disposeOutlineNode skips flagged geometries so they
+   * persist across rebuilds.
+   */
+  const _sharedMarkerGeoCache = new Map();
+  function getSharedMarkerGeometry(key, build) {
+    let g = _sharedMarkerGeoCache.get(key);
+    if (!g) {
+      g = build();
+      if (g) {
+        g.userData = g.userData || {};
+        g.userData.__sharedCached = true;
+      }
+      _sharedMarkerGeoCache.set(key, g);
+    }
+    return g;
+  }
+
   /** Multi-day ribbon fills at or above this span use a radial alpha gradient (opaque at Sun-ward inner edge, fading toward outer). */
   const LONG_EVENT_RIBBON_RADIAL_GRADIENT_MIN_DAYS = 1;
   /** Outer-edge fill alpha = fillOpacity × this (inner edge uses full fillOpacity). Outlines are unchanged. */
@@ -431,7 +481,7 @@
 
   function disposeOutlineNode(node) {
     if (!node) return;
-    if (node.geometry) node.geometry.dispose();
+    if (node.geometry && !(node.geometry.userData && node.geometry.userData.__sharedCached)) node.geometry.dispose();
     if (node.material) {
       if (Array.isArray(node.material)) node.material.forEach((m) => m.dispose());
       else node.material.dispose();
@@ -2706,7 +2756,7 @@
     const root = new THREE.Group();
     const outerR = size * 0.94;
     if (diskFrame && diskFrame.quaternion) {
-      const fillGeo = new THREE.CircleGeometry(outerR * 0.88, 20);
+      const fillGeo = getSharedMarkerGeometry('disk-circle', () => new THREE.CircleGeometry(0.88, 20));
       const fill = new THREE.Mesh(
         fillGeo,
         new THREE.MeshBasicMaterial({
@@ -2717,7 +2767,8 @@
           side: THREE.DoubleSide
         })
       );
-      const rimGeo = new THREE.RingGeometry(outerR * 0.72, outerR, 20);
+      fill.scale.setScalar(outerR);
+      const rimGeo = getSharedMarkerGeometry('disk-ring', () => new THREE.RingGeometry(0.72, 1, 20));
       const rim = new THREE.Mesh(
         rimGeo,
         new THREE.MeshBasicMaterial({
@@ -2728,12 +2779,13 @@
           side: THREE.DoubleSide
         })
       );
+      rim.scale.setScalar(outerR);
       rim.renderOrder = 2;
       root.add(fill);
       root.add(rim);
       root.quaternion.copy(diskFrame.quaternion);
     } else {
-      const geo = new THREE.SphereGeometry(outerR, 14, 14);
+      const geo = getSharedMarkerGeometry('sphere', () => new THREE.SphereGeometry(1, 14, 14));
       const fill = new THREE.Mesh(
         geo,
         new THREE.MeshBasicMaterial({
@@ -2744,8 +2796,9 @@
           side: THREE.DoubleSide
         })
       );
+      fill.scale.setScalar(outerR);
       const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(geo),
+        getSharedMarkerGeometry('sphere-edges', () => new THREE.EdgesGeometry(new THREE.SphereGeometry(1, 14, 14))),
         new THREE.LineBasicMaterial({
           color: colorHex,
           transparent: true,
@@ -2753,6 +2806,7 @@
           depthWrite: false
         })
       );
+      edges.scale.setScalar(outerR);
       edges.renderOrder = 2;
       root.add(fill);
       root.add(edges);
@@ -3599,6 +3653,21 @@
     const THREE = global.THREE;
     const nPts = flat.length / 3;
     if (nPts < 2) return null;
+    if (_eventOutlineLineMode) {
+      const lineGeo = new THREE.BufferGeometry();
+      lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3));
+      const line = new THREE.Line(
+        lineGeo,
+        new THREE.LineBasicMaterial({
+          color: colorHex,
+          transparent: true,
+          opacity: opacity,
+          depthWrite: false
+        })
+      );
+      line.renderOrder = renderOrder;
+      return line;
+    }
     let r = getRibbonOutlineTubeRadius(earthDist, layerConfig);
     if (radiusScale != null && isFinite(radiusScale) && radiusScale > 0) r *= radiusScale;
     if (nPts === 2) {
@@ -3612,8 +3681,11 @@
         points.push(new THREE.Vector3(flat[i], flat[i + 1], flat[i + 2]));
       }
       const curve = new THREE.CatmullRomCurve3(points);
-      const tubularSegments = Math.max(8, Math.min(160, (nPts - 1) * 4));
-      const geo = new THREE.TubeGeometry(curve, tubularSegments, r, 5, false);
+      const q = _eventTubeQualityScale;
+      const maxTub = Math.max(24, Math.round(160 * q));
+      const tubularSegments = Math.max(6, Math.min(maxTub, Math.round((nPts - 1) * 4 * q)));
+      const radialSegments = q < 0.55 ? 3 : (q < 0.8 ? 4 : 5);
+      const geo = new THREE.TubeGeometry(curve, tubularSegments, r, radialSegments, false);
       const mat = new THREE.MeshBasicMaterial({
         color: colorHex,
         transparent: true,
@@ -3720,6 +3792,26 @@
     if (z >= 5) return 30 * MS_PER_DAY;
     if (z >= 3) return 120 * MS_PER_DAY;
     return 365 * MS_PER_DAY;
+  }
+
+  /**
+   * True when an event is far enough from SELECTED TIME (and "now") that its
+   * outline should render as a cheap line instead of a tube. Distance is measured
+   * against the zoom-aware in-focus half span.
+   */
+  function eventOutlineShouldUseLine(start, end) {
+    if (!(EVENT_LINE_LOD_FAR_FACTOR > 0) || !isFinite(EVENT_LINE_LOD_FAR_FACTOR)) return false;
+    const anchor = getEventTemporalAnchorMs(start, end);
+    if (!isFinite(anchor)) return false;
+    const selFn = getSelectedDateTimeFn();
+    const selMs = selFn ? selFn().getTime() : NaN;
+    const nowMs = Date.now();
+    const d = Math.min(
+      isFinite(selMs) ? Math.abs(anchor - selMs) : Infinity,
+      Math.abs(anchor - nowMs)
+    );
+    const half = getFocusHalfSpanMsForZoom(getZoomLevelForEvents());
+    return d > half * EVENT_LINE_LOD_FAR_FACTOR;
   }
 
   function getSelectedHourLocalBounds(ref) {
@@ -4195,21 +4287,21 @@
     const markerRoot = new THREE.Group();
     const outerR = markerR * 0.94;
     if (diskFrame && diskFrame.quaternion) {
-      const fillGeo = new THREE.CircleGeometry(outerR * 0.88, 20);
-      markerRoot.add(
-        new THREE.Mesh(
-          fillGeo,
-          new THREE.MeshBasicMaterial({
-            color,
-            transparent: true,
-            opacity: fillOp,
-            depthWrite: false,
-            side: THREE.DoubleSide
-          })
-        )
+      const fillGeo = getSharedMarkerGeometry('disk-circle', () => new THREE.CircleGeometry(0.88, 20));
+      const fillDisk = new THREE.Mesh(
+        fillGeo,
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: fillOp,
+          depthWrite: false,
+          side: THREE.DoubleSide
+        })
       );
+      fillDisk.scale.setScalar(outerR);
+      markerRoot.add(fillDisk);
       const rim = new THREE.Mesh(
-        new THREE.RingGeometry(outerR * 0.72, outerR, 20),
+        getSharedMarkerGeometry('disk-ring', () => new THREE.RingGeometry(0.72, 1, 20)),
         new THREE.MeshBasicMaterial({
           color,
           transparent: true,
@@ -4218,11 +4310,12 @@
           side: THREE.DoubleSide
         })
       );
+      rim.scale.setScalar(outerR);
       rim.renderOrder = 3;
       markerRoot.add(rim);
       markerRoot.quaternion.copy(diskFrame.quaternion);
     } else {
-      const geo = new THREE.SphereGeometry(outerR, 16, 16);
+      const geo = getSharedMarkerGeometry('sphere16', () => new THREE.SphereGeometry(1, 16, 16));
       const fillMesh = new THREE.Mesh(
         geo,
         new THREE.MeshBasicMaterial({
@@ -4233,8 +4326,9 @@
           side: THREE.DoubleSide
         })
       );
+      fillMesh.scale.setScalar(outerR);
       const edgeLines = new THREE.LineSegments(
-        new THREE.EdgesGeometry(geo),
+        getSharedMarkerGeometry('sphere16-edges', () => new THREE.EdgesGeometry(new THREE.SphereGeometry(1, 16, 16))),
         new THREE.LineBasicMaterial({
           color,
           transparent: true,
@@ -4242,6 +4336,7 @@
           depthWrite: false
         })
       );
+      edgeLines.scale.setScalar(outerR);
       edgeLines.renderOrder = 3;
       markerRoot.add(fillMesh);
       markerRoot.add(edgeLines);
@@ -4292,6 +4387,7 @@
     if (!end || end <= start) {
       return createEventMarker(event, layerConfig, radius);
     }
+    _eventOutlineLineMode = eventOutlineShouldUseLine(start, end);
 
     const midTitleAlong01 =
       layerConfig && layerConfig._midTitleAlongSpan != null && !isNaN(layerConfig._midTitleAlongSpan)
@@ -4741,6 +4837,8 @@
       : getEarthDistance();
     const objects = [];
     if (!lines || !Array.isArray(lines) || !layerConfig) return objects;
+    _eventTubeQualityScale = computeEventTubeQualityScale(lines.length);
+    _eventOutlineLineMode = false;
     const group = sceneContentGroup || null;
     const worldGroup = worldSpaceGroup || null;
     const lineZl = getZoomLevelForEvents();
@@ -5439,6 +5537,8 @@
     const objects = [];
     if (!events || !layerConfig) return objects;
     ensureSceneGeometryInitialized();
+    _eventTubeQualityScale = computeEventTubeQualityScale(events.length);
+    _eventOutlineLineMode = false;
     const group = sceneContentGroup || null;
     const worldGroup = worldSpaceGroup || null;
     const byCategory = layerConfig.layerStylesByCategory || {};
