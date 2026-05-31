@@ -56,6 +56,9 @@ let targetFocusPoint = null; // Initialized in initScene after THREE is loaded
 let targetCameraDistance = 800;
 let currentCameraDistance = 800;
 let cameraTransitionSpeed = 0.15; // Camera transition speed for zoom level changes
+/** Default perspective FOV. Zoom 0 narrows toward MIN_MOMENT_FOV for telephoto inspection once the dolly is pinned at the globe. */
+const BASE_CAMERA_FOV = 75;
+const MIN_MOMENT_FOV = 14;
 /** 'dark' | 'light' | 'sky' — sky uses light chrome (body.light-mode) plus sky-theme tints and a blue scene background. */
 let appearanceTheme = 'dark';
 /** True for light or sky (readable orbit lines, bright UI chrome). */
@@ -1448,12 +1451,21 @@ function getThreeNamespace() {
 }
 
 /** Same half-span as `nearbyHalfSpanMs` in `yang/web/index.html` (event list time window). */
-function getEventListHalfSpanMs(zoomLevel) {
+function getEventListHalfSpanMs(zoomLevel, refDate) {
     const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+    if (z === 7 && typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
+        const ref =
+            refDate instanceof Date && !isNaN(refDate.getTime())
+                ? refDate
+                : typeof getSelectedDateTime === 'function'
+                  ? getSelectedDateTime()
+                  : new Date();
+        const b = MoonMechanics.fullMoonBoundsAroundRef(ref);
+        return Math.max(EVENT_LIST_MS_PER_DAY, (b.t1 - b.t0) / 2);
+    }
     if (z === 0) return EVENT_LIST_MS_PER_DAY / 24 / 2;
     if (z >= 9) return EVENT_LIST_MS_PER_DAY;
     if (z >= 8) return 2 * EVENT_LIST_MS_PER_DAY;
-    if (z >= 7) return 7 * EVENT_LIST_MS_PER_DAY;
     if (z >= 5) return 30 * EVENT_LIST_MS_PER_DAY;
     if (z >= 3) return 120 * EVENT_LIST_MS_PER_DAY;
     return 365 * EVENT_LIST_MS_PER_DAY;
@@ -1468,7 +1480,18 @@ function getListContextDiscTimeBoundsMs(zoomLevel, refDate) {
             : typeof getSelectedDateTime === 'function'
               ? getSelectedDateTime()
               : new Date();
-    const halfMs = getEventListHalfSpanMs(z);
+    if (z === 7 && typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
+        const b = MoonMechanics.fullMoonBoundsAroundRef(ref);
+        let t0 = b.t0;
+        let t1 = b.t1;
+        const y0 = new Date(ref.getFullYear(), 0, 1, 0, 0, 0, 0).getTime();
+        const y1 = new Date(ref.getFullYear(), 11, 31, 23, 59, 59, 999).getTime();
+        t0 = Math.max(t0, y0);
+        t1 = Math.min(t1, y1);
+        if (t1 < t0) t1 = t0;
+        return { t0, t1, ref };
+    }
+    const halfMs = getEventListHalfSpanMs(z, ref);
     let t0 = ref.getTime() - halfMs;
     let t1 = ref.getTime() + halfMs;
     if (z === 0) {
@@ -1502,6 +1525,10 @@ function getListContextDiscArcTimeBoundsMs(zoomLevel, refDate) {
         return { t0: start.getTime(), t1: start.getTime() + dayMs / 24, ref };
     }
     if (z === 7) {
+        if (typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
+            const b = MoonMechanics.fullMoonBoundsAroundRef(ref);
+            return { t0: b.t0, t1: b.t1, ref };
+        }
         const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), 0, 0, 0, 0);
         start.setDate(start.getDate() - start.getDay());
         return { t0: start.getTime(), t1: start.getTime() + 7 * dayMs - 1, ref };
@@ -2094,6 +2121,64 @@ function applySkyAnnulusVertexColors(geom, ri, ro, isLight, edgeColorHex) {
 
 function isEarthDaylightSkyZoom(zoomLevel) {
     return zoomLevel === 0 || zoomLevel === 8 || zoomLevel === 9;
+}
+
+/** Sky zooms show all timeseries; month/week show sleep on the selected day only. */
+function isTimeseriesArcZoom(zoomLevel) {
+    return isEarthDaylightSkyZoom(zoomLevel) || zoomLevel === 5 || zoomLevel === 7;
+}
+
+function shouldAttachTimeseriesArcGroup(zoomLevel) {
+    if (!isTimeseriesArcZoom(zoomLevel)) return false;
+    if (isEarthDaylightSkyZoom(zoomLevel)) return true;
+    return typeof circadianState !== 'undefined' && circadianState !== 'off';
+}
+
+/**
+ * Timeseries-event arcs (Garmin HR/sleep, ...) flow in through the normal event ingest, which can
+ * arrive after createPlanets. Lazily attach the arc group as soon as data exists at a sky zoom,
+ * without forcing a full scene rebuild. createPlanets clears + recreates it on the next rebuild.
+ */
+function ensureTimeseriesArcGroup() {
+    if (typeof TimeseriesRenderer === 'undefined' || typeof TimeseriesRenderer.hasData !== 'function') return;
+    if (typeof sceneContentGroup === 'undefined' || !sceneContentGroup) return;
+    if (!shouldAttachTimeseriesArcGroup(currentZoom)) return;
+    if (!TimeseriesRenderer.hasData()) return;
+    for (let i = 0; i < circadianWorldlines.length; i++) {
+        const ln = circadianWorldlines[i];
+        if (ln && ln.userData && ln.userData.circadianTimeseriesAnim) return; // already attached
+    }
+    const tsGroup = TimeseriesRenderer.createGroup();
+    if (tsGroup) {
+        tsGroup.userData.spanDays = circadianSpanDaysForZoom(currentZoom);
+        sceneContentGroup.add(tsGroup);
+        circadianWorldlines.push(tsGroup);
+    }
+}
+
+/** Faint ATC band guide rings on day disks (sky zooms). */
+function ensureAtcGuideGroup() {
+    if (typeof AtcBand === 'undefined' || typeof AtcBand.createGuideGroup !== 'function') return;
+    if (typeof sceneContentGroup === 'undefined' || !sceneContentGroup) return;
+    if (!isEarthDaylightSkyZoom(currentZoom)) return;
+    if (typeof circadianState !== 'undefined' && circadianState === 'off') return;
+    for (let i = circadianWorldlines.length - 1; i >= 0; i--) {
+        const ln = circadianWorldlines[i];
+        if (ln && ln.userData && ln.userData.atcGuideAnim) {
+            if (ln.userData.atcGuideVersion === 3) return;
+            if (sceneContentGroup) sceneContentGroup.remove(ln);
+            circadianWorldlines.splice(i, 1);
+            break;
+        }
+    }
+    const currentHeight = typeof selectedDateHeight !== 'undefined' && !isNaN(selectedDateHeight)
+        ? selectedDateHeight
+        : currentDateHeight;
+    const guideGroup = AtcBand.createGuideGroup(currentHeight, {});
+    if (guideGroup) {
+        sceneContentGroup.add(guideGroup);
+        circadianWorldlines.push(guideGroup);
+    }
 }
 
 function skySmoothstep(edge0, edge1, x) {
@@ -3585,6 +3670,12 @@ function createPlanets(zoomLevel) {
         if (sceneContentGroup) sceneContentGroup.remove(obj);
     });
     circadianWorldlines = [];
+    if (typeof TimeseriesRenderer !== 'undefined' && typeof TimeseriesRenderer.resetRefreshCache === 'function') {
+        TimeseriesRenderer.resetRefreshCache();
+    }
+    if (typeof AtcBand !== 'undefined' && typeof AtcBand.resetGuideCache === 'function') {
+        AtcBand.resetGuideCache();
+    }
     circadianHelixMarkerGroups.forEach(obj => {
         if (sceneContentGroup) sceneContentGroup.remove(obj);
     });
@@ -4004,6 +4095,31 @@ function createPlanets(zoomLevel) {
                 sceneContentGroup.add(diskGroup);
                 circadianWorldlines.push(diskGroup);
             }
+        }
+    }
+
+    // Timeseries-event arcs (e.g. Garmin HR/sleep) on day disks.
+    // Sky zooms (0/8/9): HR + sleep. Month/week (5/7): selected-day sleep only (refreshGroup filters).
+    if (shouldAttachTimeseriesArcGroup(zoomLevel) &&
+        typeof TimeseriesRenderer !== 'undefined' && TimeseriesRenderer.hasData && TimeseriesRenderer.hasData()) {
+        const tsGroup = TimeseriesRenderer.createGroup();
+        if (tsGroup) {
+            tsGroup.userData.spanDays = circadianSpanDaysForZoom(zoomLevel);
+            sceneContentGroup.add(tsGroup);
+            circadianWorldlines.push(tsGroup);
+        }
+    }
+
+    if (isEarthDaylightSkyZoom(zoomLevel) &&
+        typeof circadianState !== 'undefined' && circadianState !== 'off' &&
+        typeof AtcBand !== 'undefined' && typeof AtcBand.createGuideGroup === 'function') {
+        const currentHeight = typeof selectedDateHeight !== 'undefined' && !isNaN(selectedDateHeight)
+            ? selectedDateHeight
+            : currentDateHeight;
+        const guideGroup = AtcBand.createGuideGroup(currentHeight, {});
+        if (guideGroup) {
+            sceneContentGroup.add(guideGroup);
+            circadianWorldlines.push(guideGroup);
         }
     }
 
@@ -4892,35 +5008,8 @@ function initControls() {
         return false;
     }
 
-    function trySelectEventObjectAtClientPoint(clientX, clientY, options) {
-        if (!renderer || !camera || !sceneContentGroup) return false;
-        if (!options || !options.skipLagrangeL1) {
-            if (tryPickLagrangeL1DayNavigate(clientX, clientY)) return true;
-        }
-        if (tryPickArtemisMissionTrajectory(clientX, clientY)) return true;
-        const rect = renderer.domElement.getBoundingClientRect();
-        if (!rect.width || !rect.height) return false;
-        pickPointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-        pickPointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-        pickRaycaster.setFromCamera(pickPointer, camera);
-        const hits = pickRaycaster.intersectObjects(sceneContentGroup.children, true);
-        const eventHit = hits.find((hit) => {
-            let cur = hit.object;
-            while (cur) {
-                if (cur.userData && cur.userData.shortEventPickable === false) return false;
-                if (cur.userData && cur.userData.type === 'EventObject' && cur.userData.vevent) return true;
-                cur = cur.parent;
-            }
-            return false;
-        });
-        if (!eventHit) return false;
-        let target = eventHit.object;
-        while (target && !(target.userData && target.userData.type === 'EventObject' && target.userData.vevent)) {
-            target = target.parent;
-        }
-        if (!target || !target.userData || !target.userData.vevent) return false;
-        if (target.userData.shortEventPickable === false) return false;
-        const ve = target.userData.vevent;
+    function finishEventPickFromVevent(ve, layerId, options) {
+        if (!ve) return false;
         let startRaw = ve.start || ve.startTime || ve.date || ve.dtstart?.dateTime || ve.dtstart?.date || null;
         let endRaw = ve.end || ve.endTime || ve.dtend?.dateTime || ve.dtend?.date || null;
         if (!startRaw && typeof ve.getStartDate === 'function') {
@@ -4934,15 +5023,15 @@ function initControls() {
         const start = startRaw instanceof Date ? startRaw : (startRaw ? new Date(startRaw) : null);
         const end = endRaw instanceof Date ? endRaw : (endRaw ? new Date(endRaw) : null);
         if (!start || isNaN(start.getTime())) return false;
-        if (target.userData.shortEventPickable === false) return false;
+        const skipShortPick = !!(options && options.skipShortEventPickCheck);
         if (
+            !skipShortPick &&
             typeof EventRenderer !== 'undefined' &&
             typeof EventRenderer.isShortEventPointerPickableAtCurrentZoom === 'function' &&
             !EventRenderer.isShortEventPointerPickableAtCurrentZoom(start, end)
         ) {
             return false;
         }
-        const layerId = target.userData.layerId;
         const pickUid = ve.uid != null ? ve.uid : ve.id;
         const pickUidStr = pickUid != null ? String(pickUid).trim() : '';
         if (typeof window.setCircaevumSelectedLayerId === 'function' && layerId) {
@@ -4963,7 +5052,11 @@ function initControls() {
             }
             glPick.setEventHighlight(layerId, pickUidStr);
         }
-        if (typeof window.navigateToEvent === 'function') window.navigateToEvent(start, end);
+        if (options && options.preferSleepStartNav && typeof window.smoothNavigateToTime === 'function') {
+            window.smoothNavigateToTime(start, 880);
+        } else if (typeof window.navigateToEvent === 'function') {
+            window.navigateToEvent(start, end);
+        }
         if (useMobileSheet && typeof window.showMobileEventDetailSheet === 'function') {
             window.showMobileEventDetailSheet({
                 vevent: ve,
@@ -4989,6 +5082,67 @@ function initControls() {
             requestAnimationFrame(scrollToRow);
         }
         return true;
+    }
+
+    function trySelectEventObjectAtClientPoint(clientX, clientY, options) {
+        if (!renderer || !camera || !sceneContentGroup) return false;
+        if (!options || !options.skipLagrangeL1) {
+            if (tryPickLagrangeL1DayNavigate(clientX, clientY)) return true;
+        }
+        if (tryPickArtemisMissionTrajectory(clientX, clientY)) return true;
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (!rect.width || !rect.height) return false;
+        pickPointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        pickPointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+        pickRaycaster.setFromCamera(pickPointer, camera);
+        const hits = pickRaycaster.intersectObjects(sceneContentGroup.children, true);
+        const tsHit = hits.find((hit) => {
+            let cur = hit.object;
+            while (cur) {
+                if (cur.userData && cur.userData.type === 'TimeseriesObject' && cur.userData.vevent) return true;
+                cur = cur.parent;
+            }
+            return false;
+        });
+        if (tsHit) {
+            let target = tsHit.object;
+            while (target && !(target.userData && target.userData.type === 'TimeseriesObject' && target.userData.vevent)) {
+                target = target.parent;
+            }
+            if (target && target.userData && target.userData.vevent) {
+                return finishEventPickFromVevent(
+                    target.userData.vevent,
+                    target.userData.layerId,
+                    {
+                        skipShortEventPickCheck: true,
+                        preferSleepStartNav: target.userData.timeseriesMetric === 'sleepStage'
+                    }
+                );
+            }
+        }
+        const eventHit = hits.find((hit) => {
+            let cur = hit.object;
+            // Wide transparent label/text quads must never steal a click from the
+            // event the user is actually pointing at — skip them so the colored
+            // ribbon/marker geometry behind resolves instead.
+            if (cur && cur.userData && typeof cur.userData.type === 'string' && /Label$/.test(cur.userData.type)) {
+                return false;
+            }
+            while (cur) {
+                if (cur.userData && cur.userData.shortEventPickable === false) return false;
+                if (cur.userData && cur.userData.type === 'EventObject' && cur.userData.vevent) return true;
+                cur = cur.parent;
+            }
+            return false;
+        });
+        if (!eventHit) return false;
+        let target = eventHit.object;
+        while (target && !(target.userData && target.userData.type === 'EventObject' && target.userData.vevent)) {
+            target = target.parent;
+        }
+        if (!target || !target.userData || !target.userData.vevent) return false;
+        if (target.userData.shortEventPickable === false) return false;
+        return finishEventPickFromVevent(target.userData.vevent, target.userData.layerId);
     }
 
     // Mouse events for desktop
@@ -5344,6 +5498,25 @@ function initControls() {
     // Mouse wheel zoom within current zoom level (distance dolly; [ ] / mobile buttons change zoom band)
     renderer.domElement.addEventListener('wheel', (e) => {
         e.preventDefault();
+        const zoomIn = e.deltaY < 0;
+        // Zoom 0 (Moment): the dolly bottoms out at the globe standoff, so extra
+        // zoom-in scroll there is dead. Convert it into FOV magnification
+        // (telephoto) for fine inspection, and unwind FOV before pulling back out.
+        if (currentZoom === 0 && camera) {
+            const earthMesh = planetMeshes.find((p) => p.userData && p.userData.name === 'Earth');
+            const standoff = resolveEarthGlobeSurfaceRadius(earthMesh) + 0.02;
+            const atWall = targetCameraDistance <= standoff + 1e-3;
+            if (zoomIn && atWall) {
+                camera.fov = Math.max(MIN_MOMENT_FOV, camera.fov * 0.9);
+                camera.updateProjectionMatrix();
+                return;
+            }
+            if (!zoomIn && camera.fov < BASE_CAMERA_FOV - 1e-3) {
+                camera.fov = Math.min(BASE_CAMERA_FOV, camera.fov / 0.9);
+                camera.updateProjectionMatrix();
+                return;
+            }
+        }
         const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
         targetCameraDistance = clampCameraDistanceForZoom(currentZoom, targetCameraDistance * zoomFactor);
         if (isEarthZoomRig(currentZoom)) {
@@ -6645,7 +6818,7 @@ function clampCameraDistanceForZoom(zoomLevel, dist) {
     const config = ZOOM_LEVELS[zoomLevel];
     const base = config && config.distance ? config.distance : dist;
     if (zoomLevel === 0) {
-        return Math.max(base * 0.2, Math.min(base * 6, dist));
+        return Math.max(base * 0.035, Math.min(base * 6, dist));
     }
     if (zoomLevel === 9) {
         return Math.max(base * 0.25, Math.min(base * 4.5, dist));
@@ -6667,7 +6840,7 @@ function clampPolarCameraOutsideEarth(offsetFromFocus, focus) {
     const cfgDist = cfg && cfg.distance ? cfg.distance : 4.25;
 
     if (polarRig) {
-        const minGlobeStandoff = r + (momentZoom ? 0.3 : 0.5);
+        const minGlobeStandoff = r + (momentZoom ? 0.02 : 0.5);
         const maxDist = cfgDist * (momentZoom ? 6 : 4.5);
         const targetLen = Math.max(minGlobeStandoff, Math.min(maxDist, wheelDist));
         if (offsetFromFocus.lengthSq() < 1e-10) {
@@ -6862,6 +7035,12 @@ function setZoomLevel(level, overrideDate) {
     
     // Set target camera distance for smooth transition
     targetCameraDistance = config.distance;
+
+    // Unwind any Zoom-0 telephoto magnification when changing zoom band.
+    if (camera && Math.abs(camera.fov - BASE_CAMERA_FOV) > 1e-3) {
+        camera.fov = BASE_CAMERA_FOV;
+        camera.updateProjectionMatrix();
+    }
     
     const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
     document.getElementById('current-zoom').textContent = config.name;
@@ -7651,6 +7830,7 @@ function animate(time, frame) {
     }
     currentCircadianStraightenAmount +=
         (circadianStraightenTarget - currentCircadianStraightenAmount) * 0.08;
+    ensureTimeseriesArcGroup();
     if (typeof CircadianRenderer !== 'undefined' && circadianWorldlines && circadianWorldlines.length) {
         const sdHel = getSelectedDateTime();
         const chHel = calculateDateHeight(
@@ -7676,6 +7856,22 @@ function animate(time, frame) {
                     currentCircadianStraightenAmount,
                     chHel,
                     ln.userData.spanDays
+                );
+            } else if (ln.userData.circadianTimeseriesAnim && typeof TimeseriesRenderer !== 'undefined' && TimeseriesRenderer.refreshGroup) {
+                TimeseriesRenderer.refreshGroup(
+                    ln,
+                    currentCircadianStraightenAmount,
+                    chHel,
+                    sdHel,
+                    ln.userData.spanDays,
+                    calculateDateHeight
+                );
+            } else if (ln.userData.atcGuideAnim && typeof AtcBand !== 'undefined' && AtcBand.refreshGuideGroup) {
+                AtcBand.refreshGuideGroup(
+                    ln,
+                    currentCircadianStraightenAmount,
+                    chHel,
+                    sdHel
                 );
             }
         });

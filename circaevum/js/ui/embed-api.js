@@ -30,6 +30,9 @@
         console.log('[Circaevum GL] Ingesting events from wrapper:', data.layerId, 'count=', data.events.length);
       } catch (e) {}
       gl.ingestEvents(data.layerId, data.events, data.options || {});
+      if (typeof TimeseriesRenderer !== 'undefined' && typeof TimeseriesRenderer.resetRefreshCache === 'function') {
+        TimeseriesRenderer.resetRefreshCache();
+      }
       if (typeof gl.refreshAllEventLayers === 'function') {
         try { gl.refreshAllEventLayers(); } catch (e2) {}
       }
@@ -91,6 +94,20 @@
       if (readySent) clearInterval(t0);
     }, 100);
     setTimeout(function() { clearInterval(t0); }, 8000);
+
+    // Notify parent when selected time changes (wrapper loads Garmin history on demand).
+    if (window.self !== window.top && window.parent.postMessage && gl && typeof gl.navigateToTime === 'function') {
+      var origNavigate = gl.navigateToTime.bind(gl);
+      gl.navigateToTime = function(date) {
+        origNavigate(date);
+        try {
+          var d = date instanceof Date ? date : new Date(date);
+          if (!isNaN(d.getTime())) {
+            window.parent.postMessage({ type: 'CIRCAEVUM_VIEW_FOCUS', focus: d.toISOString() }, '*');
+          }
+        } catch (e) {}
+      };
+    }
   }
 
   // Monkey-patch setZoomLevel to notify parent wrapper about zoom changes.

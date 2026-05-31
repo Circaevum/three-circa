@@ -229,14 +229,23 @@ const EarthGlobe = (function () {
         return null;
     }
 
-    function nearbyHalfSpanMs(zoom) {
+    function nearbyHalfSpanMs(zoom, refDate) {
         const day = 86400000;
         const hour = 3600000;
         const z = typeof zoom === 'number' && !isNaN(zoom) ? zoom : 9;
+        if (z === 7 && typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
+            const ref =
+                refDate instanceof Date && !isNaN(refDate.getTime())
+                    ? refDate
+                    : typeof getSelectedDateTime === 'function'
+                      ? getSelectedDateTime()
+                      : new Date();
+            const b = MoonMechanics.fullMoonBoundsAroundRef(ref);
+            return Math.max(day, (b.t1 - b.t0) / 2);
+        }
         if (z === 0) return hour / 2;
         if (z >= 9) return day;
         if (z >= 8) return 2 * day;
-        if (z >= 7) return 7 * day;
         if (z >= 5) return 30 * day;
         if (z >= 3) return 120 * day;
         return 365 * day;
@@ -248,7 +257,7 @@ const EarthGlobe = (function () {
             return null;
         }
         const ref = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date();
-        const halfMs = nearbyHalfSpanMs(zoomLevel);
+        const halfMs = nearbyHalfSpanMs(zoomLevel, ref);
         const t0 = ref.getTime() - halfMs;
         const t1 = ref.getTime() + halfMs;
         let best = null;

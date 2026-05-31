@@ -28,8 +28,6 @@
    * Radius = earthDist * FRAC * (outline emphasis); ~0.005 reads clearly at Earth orbit scale (~50).
    */
   const RIBBON_OUTLINE_TUBE_RADIUS_FRAC = 0.0003;
-  /** Sample-data cap for generated parallel stacks (see edge-esmeralda-week1-samples.js). */
-  const MAX_STE_PARALLEL_LANES = 4;
 
   /**
    * Adaptive tube level-of-detail. Each duration event builds two TubeGeometry
@@ -600,24 +598,55 @@
     if (zl !== 0 && zl !== 8 && zl !== 9) return true;
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    if (!isSub24HourSpan(start, evEnd)) return true;
+    if (!isSub24HourSpan(start, evEnd)) return false;
     return eventTouchesSelectedCalendarDay(start, evEnd);
   }
 
-  /** Zoom 0 / 9 (clock / moment): only STEs on the selected calendar day are shown. */
-  function isSteVisibleOnDailySkyClock(start, end) {
-    if (isCircadianShortEventsShiftPreview()) {
-      if (!start || isNaN(start.getTime())) return false;
-      const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-      if (!isSub24HourSpan(start, evEnd)) return true;
-      return true;
-    }
+  /** Moment (0) & Clock (9): hide LTE on flat day-sky disk. Day zoom (8) keeps them. */
+  function shouldHideLongTermOnDailySkySte(start, end) {
     const zl = getZoomLevelForEvents();
-    if (zl !== 0 && zl !== 9) return true;
+    if (zl !== 0 && zl !== 9) return false;
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    if (!isSub24HourSpan(start, evEnd)) return true;
+    if (isLongTermEventSpanForPlotType(start, evEnd)) return true;
+    if (durationDaysBetween(start, evEnd) >= 2) return true;
+    return false;
+  }
+
+  function isLongTermSpanForDailySky(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    return isLongTermEventSpanForPlotType(start, evEnd) || durationDaysBetween(start, evEnd) >= 2;
+  }
+
+  /** Labels, disk markers, fallback dots: selected calendar day only (Shift does not override). */
+  function isSteVisibleOnDailySkyClock(start, end) {
+    if (shouldHideLongTermOnDailySkySte(start, end)) return false;
+    const zl = getZoomLevelForEvents();
+    if (zl !== 0 && zl !== 8 && zl !== 9) return true;
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     return eventTouchesSelectedCalendarDay(start, evEnd);
+  }
+
+  /** Ribbons/lines on day-sky STE: Shift peeks off-day sub-day spans only; LTE uses day overlap rules. */
+  function shouldDrawDailySkySteGeometry(start, end) {
+    if (shouldHideLongTermOnDailySkySte(start, end)) return false;
+    const zl = getZoomLevelForEvents();
+    if (zl !== 0 && zl !== 8 && zl !== 9) return true;
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    if (isLongTermSpanForDailySky(start, evEnd)) {
+      return zl === 8 && eventTouchesSelectedCalendarDay(start, evEnd);
+    }
+    if (isCircadianShortEventsShiftPreview()) return true;
+    return eventTouchesSelectedCalendarDay(start, evEnd);
+  }
+
+  /** Skip orphan disk dots when ribbon build fails at day-sky STE zooms (0 / 8 / 9). */
+  function shouldRenderDailySkySteDiskFallbackMarker(start, end) {
+    if (isEarthDailySkyEventZoom(getZoomLevelForEvents())) return false;
+    return isSteVisibleOnDailySkyClock(start, end);
   }
 
   function markShortEventPointerPickability(root, start, end) {
@@ -769,12 +798,20 @@
 
   /** Hide events outside scoped window: Moment (0) & Clock (9) always use selected local day (even if UI scope is “year”). */
   function shouldHideCircadianShortEventForDayScope(start, end) {
-    if (isCircadianShortEventsShiftPreview()) return false;
     const zl = getZoomLevelForEvents();
     const selFn = getSelectedDateTimeFn();
     if (!selFn || !start || isNaN(start.getTime())) return false;
     const sel = selFn();
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+
+    if (shouldHideLongTermOnDailySkySte(start, evEnd)) return true;
+
+    // Day zoom: every long-term span on the selected day stays visible (all-day DATE fixes included).
+    if (zl === 8 && isLongTermSpanForDailySky(start, evEnd) && eventTouchesSelectedCalendarDay(start, evEnd)) {
+      return false;
+    }
+
+    if (isCircadianShortEventsShiftPreview()) return false;
 
     if (zl === 0) {
       const dayStart = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
@@ -785,7 +822,8 @@
     }
 
     if (isCircadianShortEventScopeYear()) {
-      if (zl === 9 || zl === 8 || zl === 7) return false;
+      // Week zoom still shows year-wide STE; day-sky STE (8/9) stays on selected day only.
+      if (zl === 7) return false;
     }
 
     if (zl === 9) {
@@ -799,13 +837,6 @@
     const circ = normalizedCircadianState();
     if (!isCircadianHelixZoom(zl) || circ === 'off') return false;
 
-    if (zl === 8) {
-      const wk = startOfLocalWeekSunday(sel);
-      if (wk) {
-        return !eventOverlapsLocalWeek(start, evEnd, wk);
-      }
-    }
-
     const dayStart = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
     const dayEnd = new Date(dayStart.getTime());
     dayEnd.setDate(dayEnd.getDate() + 1);
@@ -813,13 +844,10 @@
     return !overlap;
   }
 
-  /** Zoom 0 / 9: drop multi-day geometry outside selected day unless short-event scope is “year”. */
+  /** Zoom 0 / 8 / 9: drop geometry outside selected day unless short-event scope is “year”. */
   function shouldHideCircadianEventOutsideSelectedDayAtClockZooms(start, end) {
     const zl = getZoomLevelForEvents();
-    if (zl !== 0 && zl !== 9) return false;
-    if (zl === 9 && isCircadianShortEventScopeYear()) {
-      return false;
-    }
+    if (zl !== 0 && zl !== 8 && zl !== 9) return false;
     return shouldHideCircadianShortEventForDayScope(start, end);
   }
 
@@ -832,7 +860,7 @@
     const circ = normalizedCircadianState();
     const helixOn = isCircadianHelixZoom(zl) && circ !== 'off';
     if (!helixOn) return 1;
-    if ((zl === 7 || zl === 8 || zl === 9) && isCircadianShortEventScopeYear()) {
+    if (zl === 7 && isCircadianShortEventScopeYear()) {
       return 1;
     }
 
@@ -870,6 +898,10 @@
 
     if (zl === 9 && onSelDay && isShort) {
       mul = Math.min(1, mul * 1.38);
+    }
+
+    if (zl === 8 && onSelDay && !isShort) {
+      return Math.max(0.72, Math.min(1, mul));
     }
 
     if (!onSelDay) {
@@ -944,10 +976,13 @@
     const outerR = getDailySkySteMaxOuterRadius(hl);
     const span = Math.max(outerR - innerR, 0.05);
     const lanes = Math.max(1, peakConcurrent);
-    /** Each inter-lane slit uses this share of the annulus (not divided by lane count). */
-    const gapSharePerSlit = 0.11;
-    const gap = lanes > 1 ? span * gapSharePerSlit : 0;
-    const bandW = Math.max((span - gap * (lanes - 1)) / lanes, span * 0.04);
+    // Split the annulus into `lanes` equal steps; each step is a band + a slit.
+    // Gap is a fraction of the *step* (not the whole span) so the layout stays
+    // valid for any lane count and always fills the full radial span.
+    const step = span / lanes;
+    const gapFrac = lanes > 1 ? 0.18 : 0;
+    const gap = step * gapFrac;
+    const bandW = step - gap;
     return { innerR, outerR, bandW, gap, lanes };
   }
 
@@ -1099,7 +1134,7 @@
    * Each zoom’s “focused” spans are one step **smaller** than the view unit (sub outer / super inner).
    * Moment (0) / Clock (9): sub-day [0, 1). Century (1): (decade, century]. Decade (2): (year, decade].
    * Year (3): (quarter, year). Quarter (4): (month, quarter]. Month (5) / Lunar (6): (week, month].
-   * Week (7): (day, week]. Day (8): (0, 1d].
+   * Week (7): (day, synodic month] — window is prev full moon → next full moon. Day (8): (0, 1d].
    * Keep in sync with `yang/web/index.html` list filter.
    */
   function eventDurationEligibleForFullListAtZoom(durationDays, zl) {
@@ -1111,7 +1146,13 @@
     if (z === 3) return d > CONTEXT_QUARTER_DAYS && d < CONTEXT_YEAR_DAYS;
     if (z === 4) return d > CONTEXT_MONTH_DAYS && d <= CONTEXT_QUARTER_DAYS;
     if (z === 5 || z === 6) return d > 7 && d <= CONTEXT_MONTH_DAYS;
-    if (z === 7) return d > 1 && d <= 7;
+    if (z === 7) {
+      const synDays =
+        typeof global.MoonMechanics !== 'undefined' && global.MoonMechanics.SYNODIC_MONTH_DAYS
+          ? global.MoonMechanics.SYNODIC_MONTH_DAYS
+          : 29.530588861;
+      return d > 1 && d <= synDays;
+    }
     if (z === 8) return d > 0 && d <= 1;
     return true;
   }
@@ -1230,6 +1271,10 @@
 
   function areEventTextLabelsVisibleAtCurrentZoom(start, end) {
     if (!start || !end || !(end > start)) return false;
+    const zlLbl = getZoomLevelForEvents();
+    if (zlLbl === 8 && isLongTermSpanForDailySky(start, end) && eventTouchesSelectedCalendarDay(start, end)) {
+      return true;
+    }
     if (isSub24HourSpan(start, end) && !eventTouchesSelectedCalendarDay(start, end)) return false;
     if (!isEventLabelRadialContextSurpassesInner(start, end)) return false;
     const zl = getZoomLevelForEvents();
@@ -1244,6 +1289,10 @@
    */
   function areEventNameLabelsVisibleAtCurrentZoom(start, end) {
     if (!start || !end || !(end > start)) return false;
+    const zlLbl = getZoomLevelForEvents();
+    if (zlLbl === 8 && isLongTermSpanForDailySky(start, end) && eventTouchesSelectedCalendarDay(start, end)) {
+      return true;
+    }
     if (isSub24HourSpan(start, end) && !eventTouchesSelectedCalendarDay(start, end)) return false;
     if (!isEventLabelRadialContextSurpassesInner(start, end)) return false;
     if (areEventTextLabelsVisibleAtCurrentZoom(start, end)) return true;
@@ -2088,6 +2137,7 @@
   }
 
   function addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder, tubeRadius) {
+    if (isEarthDailySkyEventZoom(getZoomLevelForEvents())) return;
     const n = innerFlat.length / 3;
     if (n < 1) return;
     const THREE = global.THREE;
@@ -2821,13 +2871,23 @@
    * @param {Object|VEvent} event
    * @returns {Date|null}
    */
+  function parseLocalCalendarDate(dateStr) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || ''));
+    if (!m) return null;
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+  }
+
   function getEventStart(event) {
     if (typeof VEvent !== 'undefined' && event instanceof VEvent) {
       return event.getStartDate();
     }
     if (event.dtstart) {
       if (event.dtstart.dateTime) return new Date(event.dtstart.dateTime);
-      if (event.dtstart.date) return new Date(event.dtstart.date + 'T00:00:00Z');
+      if (event.dtstart.date) {
+        const local = parseLocalCalendarDate(event.dtstart.date);
+        if (local) return local;
+        return new Date(event.dtstart.date + 'T00:00:00Z');
+      }
       if (typeof event.dtstart === 'string') {
         const d = new Date(event.dtstart);
         if (!isNaN(d.getTime())) return d;
@@ -2848,7 +2908,11 @@
     }
     if (event.dtend) {
       if (event.dtend.dateTime) return new Date(event.dtend.dateTime);
-      if (event.dtend.date) return new Date(event.dtend.date + 'T00:00:00Z');
+      if (event.dtend.date) {
+        const local = parseLocalCalendarDate(event.dtend.date);
+        if (local) return local;
+        return new Date(event.dtend.date + 'T00:00:00Z');
+      }
       if (typeof event.dtend === 'string') {
         const d = new Date(event.dtend);
         if (!isNaN(d.getTime())) return d;
@@ -3323,6 +3387,9 @@
         labelRibbonIdx: idx,
         labelRibbonRadialT: ribbonLabelRadialT,
         isRibbonSurfaceLabel: true,
+        // Wide transparent text quads must not steal clicks from neighboring
+        // events; only the colored ribbon/marker geometry is pickable.
+        shortEventPickable: false,
         circadianBillboardLabel: false,
         circadianShortRibbonLabel: !!circadianBillboardNames,
         dailySkySteLabelFace: isDailySkySteLabel ? dailySkyFace : null,
@@ -3785,10 +3852,15 @@
    */
   function getFocusHalfSpanMsForZoom(zl) {
     const z = typeof zl === 'number' && !isNaN(zl) ? zl : 5;
+    if (z === 7 && typeof global.MoonMechanics !== 'undefined' && typeof global.MoonMechanics.fullMoonBoundsAroundRef === 'function') {
+      const fn = getSelectedDateTimeFn();
+      const ref = fn ? fn() : new Date();
+      const b = global.MoonMechanics.fullMoonBoundsAroundRef(ref);
+      return Math.max(MS_PER_DAY, (b.t1 - b.t0) / 2);
+    }
     if (z === 0) return MS_PER_HOUR / 2;
     if (z >= 9) return MS_PER_DAY;
     if (z >= 8) return 2 * MS_PER_DAY;
-    if (z >= 7) return 7 * MS_PER_DAY;
     if (z >= 5) return 30 * MS_PER_DAY;
     if (z >= 3) return 120 * MS_PER_DAY;
     return 365 * MS_PER_DAY;
@@ -3932,6 +4004,15 @@
   }
 
   function getLongTermContextFillFadeScales(anchorMs, spanStart, spanEnd, durationDays) {
+    if (
+      getZoomLevelForEvents() === 8 &&
+      spanStart &&
+      spanEnd &&
+      isLongTermSpanForDailySky(spanStart, spanEnd) &&
+      eventTouchesSelectedCalendarDay(spanStart, spanEnd)
+    ) {
+      return { innerScale: 1, outerScale: 1 };
+    }
     if (durationDays < 1 || getLongEventContextFadeMode() !== 'alpha') {
       return { innerScale: 1, outerScale: 1 };
     }
@@ -4221,7 +4302,12 @@
     const earthDist = getEarthDistance();
     const start = getEventStart(event);
     if (!start || isNaN(start.getTime())) return null;
-    if (shouldHideCircadianShortEventForDayScope(start, null)) return null;
+    let spanEnd = getEventEnd(event);
+    if (!spanEnd || spanEnd <= start) spanEnd = start;
+    if (shouldHideLongTermOnDailySkySte(start, spanEnd)) return null;
+    if (getZoomLevelForEvents() === 8 && isLongTermSpanForDailySky(start, spanEnd)) return null;
+    if (shouldHideCircadianShortEventForDayScope(start, spanEnd)) return null;
+    if (!isSteVisibleOnDailySkyClock(start, spanEnd)) return null;
 
     const height = typeof calculateDateHeight === 'function'
       ? calculateDateHeight(start.getFullYear(), start.getMonth(), start.getDate(), start.getHours())
@@ -4260,9 +4346,9 @@
     const explicitColor = hasExplicitEventColor(event);
     const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
     const colorBase = parseColor(explicitColor ? (event.color ?? event.colorId) : fallbackGradient);
-    let spanEnd = getEventEnd(event);
-    if (!spanEnd || spanEnd <= start) spanEnd = start;
-    const color = applyEventDisplayColor(colorBase, start.getTime(), start, spanEnd);
+    let colorEnd = getEventEnd(event);
+    if (!colorEnd || colorEnd <= start) colorEnd = start;
+    const color = applyEventDisplayColor(colorBase, start.getTime(), start, colorEnd);
     const markerR = shouldUseDayBandDotPlacement() ? 0.28 : 0.55;
     const opMul = getDailyCircadianEventOpacityMul(start, spanEnd);
     const THREE = global.THREE;
@@ -4385,6 +4471,8 @@
     const end = getEventEnd(event);
     if (!start || isNaN(start.getTime())) return null;
     if (!end || end <= start) {
+      const evEnd = end && end > start ? end : start;
+      if (shouldHideLongTermOnDailySkySte(start, evEnd)) return null;
       return createEventMarker(event, layerConfig, radius);
     }
     _eventOutlineLineMode = eventOutlineShouldUseLine(start, end);
@@ -4404,10 +4492,11 @@
       : startHeight;
 
     const durationH = durationHoursBetween(start, end);
-    if (durationH < 24) {
+    if (!shouldDrawDailySkySteGeometry(start, end)) return null;
+    const isShortSpan = !isLongTermEventSpanForPlotType(start, end) && durationDaysBetween(start, end) < 2;
+    if (isShortSpan) {
       const anchorMsShort = getEventTemporalAnchorMs(start, end);
       if (shouldHideCircadianShortEventForDayScope(start, end)) return null;
-      if (!isSteVisibleOnDailySkyClock(start, end)) return null;
       const zl = getZoomLevelForEvents();
       const straightenBlend = getCircadianStraightenBlendForEvents();
       const CR = typeof global.CircadianRenderer !== 'undefined' ? global.CircadianRenderer : null;
@@ -4579,6 +4668,8 @@
         }
       }
 
+      if (!shouldRenderDailySkySteDiskFallbackMarker(start, end)) return null;
+
       const midDate = new Date((start.getTime() + end.getTime()) / 2);
       const getPos = function (h, rad) {
         const a = getOrbitAngleForShortEventPlacement(h, refSelected);
@@ -4632,6 +4723,7 @@
       return grp;
     }
 
+    if (shouldHideLongTermOnDailySkySte(start, end)) return null;
     if (shouldHideCircadianEventOutsideSelectedDayAtClockZooms(start, end)) return null;
 
     const durationDays = (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000);
@@ -4882,9 +4974,7 @@
       const durationMs = end.getTime() - start.getTime();
       const durationDays = durationMs / (24 * 60 * 60 * 1000);
       const durationH = durationHoursBetween(start, end);
-      const sameDay = start.getFullYear() === end.getFullYear() &&
-        start.getMonth() === end.getMonth() && start.getDate() === end.getDate();
-      const isShortEvent = durationH < 24;
+      const isShortEvent = !isLongTermEventSpanForPlotType(start, end) && durationDaysBetween(start, end) < 2;
 
       const midDate = new Date((start.getTime() + end.getTime()) / 2);
       const anchorMs = midDate.getTime();
@@ -4900,6 +4990,10 @@
       const firstStyle = Object.keys(byCategory).length > 0 ? byCategory[Object.keys(byCategory)[0]] : {};
       const lineStyle = (line.category && byCategory[line.category]) ? byCategory[line.category] : firstStyle;
       const outlineLayerCfg = { ...layerConfig, ...lineStyle };
+
+      if (!shouldDrawDailySkySteGeometry(start, end)) {
+        continue;
+      }
 
       if (isShortEvent) {
         if (shouldHideCircadianShortEventForDayScope(start, end)) {
@@ -5075,6 +5169,10 @@
           }
         }
 
+        if (!shouldRenderDailySkySteDiskFallbackMarker(start, end)) {
+          continue;
+        }
+
         let midPos = null;
         if (shouldUseCircadianNearEarthShortPlacement()) {
           midPos = getShortEventCircadianNearEarthPosition(start, end, refSelected);
@@ -5158,6 +5256,9 @@
       }
 
       if (shouldHideCircadianEventOutsideSelectedDayAtClockZooms(start, end)) {
+        continue;
+      }
+      if (!shouldDrawDailySkySteGeometry(start, end)) {
         continue;
       }
 
@@ -5388,10 +5489,6 @@
     return '__idx_' + idx;
   }
 
-  function localDayKeyFromDate(d) {
-    return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
-  }
-
   function shouldAssignCircadianDiskLanes(events) {
     if (!events || !events.length) return false;
     const zl = getZoomLevelForEvents();
@@ -5399,61 +5496,41 @@
     return true;
   }
 
+  /** Title patterns that should not count toward a venue's popularity. */
+  const ADMINISH_TITLE_RE =
+    /check.?in|registrat|office hours|orientation|front desk|info desk|help desk|sign.?up|\badmin\b/;
+
+  function diskVenueKeyOf(ev) {
+    const loc = ev && ev.location != null ? String(ev.location) : '';
+    const parts = loc.split('—');
+    if (parts.length >= 2) return parts[parts.length - 1].trim() || 'Other';
+    return 'Other';
+  }
+
+  function isAdminishEvent(ev) {
+    const t = String((ev && (ev.summary != null ? ev.summary : ev.title)) || '').toLowerCase();
+    return ADMINISH_TITLE_RE.test(t);
+  }
+
+  function diskStableHash01(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return ((h >>> 0) % 100000) / 100000;
+  }
+
   /**
-   * Per calendar day: greedy interval lanes (reuse ring when events don’t overlap in time).
-   * Maps each event uid → { rIn, rOut, rMid, lane } using concentric annuli inside the disk rim.
+   * Concentric venue rings: the busiest venue sits closest to Earth (ring 0),
+   * the 2nd-busiest next (ring 1), and every other venue is stably scattered
+   * across the outer rings. Popularity ignores admin / registration /
+   * office-hours items so logistics never win the inner ring. Maps each event
+   * uid → { rIn, rOut, rMid, lane } using concentric annuli inside the disk rim.
    */
   function buildCircadianDiskRibbonByUid(events) {
     const map = new Map();
-    const MS_DAY = 86400000;
-    const byDay = new Map();
     if (!events || !events.length) return map;
-
-    for (let i = 0; i < events.length; i++) {
-      const ev = events[i];
-      const s = getEventStart(ev);
-      const e = getEventEnd(ev);
-      if (!s || !e || !(e > s)) continue;
-      if (durationHoursBetween(s, e) >= 24) continue;
-      const uid = eventUidForDisk(ev, i);
-      let d = new Date(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0, 0);
-      const endDay = new Date(e.getFullYear(), e.getMonth(), e.getDate(), 0, 0, 0, 0);
-      while (d.getTime() <= endDay.getTime()) {
-        const key = localDayKeyFromDate(d);
-        if (!byDay.has(key)) byDay.set(key, []);
-        byDay.get(key).push({ uid, s, e });
-        d = new Date(d.getTime() + MS_DAY);
-      }
-    }
-
-    const uidMaxLane = new Map();
-    let globalMaxLanes = 1;
-
-    byDay.forEach((list) => {
-      list.sort((a, b) => a.s - b.s);
-      const laneEnds = [];
-      for (let j = 0; j < list.length; j++) {
-        const item = list[j];
-        let placed = -1;
-        for (let L = 0; L < laneEnds.length; L++) {
-          if (laneEnds[L] <= item.s.getTime()) {
-            placed = L;
-            laneEnds[L] = item.e.getTime();
-            break;
-          }
-        }
-        if (placed < 0) {
-          if (laneEnds.length >= MAX_STE_PARALLEL_LANES) continue;
-          placed = laneEnds.length;
-          laneEnds.push(item.e.getTime());
-        }
-        const prev = uidMaxLane.get(item.uid);
-        if (prev == null || placed > prev) uidMaxLane.set(item.uid, placed);
-      }
-      globalMaxLanes = Math.max(globalMaxLanes, laneEnds.length);
-    });
-
-    globalMaxLanes = Math.min(MAX_STE_PARALLEL_LANES, globalMaxLanes);
 
     const CR = global.CircadianRenderer;
     const baseHand = CR && typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
@@ -5464,46 +5541,106 @@
     const rim = Math.max(baseHand * 1.08, minR + Math.max(baseHand * 0.04, 0.35));
     const innerMin = Math.max(baseHand * 0.24, minR);
     const gapFrac = momentLanes ? 0.36 : dailySkyLanes ? 0.12 : 0.4;
-    const usable = Math.max(baseHand * (momentLanes ? 0.04 : dailySkyLanes ? 0.04 : 0.04), rim - innerMin);
+    const usable = Math.max(baseHand * 0.04, rim - innerMin);
     const minLaneSpan = momentLanes ? 0 : getShortCircadianMinRibbonRadialSpan(baseHand, zlLanes);
 
+    // Dynamic ring capacity: as many readable radial rings as the span allows.
+    let laneCapacity;
     if (dailySkyLanes) {
-      const layout = getDailySkySteAnnulusLayout(baseHand, globalMaxLanes);
-      const step = layout.bandW + layout.gap;
+      const outerR = getDailySkySteMaxOuterRadius(baseHand);
+      const span = Math.max(outerR - minR, 0.05);
+      const minBand = Math.max(baseHand * 0.045, 0.1);
+      laneCapacity = Math.max(4, Math.min(22, Math.floor(span / minBand)));
+    } else {
+      const minSpan = Math.max(minLaneSpan, baseHand * 0.03, 1e-3);
+      laneCapacity = Math.max(4, Math.min(16, Math.floor(usable / minSpan)));
+    }
 
-      function venueKey(ev) {
-        const loc = ev && ev.location != null ? String(ev.location) : '';
-        const parts = loc.split('—');
-        if (parts.length >= 2) return parts[parts.length - 1].trim() || 'Other';
-        return 'Other';
+    // Rank venues by non-adminish sub-day event count.
+    const venueCounts = new Map();
+    const venueOrder = [];
+    for (let i = 0; i < events.length; i++) {
+      const s = getEventStart(events[i]);
+      const e = getEventEnd(events[i]);
+      if (!s || !e || !(e > s) || durationHoursBetween(s, e) >= 24) continue;
+      const v = diskVenueKeyOf(events[i]);
+      if (!venueCounts.has(v)) {
+        venueCounts.set(v, 0);
+        venueOrder.push(v);
       }
+      if (!isAdminishEvent(events[i])) venueCounts.set(v, venueCounts.get(v) + 1);
+    }
+    venueOrder.sort(
+      (a, b) => venueCounts.get(b) - venueCounts.get(a) || (a < b ? -1 : 1)
+    );
+    const venueRank = new Map();
+    venueOrder.forEach((v, i) => venueRank.set(v, i));
 
-      function stableHash01(s) {
-        // Tiny stable hash → [0,1). No crypto. Good enough for lane pick.
-        let h = 2166136261;
-        for (let i = 0; i < s.length; i++) {
-          h ^= s.charCodeAt(i);
-          h = Math.imul(h, 16777619);
-        }
-        return ((h >>> 0) % 100000) / 100000;
-      }
+    // The two busiest venues each get TWO thin sub-lanes so time-overlapping
+    // sessions split apart by radius instead of stacking; every other venue
+    // keeps a single ring. Lane order inner→outer:
+    //   [ top0 ×2, top1 ×2, then one ring per remaining venue (stable scatter) ].
+    const TOP_SUBLANES = 2;
+    const top0 = venueOrder.length > 0 ? venueOrder[0] : null;
+    const top1 = venueOrder.length > 1 ? venueOrder[1] : null;
+    function isTopVenue(v) {
+      return v != null && (v === top0 || v === top1);
+    }
 
+    let cursor = 0;
+    const venueLaneStart = new Map();
+    if (top0 != null) { venueLaneStart.set(top0, cursor); cursor += TOP_SUBLANES; }
+    if (top1 != null) { venueLaneStart.set(top1, cursor); cursor += TOP_SUBLANES; }
+    const scatterLo = cursor;
+    const reserved = top1 != null ? 2 : top0 != null ? 1 : 0;
+    const restCount = Math.max(0, venueOrder.length - reserved);
+    const totalLanes = Math.max(1, Math.min(laneCapacity, scatterLo + restCount));
+    const scatterSpan = Math.max(1, totalLanes - scatterLo);
+
+    function laneStartForVenue(v) {
+      if (venueLaneStart.has(v)) return venueLaneStart.get(v);
+      return scatterLo + (Math.floor(diskStableHash01('ring|' + v) * scatterSpan) % scatterSpan);
+    }
+
+    // Greedy 2-way split of each top venue's sub-day events by time overlap:
+    // first free sub-lane wins; if both busy, take the one that frees soonest.
+    const subLaneByUid = new Map();
+    [top0, top1].forEach((v) => {
+      if (v == null) return;
+      const list = [];
       for (let i = 0; i < events.length; i++) {
-        const ev = events[i];
-        const uid = eventUidForDisk(ev, i);
+        if (diskVenueKeyOf(events[i]) !== v) continue;
+        const s = getEventStart(events[i]);
+        const e = getEventEnd(events[i]);
+        if (!s || !e || !(e > s) || durationHoursBetween(s, e) >= 24) continue;
+        list.push({ uid: eventUidForDisk(events[i], i), s: s.getTime(), e: e.getTime() });
+      }
+      list.sort((a, b) => a.s - b.s || a.e - b.e);
+      const freeAt = [-Infinity, -Infinity];
+      for (let k = 0; k < list.length; k++) {
+        const it = list[k];
+        let sub;
+        if (it.s >= freeAt[0]) sub = 0;
+        else if (it.s >= freeAt[1]) sub = 1;
+        else sub = freeAt[0] <= freeAt[1] ? 0 : 1;
+        freeAt[sub] = Math.max(freeAt[sub], it.e);
+        subLaneByUid.set(it.uid, sub);
+      }
+    });
 
-        // Venue rings: Hub inner, Loft next, others float in remaining space.
-        const v = venueKey(ev);
-        let lane;
-        if (v === 'The Hub') lane = 0;
-        else if (v === 'The Loft') lane = 1;
-        else {
-          const maxOtherStart = Math.max(2, layout.lanes - 2);
-          const pick = stableHash01(v + '|' + uid);
-          lane = 2 + Math.floor(pick * maxOtherStart);
-        }
-        lane = Math.max(0, Math.min(layout.lanes - 1, lane));
+    function laneForEvent(i, uid) {
+      const v = diskVenueKeyOf(events[i]);
+      let lane = laneStartForVenue(v);
+      if (isTopVenue(v)) lane += subLaneByUid.get(uid) || 0;
+      return Math.max(0, Math.min(totalLanes - 1, lane));
+    }
 
+    if (dailySkyLanes) {
+      const layout = getDailySkySteAnnulusLayout(baseHand, totalLanes);
+      const step = layout.bandW + layout.gap;
+      for (let i = 0; i < events.length; i++) {
+        const uid = eventUidForDisk(events[i], i);
+        const lane = Math.max(0, Math.min(layout.lanes - 1, laneForEvent(i, uid)));
         const rIn = layout.innerR + lane * step;
         const rOut = rIn + layout.bandW;
         const rMid = (rIn + rOut) * 0.5;
@@ -5513,12 +5650,12 @@
     }
 
     const laneW = momentLanes
-      ? usable / globalMaxLanes
-      : Math.max(baseHand * 0.04, usable / globalMaxLanes);
+      ? usable / totalLanes
+      : Math.max(baseHand * 0.04, usable / totalLanes);
 
     for (let i = 0; i < events.length; i++) {
       const uid = eventUidForDisk(events[i], i);
-      const L = uidMaxLane.has(uid) ? uidMaxLane.get(uid) : 0;
+      const L = laneForEvent(i, uid);
       const rIn = innerMin + L * laneW;
       let rOut = rIn + laneW * (1 - gapFrac);
       if (minLaneSpan > 0 && rOut - rIn < minLaneSpan) rOut = rIn + minLaneSpan;
@@ -5552,6 +5689,9 @@
 
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
+      // Timeseries events (e.g. Garmin HR/sleep) render as varying-radius arcs via TimeseriesRenderer,
+      // not as default dots/ribbons. Suppress the default geometry when the render flag disables the arc.
+      if (event && event.render && event.render.kind === 'timeseries' && event.render.arc === false) continue;
       const category = getEventCategory(event);
       const styleOverride = byCategory[category];
       if (styleOverride && styleOverride.visible === false) continue;
@@ -5578,7 +5718,15 @@
     }
 
     const seriesBaseConfig = { ...layerConfig, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange };
-    const seriesRoots = createTimeSeriesDecorationGroups(events, seriesBaseConfig);
+    // Timeseries-arc events (e.g. Garmin sleep/HR) draw their own arcs; keep them out of the standard
+    // time-series decoration spines/connectors so no extra "standard event arcs" appear for them.
+    const decorationEvents = events.filter(
+      (e) => !(e && e.render && e.render.kind === 'timeseries' && e.render.arc === false)
+    );
+    let seriesRoots = [];
+    if (!isEarthDailySkyEventZoom(getZoomLevelForEvents())) {
+      seriesRoots = createTimeSeriesDecorationGroups(decorationEvents, seriesBaseConfig);
+    }
     for (let si = 0; si < seriesRoots.length; si++) {
       const sg = seriesRoots[si];
       if (group) group.add(sg);

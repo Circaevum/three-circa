@@ -1202,22 +1202,28 @@ class CircaevumGL {
     const day = 86400000;
     if (z === 3 || z === 4 || z >= 5) {
       const y = ref.getFullYear();
-      const t0 = new Date(y, 0, 1, 0, 0, 0, 0).getTime();
-      const t1 = new Date(y, 11, 31, 23, 59, 59, 999).getTime();
+      const t0y = new Date(y, 0, 1, 0, 0, 0, 0).getTime();
+      const t1y = new Date(y, 11, 31, 23, 59, 59, 999).getTime();
+      if (z === 7 && typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
+        const b = MoonMechanics.fullMoonBoundsAroundRef(ref);
+        return { t0: Math.max(t0y, b.t0), t1: Math.min(t1y, b.t1) };
+      }
       if (z >= 5) {
         let halfMs = 30 * day;
         if (z >= 9) halfMs = day;
         else if (z >= 8) halfMs = 2 * day;
-        else if (z >= 7) halfMs = 7 * day;
         const mid = ref.getTime();
-        return { t0: Math.max(t0, mid - halfMs), t1: Math.min(t1, mid + halfMs) };
+        return { t0: Math.max(t0y, mid - halfMs), t1: Math.min(t1y, mid + halfMs) };
       }
-      return { t0, t1 };
+      return { t0: t0y, t1: t1y };
+    }
+    if (z === 7 && typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
+      const b = MoonMechanics.fullMoonBoundsAroundRef(ref);
+      return { t0: b.t0, t1: b.t1 };
     }
     let halfMs;
     if (z >= 9) halfMs = day;
     else if (z >= 8) halfMs = 2 * day;
-    else if (z >= 7) halfMs = 7 * day;
     else if (z >= 5) halfMs = 30 * day;
     else if (z >= 3) halfMs = 120 * day;
     else halfMs = 365 * day;
@@ -1287,6 +1293,11 @@ class CircaevumGL {
         else this._applyMaterialsFocusRecursive(root, 'restore');
       }
     }
+    try {
+      if (typeof TimeseriesRenderer !== 'undefined' && typeof TimeseriesRenderer.applyEventFocus === 'function') {
+        TimeseriesRenderer.applyEventFocus(focus, win);
+      }
+    } catch (e) { /* ignore */ }
   }
 
   /** Re-run focus styling after a layer re-render (new materials). */

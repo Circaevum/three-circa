@@ -63,6 +63,7 @@
                 <h3>Calendars</h3>
                 <p class="muted muted-tight">Tap a layer name to select it. Eye toggles visibility.</p>
                 <div id="calendar-layers-list" class="calendar-layers-list"></div>
+                <div id="atc-legend-host" class="atc-legend-host" aria-label="ATC band legend"></div>
             </div>
         </div>
     </aside>
@@ -92,10 +93,10 @@
             <button type="button" id="test-event-lines-btn" class="strip-btn">Test event lines</button>
             <div class="edge-esmeralda-strip" role="group" aria-label="Edge Esmeralda 2026 sample weeks">
                 <span class="edge-esmeralda-strip-label">Edge Esmeralda:</span>
-                <button type="button" id="edge-esmeralda-w1-btn" class="strip-btn strip-btn-compact" data-ee-week="1" title="Festival + W1 span; ~160 sessions June 1–7 2026 PDT">W1</button>
-                <button type="button" id="edge-esmeralda-w2-btn" class="strip-btn strip-btn-compact" data-ee-week="2" title="Festival + Intelligence & Autonomy week span">W2</button>
-                <button type="button" id="edge-esmeralda-w3-btn" class="strip-btn strip-btn-compact" data-ee-week="3" title="Festival + Emergent Futures week span">W3</button>
-                <button type="button" id="edge-esmeralda-w4-btn" class="strip-btn strip-btn-compact" data-ee-week="4" title="Festival + Environments of Tomorrow week span">W4</button>
+                <button type="button" id="edge-esmeralda-w1-btn" class="strip-btn strip-btn-compact" data-ee-week="1" title="Protocols for Flourishing — health & longevity, consciousness, wellbeing, bio & neuro (June 1–7)">W1</button>
+                <button type="button" id="edge-esmeralda-w2-btn" class="strip-btn strip-btn-compact" data-ee-week="2" title="Intelligence & Autonomy — AI, governance, hard tech, privacy, d/acc (June 8–14)">W2</button>
+                <button type="button" id="edge-esmeralda-w3-btn" class="strip-btn strip-btn-compact" data-ee-week="3" title="Emergent Futures & World Building — art, decentralized tech, creative AI, spatial computing (June 15–21)">W3</button>
+                <button type="button" id="edge-esmeralda-w4-btn" class="strip-btn strip-btn-compact" data-ee-week="4" title="Environments of Tomorrow — new urbanism, education, energy & climate, food systems (June 22–27)">W4</button>
             </div>
         </div>
         <div id="events-panel-list" class="event-list-panel-list"></div>
@@ -575,11 +576,13 @@
     <script src="circaevum/js/missions/artemis-ii-mission.js"></script>
     <script src="circaevum/js/renderers/event-renderer.js"></script>
     <script src="circaevum/js/renderers/circadian-renderer.js"></script>
+    <script src="circaevum/js/atc/atc-band.js"></script>
+    <script src="circaevum/js/renderers/garmin-renderer.js"></script>
     
     <!-- Models (VEVENT format) -->
     <script src="circaevum/js/models/vevent.js"></script>
     <script src="circaevum/js/data/edge-esmeralda-2026.js"></script>
-    <script src="circaevum/js/data/edge-esmeralda-week1-samples.js"></script>
+    <script src="circaevum/js/data/edge-esmeralda-2026-sessions.js"></script>
     
     <!-- html2canvas for XR in-scene UI panel (capture DOM to texture) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>
