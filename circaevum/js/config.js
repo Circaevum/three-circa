@@ -87,7 +87,7 @@ const ZOOM_LEVELS = {
     4: { name: 'QUARTER', span: '3 months', distance: 70, height: 400, timeYears: 0.25, focusTarget: 'mid', centerYear: 2025 },
     5: { name: 'MONTH', span: '1 month', distance: 25, height: 300, timeYears: 0.0833, focusTarget: 'mid', centerYear: 2025 },
     6: { name: 'LUNAR CYCLE', span: '28 days', distance: 19, height: 240, timeYears: 0.0767, focusTarget: 'moon', centerYear: 2025 },
-    7: { name: 'WEEK', span: '7 days', distance: 13, height: 200, timeYears: 0.0192, focusTarget: 'mid', centerYear: 2025 },
+    7: { name: 'WEEK', span: 'Full moons', distance: 13, height: 200, timeYears: 29.530588861 / 365.25, focusTarget: 'mid', centerYear: 2025 },
     8: { name: 'DAY', span: '24 hours', distance: 12, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025 },
     9: { name: 'CLOCK', span: '24 hours', distance: 8, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025, isPolar: true }
 };

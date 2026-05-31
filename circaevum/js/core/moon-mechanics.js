@@ -29,9 +29,32 @@ const MoonMechanics = (function () {
     const MS_PER_DAY = 86400000;
 
     /** Mean synodic month (ms); lunar worldline + A/D quarter steps share this grid. */
-    const SYNODIC_MONTH_MS = 29.530588861 * 86400000;
+    const SYNODIC_MONTH_MS = 29.530588861 * MS_PER_DAY;
+    const SYNODIC_MONTH_DAYS = 29.530588861;
     /** Reference new moon (UTC ms) for mean synodic phase. */
     const LUNATION_ANCHOR_UTC_MS = Date.UTC(2000, 0, 6, 18, 14, 0);
+
+    function synodicFullMoonMsAtIndex(k) {
+        return LUNATION_ANCHOR_UTC_MS + (k + 0.5) * SYNODIC_MONTH_MS;
+    }
+
+    /**
+     * Zoom 7 list/arc window: previous full moon through next full moon around `refDate`.
+     * @param {Date} [refDate]
+     * @returns {{ t0: number, t1: number, prevFullMs: number, nextFullMs: number, ref: Date }}
+     */
+    function fullMoonBoundsAroundRef(refDate) {
+        const ref = refDate instanceof Date && !isNaN(refDate.getTime()) ? refDate : new Date();
+        const refMs = ref.getTime();
+        let kPrev = Math.floor((refMs - LUNATION_ANCHOR_UTC_MS - SYNODIC_MONTH_MS / 2) / SYNODIC_MONTH_MS);
+        while (synodicFullMoonMsAtIndex(kPrev) > refMs) kPrev--;
+        let kNext = kPrev;
+        if (synodicFullMoonMsAtIndex(kNext) < refMs) kNext++;
+        let prevFullMs = synodicFullMoonMsAtIndex(kPrev);
+        let nextFullMs = synodicFullMoonMsAtIndex(kNext);
+        if (nextFullMs <= prevFullMs) nextFullMs = synodicFullMoonMsAtIndex(kPrev + 1);
+        return { t0: prevFullMs, t1: nextFullMs, prevFullMs, nextFullMs, ref };
+    }
 
     /**
      * Moon orbital angle (radians) in the ecliptic plane from calendar time.
@@ -320,7 +343,10 @@ const MoonMechanics = (function () {
         getOffset: function () {
             return cfg().offsetFromEarth;
         },
+        synodicFullMoonMsAtIndex,
+        fullMoonBoundsAroundRef,
         SYNODIC_MONTH_MS,
+        SYNODIC_MONTH_DAYS,
         LUNATION_ANCHOR_UTC_MS
     };
 })();

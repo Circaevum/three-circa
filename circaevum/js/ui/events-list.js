@@ -113,6 +113,16 @@
     gl.on('eventsIngested', r);
   }
 
+  function refreshAtcLegend() {
+    var host = document.getElementById('atc-legend-host');
+    if (!host) return;
+    if (typeof AtcBand !== 'undefined' && typeof AtcBand.renderLegendHtml === 'function') {
+      host.innerHTML = AtcBand.renderLegendHtml();
+    } else {
+      host.innerHTML = '';
+    }
+  }
+
   function refreshCalendarLayersList() {
     var listEl = document.getElementById('calendar-layers-list');
     if (!listEl) return;
@@ -126,6 +136,7 @@
     var ids = gl.getLayerIds();
     if (!ids.length) {
       listEl.innerHTML = '<p class="calendar-layers-empty">No calendar layers yet. Layers appear when calendars or events are added.</p>';
+      refreshAtcLegend();
       return;
     }
     ids.forEach(function(layerId) {
@@ -178,8 +189,10 @@
       det.appendChild(body);
       listEl.appendChild(det);
     });
+    refreshAtcLegend();
   }
   window.refreshCalendarLayersList = refreshCalendarLayersList;
+  window.refreshAtcLegend = refreshAtcLegend;
 
   function linkifyText(s) {
     var text = String(s == null ? '' : s);
@@ -199,14 +212,20 @@
     };
   }
 
-  function nearbyHalfSpanMs(zoom) {
+  function nearbyHalfSpanMs(zoom, refDate) {
     var day = 86400000;
     var hour = 3600000;
     var z = typeof zoom === 'number' && !isNaN(zoom) ? zoom : (typeof currentZoom !== 'undefined' ? currentZoom : 2);
+    if (z === 7 && typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
+      var ref = refDate instanceof Date && !isNaN(refDate.getTime())
+        ? refDate
+        : (typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : new Date());
+      var b = MoonMechanics.fullMoonBoundsAroundRef(ref);
+      return Math.max(day, (b.t1 - b.t0) / 2);
+    }
     if (z === 0) return hour / 2;
     if (z >= 9) return day;
     if (z >= 8) return 2 * day;
-    if (z >= 7) return 7 * day;
     if (z >= 5) return 30 * day;
     if (z >= 3) return 120 * day;
     return 365 * day;
@@ -266,7 +285,12 @@
     if (z === 3) return days > 92 && days < Y;
     if (z === 4) return days > 31 && days <= 92;
     if (z === 5 || z === 6) return days > 7 && days <= 31;
-    if (z === 7) return days > 1 && days <= 7;
+    if (z === 7) {
+      var synDays = (typeof MoonMechanics !== 'undefined' && MoonMechanics.SYNODIC_MONTH_DAYS)
+        ? MoonMechanics.SYNODIC_MONTH_DAYS
+        : 29.530588861;
+      return days > 1 && days <= synDays;
+    }
     if (z === 8) return days > 0 && days <= 1;
     return true;
   }
@@ -460,7 +484,7 @@
     var ref = (typeof getSelectedDateTime === 'function') ? getSelectedDateTime() : new Date();
     if (!ref || !(ref instanceof Date) || isNaN(ref.getTime())) ref = new Date();
     var z = typeof currentZoom !== 'undefined' ? currentZoom : 2;
-    var halfMs = nearbyHalfSpanMs(z);
+    var halfMs = nearbyHalfSpanMs(z, ref);
     var yearBounds = getSelectedCalendarYearLocalBounds(ref);
     if (ctxEl) {
       if (drawAll) ctxEl.textContent = 'Showing all loaded events and lines (Draw all).';
@@ -534,8 +558,16 @@
           return rangesOverlap(s, e, yearBounds.start.getTime(), yearBounds.end.getTime());
         });
       } else {
-        var t0 = ref.getTime() - halfMs;
-        var t1 = ref.getTime() + halfMs;
+        var t0;
+        var t1;
+        if (z === 7 && typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
+          var moonBounds = MoonMechanics.fullMoonBoundsAroundRef(ref);
+          t0 = moonBounds.t0;
+          t1 = moonBounds.t1;
+        } else {
+          t0 = ref.getTime() - halfMs;
+          t1 = ref.getTime() + halfMs;
+        }
         if (z >= 5) {
           var y0 = yearBounds.start.getTime();
           var y1 = yearBounds.end.getTime();

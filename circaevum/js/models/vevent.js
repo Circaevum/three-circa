@@ -37,6 +37,11 @@ class VEvent {
     this.color = data.color || null;
     this.class = data.class || 'PUBLIC';
     this.layerId = data.layerId || null;
+    // Render-kind descriptor. Lets one VEVENT carry a non-default visual (e.g. a timeseries arc)
+    // while staying a normal, layer-toggleable calendar object. See TimeseriesEvent below.
+    //   { kind: 'timeseries', metric: 'hr'|'sleepStage', arc: false,
+    //     summary: [{ tOff, v }], dense: { collection, key, id } }
+    this.render = data.render || null;
   }
 
   /**
@@ -119,7 +124,8 @@ class VEvent {
       isWorkEvent: this.isWorkEvent,
       color: this.color,
       class: this.class,
-      layerId: this.layerId
+      layerId: this.layerId,
+      render: this.render
     };
   }
 
@@ -154,9 +160,37 @@ class VEvent {
     if (this.dtstamp) ical += `DTSTAMP:${this._formatICalDateTime(this.dtstamp)}\n`;
     if (this.color) ical += `COLOR:${this.color}\n`;
     if (this.class) ical += `CLASS:${this.class}\n`;
+    const renderProp = VEvent._renderToICalProp(this.render);
+    if (renderProp) ical += `X-CIRCAEVUM-RENDER:${renderProp}\n`;
     
     ical += 'END:VEVENT';
     return ical;
+  }
+
+  /**
+   * Serialize a render descriptor to a compact X-prop value, e.g. "timeseries;metric=hr;arc=0".
+   * Bulk fields (summary/dense) are intentionally omitted from iCalendar; JSON carries the full shape.
+   * @returns {string|null}
+   */
+  static _renderToICalProp(render) {
+    if (!render || !render.kind) return null;
+    const parts = [render.kind];
+    if (render.metric) parts.push(`metric=${render.metric}`);
+    parts.push(`arc=${render.arc === false ? '0' : '1'}`);
+    return parts.join(';');
+  }
+
+  /** Parse "timeseries;metric=hr;arc=0" → { kind, metric, arc }. */
+  static _renderFromICalProp(value) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const segs = value.trim().split(';');
+    const render = { kind: segs[0] };
+    for (let i = 1; i < segs.length; i++) {
+      const [k, v] = segs[i].split('=');
+      if (k === 'metric') render.metric = v;
+      else if (k === 'arc') render.arc = v !== '0';
+    }
+    return render;
   }
 
   /**
@@ -180,7 +214,11 @@ class VEvent {
   _getDateTime(dt) {
     if (!dt) return null;
     if (dt.dateTime) return new Date(dt.dateTime);
-    if (dt.date) return new Date(dt.date + 'T00:00:00Z');
+    if (dt.date) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dt.date));
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+      return new Date(dt.date + 'T00:00:00');
+    }
     return null;
   }
 
@@ -339,6 +377,8 @@ class VEvent {
         data.location = line.substring(9).trim();
       } else if (line.startsWith('STATUS:')) {
         data.status = line.substring(7).trim();
+      } else if (line.startsWith('X-CIRCAEVUM-RENDER:')) {
+        data.render = VEvent._renderFromICalProp(line.substring(19).trim());
       }
     }
 
@@ -346,9 +386,54 @@ class VEvent {
   }
 }
 
+/**
+ * Timeseries sub-class: a VEVENT whose visual is a varying-radius arc (HR, sleep depth, ...)
+ * instead of a basic dot/ribbon. Stays a normal layer-toggleable calendar object; the renderer
+ * dispatches on `render.kind === 'timeseries'` and suppresses the default geometry when
+ * `render.arc === false`. Heavy data stays as a coarse inline `summary` plus a `dense` cold-storage key.
+ */
+class TimeseriesEvent extends VEvent {
+  constructor(data = {}) {
+    super(data);
+    const r = data.render || {};
+    this.render = {
+      kind: 'timeseries',
+      metric: r.metric || 'hr',
+      arc: r.arc === true, // default false: draw the timeseries, not the default arc/ribbon
+      summary: Array.isArray(r.summary) ? r.summary : [],
+      dense: r.dense || null
+    };
+  }
+
+  /** Coarse, render-ready samples: [{ tOff, v }] (tOff = ms from dtstart). */
+  getSeriesSummary() {
+    return this.render && Array.isArray(this.render.summary) ? this.render.summary : [];
+  }
+
+  /** Pointer to the dense payload in cold storage: { collection, key, id } | null. */
+  getDenseKey() {
+    return this.render ? this.render.dense || null : null;
+  }
+
+  /** True when the default dot/ribbon should be suppressed in favor of the timeseries arc. */
+  isArcSuppressed() {
+    return !!this.render && this.render.arc === false;
+  }
+}
+
+/** True for any event object (class instance or plain) carrying a timeseries render descriptor. */
+function isTimeseriesEvent(ev) {
+  return !!(ev && ev.render && ev.render.kind === 'timeseries');
+}
+
 // Export
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = VEvent;
+  module.exports.VEvent = VEvent;
+  module.exports.TimeseriesEvent = TimeseriesEvent;
+  module.exports.isTimeseriesEvent = isTimeseriesEvent;
 } else {
   window.VEvent = VEvent;
+  window.TimeseriesEvent = TimeseriesEvent;
+  window.isTimeseriesEvent = isTimeseriesEvent;
 }
