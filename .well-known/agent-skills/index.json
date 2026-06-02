@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "skills": [
+    {
+      "name": "circaevum-gl-embed",
+      "type": "skill-md",
+      "description": "Integrate the Circaevum Graphics Library via iframe postMessage and circaevum-gl.js (viewer mode, ingest events, layers).",
+      "url": "/.well-known/agent-skills/circaevum-gl-embed/SKILL.md",
+      "digest": "sha256:caeac59062cced70af7e881cea1c8c71604d42ab270d9a987c63e613afd8d5f6"
+    },
+    {
+      "name": "circaevum-site",
+      "type": "skill-md",
+      "description": "Overview of circaevum.com — public GL viewer, llms.txt, relationship to app.circaevum.com and three-circa on GitHub.",
+      "url": "/.well-known/agent-skills/circaevum-site/SKILL.md",
+      "digest": "sha256:ad6a3fa74875aaeab86626fc460946761486fda05eeb8c6297df289a907c83f8"
+    },
+    {
+      "name": "circaevum-developers",
+      "type": "skill-md",
+      "description": "Developer and agent integration — discovery URLs, MCP status (none on site), embed/postMessage API, OSC lab streams.",
+      "url": "/.well-known/agent-skills/circaevum-developers/SKILL.md",
+      "digest": "sha256:0b0fd37c34888b2b8e4ed427a9c175fd8c4717f5bb503b23df684647f4b032f4"
+    }
+  ]
+}

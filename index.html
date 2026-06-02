@@ -3,8 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Circaevum — open 3D time visualization: planetary orbits, circadian rhythm, and calendar events. WebXR on HTTPS. Machine-readable: /llms.txt, /index.md">
     <title>Circaevum - Planetary Time</title>
     <link rel="stylesheet" href="circaevum/css/styles.css">
+    <link rel="describedby" href="/llms.txt" type="text/plain">
+    <link rel="alternate" type="text/markdown" href="/index.md" title="Circaevum (markdown)">
+    <link rel="help" href="/developers.html" title="Developers &amp; AI agents">
 </head>
 <body>
     <script src="circaevum/js/ui/viewer-bootstrap.js"></script>
@@ -34,6 +38,7 @@
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="keyboard-controls">Keyboard Controls</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="about">About</button>
+                    <a class="nav-dropdown-item" role="menuitem" href="/developers.html">Developers &amp; agents</a>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="replay-intro">Replay intro tour</button>
                 </div>
             </div>
@@ -420,6 +425,9 @@
                 <p class="landing-doc-link">
                     <a href="https://github.com/Circaevum/three-circa" target="_blank" rel="noopener noreferrer">Graphics library on GitHub</a> (three-circa) — Three.js viewer, WebXR, and core GL source.
                 </p>
+                <p class="landing-doc-link">
+                    <a href="/developers.html">Developers &amp; AI agents</a> — embed API, postMessage, agent discovery (<code>llms.txt</code>, Agent Skills), OSC lab streams, and MCP status.
+                </p>
             </section>
 
             <section class="landing-section" aria-labelledby="landing-h-support">
@@ -464,7 +472,7 @@
             </section>
 
             <footer class="landing-footer">
-                <p>© 2026 Circaevum</p>
+                <p>© 2026 Circaevum · <a href="/developers.html">Developers &amp; agents</a> · <a href="/llms.txt">llms.txt</a></p>
             </footer>
         </div>
     </div>
@@ -514,19 +522,26 @@
             </div>
         </div>
     </div>
-    <div class="mobile-zoom-controls" id="mobile-zoom-controls">
-        <button class="mobile-zoom-btn" id="zoom-out-btn" aria-label="Zoom Out">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-        </button>
-        <div class="mobile-zoom-label" id="mobile-zoom-label">DECADE</div>
-        <button class="mobile-zoom-btn" id="zoom-in-btn" aria-label="Zoom In">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-        </button>
+    <div class="mobile-controls-stack" id="mobile-controls-stack" aria-label="Mobile time and zoom controls">
+        <div class="mobile-time-controls" id="mobile-time-controls" role="group" aria-label="Selected time">
+            <button type="button" class="mobile-time-btn" id="mobile-time-back-btn" aria-label="Earlier in time">−</button>
+            <button type="button" class="mobile-time-btn mobile-time-btn-now" id="mobile-time-now-btn" aria-label="Return to now">NOW</button>
+            <button type="button" class="mobile-time-btn" id="mobile-time-forward-btn" aria-label="Later in time">+</button>
+        </div>
+        <div class="mobile-zoom-controls" id="mobile-zoom-controls" role="group" aria-label="Zoom level">
+            <button type="button" class="mobile-zoom-btn" id="zoom-out-btn" aria-label="Zoom out">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <div class="mobile-zoom-label" id="mobile-zoom-label">DECADE</div>
+            <button type="button" class="mobile-zoom-btn" id="zoom-in-btn" aria-label="Zoom in">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+        </div>
     </div>
 
     <!-- External Dependencies -->

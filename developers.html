@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Circaevum developer docs — embed API, postMessage, agent discovery, OSC lab streams, MCP status, and links for AI agents.">
+    <title>Developers &amp; AI agents — Circaevum</title>
+    <link rel="stylesheet" href="circaevum/css/styles.css">
+    <link rel="describedby" href="/llms.txt" type="text/plain">
+    <link rel="alternate" type="text/markdown" href="/docs/FOR-AGENTS.md" title="For agents (markdown)">
+    <link rel="help" href="/developers.html">
+</head>
+<body class="light-mode dev-doc-page">
+    <header class="dev-doc-header">
+        <a href="/" class="dev-doc-brand">← Circaevum GL</a>
+        <nav class="dev-doc-nav" aria-label="Developer sections">
+            <a href="#discovery">Discovery</a>
+            <a href="#embed-api">Embed API</a>
+            <a href="#postmessage">postMessage</a>
+            <a href="#osc">OSC lab</a>
+            <a href="#mcp">MCP</a>
+            <a href="#account">Account</a>
+        </nav>
+    </header>
+
+    <main class="dev-doc-main">
+        <header class="dev-doc-hero">
+            <p class="dev-doc-kicker">Integrators · AI agents · local lab</p>
+            <h1>Developers &amp; agents</h1>
+            <p class="dev-doc-lede">
+                <strong>circaevum.com</strong> is the public Graphics Library — auth-free 3D time visualization.
+                Login and calendar sync live on <a href="https://app.circaevum.com/" rel="noopener noreferrer">app.circaevum.com</a>.
+            </p>
+            <p class="dev-doc-lede">
+                Machine-readable entry: <a href="/llms.txt">llms.txt</a> ·
+                <a href="/docs/FOR-AGENTS.md">FOR-AGENTS.md</a> ·
+                <a href="https://isitagentready.com/circaevum.com" rel="noopener noreferrer">agent readiness scan</a>
+            </p>
+        </header>
+
+        <section id="discovery" class="dev-doc-section">
+            <h2>Discovery (agents &amp; crawlers)</h2>
+            <table class="dev-doc-table">
+                <thead><tr><th>Resource</th><th>URL</th></tr></thead>
+                <tbody>
+                    <tr><td>LLM site map</td><td><a href="/llms.txt">/llms.txt</a></td></tr>
+                    <tr><td>Homepage (markdown)</td><td><a href="/index.md">/index.md</a></td></tr>
+                    <tr><td>API catalog (RFC 9727)</td><td><a href="/.well-known/api-catalog">/.well-known/api-catalog</a></td></tr>
+                    <tr><td>Agent Skills</td><td><a href="/.well-known/agent-skills/index.json">/.well-known/agent-skills/index.json</a></td></tr>
+                    <tr><td>Sitemap</td><td><a href="/sitemap.xml">/sitemap.xml</a></td></tr>
+                    <tr><td>robots.txt</td><td><a href="/robots.txt">/robots.txt</a> (Content-Signal + AI bot rules)</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="embed-api" class="dev-doc-section">
+            <h2>Embed API</h2>
+            <p>Load the viewer in an iframe or new window:</p>
+            <pre class="dev-doc-code"><code>https://circaevum.com/index.html?viewer=1</code></pre>
+            <p>After load, use the public GL helpers (see <a href="/API.md">API.md</a>):</p>
+            <pre class="dev-doc-code"><code>const gl = window.getGL();
+gl.ingestEvents('my-layer', events, { layerStyles: {} });</code></pre>
+            <p>
+                Source: <a href="https://github.com/Circaevum/three-circa/blob/main/circaevum/js/api/circaevum-gl.js" rel="noopener noreferrer">circaevum-gl.js</a> ·
+                Wrapper guide: <a href="/docs/VIEWER-AND-WRAPPER.md">VIEWER-AND-WRAPPER.md</a>
+            </p>
+        </section>
+
+        <section id="postmessage" class="dev-doc-section">
+            <h2>postMessage (iframe)</h2>
+            <p>Wait for <code>CIRCAEVUM_READY</code> from the iframe, then send:</p>
+            <ul class="dev-doc-list">
+                <li><code>CIRCAEVUM_INGEST_EVENTS</code> — <code>{ layerId, events, options? }</code></li>
+                <li><code>CIRCAEVUM_CLEAR_EVENTS</code> — <code>{ layerId }</code></li>
+                <li><code>CIRCAEVUM_FIT_VIEW</code> — <code>{ focus, zoom }</code></li>
+                <li><code>CIRCAEVUM_OPEN_EVENT_LIST</code></li>
+            </ul>
+            <p>Full table: <a href="/docs/FOR-AGENTS.md#postmessage-iframe-host--gl">FOR-AGENTS.md</a></p>
+        </section>
+
+        <section id="osc" class="dev-doc-section">
+            <h2>OSC lab streams (local)</h2>
+            <p>
+                For Muse, ESP32, or other sensors on your LAN: stream via <strong>Open Sound Control (UDP)</strong>,
+                record to CSV locally, or bridge into a custom viewer. Nothing is uploaded by circaevum.com.
+            </p>
+            <table class="dev-doc-table">
+                <thead><tr><th>Address</th><th>Data</th></tr></thead>
+                <tbody>
+                    <tr><td><code>/eeg</code></td><td>EEG floats (µV), multi-channel</td></tr>
+                    <tr><td><code>/ppg</code>, <code>/optics</code></td><td>Biometric optics</td></tr>
+                    <tr><td><code>/acc</code>, <code>/gyro</code></td><td>IMU</td></tr>
+                    <tr><td><code>/drlref</code></td><td>Electrode quality</td></tr>
+                    <tr><td><code>/thermistor</code></td><td>Temperature</td></tr>
+                </tbody>
+            </table>
+            <p>Muse iOS example sends <code>/eeg</code> over OSC (default port 7000). A Python <code>python-osc</code> recorder can write one CSV per stream under a dated session folder.</p>
+        </section>
+
+        <section id="mcp" class="dev-doc-section dev-doc-section--muted">
+            <h2>MCP</h2>
+            <p><strong>No MCP server on circaevum.com.</strong> There is no live Model Context Protocol endpoint on this static site.</p>
+            <p>Available instead:</p>
+            <ul class="dev-doc-list">
+                <li><a href="/.well-known/agent-skills/index.json">Agent Skills index</a> — SKILL.md documents for coding agents</li>
+                <li><a href="/.well-known/api-catalog">API catalog</a> — doc linkset (RFC 9727)</li>
+                <li><a href="/docs/FOR-AGENTS.md">FOR-AGENTS.md</a> — full integrator reference</li>
+            </ul>
+        </section>
+
+        <section id="account" class="dev-doc-section">
+            <h2>Account &amp; OAuth</h2>
+            <p>
+                Nakama login, calendars, and Garmin Connect run on
+                <a href="https://app.circaevum.com/" rel="noopener noreferrer">app.circaevum.com</a> — not on the GL origin.
+                Storage contracts: <a href="https://github.com/Circaevum/circaevum-spec" rel="noopener noreferrer">circaevum-spec</a>.
+            </p>
+        </section>
+
+        <section class="dev-doc-section">
+            <h2>Open source</h2>
+            <ul class="dev-doc-list">
+                <li><a href="https://github.com/Circaevum/three-circa" rel="noopener noreferrer">three-circa</a> — this site</li>
+                <li><a href="/API.md">API.md</a> — GL reference</li>
+                <li><a href="/docs/AGENT-READINESS.md">AGENT-READINESS.md</a> — deploy &amp; Cloudflare checklist</li>
+            </ul>
+        </section>
+    </main>
+
+    <footer class="dev-doc-footer">
+        <p>© 2026 Circaevum · <a href="/">Back to visualization</a></p>
+    </footer>
+</body>
+</html>

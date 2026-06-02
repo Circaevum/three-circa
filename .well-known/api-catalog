@@ -1,0 +1,35 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://circaevum.com/",
+      "service-doc": [
+        {
+          "href": "https://circaevum.com/developers.html",
+          "type": "text/html"
+        },
+        {
+          "href": "https://circaevum.com/docs/FOR-AGENTS.md",
+          "type": "text/markdown"
+        },
+        {
+          "href": "https://circaevum.com/API.md",
+          "type": "text/markdown"
+        },
+        {
+          "href": "https://circaevum.com/docs/VIEWER-AND-WRAPPER.md",
+          "type": "text/markdown"
+        },
+        {
+          "href": "https://github.com/Circaevum/three-circa/blob/main/circaevum/js/api/circaevum-gl.js",
+          "type": "text/html"
+        }
+      ],
+      "describedby": [
+        {
+          "href": "https://circaevum.com/llms.txt",
+          "type": "text/plain"
+        }
+      ]
+    }
+  ]
+}

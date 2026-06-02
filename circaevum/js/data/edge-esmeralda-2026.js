@@ -190,6 +190,27 @@
     return out;
   }
 
+  /** Drop duplicate VEVENT rows by uid, then by summary + start time. */
+  function dedupeVeventRows(list) {
+    if (!list || !list.length) return [];
+    var out = [];
+    var seenUid = {};
+    var seenSig = {};
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i];
+      if (!e) continue;
+      var uid = e.uid != null ? String(e.uid) : '';
+      if (uid && seenUid[uid]) continue;
+      var s = edgeEventStartMs(e);
+      var sig = String(e.summary || '').trim() + '|' + (isFinite(s) ? s : '');
+      if (seenSig[sig]) continue;
+      if (uid) seenUid[uid] = true;
+      seenSig[sig] = true;
+      out.push(e);
+    }
+    return out;
+  }
+
   function toVEvents(raw) {
     if (typeof VEvent === 'undefined') return raw;
     return raw.map(function (e) {
@@ -241,8 +262,8 @@
     // overlapping sub-day events into readable radial lanes (see event-renderer).
     // Also fold in the weekend that borders this week (from neighbor weeks) for
     // continuity, deduped by uid so nothing loads twice.
-    var weekSessions = appendAdjacentWeekendEvents(w, sessionsByWeek[w] || []);
-    var combined = longTermEvents.concat(weekSessions);
+    var weekSessions = dedupeVeventRows(appendAdjacentWeekendEvents(w, sessionsByWeek[w] || []));
+    var combined = dedupeVeventRows(longTermEvents.concat(weekSessions));
     var vevents = toVEvents(combined);
     var mergedStyles = buildLayerStyles(
       gl.layerStylesByCategory && typeof gl.layerStylesByCategory === 'object'

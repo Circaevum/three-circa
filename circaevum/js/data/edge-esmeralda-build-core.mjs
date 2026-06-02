@@ -222,6 +222,20 @@ export function venueShort(ev) {
   return v || 'Village';
 }
 
+/** Circadian disk bands: hub (inner ×2), loft (single), other (outer). */
+export function venueZoneOf(ev) {
+  const hay = [
+    ev.venue_title,
+    ev.custom_location_name,
+    ev.venue_location
+  ]
+    .map((s) => String(s || '').toLowerCase())
+    .join(' ');
+  if (/\bhub\b|405 healdsburg|outside the hub|meet at the hub/.test(hay)) return 'hub';
+  if (/\bloft\b|120 north|outside the loft/.test(hay)) return 'loft';
+  return 'other';
+}
+
 export function fmt(ms) {
   return new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
@@ -236,6 +250,70 @@ export function clean(s, max) {
 export function eventUrl(ev) {
   const u = ev.meeting_url || ev.custom_location_url || null;
   return u && String(u).trim() ? String(u).trim() : null;
+}
+
+/** Stable key for one portal row (master event or pre-expanded occurrence). */
+export function portalEventKey(ev) {
+  if (!ev) return '';
+  if (ev.occurrence_id != null && String(ev.occurrence_id).trim() !== '') {
+    return String(ev.occurrence_id).trim();
+  }
+  const id = ev.id != null && String(ev.id).trim() !== '' ? String(ev.id).trim() : null;
+  if (id) return id + '|' + String(ev.start_time || '');
+  return 'no-id:' + String(ev.title || '') + '|' + String(ev.start_time || '');
+}
+
+/**
+ * Portal export may repeat rows (sync dupes) or pre-expand recurrences (same id,
+ * different occurrence_id / start_time). Keep the first row per logical occurrence.
+ */
+export function dedupeRawPortalEvents(raw) {
+  if (!raw || !raw.length) return [];
+  const seen = new Set();
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const ev = raw[i];
+    if (!ev) continue;
+    const key = portalEventKey(ev);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ev);
+  }
+  return out;
+}
+
+/** Occurrence start times for one portal row (respect pre-expanded rows). */
+export function portalOccurrenceStarts(ev) {
+  const startMs = Date.parse(ev.start_time);
+  if (!isFinite(startMs)) return [];
+  if (ev.occurrence_id) {
+    if (startMs >= WINDOW_START && startMs < WINDOW_END) return [startMs];
+    return [];
+  }
+  const endMs = Date.parse(ev.end_time);
+  const durMs = isFinite(endMs) ? Math.max(15 * 60000, endMs - startMs) : 60 * 60000;
+  return expand(startMs, durMs, ev.rrule);
+}
+
+/** Drop duplicate VEVENT rows by uid, then by summary + start time. */
+export function dedupeVeventRows(list) {
+  if (!list || !list.length) return [];
+  const out = [];
+  const seenUid = new Set();
+  const seenSig = new Set();
+  for (let i = 0; i < list.length; i++) {
+    const e = list[i];
+    if (!e) continue;
+    const uid = e.uid != null ? String(e.uid) : '';
+    if (uid && seenUid.has(uid)) continue;
+    const s = edgeEventStartMs(e);
+    const sig = String(e.summary || '').trim() + '|' + (isFinite(s) ? s : '');
+    if (seenSig.has(sig)) continue;
+    if (uid) seenUid.add(uid);
+    seenSig.add(sig);
+    out.push(e);
+  }
+  return out;
 }
 
 export function edgeEventStartMs(e) {
@@ -318,8 +396,9 @@ export function buildWeekSessions(raw, opts = {}) {
   const weeks = { 1: [], 2: [], 3: [], 4: [] };
   const usedCats = new Map();
   let occCount = 0;
+  const sourceRows = dedupeRawPortalEvents(raw);
 
-  for (const ev of raw) {
+  for (const ev of sourceRows) {
     const startMs = Date.parse(ev.start_time);
     const endMs = Date.parse(ev.end_time);
     if (!isFinite(startMs) || !isFinite(endMs)) continue;
@@ -328,14 +407,19 @@ export function buildWeekSessions(raw, opts = {}) {
     usedCats.set(cat, color);
     const venue = venueShort(ev);
     const url = eventUrl(ev);
-    const occs = expand(startMs, durMs, ev.rrule);
+    const occs = portalOccurrenceStarts(ev);
     for (let i = 0; i < occs.length; i++) {
       const s = occs[i];
       const e = s + durMs;
       const wk = s < WEEK_CUTS[0] ? 1 : s < WEEK_CUTS[1] ? 2 : s < WEEK_CUTS[2] ? 3 : 4;
       const desc = descriptionMax == null ? clean(ev.content) : clean(ev.content, descriptionMax);
+      const uidSuffix = ev.occurrence_id
+        ? '-' + String(ev.occurrence_id).replace(/[^a-zA-Z0-9_-]+/g, '_')
+        : occs.length > 1
+          ? '-' + i
+          : '';
       const row = {
-        uid: 'ee26-' + (ev.id || 'x') + (occs.length > 1 ? '-' + i : ''),
+        uid: 'ee26-' + (ev.id || 'x') + uidSuffix,
         summary: clean(ev.title, 120) || 'Untitled',
         description: desc,
         location: LOC + ' — ' + venue,
@@ -346,19 +430,28 @@ export function buildWeekSessions(raw, opts = {}) {
         status: 'CONFIRMED'
       };
       if (url) row.url = url;
-      if (ev.host_display_name) row.metadata = { host: ev.host_display_name };
-      if (ev.track_title) row.metadata = { ...(row.metadata || {}), track: ev.track_title };
-      if (ev.kind) row.metadata = { ...(row.metadata || {}), kind: ev.kind };
+      const venueZone = venueZoneOf(ev);
+      row.metadata = { venue_zone: venueZone, venue };
+      if (ev.host_display_name) row.metadata.host = ev.host_display_name;
+      if (ev.track_title) row.metadata.track = ev.track_title;
+      if (ev.kind) row.metadata.kind = ev.kind;
       weeks[wk].push(row);
       occCount += 1;
     }
   }
 
   for (const w of [1, 2, 3, 4]) {
+    weeks[w] = dedupeVeventRows(weeks[w]);
     weeks[w].sort((a, b) => edgeEventStartMs(a) - edgeEventStartMs(b));
   }
 
-  return { weeks, usedCats, occCount, sourceRows: raw.length };
+  return {
+    weeks,
+    usedCats,
+    occCount,
+    rawRowCount: raw.length,
+    uniqueSourceRows: sourceRows.length
+  };
 }
 
 export function loadRaw() {
@@ -368,8 +461,8 @@ export function loadRaw() {
 export function buildShareableWeekPack(week, sessionsByWeek) {
   const meta = WEEK_SHARE_META[week];
   const base = sessionsByWeek[week] || [];
-  const withWeekends = appendAdjacentWeekendEvents(week, base, sessionsByWeek);
-  const events = longTermForWeek(week).concat(withWeekends);
+  const withWeekends = dedupeVeventRows(appendAdjacentWeekendEvents(week, base, sessionsByWeek));
+  const events = dedupeVeventRows(longTermForWeek(week).concat(withWeekends));
   events.sort((a, b) => edgeEventStartMs(a) - edgeEventStartMs(b));
   const weekendExtras = withWeekends.length - base.length;
   return {

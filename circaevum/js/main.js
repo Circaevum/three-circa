@@ -168,8 +168,9 @@ let listHorizonHelixTimeKey = null;
 /** Context arc always on at zoom; hidden only when Event List uses Draw all. */
 /** Short (<24h) circadian-scoped events: 'day' = selected calendar day only, 'year' = whole selected year. */
 let circadianShortEventScope = 'year';
-/** Hold Shift: show all STEs as lightweight centerlines (see event-renderer). */
+/** Hold Shift: show all STEs as lightweight centerlines (see event-renderer). Suppressed while ⌘/Meta is held (screenshots). */
 let circadianShortEventsShiftPreview = false;
+let modifierMetaHeld = false;
 /** Default on so the circadian frame is visible at helix-capable zoom levels. */
 let circadianState = 'wrapped';
 /** false = show calendar events only in selected year; true = all time (see scene calendar icon) */
@@ -276,17 +277,60 @@ if (typeof window !== 'undefined') {
         }
     };
     window.getCircadianShortEventsShiftPreview = function () {
-        return !!circadianShortEventsShiftPreview;
+        return !!circadianShortEventsShiftPreview && !modifierMetaHeld;
+    };
+    function metaModifierFromKeyboardEvent(e) {
+        if (!e) return false;
+        return !!(e.metaKey || (typeof e.getModifierState === 'function' && e.getModifierState('Meta')));
+    }
+    function shiftModifierFromKeyboardEvent(e) {
+        if (!e || typeof e.getModifierState !== 'function') return false;
+        return e.getModifierState('Shift');
+    }
+    /** Derive Shift peek from live modifier state (⌘/Meta suppresses for screenshots). */
+    window.applyCircadianShiftPreviewFromModifiers = function (e) {
+        if (!e) return;
+        const meta = metaModifierFromKeyboardEvent(e);
+        const shift = shiftModifierFromKeyboardEvent(e);
+        let changed = false;
+        if (meta !== modifierMetaHeld) {
+            modifierMetaHeld = meta;
+            changed = true;
+        }
+        const wantPreview = shift && !meta;
+        if (wantPreview !== circadianShortEventsShiftPreview) {
+            circadianShortEventsShiftPreview = wantPreview;
+            changed = true;
+        }
+        if (changed) refreshShiftPreviewScene();
     };
     window.setCircadianShortEventsShiftPreview = function (active) {
+        if (active && modifierMetaHeld) return;
         const next = !!active;
         if (next === circadianShortEventsShiftPreview) return;
         circadianShortEventsShiftPreview = next;
+        refreshShiftPreviewScene();
+    };
+    /** @deprecated use applyCircadianShiftPreviewFromModifiers */
+    window.syncCircadianShiftPreviewModifiers = function (e) {
+        window.applyCircadianShiftPreviewFromModifiers(e);
+    };
+    window.setCircadianShiftPreviewMetaHeld = function (held) {
+        window.applyCircadianShiftPreviewFromModifiers({
+            metaKey: !!held,
+            shiftKey: false,
+            getModifierState: function (key) { return key === 'Meta' ? !!held : false; }
+        });
+    };
+    function refreshShiftPreviewScene() {
         const gl = window.circaevumGL;
         if (gl && typeof gl.refreshAllEventLayers === 'function') {
             try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
         }
-    };
+        if (typeof TimeseriesRenderer !== 'undefined' && typeof TimeseriesRenderer.resetRefreshCache === 'function') {
+            TimeseriesRenderer.resetRefreshCache();
+        }
+    }
     /** Console: debugShortEventRender('edge-esmeralda-2026') — counts filters before GPU meshes. */
     window.debugShortEventRender = function (layerId) {
         const gl = window.circaevumGL || (window.getGL && window.getGL());
@@ -5474,25 +5518,21 @@ function initControls() {
         }
     });
 
-    function isShiftStePreviewKey(e) {
-        return e && (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight');
+    function onCircadianShiftPreviewModifierEvent(e) {
+        if (typeof window.applyCircadianShiftPreviewFromModifiers === 'function') {
+            window.applyCircadianShiftPreviewFromModifiers(e);
+        }
     }
-    document.addEventListener('keydown', (e) => {
-        if (!isShiftStePreviewKey(e)) return;
-        if (typeof window.setCircadianShortEventsShiftPreview === 'function') {
-            window.setCircadianShortEventsShiftPreview(true);
-        }
-    });
-    document.addEventListener('keyup', (e) => {
-        if (!isShiftStePreviewKey(e)) return;
-        if (typeof window.setCircadianShortEventsShiftPreview === 'function') {
-            window.setCircadianShortEventsShiftPreview(false);
-        }
-    });
+    document.addEventListener('keydown', onCircadianShiftPreviewModifierEvent, true);
+    document.addEventListener('keyup', onCircadianShiftPreviewModifierEvent, true);
+    document.addEventListener('mousemove', onCircadianShiftPreviewModifierEvent, { capture: true, passive: true });
+    document.addEventListener('pointermove', onCircadianShiftPreviewModifierEvent, { capture: true, passive: true });
     window.addEventListener('blur', () => {
-        if (typeof window.setCircadianShortEventsShiftPreview === 'function') {
-            window.setCircadianShortEventsShiftPreview(false);
-        }
+        onCircadianShiftPreviewModifierEvent({
+            metaKey: false,
+            shiftKey: false,
+            getModifierState: function () { return false; }
+        });
     });
     
     // Mouse wheel zoom within current zoom level (distance dolly; [ ] / mobile buttons change zoom band)
@@ -5554,6 +5594,35 @@ function initControls() {
         zoomOutBtn.addEventListener('click', handleZoomOut);
         zoomOutBtn.addEventListener('touchend', handleZoomOut);
     }
+
+    const mobileTimeBackBtn = document.getElementById('mobile-time-back-btn');
+    const mobileTimeNowBtn = document.getElementById('mobile-time-now-btn');
+    const mobileTimeForwardBtn = document.getElementById('mobile-time-forward-btn');
+    const handleTimeBack = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        navigateUnit(-1);
+        if (typeof playTickSound === 'function') playTickSound(currentZoom);
+    };
+    const handleTimeNow = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        smoothReturnToPresent();
+    };
+    const handleTimeForward = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        navigateUnit(1);
+        if (typeof playTickSound === 'function') playTickSound(currentZoom);
+    };
+    function wireMobileTimeBtn(btn, handler) {
+        if (!btn) return;
+        btn.addEventListener('click', handler);
+        btn.addEventListener('touchend', handler);
+    }
+    wireMobileTimeBtn(mobileTimeBackBtn, handleTimeBack);
+    wireMobileTimeBtn(mobileTimeNowBtn, handleTimeNow);
+    wireMobileTimeBtn(mobileTimeForwardBtn, handleTimeForward);
     
     document.querySelectorAll('.zoom-option').forEach(option => {
         option.addEventListener('click', () => {

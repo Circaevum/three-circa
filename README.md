@@ -85,6 +85,22 @@ The GL can run in **WebXR** (immersive VR): you’re placed in the scene with th
 
 [CHANGELOG.md](./CHANGELOG.md) — version and feature history.
 
+## Agent readiness (AI agents & isitagentready.com)
+
+Static files for [isitagentready.com/circaevum.com](https://isitagentready.com/circaevum.com):
+
+- `/robots.txt`, `/sitemap.xml`, `/llms.txt`, `/index.md`
+- `/developers.html`, `/docs/FOR-AGENTS.md`
+- `/.well-known/api-catalog`, `/.well-known/agent-skills/`
+
+Full deploy + **Cloudflare** Link / markdown rules: **[docs/AGENT-READINESS.md](./docs/AGENT-READINESS.md)**.
+
+After push to `main`, verify with:
+
+```bash
+curl -sI https://circaevum.com/robots.txt | head -3
+```
+
 ---
 
 For project structure, DAO, and coordination (Zhong), see the main Circaevum org and [circaevum-dao-phase-1](https://github.com/Circaevum/circaevum-dao-phase-1).
