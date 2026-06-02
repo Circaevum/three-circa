@@ -1976,6 +1976,10 @@ body.light-mode .event-list-panel-list .draw-line-btn.drawn {
     display: none;
 }
 
+.circaevum-intro-replay-btn {
+    flex-shrink: 0;
+}
+
 .scene-icon-toggle {
     width: 100%;
     min-height: 0;

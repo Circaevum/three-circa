@@ -23,6 +23,10 @@
       window.toggleAboutPanel();
       return;
     }
+    if (data.type === 'CIRCAEVUM_OPEN_KEYBOARD_CONTROLS' && typeof window.openKeyboardControlsPanel === 'function') {
+      window.openKeyboardControlsPanel();
+      return;
+    }
     var gl = window.circaevumGL || (window.getGL && window.getGL());
     if (!gl || typeof gl.ingestEvents !== 'function') return;
     if (data.type === 'CIRCAEVUM_INGEST_EVENTS' && data.layerId && Array.isArray(data.events)) {
