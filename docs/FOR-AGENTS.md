@@ -82,8 +82,9 @@ Use when you want **Circaevum-managed** calendars, layers, Garmin sync, and cros
 | robots.txt | [/robots.txt](https://circaevum.com/robots.txt) | Crawl policy + Content-Signal |
 | Sitemap | [/sitemap.xml](https://circaevum.com/sitemap.xml) | Canonical URLs |
 | Agent readiness notes | [docs/AGENT-READINESS.md](https://circaevum.com/docs/AGENT-READINESS.md) | isitagentready.com checklist |
+| Link headers (HTTP) | [cloudflare/README.md](https://circaevum.com/cloudflare/README.md) | RFC 8288 — **Cloudflare Transform Rule** on `/` |
 
-**Scan this site:** https://isitagentready.com/circaevum.com
+**Homepage HTTP `Link` headers** are not set by GitHub Pages. Apply Cloudflare rule in [`cloudflare/README.md`](../cloudflare/README.md) (or `_headers` on Cloudflare Pages).
 
 ---
 

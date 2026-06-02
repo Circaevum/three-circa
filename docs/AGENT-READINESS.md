@@ -58,19 +58,22 @@ circaevum.com is proxied through **Cloudflare** (`cf-ray` on responses). GitHub 
 
 ### 1. Link headers (homepage)
 
-**Transform Rules → Modify response header** (zone: circaevum.com):
+**GitHub Pages cannot set `Link` response headers.** Use Cloudflare (zone: circaevum.com).
 
-When: URI Path equals `/` OR equals `/index.html`
+**Step-by-step:** [`cloudflare/README.md`](../cloudflare/README.md)  
+**Paste value:** [`cloudflare/homepage-link-header.txt`](../cloudflare/homepage-link-header.txt)
 
-Set headers:
+**Transform Rules → Modify response header** — when path is `/` OR `/index.html`, set header `Link` to:
 
 ```
-Link: <https://circaevum.com/.well-known/api-catalog>; rel="api-catalog"
-Link: <https://circaevum.com/.well-known/agent-skills/index.json>; rel="service-doc"
-Link: <https://circaevum.com/llms.txt>; rel="describedby"
+Link: <https://circaevum.com/.well-known/api-catalog>; rel="api-catalog", <https://circaevum.com/.well-known/agent-skills/index.json>; rel="service-doc", <https://circaevum.com/llms.txt>; rel="describedby", <https://circaevum.com/docs/FOR-AGENTS.md>; rel="service-doc"; type="text/markdown", <https://circaevum.com/.well-known/oauth-authorization-server>; rel="service-desc"; type="application/json"
 ```
 
-(Or one combined `Link:` header with comma-separated entries.)
+Validate:
+
+```bash
+curl -sI https://circaevum.com/ | grep -i '^link:'
+```
 
 ### 2. Markdown content negotiation
 
