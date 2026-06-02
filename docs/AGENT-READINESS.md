@@ -25,6 +25,28 @@ curl -s -X POST https://isitagentready.com/api/scan \
 
 These ship from [three-circa](https://github.com/Circaevum/three-circa) / `yang/web/` on GitHub Pages → **circaevum.com**.
 
+### GitHub Pages: `.nojekyll` (required)
+
+GitHub Pages runs Jekyll by default. Jekyll **skips** dot-directories like `/.well-known/`, so `api-catalog` and Agent Skills return **404** even after push.
+
+**Fix:** keep an empty **`.nojekyll`** at the site root (`yang/web/.nojekyll`). Without it, discovery checks stay at 0/7 no matter what you add in repo.
+
+After deploy, verify:
+
+```bash
+curl -sI https://circaevum.com/.well-known/agent-skills/index.json | head -3
+curl -sI https://circaevum.com/.well-known/api-catalog | head -3
+# expect HTTP/2 200 (not 404)
+```
+
+**api-catalog Content-Type:** scan wants `application/linkset+json`. GitHub may serve extensionless files as `application/octet-stream`. If scan still fails after 200, add a Cloudflare **response header** rule on `/.well-known/api-catalog` → `Content-Type: application/linkset+json`.
+
+## Lanternade vs this score
+
+[toolchain.lanternade.com](https://toolchain.lanternade.com/) (Zod, Gitleaks, Husky, Vitest, CI, ESLint) hardens **code in git**. [isitagentready.com](https://isitagentready.com/circaevum.com) scores **public HTTP discovery** for agents. **No Lanternade tier moves this score** — different layer.
+
+Use Lanternade on `garmin-ingest`, portal, future bio hub anyway; use this doc for circaevum.com deploy + Cloudflare.
+
 ## Cloudflare (required for two more passes)
 
 circaevum.com is proxied through **Cloudflare** (`cf-ray` on responses). GitHub Pages cannot set **Link** response headers or **Accept: text/markdown** negotiation — add Cloudflare rules:
@@ -76,11 +98,24 @@ curl -sI -H "Accept: text/markdown" https://circaevum.com/ | grep -i content-typ
 
 ## After deploy checklist
 
-1. Push to **three-circa** `main` (Pages rebuild).
+1. Push to **three-circa** `main` (Pages rebuild) — include **`.nojekyll`** at repo root.
 2. Confirm https://circaevum.com/robots.txt returns **200** `text/plain`.
-3. Confirm https://circaevum.com/.well-known/api-catalog returns JSON.
+3. Confirm https://circaevum.com/.well-known/api-catalog and `.../agent-skills/index.json` return **200** (not 404).
 4. Apply Cloudflare Link + markdown rules if not already.
-5. Re-run isitagentready.com scan — target **Level 2+** from static files alone; **Level 3+** with Cloudflare content rules.
+5. Re-run isitagentready.com scan.
+
+### Expected score after fixes (honest ceiling)
+
+| Fix | Checks unlocked |
+|-----|-----------------|
+| `.nojekyll` + `.well-known/*` live | `apiCatalog`, `agentSkills` |
+| Cloudflare Link headers on `/` | `linkHeaders` |
+| Cloudflare markdown negotiation on `/` | `markdownNegotiation` |
+| DNS SVCB / DNS-AID at registrar (optional) | `dnsAid` |
+
+**Still fail without scope creep** (auth/MCP live on **app.circaevum.com**, not static GL): OAuth discovery, `auth.md`, MCP server card, WebMCP, A2A agent card — **5 of 7** in the discovery bucket. Do not fake these on circaevum.com.
+
+Target after deploy + Cloudflare: **Level 3-ish** (Discoverability + Content + partial Discovery), not 100/100.
 
 ## Coding-agent repo map
 
