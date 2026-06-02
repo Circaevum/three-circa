@@ -14,6 +14,7 @@
     <header class="dev-doc-header">
         <a href="/" class="dev-doc-brand">← Circaevum GL</a>
         <nav class="dev-doc-nav" aria-label="Developer sections">
+            <a href="#paths">Paths</a>
             <a href="#discovery">Discovery</a>
             <a href="#embed-api">Embed API</a>
             <a href="#postmessage">postMessage</a>
@@ -36,7 +37,46 @@
                 <a href="/docs/FOR-AGENTS.md">FOR-AGENTS.md</a> ·
                 <a href="https://isitagentready.com/circaevum.com" rel="noopener noreferrer">agent readiness scan</a>
             </p>
+            <p class="dev-doc-lede">
+                <strong>Modular:</strong> embed the GL with <em>your</em> auth, or plug into Circaevum accounts — see
+                <a href="#paths">integration paths</a>.
+            </p>
         </header>
+
+        <section id="paths" class="dev-doc-section">
+            <h2>Integration paths</h2>
+            <p>Pick what you need. Systems are independent.</p>
+            <table class="dev-doc-table">
+                <thead><tr><th>Path</th><th>Use when</th><th>Auth</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><strong>A — GL + your auth</strong></td>
+                        <td>You want the 3D viewer only</td>
+                        <td>Yours — GL is auth-free</td>
+                    </tr>
+                    <tr>
+                        <td><strong>B — Circaevum account</strong></td>
+                        <td>Calendars, Nakama storage, Garmin</td>
+                        <td>app.circaevum.com + Nakama</td>
+                    </tr>
+                    <tr>
+                        <td><strong>C — Reference wrapper</strong></td>
+                        <td>Copy Yin-portal iframe pattern</td>
+                        <td>Nakama (swap for yours)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>D — Local lab</strong></td>
+                        <td>Muse / ESP32 / OSC on LAN</td>
+                        <td>Local only</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>
+                <strong>Path A:</strong> iframe <code>?viewer=1</code> → your login →
+                <code>CIRCAEVUM_INGEST_EVENTS</code>. No OAuth on circaevum.com required.
+            </p>
+            <p>Full detail: <a href="/docs/FOR-AGENTS.md#integration-paths-pick-what-you-need">FOR-AGENTS.md</a></p>
+        </section>
 
         <section id="discovery" class="dev-doc-section">
             <h2>Discovery (agents &amp; crawlers)</h2>
@@ -109,12 +149,22 @@ gl.ingestEvents('my-layer', events, { layerStyles: {} });</code></pre>
         </section>
 
         <section id="account" class="dev-doc-section">
-            <h2>Account &amp; OAuth</h2>
+            <h2>Account &amp; OAuth (Path B — optional)</h2>
             <p>
-                Nakama login, calendars, and Garmin Connect run on
-                <a href="https://app.circaevum.com/" rel="noopener noreferrer">app.circaevum.com</a> — not on the GL origin.
-                Storage contracts: <a href="https://github.com/Circaevum/circaevum-spec" rel="noopener noreferrer">circaevum-spec</a>.
+                Only if you use Circaevum-managed accounts. For GL + your own auth, skip this block.
             </p>
+            <p>
+                Nakama login, calendars, and Garmin Connect:
+                <a href="https://app.circaevum.com/" rel="noopener noreferrer">app.circaevum.com</a>.
+                OAuth/OIDC discovery on this origin:
+            </p>
+            <ul class="dev-doc-list">
+                <li><a href="/.well-known/oauth-authorization-server">oauth-authorization-server</a> (RFC 8414)</li>
+                <li><a href="/.well-known/openid-configuration">openid-configuration</a></li>
+                <li><a href="/.well-known/oauth-protected-resource">oauth-protected-resource</a> (RFC 9728)</li>
+                <li><a href="/auth.md">auth.md</a> — agent registration guide</li>
+            </ul>
+            <p>Storage contracts: <a href="https://github.com/Circaevum/circaevum-spec" rel="noopener noreferrer">circaevum-spec</a>.</p>
         </section>
 
         <section class="dev-doc-section">

@@ -7,6 +7,7 @@
 - [Home (interactive GL)](https://circaevum.com/): Three.js timeline — zoom from years to hours, WebXR on supported browsers.
 - [Developers & agents](https://circaevum.com/developers.html): On-page docs — embed API, postMessage, MCP status, OSC lab streams.
 - [For agents (markdown)](https://circaevum.com/docs/FOR-AGENTS.md): Full integrator reference (discovery, API, OSC, skills).
+- [Integration paths](https://circaevum.com/docs/FOR-AGENTS.md#integration-paths-pick-what-you-need): GL-only + your auth, Circaevum account, wrapper, local lab.
 - [Markdown overview](https://circaevum.com/index.md): Same homepage as machine-readable markdown.
 - [Graphics Library API](https://circaevum.com/API.md): `CircaevumAPI` / embed `postMessage` contract for integrators.
 - [Viewer & wrapper guide](https://circaevum.com/docs/VIEWER-AND-WRAPPER.md): iframe embed mode (`?viewer=1`), portal integration.
@@ -22,6 +23,10 @@
 - [Developers page](https://circaevum.com/developers.html): Human-readable entry for integrators and AI agents.
 - [API catalog](https://circaevum.com/.well-known/api-catalog): RFC 9727 linkset — embed API docs and GitHub.
 - [Agent skills index](https://circaevum.com/.well-known/agent-skills/index.json): SKILL.md files for GL embed, site overview, and developers.
+- [OAuth Authorization Server](https://circaevum.com/.well-known/oauth-authorization-server): RFC 8414 metadata (Nakama account API).
+- [OpenID configuration](https://circaevum.com/.well-known/openid-configuration): OIDC discovery.
+- [Protected resource metadata](https://circaevum.com/.well-known/oauth-protected-resource): RFC 9728.
+- [auth.md](https://circaevum.com/auth.md): Agent authentication guide.
 
 ## Account (separate origin)
 

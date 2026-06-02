@@ -6,7 +6,7 @@
       "type": "skill-md",
       "description": "Integrate the Circaevum Graphics Library via iframe postMessage and circaevum-gl.js (viewer mode, ingest events, layers).",
       "url": "/.well-known/agent-skills/circaevum-gl-embed/SKILL.md",
-      "digest": "sha256:caeac59062cced70af7e881cea1c8c71604d42ab270d9a987c63e613afd8d5f6"
+      "digest": "sha256:2a13fbc9b0e9d13591b5d7c875df8285953abab1853f8deb6ff2c00d2eda7af1"
     },
     {
       "name": "circaevum-site",
@@ -20,7 +20,7 @@
       "type": "skill-md",
       "description": "Developer and agent integration — discovery URLs, MCP status (none on site), embed/postMessage API, OSC lab streams.",
       "url": "/.well-known/agent-skills/circaevum-developers/SKILL.md",
-      "digest": "sha256:0b0fd37c34888b2b8e4ed427a9c175fd8c4717f5bb503b23df684647f4b032f4"
+      "digest": "sha256:91fb6ba0d658f5e563afda986b0807c390fbb24373ee21d100d3b46b4c4145f1"
     }
   ]
 }
