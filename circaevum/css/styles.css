@@ -1976,6 +1976,10 @@ body.light-mode .event-list-panel-list .draw-line-btn.drawn {
     display: none;
 }
 
+.circaevum-intro-replay-btn {
+    flex-shrink: 0;
+}
+
 .scene-icon-toggle {
     width: 100%;
     min-height: 0;
@@ -4369,6 +4373,26 @@ body.sky-theme .circaevum-tour-personas-chip {
 /* ============================================
    DEVELOPERS / AGENTS DOC PAGE
    ============================================ */
+body.dev-doc-page {
+    overflow-x: hidden;
+    overflow-y: auto;
+    cursor: auto;
+    height: auto;
+    min-height: 100vh;
+    scroll-behavior: smooth;
+    scroll-padding-top: 72px;
+}
+
+body.dev-doc-page a,
+body.dev-doc-page button {
+    cursor: pointer;
+}
+
+body.dev-doc-page .dev-doc-code,
+body.dev-doc-page pre {
+    cursor: text;
+}
+
 .dev-doc-page {
     min-height: 100vh;
     background: #f8fafc;

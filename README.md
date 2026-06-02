@@ -43,7 +43,7 @@ If the URL looks like a **public** view (`view=public`, or `bundle` + `owner`, o
 
 **Replay**
 
-- Menu: **Replay intro tour** (navbar). In **viewer / iframe** mode the navbar is hidden; use the **play** icon added to the scene tool strip (bottom-right cluster) to reset intro state and show the prompt again.
+- **Play** icon on the scene tool strip (bottom-right): resets intro state and shows the prompt again. In **viewer / iframe** mode the navbar is hidden; use the play icon on the scene strip.
 
 **Parent page `postMessage`** (see [`circaevum/js/ui/embed-api.js`](./circaevum/js/ui/embed-api.js))
 

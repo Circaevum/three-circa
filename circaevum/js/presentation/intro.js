@@ -220,12 +220,13 @@
   }
 
   function ensureReplayControl() {
-    var grid = document.querySelector('.scene-icon-grid');
-    if (!grid || grid.querySelector('#circaevum-intro-replay-btn')) return;
+    var overlay = document.querySelector('.scene-icon-overlay');
+    var grid = overlay && overlay.querySelector('.scene-icon-grid');
+    if (!overlay || !grid || overlay.querySelector('#circaevum-intro-replay-btn')) return;
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.id = 'circaevum-intro-replay-btn';
-    btn.className = 'scene-icon-btn';
+    btn.className = 'scene-icon-btn circaevum-intro-replay-btn';
     btn.title = 'Replay intro tour';
     btn.setAttribute('aria-label', 'Replay intro tour');
     btn.innerHTML =
@@ -237,7 +238,7 @@
       clearStoredIntro();
       showIntroPrompt({ force: true });
     };
-    grid.appendChild(btn);
+    overlay.insertBefore(btn, grid);
   }
 
   /** @param {Object} data embed message */

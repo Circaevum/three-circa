@@ -211,16 +211,7 @@
           if (action === 'calendar-layers') openCalendarsLeftPanel();
           if (action === 'event-list') openEventListPanel();
           if (action === 'login' && fullAppUrl) window.location.href = buildFullAppUrl(true);
-          if (action === 'keyboard-controls') openKeyboardControlsPanel();
           if (action === 'about') toggleAboutPanel();
-          if (action === 'replay-intro') {
-            if (window.CircaevumIntro && typeof window.CircaevumIntro.clearStoredIntro === 'function') {
-              window.CircaevumIntro.clearStoredIntro();
-            }
-            if (typeof window.showCircaevumIntroPrompt === 'function') {
-              window.showCircaevumIntroPrompt({ force: true });
-            }
-          }
         };
       });
       document.addEventListener('click', function() {
