@@ -27,6 +27,8 @@
 - [OpenID configuration](https://circaevum.com/.well-known/openid-configuration): OIDC discovery.
 - [Protected resource metadata](https://circaevum.com/.well-known/oauth-protected-resource): RFC 9728.
 - [auth.md](https://circaevum.com/auth.md): Agent authentication guide.
+- [MCP Server Card](https://circaevum.com/.well-known/mcp/server-card.json): SEP-1649 discovery; WebMCP tools on homepage.
+- [Cloudflare agent setup](https://circaevum.com/cloudflare/README.md): Link headers, Markdown for Agents, DNS-AID.
 
 ## Account (separate origin)
 
