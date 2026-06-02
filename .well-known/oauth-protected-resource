@@ -1,0 +1,17 @@
+{
+  "resource": "https://circaevum.com/",
+  "authorization_servers": [
+    "https://circaevum.com"
+  ],
+  "bearer_methods_supported": [
+    "header"
+  ],
+  "scopes_supported": [
+    "circaevum.storage.read",
+    "circaevum.storage.write",
+    "openid",
+    "email",
+    "profile"
+  ],
+  "resource_documentation": "https://circaevum.com/docs/FOR-AGENTS.md#oauth--account-api-optional"
+}

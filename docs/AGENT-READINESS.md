@@ -22,6 +22,11 @@ curl -s -X POST https://isitagentready.com/api/scan \
 | `/index.md` | Markdown fallback URL |
 | `/.well-known/api-catalog` | RFC 9727 API catalog (`application/linkset+json`) |
 | `/.well-known/agent-skills/index.json` | Agent Skills discovery |
+| `/.well-known/oauth-authorization-server` | OAuth AS metadata (RFC 8414) |
+| `/.well-known/openid-configuration` | OpenID Provider discovery |
+| `/.well-known/oauth-protected-resource` | Protected resource metadata (RFC 9728) |
+| `/.well-known/jwks.json` | JWKS (empty — Nakama uses server-side JWT validation) |
+| `/auth.md` | Agent authentication guide (Auth.md) |
 
 These ship from [three-circa](https://github.com/Circaevum/three-circa) / `yang/web/` on GitHub Pages → **circaevum.com**.
 
@@ -89,7 +94,6 @@ curl -sI -H "Accept: text/markdown" https://circaevum.com/ | grep -i content-typ
 
 | Check | Why skip / defer |
 |-------|------------------|
-| OAuth discovery | Auth on **app.circaevum.com** / Nakama — not the public GL origin |
 | MCP Server Card | No MCP server on static GL site |
 | WebMCP | No browser tool registration on GL |
 | x402 / commerce | Not a storefront |
@@ -108,12 +112,13 @@ curl -sI -H "Accept: text/markdown" https://circaevum.com/ | grep -i content-typ
 
 | Fix | Checks unlocked |
 |-----|-----------------|
-| `.nojekyll` + `.well-known/*` live | `apiCatalog`, `agentSkills` |
+| `.nojekyll` + `.well-known/*` live | `apiCatalog`, `agentSkills`, `oauthDiscovery`, `oauthProtectedResource` |
+| `/auth.md` live | `authMd` |
 | Cloudflare Link headers on `/` | `linkHeaders` |
 | Cloudflare markdown negotiation on `/` | `markdownNegotiation` |
 | DNS SVCB / DNS-AID at registrar (optional) | `dnsAid` |
 
-**Still fail without scope creep** (auth/MCP live on **app.circaevum.com**, not static GL): OAuth discovery, `auth.md`, MCP server card, WebMCP, A2A agent card — **5 of 7** in the discovery bucket. Do not fake these on circaevum.com.
+**Still fail without scope creep** (no live MCP/A2A/WebMCP on static GL): MCP server card, WebMCP, A2A agent card.
 
 Target after deploy + Cloudflare: **Level 3-ish** (Discoverability + Content + partial Discovery), not 100/100.
 

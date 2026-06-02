@@ -2,6 +2,16 @@
 
 The Circaevum web app is split so the **graphics library (GL)** is viewer-only (no account/Nakama in the repo) and **login/account** lives in the wrapper (app.circaevum.com).
 
+## Bring your own auth (most integrators)
+
+You do **not** have to use app.circaevum.com or Nakama. Typical pattern:
+
+1. Host a page with an iframe: `index.html?viewer=1` (from circaevum.com or your fork of [three-circa](https://github.com/Circaevum/three-circa)).
+2. Authenticate users with **your** IdP / API.
+3. On `CIRCAEVUM_READY`, send `CIRCAEVUM_INGEST_EVENTS` with events from **your** backend.
+
+The Yin-portal (Path C) is a **reference** implementation that uses Nakama — copy the iframe + postMessage pattern, swap in your auth layer. See [FOR-AGENTS.md](./FOR-AGENTS.md#integration-paths-pick-what-you-need).
+
 ## Single entry: `index.html`
 
 There is one HTML file: **`yang/web/index.html`**.
