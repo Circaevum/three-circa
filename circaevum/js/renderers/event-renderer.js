@@ -1214,6 +1214,28 @@
     return { rInner: ri, rOuter: ro };
   }
 
+  /** Push overlapping long-term ribbons to slightly different radii when lane packing cannot split them on the disk. */
+  function applyOverlapLaneRadialNudge(earthDist, rInner, rOuter, overlapLane, peakLanes) {
+    const lane = typeof overlapLane === 'number' && overlapLane > 0 ? overlapLane : 0;
+    const peak = Math.max(1, peakLanes || 1);
+    if (lane <= 0 || peak <= 1) return { rInner, rOuter };
+    const W = earthDist;
+    const band = Math.max(rOuter - rInner, W * 0.014);
+    const step = Math.min(W * 0.013, band * 0.38);
+    const nudge = step * lane;
+    const { dayName: rDnm } = getDayNumberNameBand(W);
+    const outerCap = rDnm - W * 0.0025;
+    let ri = rInner + nudge * 0.5;
+    let ro = rOuter + nudge;
+    if (ro > outerCap) {
+      const spill = ro - outerCap;
+      ro = outerCap;
+      ri = Math.max(rInner, ri - spill * 0.45);
+    }
+    if (ro < ri + W * 0.012) ro = ri + W * 0.012;
+    return { rInner: ri, rOuter: ro };
+  }
+
   function shouldApplyConcentricEventRibbonLayout(zl) {
     const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : 5;
     if (z <= 1) return false;
@@ -4336,7 +4358,7 @@
     if (!pos) {
       const r = shouldUseDayBandDotPlacement()
         ? earthDist * DAY_EVENT_DOT_RADIUS_FRAC
-        : (radius != null ? radius : getRadiusForTimeOfDay(start, earthDist, 0));
+        : (radius != null ? radius : getRadiusForTimeOfDay(start, earthDist, layerConfig._overlapLane || 0));
       const angle = getOrbitAngleForShortEventPlacement(height, currentHeight);
       pos = typeof SceneGeometry !== 'undefined' && SceneGeometry.getPosition3D
         ? SceneGeometry.getPosition3D(height, angle, r)
@@ -4687,7 +4709,7 @@
         );
       }
       if (!pos) {
-        const rDot = getRadiusForDailyEventDot(earthDist, midDate, 0);
+        const rDot = getRadiusForDailyEventDot(earthDist, midDate, layerConfig._overlapLane || 0);
         pos = getPos(midHeight, rDot);
       }
       let markerSize = Math.max(0.22, Math.min(0.5, 0.22 + 0.28 * Math.min(1, durationH / 24)));
@@ -4740,6 +4762,17 @@
       const conc = applyConcentricEventRibbonRadii(earthDist, rInner, rOuter, rank01);
       rInner = conc.rInner;
       rOuter = conc.rOuter;
+    }
+    if (layerConfig._overlapLane > 0) {
+      const nudged = applyOverlapLaneRadialNudge(
+        earthDist,
+        rInner,
+        rOuter,
+        layerConfig._overlapLane,
+        layerConfig._overlapPeak
+      );
+      rInner = nudged.rInner;
+      rOuter = nudged.rOuter;
     }
 
     const segments = 32;
@@ -4936,6 +4969,10 @@
     const lineZl = getZoomLevelForEvents();
     const lineDurationRanks = buildDurationRankMapForLines(lines);
     const titleAlongByLineIdx = computeTitleAlongForLayerLines(lines);
+    const lineOverlapLayout = buildTemporalOverlapLayoutForLines(lines);
+    const lineDiskRibbonByIdx = shouldAssignCircadianDiskLanes(lines)
+      ? buildCircadianDiskRibbonForLineIntervals(lines, lineOverlapLayout)
+      : null;
 
     function addToFlattenOrWorld(root) {
       if (!root) return;
@@ -4978,7 +5015,7 @@
 
       const midDate = new Date((start.getTime() + end.getTime()) / 2);
       const anchorMs = midDate.getTime();
-      const rShort = getRadiusForDailyEventDot(earthDist, midDate, i % 4);
+      const rShort = getRadiusForDailyEventDot(earthDist, midDate, lineOverlapLayout.byIndex.get(i) || 0);
 
       const lineHasExplicitColor = hasExplicitEventColor(line);
       const lineGradient = getTimeGradientHex(getNormalizedTimeForDate(start, lineTimeRange));
@@ -4989,7 +5026,14 @@
       const byCategory = layerConfig.layerStylesByCategory || {};
       const firstStyle = Object.keys(byCategory).length > 0 ? byCategory[Object.keys(byCategory)[0]] : {};
       const lineStyle = (line.category && byCategory[line.category]) ? byCategory[line.category] : firstStyle;
-      const outlineLayerCfg = { ...layerConfig, ...lineStyle };
+      const lineDiskRibbon = lineDiskRibbonByIdx ? lineDiskRibbonByIdx.get(i) : null;
+      const outlineLayerCfg = {
+        ...layerConfig,
+        ...lineStyle,
+        _overlapLane: lineOverlapLayout.byIndex.get(i) || 0,
+        _overlapPeak: lineOverlapLayout.peakAll || 1,
+        ...(lineDiskRibbon ? { _diskRibbon: lineDiskRibbon } : {})
+      };
 
       if (!shouldDrawDailySkySteGeometry(start, end)) {
         continue;
@@ -5030,14 +5074,34 @@
 
         if (useHelixRibbon) {
           const segments = Math.max(8, Math.min(48, Math.ceil(durationH * 4)));
-          const ribbonPair = global.CircadianRenderer.buildHelixRibbonBetween(
-            start,
-            end,
-            refSelected,
-            calculateDateHeight,
-            segments,
-            straightenBlendLines
-          );
+          const CR = global.CircadianRenderer;
+          let ribbonPair = null;
+          if (lineDiskRibbon && CR && typeof CR.buildDiskRibbonBetween === 'function') {
+            ribbonPair = CR.buildDiskRibbonBetween(
+              start,
+              end,
+              lineDiskRibbon.rIn,
+              lineDiskRibbon.rOut,
+              refSelected,
+              calculateDateHeight,
+              segments,
+              straightenBlendLines
+            );
+          }
+          if (
+            (!ribbonPair || !ribbonPair.innerFlat || ribbonPair.innerFlat.length < 6) &&
+            CR &&
+            typeof CR.buildHelixRibbonBetween === 'function'
+          ) {
+            ribbonPair = CR.buildHelixRibbonBetween(
+              start,
+              end,
+              refSelected,
+              calculateDateHeight,
+              segments,
+              straightenBlendLines
+            );
+          }
           if (ribbonPair && ribbonPair.innerFlat && ribbonPair.outerFlat && ribbonPair.innerFlat.length >= 6) {
             const durationDaysSmall = Math.max(durationH / 24, 1 / 24);
             const plotType = resolveEventPlotType(start, end, lineStyle, layerConfig, firstStyle);
@@ -5274,6 +5338,17 @@
         rInner = conc.rInner;
         rOuter = conc.rOuter;
       }
+      if ((lineOverlapLayout.byIndex.get(i) || 0) > 0) {
+        const nudged = applyOverlapLaneRadialNudge(
+          earthDist,
+          rInner,
+          rOuter,
+          lineOverlapLayout.byIndex.get(i),
+          lineOverlapLayout.peakAll
+        );
+        rInner = nudged.rInner;
+        rOuter = nudged.rOuter;
+      }
 
       const plotType = resolveEventPlotType(start, end, lineStyle, layerConfig, firstStyle);
       const fillColorFromStyle = lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
@@ -5500,7 +5575,81 @@
   const ADMINISH_TITLE_RE =
     /check.?in|registrat|office hours|orientation|front desk|info desk|help desk|sign.?up|\badmin\b/;
 
+  /** Edge Esmeralda day-disk band plan: Hub lanes 0–1, Loft lane 2, others from 3+. */
+  const EDGE_HUB_DISK_LANES = 2;
+  const EDGE_LOFT_DISK_LANE = 2;
+  const EDGE_OTHER_DISK_LANE_START = 3;
+
+  function isEdgeEsmeraldaEvent(ev) {
+    if (!ev) return false;
+    if (ev.metadata && ev.metadata.venue_zone) return true;
+    const loc = ev.location != null ? String(ev.location) : '';
+    if (loc.indexOf('Edge Esmeralda') >= 0) return true;
+    const uid = ev.uid != null ? String(ev.uid) : '';
+    return uid.indexOf('ee26-') === 0;
+  }
+
+  function isEdgeEsmeraldaEventSet(events) {
+    if (!events || !events.length) return false;
+    let n = 0;
+    for (let i = 0; i < events.length; i++) {
+      if (isEdgeEsmeraldaEvent(events[i])) n++;
+    }
+    return n >= Math.max(5, Math.floor(events.length * 0.2));
+  }
+
+  function edgeVenueZoneOf(ev) {
+    if (ev && ev.metadata && ev.metadata.venue_zone) return ev.metadata.venue_zone;
+    const loc = ev && ev.location != null ? String(ev.location) : '';
+    const tail = loc.indexOf('—') >= 0 ? loc.split('—').pop().trim().toLowerCase() : loc.toLowerCase();
+    if (!tail) return 'other';
+    if (/\bhub\b|405 healdsburg|outside the hub|meet at the hub/.test(tail)) return 'hub';
+    if (/\bloft\b|120 north|outside the loft/.test(tail)) return 'loft';
+    return 'other';
+  }
+
+  function edgeVenueZoneOfInterval(it, events) {
+    const ev = events && events[it.i] != null ? events[it.i] : null;
+    return edgeVenueZoneOf(ev);
+  }
+
+  /**
+   * Pack Edge Esmeralda sub-day events into fixed venue bands on the circadian disk.
+   * Hub overlaps scrunch into two inner lanes; Loft is one lane; everything else floats above.
+   */
+  function assignEdgeEsmeraldaVenueLanes(intervalList, events, maxOtherLanes) {
+    const hub = [];
+    const loft = [];
+    const other = [];
+    for (let k = 0; k < intervalList.length; k++) {
+      const it = intervalList[k];
+      const zone = edgeVenueZoneOfInterval(it, events);
+      if (zone === 'hub') hub.push(it);
+      else if (zone === 'loft') loft.push(it);
+      else other.push(it);
+    }
+    const laneByUid = new Map();
+    assignTemporalOverlapLanes(hub, EDGE_HUB_DISK_LANES, null).forEach((lane, uid) => {
+      laneByUid.set(uid, lane);
+    });
+    for (let k = 0; k < loft.length; k++) {
+      laneByUid.set(loft[k].uid, EDGE_LOFT_DISK_LANE);
+    }
+    const otherCap = Math.max(1, maxOtherLanes || 1);
+    assignTemporalOverlapLanes(other, otherCap, null).forEach((lane, uid) => {
+      laneByUid.set(uid, EDGE_OTHER_DISK_LANE_START + lane);
+    });
+    const peakOther = Math.max(1, computePeakConcurrentFromIntervals(other));
+    const totalLanes = EDGE_OTHER_DISK_LANE_START + Math.min(otherCap, peakOther);
+    return { laneByUid, totalLanes, peakOther };
+  }
+
   function diskVenueKeyOf(ev) {
+    if (isEdgeEsmeraldaEvent(ev)) {
+      const zone = edgeVenueZoneOf(ev);
+      if (zone === 'hub') return 'The Hub';
+      if (zone === 'loft') return 'The Loft';
+    }
     const loc = ev && ev.location != null ? String(ev.location) : '';
     const parts = loc.split('—');
     if (parts.length >= 2) return parts[parts.length - 1].trim() || 'Other';
@@ -5512,25 +5661,197 @@
     return ADMINISH_TITLE_RE.test(t);
   }
 
-  function diskStableHash01(s) {
-    let h = 2166136261;
-    for (let i = 0; i < s.length; i++) {
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 16777619);
+  function normalizeEventIntervalMs(event, idx) {
+    const s = getEventStart(event);
+    let e = getEventEnd(event);
+    if (!s || isNaN(s.getTime())) return null;
+    if (!e || !(e > s)) e = new Date(s.getTime() + 3600000);
+    return {
+      i: idx,
+      uid: eventUidForDisk(event, idx),
+      s: s.getTime(),
+      e: e.getTime(),
+      venue: diskVenueKeyOf(event),
+      subDay: durationHoursBetween(s, e) < 24
+    };
+  }
+
+  function buildVenueRankMap(events, intervalItems) {
+    if (isEdgeEsmeraldaEventSet(events)) {
+      const venueRank = new Map([
+        ['The Hub', 0],
+        ['The Loft', 1]
+      ]);
+      let next = 2;
+      for (let k = 0; k < intervalItems.length; k++) {
+        const v = intervalItems[k].venue;
+        if (!venueRank.has(v)) venueRank.set(v, next++);
+      }
+      return venueRank;
     }
-    return ((h >>> 0) % 100000) / 100000;
+    const venueCounts = new Map();
+    const venueOrder = [];
+    for (let k = 0; k < intervalItems.length; k++) {
+      const it = intervalItems[k];
+      if (!it.subDay) continue;
+      if (!venueCounts.has(it.venue)) {
+        venueCounts.set(it.venue, 0);
+        venueOrder.push(it.venue);
+      }
+      const ev = events && events[it.i] != null ? events[it.i] : null;
+      if (!isAdminishEvent(ev)) venueCounts.set(it.venue, venueCounts.get(it.venue) + 1);
+    }
+    venueOrder.sort(
+      (a, b) => venueCounts.get(b) - venueCounts.get(a) || (a < b ? -1 : 1)
+    );
+    const venueRank = new Map();
+    venueOrder.forEach((v, i) => venueRank.set(v, i));
+    return venueRank;
+  }
+
+  function computePeakConcurrentFromIntervals(list) {
+    if (!list || !list.length) return 0;
+    const points = [];
+    for (let k = 0; k < list.length; k++) {
+      points.push({ t: list[k].s, d: 1 });
+      points.push({ t: list[k].e, d: -1 });
+    }
+    points.sort((a, b) => a.t - b.t || a.d - b.d);
+    let cur = 0;
+    let peak = 0;
+    for (let k = 0; k < points.length; k++) {
+      cur += points[k].d;
+      if (cur > peak) peak = cur;
+    }
+    return peak;
   }
 
   /**
-   * Concentric venue rings: the busiest venue sits closest to Earth (ring 0),
-   * the 2nd-busiest next (ring 1), and every other venue is stably scattered
-   * across the outer rings. Popularity ignores admin / registration /
-   * office-hours items so logistics never win the inner ring. Maps each event
-   * uid → { rIn, rOut, rMid, lane } using concentric annuli inside the disk rim.
+   * Greedy interval lanes: overlapping spans prefer different lanes when capacity allows.
+   * @returns {Map<string, number>} uid → lane (0..maxLanes-1)
    */
-  function buildCircadianDiskRibbonByUid(events) {
+  function assignTemporalOverlapLanes(list, maxLanes, venueRank) {
+    const laneByUid = new Map();
+    if (!list || !list.length) return laneByUid;
+    const lanes = Math.max(1, maxLanes);
+    const sorted = list.slice().sort((a, b) => {
+      if (a.s !== b.s) return a.s - b.s;
+      if (a.e !== b.e) return a.e - b.e;
+      const ra = venueRank && venueRank.has(a.venue) ? venueRank.get(a.venue) : 9999;
+      const rb = venueRank && venueRank.has(b.venue) ? venueRank.get(b.venue) : 9999;
+      return ra - rb || (a.uid < b.uid ? -1 : 1);
+    });
+    const freeAt = new Array(lanes);
+    for (let L = 0; L < lanes; L++) freeAt[L] = -Infinity;
+    for (let k = 0; k < sorted.length; k++) {
+      const it = sorted[k];
+      let lane = -1;
+      for (let L = 0; L < freeAt.length; L++) {
+        if (it.s >= freeAt[L]) {
+          lane = L;
+          break;
+        }
+      }
+      if (lane === -1) {
+        lane = 0;
+        for (let L = 1; L < freeAt.length; L++) {
+          if (freeAt[L] < freeAt[lane]) lane = L;
+        }
+      }
+      freeAt[lane] = Math.max(freeAt[lane], it.e);
+      laneByUid.set(it.uid, lane);
+    }
+    return laneByUid;
+  }
+
+  function buildTemporalOverlapLayoutForEvents(events) {
+    const byIndex = new Map();
+    const subDayByUid = new Map();
+    if (!events || !events.length) {
+      return { byIndex, subDayByUid, peakAll: 1, peakSubDay: 1 };
+    }
+    const all = [];
+    const subDay = [];
+    for (let i = 0; i < events.length; i++) {
+      const iv = normalizeEventIntervalMs(events[i], i);
+      if (!iv) continue;
+      all.push(iv);
+      if (iv.subDay) subDay.push(iv);
+    }
+    const venueRank = buildVenueRankMap(events, subDay.length ? subDay : all);
+    const peakAll = Math.max(1, computePeakConcurrentFromIntervals(all));
+    const peakSubDay = Math.max(1, computePeakConcurrentFromIntervals(subDay));
+    const helixPeak = Math.min(peakAll, 8);
+    if (isEdgeEsmeraldaEventSet(events)) {
+      const edgeAll = assignEdgeEsmeraldaVenueLanes(all, events, helixPeak);
+      for (let k = 0; k < all.length; k++) {
+        byIndex.set(all[k].i, edgeAll.laneByUid.get(all[k].uid) || 0);
+      }
+      const edgeSub = assignEdgeEsmeraldaVenueLanes(subDay, events, Math.max(1, peakSubDay));
+      return {
+        byIndex,
+        subDayByUid,
+        peakAll: edgeAll.totalLanes,
+        peakSubDay: edgeSub.totalLanes,
+        subDay,
+        venueRank
+      };
+    }
+    const laneByUidAll = assignTemporalOverlapLanes(all, helixPeak, venueRank);
+    for (let k = 0; k < all.length; k++) {
+      byIndex.set(all[k].i, laneByUidAll.get(all[k].uid) || 0);
+    }
+    return { byIndex, subDayByUid, peakAll: helixPeak, peakSubDay, subDay, venueRank };
+  }
+
+  function normalizeLineIntervalMs(line, idx) {
+    const start = line.start instanceof Date ? line.start : new Date(line.start);
+    const end = line.end instanceof Date ? line.end : new Date(line.end);
+    if (!start || isNaN(start.getTime()) || !end || isNaN(end.getTime()) || !(end > start)) return null;
+    return {
+      i: idx,
+      uid: '__line_' + idx,
+      s: start.getTime(),
+      e: end.getTime(),
+      venue: line.location != null ? String(line.location).trim() || 'Other' : 'Other',
+      subDay: durationHoursBetween(start, end) < 24
+    };
+  }
+
+  function buildTemporalOverlapLayoutForLines(lines) {
+    const byIndex = new Map();
+    if (!lines || !lines.length) {
+      return { byIndex, peakAll: 1, peakSubDay: 1, subDay: [], venueRank: new Map() };
+    }
+    const all = [];
+    const subDay = [];
+    for (let i = 0; i < lines.length; i++) {
+      const iv = normalizeLineIntervalMs(lines[i], i);
+      if (!iv) continue;
+      all.push(iv);
+      if (iv.subDay) subDay.push(iv);
+    }
+    const pseudoEvents = lines.map((line, i) => ({
+      summary: line.label || '',
+      title: line.label || '',
+      location: line.location || ''
+    }));
+    const venueRank = buildVenueRankMap(pseudoEvents, subDay.length ? subDay : all);
+    const peakAll = Math.max(1, computePeakConcurrentFromIntervals(all));
+    const peakSubDay = Math.max(1, computePeakConcurrentFromIntervals(subDay));
+    const helixPeak = Math.min(peakAll, 8);
+    const laneByUidAll = assignTemporalOverlapLanes(all, helixPeak, venueRank);
+    for (let k = 0; k < all.length; k++) {
+      byIndex.set(all[k].i, laneByUidAll.get(all[k].uid) || 0);
+    }
+    return { byIndex, peakAll: helixPeak, peakSubDay, subDay, venueRank };
+  }
+
+  function buildCircadianDiskRibbonForLineIntervals(lines, overlapLayout) {
     const map = new Map();
-    if (!events || !events.length) return map;
+    const layout = overlapLayout || buildTemporalOverlapLayoutForLines(lines);
+    const subDay = layout.subDay || [];
+    if (!subDay.length) return map;
 
     const CR = global.CircadianRenderer;
     const baseHand = CR && typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
@@ -5544,7 +5865,6 @@
     const usable = Math.max(baseHand * 0.04, rim - innerMin);
     const minLaneSpan = momentLanes ? 0 : getShortCircadianMinRibbonRadialSpan(baseHand, zlLanes);
 
-    // Dynamic ring capacity: as many readable radial rings as the span allows.
     let laneCapacity;
     if (dailySkyLanes) {
       const outerR = getDailySkySteMaxOuterRadius(baseHand);
@@ -5556,111 +5876,122 @@
       laneCapacity = Math.max(4, Math.min(16, Math.floor(usable / minSpan)));
     }
 
-    // Rank venues by non-adminish sub-day event count.
-    const venueCounts = new Map();
-    const venueOrder = [];
-    for (let i = 0; i < events.length; i++) {
-      const s = getEventStart(events[i]);
-      const e = getEventEnd(events[i]);
-      if (!s || !e || !(e > s) || durationHoursBetween(s, e) >= 24) continue;
-      const v = diskVenueKeyOf(events[i]);
-      if (!venueCounts.has(v)) {
-        venueCounts.set(v, 0);
-        venueOrder.push(v);
-      }
-      if (!isAdminishEvent(events[i])) venueCounts.set(v, venueCounts.get(v) + 1);
+    const totalLanes = Math.max(1, Math.min(laneCapacity, layout.peakSubDay || 1));
+    const laneByUid = assignTemporalOverlapLanes(subDay, totalLanes, layout.venueRank);
+    const layoutCtx = {
+      baseHand,
+      momentLanes,
+      dailySkyLanes,
+      minR,
+      innerMin,
+      gapFrac,
+      usable,
+      minLaneSpan,
+      laneCapacity
+    };
+
+    for (let k = 0; k < subDay.length; k++) {
+      const it = subDay[k];
+      const lane = laneByUid.get(it.uid) || 0;
+      map.set(it.i, diskRibbonFromLaneIndex(lane, totalLanes, layoutCtx));
     }
-    venueOrder.sort(
-      (a, b) => venueCounts.get(b) - venueCounts.get(a) || (a < b ? -1 : 1)
-    );
-    const venueRank = new Map();
-    venueOrder.forEach((v, i) => venueRank.set(v, i));
+    return map;
+  }
 
-    // The two busiest venues each get TWO thin sub-lanes so time-overlapping
-    // sessions split apart by radius instead of stacking; every other venue
-    // keeps a single ring. Lane order inner→outer:
-    //   [ top0 ×2, top1 ×2, then one ring per remaining venue (stable scatter) ].
-    const TOP_SUBLANES = 2;
-    const top0 = venueOrder.length > 0 ? venueOrder[0] : null;
-    const top1 = venueOrder.length > 1 ? venueOrder[1] : null;
-    function isTopVenue(v) {
-      return v != null && (v === top0 || v === top1);
-    }
-
-    let cursor = 0;
-    const venueLaneStart = new Map();
-    if (top0 != null) { venueLaneStart.set(top0, cursor); cursor += TOP_SUBLANES; }
-    if (top1 != null) { venueLaneStart.set(top1, cursor); cursor += TOP_SUBLANES; }
-    const scatterLo = cursor;
-    const reserved = top1 != null ? 2 : top0 != null ? 1 : 0;
-    const restCount = Math.max(0, venueOrder.length - reserved);
-    const totalLanes = Math.max(1, Math.min(laneCapacity, scatterLo + restCount));
-    const scatterSpan = Math.max(1, totalLanes - scatterLo);
-
-    function laneStartForVenue(v) {
-      if (venueLaneStart.has(v)) return venueLaneStart.get(v);
-      return scatterLo + (Math.floor(diskStableHash01('ring|' + v) * scatterSpan) % scatterSpan);
-    }
-
-    // Greedy 2-way split of each top venue's sub-day events by time overlap:
-    // first free sub-lane wins; if both busy, take the one that frees soonest.
-    const subLaneByUid = new Map();
-    [top0, top1].forEach((v) => {
-      if (v == null) return;
-      const list = [];
-      for (let i = 0; i < events.length; i++) {
-        if (diskVenueKeyOf(events[i]) !== v) continue;
-        const s = getEventStart(events[i]);
-        const e = getEventEnd(events[i]);
-        if (!s || !e || !(e > s) || durationHoursBetween(s, e) >= 24) continue;
-        list.push({ uid: eventUidForDisk(events[i], i), s: s.getTime(), e: e.getTime() });
-      }
-      list.sort((a, b) => a.s - b.s || a.e - b.e);
-      const freeAt = [-Infinity, -Infinity];
-      for (let k = 0; k < list.length; k++) {
-        const it = list[k];
-        let sub;
-        if (it.s >= freeAt[0]) sub = 0;
-        else if (it.s >= freeAt[1]) sub = 1;
-        else sub = freeAt[0] <= freeAt[1] ? 0 : 1;
-        freeAt[sub] = Math.max(freeAt[sub], it.e);
-        subLaneByUid.set(it.uid, sub);
-      }
-    });
-
-    function laneForEvent(i, uid) {
-      const v = diskVenueKeyOf(events[i]);
-      let lane = laneStartForVenue(v);
-      if (isTopVenue(v)) lane += subLaneByUid.get(uid) || 0;
-      return Math.max(0, Math.min(totalLanes - 1, lane));
-    }
+  function diskRibbonFromLaneIndex(lane, totalLanes, layoutCtx) {
+    const {
+      baseHand,
+      momentLanes,
+      dailySkyLanes,
+      minR,
+      innerMin,
+      gapFrac,
+      usable,
+      minLaneSpan,
+      laneCapacity
+    } = layoutCtx;
+    const lanes = Math.max(1, Math.min(totalLanes, laneCapacity));
+    const L = Math.max(0, Math.min(lanes - 1, lane));
 
     if (dailySkyLanes) {
-      const layout = getDailySkySteAnnulusLayout(baseHand, totalLanes);
-      const step = layout.bandW + layout.gap;
-      for (let i = 0; i < events.length; i++) {
-        const uid = eventUidForDisk(events[i], i);
-        const lane = Math.max(0, Math.min(layout.lanes - 1, laneForEvent(i, uid)));
-        const rIn = layout.innerR + lane * step;
-        const rOut = rIn + layout.bandW;
-        const rMid = (rIn + rOut) * 0.5;
-        map.set(uid, clampShortCircadianDiskRibbon({ rIn, rOut, rMid, lane }));
-      }
-      return map;
+      const ann = getDailySkySteAnnulusLayout(baseHand, lanes);
+      const step = ann.bandW + ann.gap;
+      const rIn = ann.innerR + L * step;
+      const rOut = rIn + ann.bandW;
+      return clampShortCircadianDiskRibbon({ rIn, rOut, rMid: (rIn + rOut) * 0.5, lane: L });
     }
 
     const laneW = momentLanes
-      ? usable / totalLanes
-      : Math.max(baseHand * 0.04, usable / totalLanes);
+      ? usable / lanes
+      : Math.max(baseHand * 0.04, usable / lanes);
+    const rIn = innerMin + L * laneW;
+    let rOut = rIn + laneW * (1 - gapFrac);
+    if (minLaneSpan > 0 && rOut - rIn < minLaneSpan) rOut = rIn + minLaneSpan;
+    return clampShortCircadianDiskRibbon({ rIn, rOut, rMid: (rIn + rOut) * 0.5, lane: L });
+  }
 
-    for (let i = 0; i < events.length; i++) {
-      const uid = eventUidForDisk(events[i], i);
-      const L = laneForEvent(i, uid);
-      const rIn = innerMin + L * laneW;
-      let rOut = rIn + laneW * (1 - gapFrac);
-      if (minLaneSpan > 0 && rOut - rIn < minLaneSpan) rOut = rIn + minLaneSpan;
-      const rMid = (rIn + rOut) * 0.5;
-      map.set(uid, clampShortCircadianDiskRibbon({ rIn, rOut, rMid, lane: L }));
+  /**
+   * Sub-day disk ribbons: lane per uid from temporal overlap packing (not venue-only scatter).
+   * Overlapping intervals get different radial lanes when capacity allows.
+   */
+  function buildCircadianDiskRibbonByUid(events, overlapLayout) {
+    const map = new Map();
+    if (!events || !events.length) return map;
+
+    const layout = overlapLayout || buildTemporalOverlapLayoutForEvents(events);
+    const subDay = layout.subDay || [];
+    if (!subDay.length) return map;
+
+    const CR = global.CircadianRenderer;
+    const baseHand = CR && typeof CR.getHandLength === 'function' ? CR.getHandLength() : 12;
+    const zlLanes = getZoomLevelForEvents();
+    const momentLanes = zlLanes === 0;
+    const dailySkyLanes = isEarthDailySkyEventZoom(zlLanes);
+    const minR = getShortCircadianMinRadiusFromEarthCenter();
+    const rim = Math.max(baseHand * 1.08, minR + Math.max(baseHand * 0.04, 0.35));
+    const innerMin = Math.max(baseHand * 0.24, minR);
+    const gapFrac = momentLanes ? 0.36 : dailySkyLanes ? 0.12 : 0.4;
+    const usable = Math.max(baseHand * 0.04, rim - innerMin);
+    const minLaneSpan = momentLanes ? 0 : getShortCircadianMinRibbonRadialSpan(baseHand, zlLanes);
+
+    let laneCapacity;
+    if (dailySkyLanes) {
+      const outerR = getDailySkySteMaxOuterRadius(baseHand);
+      const span = Math.max(outerR - minR, 0.05);
+      const minBand = Math.max(baseHand * 0.045, 0.1);
+      laneCapacity = Math.max(4, Math.min(22, Math.floor(span / minBand)));
+    } else {
+      const minSpan = Math.max(minLaneSpan, baseHand * 0.03, 1e-3);
+      laneCapacity = Math.max(4, Math.min(16, Math.floor(usable / minSpan)));
+    }
+
+    let totalLanes;
+    let laneByUid;
+    if (isEdgeEsmeraldaEventSet(events)) {
+      const otherCap = Math.max(1, laneCapacity - EDGE_OTHER_DISK_LANE_START);
+      const edge = assignEdgeEsmeraldaVenueLanes(subDay, events, otherCap);
+      laneByUid = edge.laneByUid;
+      totalLanes = Math.max(EDGE_OTHER_DISK_LANE_START + 1, Math.min(laneCapacity, edge.totalLanes));
+    } else {
+      totalLanes = Math.max(1, Math.min(laneCapacity, layout.peakSubDay || 1));
+      laneByUid = assignTemporalOverlapLanes(subDay, totalLanes, layout.venueRank);
+    }
+    const layoutCtx = {
+      baseHand,
+      momentLanes,
+      dailySkyLanes,
+      minR,
+      innerMin,
+      gapFrac,
+      usable,
+      minLaneSpan,
+      laneCapacity
+    };
+
+    for (let k = 0; k < subDay.length; k++) {
+      const it = subDay[k];
+      const lane = laneByUid.get(it.uid) || 0;
+      map.set(it.uid, diskRibbonFromLaneIndex(lane, totalLanes, layoutCtx));
     }
     return map;
   }
@@ -5683,8 +6014,9 @@
     const zl = getZoomLevelForEvents();
     const durationRanks = buildDurationRankMapForEvents(events);
     const titleAlongByEventIdx = computeTitleAlongForLayerEvents(events);
+    const overlapLayout = buildTemporalOverlapLayoutForEvents(events);
     const diskRibbonByUid = shouldAssignCircadianDiskLanes(events)
-      ? buildCircadianDiskRibbonByUid(events)
+      ? buildCircadianDiskRibbonByUid(events, overlapLayout)
       : null;
 
     for (let i = 0; i < events.length; i++) {
@@ -5698,10 +6030,14 @@
       const rank01 = durationRanks.has(i) ? durationRanks.get(i) : null;
       const alongSpan = titleAlongByEventIdx.get(i) ?? 0.5;
       const diskRibbon = diskRibbonByUid ? diskRibbonByUid.get(eventUidForDisk(event, i)) : null;
+      const overlapAttach = {
+        _overlapLane: overlapLayout.byIndex.get(i) || 0,
+        _overlapPeak: overlapLayout.peakAll || 1
+      };
       const diskAttach = diskRibbon ? { _diskRibbon: diskRibbon } : {};
       const effectiveConfig = styleOverride
-        ? { ...layerConfig, ...styleOverride, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange, _durationRank01: rank01, _midTitleAlongSpan: alongSpan, ...diskAttach }
-        : { ...layerConfig, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange, _durationRank01: rank01, _midTitleAlongSpan: alongSpan, ...diskAttach };
+        ? { ...layerConfig, ...styleOverride, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange, _durationRank01: rank01, _midTitleAlongSpan: alongSpan, ...overlapAttach, ...diskAttach }
+        : { ...layerConfig, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange, _durationRank01: rank01, _midTitleAlongSpan: alongSpan, ...overlapAttach, ...diskAttach };
       const hasEnd = !!getEventEnd(event);
       const obj = hasEnd ? createEventWorldline(event, effectiveConfig) : createEventMarker(event, effectiveConfig);
       if (obj) {

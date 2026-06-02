@@ -410,6 +410,8 @@ body.sky-theme .circaevum-nav .light-mode-toggle .icon-sky {
     text-align: left;
     cursor: pointer;
     transition: background var(--ui-motion);
+    text-decoration: none;
+    box-sizing: border-box;
 }
 
 .nav-dropdown-item:hover {
@@ -2282,6 +2284,23 @@ body.light-mode .mobile-zoom-controls {
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
+body.light-mode .mobile-time-controls {
+    background: rgba(232, 244, 248, 0.95);
+    border-color: rgba(255, 193, 7, 0.65);
+}
+
+body.light-mode .mobile-time-btn {
+    background: rgba(0, 180, 216, 0.12);
+    color: var(--orbit-silver);
+    border-color: var(--cosmic-cyan);
+}
+
+body.light-mode .mobile-time-btn-now {
+    background: var(--solar-yellow);
+    color: var(--deep-space);
+    border-color: var(--solar-yellow);
+}
+
 body.light-mode .mobile-zoom-btn {
     background: var(--cosmic-cyan);
     color: var(--deep-space);
@@ -2744,7 +2763,11 @@ body.light-mode .circadian-scope-btn.active {
     }
 }
 
-/* Ensure mobile zoom controls can receive pointer events */
+/* Ensure mobile bottom controls can receive pointer events */
+.mobile-controls-stack,
+.mobile-controls-stack *,
+.mobile-time-controls,
+.mobile-time-controls *,
 .mobile-zoom-controls,
 .mobile-zoom-controls * {
     pointer-events: auto !important;
@@ -2864,18 +2887,90 @@ h1 {
 }
 
 /* ============================================
-   MOBILE ZOOM CONTROLS
+   MOBILE TIME + ZOOM CONTROLS
    ============================================ */
-.mobile-zoom-controls {
-    display: none; /* Hidden on desktop */
+.mobile-controls-stack {
+    display: none;
     position: absolute;
     bottom: 30px;
     left: 50%;
     transform: translateX(-50%);
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    z-index: 200;
+    pointer-events: none;
+    max-width: calc(100vw - 24px);
+}
+
+.mobile-controls-stack > * {
+    pointer-events: auto;
+}
+
+.mobile-time-controls {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 8, 20, 0.9);
+    backdrop-filter: blur(10px);
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 2px solid rgba(255, 214, 10, 0.55);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.mobile-time-btn {
+    min-width: 48px;
+    min-height: 48px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(0, 180, 216, 0.18);
+    color: var(--cosmic-cyan);
+    border: 2px solid rgba(0, 180, 216, 0.55);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.mobile-time-btn-now {
+    width: auto;
+    min-width: 72px;
+    padding: 0 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    background: var(--solar-yellow);
+    color: var(--deep-space);
+    border-color: var(--solar-yellow);
+    box-shadow: 0 2px 12px rgba(255, 214, 10, 0.35);
+}
+
+.mobile-time-btn:active {
+    transform: scale(0.95);
+}
+
+.mobile-time-btn-now:active {
+    background: #ffe566;
+}
+
+.mobile-zoom-controls {
+    display: flex; /* row inside stack on mobile */
+    position: static;
+    transform: none;
     flex-direction: row;
     align-items: center;
     gap: 20px;
-    z-index: 200; /* Higher z-index to ensure clickability */
     pointer-events: auto;
     background: rgba(0, 8, 20, 0.9);
     backdrop-filter: blur(10px);
@@ -3204,6 +3299,7 @@ body.zoom-level-0 .calendar-layers-pull-tab {
     display: none !important;
 }
 body.zoom-level-0 .controls,
+body.zoom-level-0 .mobile-controls-stack,
 body.zoom-level-0 .mobile-zoom-controls {
     z-index: 250;
 }
@@ -3622,7 +3718,7 @@ body.zoom-level-0 .info-panel {
         display: none !important;
     }
     
-    .mobile-zoom-controls {
+    .mobile-controls-stack {
         display: flex !important;
     }
     
@@ -3676,7 +3772,7 @@ body.zoom-level-0 .info-panel {
 
     .circaevum-attribution {
         left: 10px;
-        bottom: 8px;
+        bottom: calc(168px + env(safe-area-inset-bottom, 0px));
         font-size: 10px;
         padding: 5px 8px;
     }
@@ -3700,9 +3796,31 @@ body.zoom-level-0 .info-panel {
         letter-spacing: 0.1em;
     }
     
-    /* Mobile zoom controls - smaller on very small screens */
-    .mobile-zoom-controls {
+    /* Mobile bottom controls - smaller on very small screens */
+    .mobile-controls-stack {
         bottom: 15px;
+        gap: 8px;
+    }
+
+    .mobile-time-controls {
+        padding: 6px 12px;
+        gap: 8px;
+    }
+
+    .mobile-time-btn {
+        min-width: 44px;
+        min-height: 44px;
+        width: 44px;
+        height: 44px;
+        font-size: 20px;
+    }
+
+    .mobile-time-btn-now {
+        min-width: 64px;
+        font-size: 11px;
+    }
+
+    .mobile-zoom-controls {
         padding: 10px 20px;
         gap: 15px;
     }
@@ -4246,4 +4364,157 @@ body.light-mode .circaevum-tour-personas-chip,
 body.sky-theme .circaevum-tour-personas-chip {
     color: #334155;
     border-color: rgba(51, 65, 85, 0.35);
+}
+
+/* ============================================
+   DEVELOPERS / AGENTS DOC PAGE
+   ============================================ */
+.dev-doc-page {
+    min-height: 100vh;
+    background: #f8fafc;
+    color: #0f172a;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.dev-doc-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    padding: 16px 24px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    background: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.dev-doc-brand {
+    font-weight: 650;
+    color: #0f172a;
+    text-decoration: none;
+}
+
+.dev-doc-brand:hover {
+    color: #0369a1;
+}
+
+.dev-doc-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+}
+
+.dev-doc-nav a {
+    font-size: 0.875rem;
+    color: #475569;
+    text-decoration: none;
+}
+
+.dev-doc-nav a:hover {
+    color: #0369a1;
+}
+
+.dev-doc-main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 24px 64px;
+}
+
+.dev-doc-kicker {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin: 0 0 8px;
+}
+
+.dev-doc-hero h1 {
+    font-size: 2rem;
+    margin: 0 0 16px;
+    font-weight: 700;
+}
+
+.dev-doc-lede {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: #334155;
+    margin: 0 0 12px;
+}
+
+.dev-doc-section {
+    margin-top: 40px;
+}
+
+.dev-doc-section h2 {
+    font-size: 1.25rem;
+    margin: 0 0 12px;
+    font-weight: 650;
+}
+
+.dev-doc-section--muted {
+    padding: 20px;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.04);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.dev-doc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.dev-doc-table th,
+.dev-doc-table td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.dev-doc-table th {
+    font-weight: 600;
+    color: #475569;
+}
+
+.dev-doc-code {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin: 12px 0;
+}
+
+.dev-doc-code code {
+    font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+}
+
+.dev-doc-list {
+    margin: 12px 0;
+    padding-left: 1.25rem;
+    line-height: 1.7;
+    color: #334155;
+}
+
+.dev-doc-list code {
+    font-size: 0.88em;
+    background: rgba(15, 23, 42, 0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.dev-doc-footer {
+    text-align: center;
+    padding: 24px;
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+.dev-doc-footer a {
+    color: #0369a1;
 }

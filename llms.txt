@@ -1,0 +1,28 @@
+# Circaevum
+
+> Open-source 3D time visualization: planetary orbits, circadian rhythm, and calendar events in space-time. Auth-free viewer at circaevum.com; account sync via app.circaevum.com.
+
+## Core site
+
+- [Home (interactive GL)](https://circaevum.com/): Three.js timeline — zoom from years to hours, WebXR on supported browsers.
+- [Developers & agents](https://circaevum.com/developers.html): On-page docs — embed API, postMessage, MCP status, OSC lab streams.
+- [For agents (markdown)](https://circaevum.com/docs/FOR-AGENTS.md): Full integrator reference (discovery, API, OSC, skills).
+- [Markdown overview](https://circaevum.com/index.md): Same homepage as machine-readable markdown.
+- [Graphics Library API](https://circaevum.com/API.md): `CircaevumAPI` / embed `postMessage` contract for integrators.
+- [Viewer & wrapper guide](https://circaevum.com/docs/VIEWER-AND-WRAPPER.md): iframe embed mode (`?viewer=1`), portal integration.
+
+## Open source
+
+- [three-circa on GitHub](https://github.com/Circaevum/three-circa): Source for this site.
+- [circaevum-spec](https://github.com/Circaevum/circaevum-spec): Cross-client storage and API notes.
+- [AGENTS.md (repo map)](https://github.com/Circaevum/three-circa/blob/main/AGENTS.md): Architecture for coding agents (when published in repo).
+
+## Agent discovery
+
+- [Developers page](https://circaevum.com/developers.html): Human-readable entry for integrators and AI agents.
+- [API catalog](https://circaevum.com/.well-known/api-catalog): RFC 9727 linkset — embed API docs and GitHub.
+- [Agent skills index](https://circaevum.com/.well-known/agent-skills/index.json): SKILL.md files for GL embed, site overview, and developers.
+
+## Account (separate origin)
+
+- [Circaevum app](https://app.circaevum.com/): Login, Nakama calendars, Garmin layers — not hosted on circaevum.com.

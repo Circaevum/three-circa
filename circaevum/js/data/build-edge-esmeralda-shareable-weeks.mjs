@@ -60,7 +60,7 @@ function eventsToCsv(events) {
 }
 
 const raw = loadRaw();
-const { weeks, occCount, sourceRows } = buildWeekSessions(raw, { descriptionMax: null });
+const { weeks, occCount, rawRowCount, uniqueSourceRows } = buildWeekSessions(raw, { descriptionMax: null });
 mkdirSync(OUT_DIR, { recursive: true });
 
 const manifestRows = [
@@ -123,4 +123,4 @@ node yang/web/circaevum/js/data/build-edge-esmeralda-shareable-weeks.mjs
 );
 
 console.log('Wrote', OUT_DIR);
-console.log(`Source: ${sourceRows} rows → ${occCount} session occurrences`);
+console.log(`Source: ${uniqueSourceRows} unique portal rows (${rawRowCount} raw export rows) → ${occCount} session occurrences`);

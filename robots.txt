@@ -1,0 +1,36 @@
+# Circaevum — https://circaevum.com
+# Agent-ready crawl policy (RFC 9309). See docs/AGENT-READINESS.md
+
+User-agent: *
+Allow: /
+Content-Signal: ai-train=no, search=yes, ai-input=yes
+
+# AI crawlers — explicit rules (required for agent-readiness scans)
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+Sitemap: https://circaevum.com/sitemap.xml

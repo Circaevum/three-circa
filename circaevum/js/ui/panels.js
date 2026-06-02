@@ -232,10 +232,22 @@
 
     var sceneIconOverlay = document.querySelector('.scene-icon-overlay');
     var sceneIconToggle = document.getElementById('scene-icon-toggle');
+    function syncSceneIconToggleUi() {
+      if (!sceneIconOverlay || !sceneIconToggle) return;
+      var collapsed = sceneIconOverlay.classList.contains('collapsed');
+      sceneIconToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      sceneIconToggle.title = collapsed ? 'Expand scene controls' : 'Collapse scene controls';
+      sceneIconToggle.setAttribute('aria-label', collapsed ? 'Expand scene controls' : 'Collapse scene controls');
+    }
     if (sceneIconOverlay && sceneIconToggle) {
+      if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
+        sceneIconOverlay.classList.add('collapsed');
+      }
+      syncSceneIconToggleUi();
       sceneIconToggle.onclick = function(e) {
         e.stopPropagation();
         sceneIconOverlay.classList.toggle('collapsed');
+        syncSceneIconToggleUi();
       };
     }
 

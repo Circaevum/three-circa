@@ -13,8 +13,10 @@ import { HERE, buildWeekSessions, loadRaw } from './edge-esmeralda-build-core.mj
 
 const OUT = join(HERE, 'edge-esmeralda-2026-sessions.js');
 
-const raw = loadRaw();
-const { weeks, usedCats, occCount } = buildWeekSessions(raw, { descriptionMax: 240 });
+const rawAll = loadRaw();
+const { weeks, usedCats, occCount, rawRowCount, uniqueSourceRows } = buildWeekSessions(rawAll, {
+  descriptionMax: 240
+});
 
 const styleLines = [...usedCats.entries()]
   .map(([c, col]) => `    ${JSON.stringify(c)}: '${col}'`)
@@ -26,7 +28,7 @@ const banner =
   ' * portal export by build-edge-esmeralda-sessions.mjs. RRULE recurrences are\n' +
   ' * pre-expanded into occurrences within the festival window. Each Edge track /\n' +
   ' * kind is a toggleable category. DO NOT hand-edit; re-run the build script.\n' +
-  ` * Events: ${occCount} occurrences from ${raw.length} source rows.\n` +
+  ` * Events: ${occCount} occurrences from ${uniqueSourceRows} unique portal rows (${rawRowCount} raw export rows, deduped by id).\n` +
   ' */\n';
 
 const body =
