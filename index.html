@@ -9,6 +9,11 @@
     <link rel="describedby" href="/llms.txt" type="text/plain">
     <link rel="alternate" type="text/markdown" href="/index.md" title="Circaevum (markdown)">
     <link rel="help" href="/developers.html" title="Developers &amp; AI agents">
+    <!-- Agent discovery (HTML); HTTP Link response headers require Cloudflare — see cloudflare/README.md -->
+    <link rel="api-catalog" href="/.well-known/api-catalog">
+    <link rel="service-doc" href="/.well-known/agent-skills/index.json" type="application/json">
+    <link rel="service-doc" href="/docs/FOR-AGENTS.md" type="text/markdown">
+    <link rel="service-desc" href="/.well-known/oauth-authorization-server" type="application/json">
 </head>
 <body>
     <script src="circaevum/js/ui/viewer-bootstrap.js"></script>
