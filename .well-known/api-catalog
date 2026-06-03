@@ -28,6 +28,14 @@
           "type": "text/markdown"
         },
         {
+          "href": "https://circaevum.com/.well-known/agent-skills/index.json",
+          "type": "application/json"
+        },
+        {
+          "href": "https://circaevum.com/.well-known/mcp/server-card.json",
+          "type": "application/json"
+        },
+        {
           "href": "https://github.com/Circaevum/three-circa/blob/main/circaevum/js/api/circaevum-gl.js",
           "type": "text/html"
         }

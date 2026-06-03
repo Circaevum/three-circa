@@ -16,115 +16,74 @@ curl -s -X POST https://isitagentready.com/api/scan \
 |------|----------------|
 | `/robots.txt` | Discoverability, AI bot rules, Content-Signal |
 | `/sitemap.xml` | Sitemap |
-| `/llms.txt` | LLM site map (optional scan toggle) |
-| `/developers.html` | Human-facing integrator & agent docs (MCP, API, OSC) |
+| `/llms.txt` | LLM site map |
+| `/developers.html` | Human-facing integrator & agent docs |
 | `/docs/FOR-AGENTS.md` | Full markdown reference for agents |
 | `/index.md` | Markdown fallback URL |
-| `/.well-known/api-catalog` | RFC 9727 API catalog (`application/linkset+json`) |
+| `/.well-known/api-catalog` | RFC 9727 API catalog |
 | `/.well-known/agent-skills/index.json` | Agent Skills discovery |
-| `/.well-known/oauth-authorization-server` | OAuth AS metadata (RFC 8414) |
+| `/.well-known/oauth-authorization-server` | OAuth AS metadata + **`agent_auth`** |
 | `/.well-known/openid-configuration` | OpenID Provider discovery |
-| `/.well-known/oauth-protected-resource` | Protected resource metadata (RFC 9728) |
-| `/.well-known/jwks.json` | JWKS (empty — Nakama uses server-side JWT validation) |
-| `/auth.md` | Agent authentication guide (Auth.md) |
+| `/.well-known/oauth-protected-resource` | Protected resource metadata + **`agent_auth`** |
+| `/.well-known/jwks.json` | JWKS |
+| `/.well-known/mcp/server-card.json` | MCP Server Card (SEP-1649) |
+| `/auth.md` | Auth.md guide (H1 contains `auth.md`) |
+| `circaevum/js/ui/webmcp-tools.js` | WebMCP tools on homepage |
 
-These ship from [three-circa](https://github.com/Circaevum/three-circa) / `yang/web/` on GitHub Pages → **circaevum.com**.
+Deploy from [three-circa](https://github.com/Circaevum/three-circa) / `yang/web/` → GitHub Pages → **circaevum.com**.
 
 ### GitHub Pages: `.nojekyll` (required)
 
-GitHub Pages runs Jekyll by default. Jekyll **skips** dot-directories like `/.well-known/`, so `api-catalog` and Agent Skills return **404** even after push.
-
-**Fix:** keep an empty **`.nojekyll`** at the site root (`yang/web/.nojekyll`). Without it, discovery checks stay at 0/7 no matter what you add in repo.
-
-After deploy, verify:
+Jekyll skips `/.well-known/` without an empty **`.nojekyll`** at site root.
 
 ```bash
-curl -sI https://circaevum.com/.well-known/agent-skills/index.json | head -3
-curl -sI https://circaevum.com/.well-known/api-catalog | head -3
-# expect HTTP/2 200 (not 404)
+curl -sI https://circaevum.com/.well-known/mcp/server-card.json | head -3
+curl -sI https://circaevum.com/auth.md | head -3
 ```
 
-**api-catalog Content-Type:** scan wants `application/linkset+json`. GitHub may serve extensionless files as `application/octet-stream`. If scan still fails after 200, add a Cloudflare **response header** rule on `/.well-known/api-catalog` → `Content-Type: application/linkset+json`.
+**api-catalog Content-Type:** if scan fails after 200, Cloudflare rule on `/.well-known/api-catalog` → `Content-Type: application/linkset+json`.
 
-## Lanternade vs this score
+## Cloudflare (required for three HTTP/DNS checks)
 
-[toolchain.lanternade.com](https://toolchain.lanternade.com/) (Zod, Gitleaks, Husky, Vitest, CI, ESLint) hardens **code in git**. [isitagentready.com](https://isitagentready.com/circaevum.com) scores **public HTTP discovery** for agents. **No Lanternade tier moves this score** — different layer.
+See **[`cloudflare/README.md`](../cloudflare/README.md)** — index for:
 
-Use Lanternade on `garmin-ingest`, portal, future bio hub anyway; use this doc for circaevum.com deploy + Cloudflare.
+| Cloudflare task | Check |
+|-----------------|-------|
+| Homepage **Link** header | `linkHeaders` |
+| **Markdown for Agents** | `markdownNegotiation` |
+| **DNS-AID** SVCB/HTTPS + DNSSEC | `dnsAid` |
 
-## Cloudflare (required for two more passes)
+GitHub Pages cannot set `Link` headers or negotiate `Accept: text/markdown`.
 
-circaevum.com is proxied through **Cloudflare** (`cf-ray` on responses). GitHub Pages cannot set **Link** response headers or **Accept: text/markdown** negotiation — add Cloudflare rules:
+## Repo-only checks (after deploy)
 
-### 1. Link headers (homepage)
+| Check | Requirement |
+|-------|-------------|
+| `authMd` | `/auth.md` + `agent_auth` in OAuth metadata |
+| `mcpServerCard` | `/.well-known/mcp/server-card.json` with `serverInfo`, transport `endpoint`, `capabilities` |
+| `webMcp` | `navigator.modelContext.registerTool()` on homepage load (Chrome WebMCP preview) |
 
-**GitHub Pages cannot set `Link` response headers.** Use Cloudflare (zone: circaevum.com).
+**WebMCP note:** isitagentready loads the page in a browser. Scan may **timeout** if WebMCP is unavailable in the scanner’s browser build. Tools still register on Chrome builds with `modelContext` enabled.
 
-**Step-by-step:** [`cloudflare/README.md`](../cloudflare/README.md)  
-**Paste value:** [`cloudflare/homepage-link-header.txt`](../cloudflare/homepage-link-header.txt)
-
-**Transform Rules → Modify response header** — when path is `/` OR `/index.html`, set header `Link` to:
-
-```
-Link: <https://circaevum.com/.well-known/api-catalog>; rel="api-catalog", <https://circaevum.com/.well-known/agent-skills/index.json>; rel="service-doc", <https://circaevum.com/llms.txt>; rel="describedby", <https://circaevum.com/docs/FOR-AGENTS.md>; rel="service-doc"; type="text/markdown", <https://circaevum.com/.well-known/oauth-authorization-server>; rel="service-desc"; type="application/json"
-```
-
-Validate:
-
-```bash
-curl -sI https://circaevum.com/ | grep -i '^link:'
-```
-
-### 2. Markdown content negotiation
-
-**Option A — [Markdown for Agents](https://developers.cloudflare.com/workers/)** (Cloudflare dashboard product): enable for zone circaevum.com.
-
-**Option B — Transform + origin path** (Cloudflare docs pattern):
-
-1. **Request header transform:** if `Accept` contains `text/markdown` and path is `/` or `/index.html`, rewrite to fetch `/index.md`.
-2. **Response header transform:** set `Content-Type: text/markdown` for `/index.md` responses when `Accept` included markdown.
-
-**Option C — URL fallback:** agents can fetch https://circaevum.com/index.md directly (always markdown).
-
-Validate:
-
-```bash
-curl -sI -H "Accept: text/markdown" https://circaevum.com/ | grep -i content-type
-# expect: text/markdown
-```
-
-## Not applicable (yet) on circaevum.com
-
-| Check | Why skip / defer |
-|-------|------------------|
-| MCP Server Card | No MCP server on static GL site |
-| WebMCP | No browser tool registration on GL |
-| x402 / commerce | Not a storefront |
-| DNS-AID | Optional DNS SVCB records at registrar |
-| Web Bot Auth | Only if circaevum.com sends signed bot requests outbound |
+**MCP transport:** the server card describes browser-hosted tools (WebMCP) and embed API; there is no Streamable HTTP `/mcp` worker on circaevum.com yet.
 
 ## After deploy checklist
 
-1. Push to **three-circa** `main` (Pages rebuild) — include **`.nojekyll`** at repo root.
-2. Confirm https://circaevum.com/robots.txt returns **200** `text/plain`.
-3. Confirm https://circaevum.com/.well-known/api-catalog and `.../agent-skills/index.json` return **200** (not 404).
-4. Apply Cloudflare Link + markdown rules if not already.
-5. Re-run isitagentready.com scan.
+1. Push to **three-circa** `main` — include **`.nojekyll`**.
+2. Confirm `/.well-known/*`, `/auth.md`, MCP server card return **200**.
+3. Cloudflare: Link header, Markdown for Agents, DNS-AID + DNSSEC — see [`cloudflare/README.md`](../cloudflare/README.md).
+4. Re-run scan.
 
-### Expected score after fixes (honest ceiling)
+## Expected score (honest)
 
-| Fix | Checks unlocked |
-|-----|-----------------|
-| `.nojekyll` + `.well-known/*` live | `apiCatalog`, `agentSkills`, `oauthDiscovery`, `oauthProtectedResource` |
-| `/auth.md` live | `authMd` |
-| Cloudflare Link headers on `/` | `linkHeaders` |
-| Cloudflare markdown negotiation on `/` | `markdownNegotiation` |
-| DNS SVCB / DNS-AID at registrar (optional) | `dnsAid` |
+| Layer | Unlocks |
+|-------|---------|
+| Static discovery files | apiCatalog, agentSkills, oauthDiscovery, oauthProtectedResource, authMd, mcpServerCard |
+| Cloudflare Link + markdown + DNS-AID | linkHeaders, markdownNegotiation, dnsAid |
+| WebMCP in supported browser | webMcp |
 
-**Still fail without scope creep** (no live MCP/A2A/WebMCP on static GL): MCP server card, WebMCP, A2A agent card.
+No fake `/mcp` HTTP server or A2A card unless you add real backends.
 
-Target after deploy + Cloudflare: **Level 3-ish** (Discoverability + Content + partial Discovery), not 100/100.
+## Lanternade vs this score
 
-## Coding-agent repo map
-
-Monorepo architecture: CIR root **`AGENTS.md`** (public) + **`internal/AGENTS-CIR.md`** (ops). Copy or sync **`AGENTS.md`** into three-circa when publishing.
+[isitagentready.com](https://isitagentready.com/circaevum.com) scores **public HTTP discovery**. [Lanternade](https://toolchain.lanternade.com/) scores **code hygiene** — different layer.

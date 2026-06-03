@@ -82,23 +82,24 @@ Use when you want **Circaevum-managed** calendars, layers, Garmin sync, and cros
 | robots.txt | [/robots.txt](https://circaevum.com/robots.txt) | Crawl policy + Content-Signal |
 | Sitemap | [/sitemap.xml](https://circaevum.com/sitemap.xml) | Canonical URLs |
 | Agent readiness notes | [docs/AGENT-READINESS.md](https://circaevum.com/docs/AGENT-READINESS.md) | isitagentready.com checklist |
-| Link headers (HTTP) | [cloudflare/README.md](https://circaevum.com/cloudflare/README.md) | RFC 8288 — **Cloudflare Transform Rule** on `/` |
+| Link headers (HTTP) | [cloudflare/README.md](https://circaevum.com/cloudflare/README.md) | RFC 8288 — Cloudflare Transform Rule on `/` |
+| MCP Server Card | [/.well-known/mcp/server-card.json](https://circaevum.com/.well-known/mcp/server-card.json) | SEP-1649; browser tools via WebMCP |
+| DNS-AID | [cloudflare/dns-aid.md](https://circaevum.com/cloudflare/dns-aid.md) | `_index._agents` SVCB/HTTPS + DNSSEC at registrar |
 
-**Homepage HTTP `Link` headers** are not set by GitHub Pages. Apply Cloudflare rule in [`cloudflare/README.md`](../cloudflare/README.md) (or `_headers` on Cloudflare Pages).
+**Homepage HTTP `Link` headers** are not set by GitHub Pages. Apply Cloudflare rules in [`cloudflare/README.md`](../cloudflare/README.md).
 
 ---
 
 ## MCP (Model Context Protocol)
 
-**circaevum.com does not host an MCP server.** There is no `/.well-known/mcp/server-card.json` on this origin.
+**No Streamable HTTP MCP server** runs on circaevum.com (no `/mcp` worker). Discovery uses a **Server Card** plus **WebMCP** in the browser.
 
-| What | Where |
-|------|--------|
-| Embed + ingest API (Path A — your auth) | This doc + [API.md](../API.md) + skill `circaevum-gl-embed` |
-| Circaevum account / Nakama (Path B) | [auth.md](../auth.md) · app.circaevum.com |
-| Local bio lab (OSC → CSV) | Your machine; see [OSC lab streams](#osc-lab-streams-local) |
-
-If we add MCP later, the server card will appear under `/.well-known/mcp/`.
+| What | URL |
+|------|-----|
+| MCP Server Card (SEP-1649) | [/.well-known/mcp/server-card.json](https://circaevum.com/.well-known/mcp/server-card.json) |
+| WebMCP tools (homepage) | `circaevum_navigate_to_time`, `circaevum_set_zoom`, `circaevum_ingest_events`, … — [`webmcp-tools.js`](https://github.com/Circaevum/three-circa/blob/main/circaevum/js/ui/webmcp-tools.js) |
+| Embed + ingest (Path A) | [API.md](../API.md) + skill `circaevum-gl-embed` |
+| Circaevum account (Path B) | [auth.md](../auth.md) · app.circaevum.com |
 
 ---
 

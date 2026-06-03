@@ -1,0 +1,28 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/mcp-server-card/v1.json",
+  "version": "1.0",
+  "protocolVersion": "2025-06-18",
+  "serverInfo": {
+    "name": "circaevum-gl",
+    "title": "Circaevum Graphics Library",
+    "version": "1.0.0"
+  },
+  "description": "3D timeline viewer on circaevum.com. Client-side tools register via WebMCP on the homepage; iframe hosts use postMessage CIRCAEVUM_* and circaevum-gl.js. Optional Circaevum account storage on nakama.circaevum.com (Path B).",
+  "documentationUrl": "https://circaevum.com/docs/FOR-AGENTS.md",
+  "transport": {
+    "type": "streamable-http",
+    "endpoint": "https://circaevum.com/"
+  },
+  "capabilities": {
+    "tools": {
+      "listChanged": false
+    },
+    "resources": false,
+    "prompts": false
+  },
+  "authentication": {
+    "required": false
+  },
+  "instructions": "Open https://circaevum.com/ in a WebMCP-capable browser to call circaevum_* tools. For programmatic embed without browser MCP, use Path A in FOR-AGENTS.md (iframe + CIRCAEVUM_INGEST_EVENTS).",
+  "tools": ["dynamic"]
+}

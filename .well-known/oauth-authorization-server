@@ -25,5 +25,14 @@
     "circaevum.storage.read",
     "circaevum.storage.write"
   ],
-  "service_documentation": "https://circaevum.com/docs/FOR-AGENTS.md#oauth--account-api"
+  "service_documentation": "https://circaevum.com/docs/FOR-AGENTS.md#oauth--account-api",
+  "agent_auth": {
+    "skill": "https://circaevum.com/auth.md",
+    "register_uri": "https://app.circaevum.com/",
+    "claim_uri": "https://app.circaevum.com/",
+    "identity_types_supported": ["anonymous"],
+    "anonymous": {
+      "credential_types_supported": ["access_token"]
+    }
+  }
 }

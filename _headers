@@ -3,7 +3,7 @@
 # https://isitagentready.com/.well-known/agent-skills/link-headers/SKILL.md
 
 /
-  Link: <https://circaevum.com/.well-known/api-catalog>; rel="api-catalog", <https://circaevum.com/.well-known/agent-skills/index.json>; rel="service-doc", <https://circaevum.com/llms.txt>; rel="describedby", <https://circaevum.com/docs/FOR-AGENTS.md>; rel="service-doc"; type="text/markdown", <https://circaevum.com/.well-known/oauth-authorization-server>; rel="service-desc"; type="application/json"
+  Link: <https://circaevum.com/.well-known/api-catalog>; rel="api-catalog", <https://circaevum.com/.well-known/agent-skills/index.json>; rel="service-doc", <https://circaevum.com/llms.txt>; rel="describedby", <https://circaevum.com/docs/FOR-AGENTS.md>; rel="service-doc"; type="text/markdown", <https://circaevum.com/.well-known/oauth-authorization-server>; rel="service-desc"; type="application/json", <https://circaevum.com/.well-known/mcp/server-card.json>; rel="service-doc"; type="application/json"
 
 /index.html
-  Link: <https://circaevum.com/.well-known/api-catalog>; rel="api-catalog", <https://circaevum.com/.well-known/agent-skills/index.json>; rel="service-doc", <https://circaevum.com/llms.txt>; rel="describedby", <https://circaevum.com/docs/FOR-AGENTS.md>; rel="service-doc"; type="text/markdown", <https://circaevum.com/.well-known/oauth-authorization-server>; rel="service-desc"; type="application/json"
+  Link: <https://circaevum.com/.well-known/api-catalog>; rel="api-catalog", <https://circaevum.com/.well-known/agent-skills/index.json>; rel="service-doc", <https://circaevum.com/llms.txt>; rel="describedby", <https://circaevum.com/docs/FOR-AGENTS.md>; rel="service-doc"; type="text/markdown", <https://circaevum.com/.well-known/oauth-authorization-server>; rel="service-desc"; type="application/json", <https://circaevum.com/.well-known/mcp/server-card.json>; rel="service-doc"; type="application/json"

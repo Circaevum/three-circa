@@ -51,17 +51,30 @@ Storage collections (`events`, `layers`, `garmin_*`, …) are documented in [cir
 
 ## agent_auth
 
-```yaml
-agent_auth:
-  skill: https://circaevum.com/.well-known/agent-skills/circaevum-developers/SKILL.md
-  register_uri: https://app.circaevum.com/
-  optional: true  # skip entirely if using GL + your own auth (Path A)
-  methods:
-    - type: browser
-      description: Sign up or log in at app.circaevum.com (Yin-portal + Nakama session)
-    - type: nakama_email
-      description: POST /v2/account/authenticate/email on nakama.circaevum.com with server key — see FOR-AGENTS.md
-  gl_only_alternative:
-    description: Embed GL with ?viewer=1; use your auth + CIRCAEVUM_INGEST_EVENTS — no register_uri required
-    doc: https://circaevum.com/docs/FOR-AGENTS.md#path-a--gl-only-bring-your-own-auth-most-common-for-custom-agents
+Machine-readable `agent_auth` is published in:
+
+- `/.well-known/oauth-authorization-server` (RFC 8414)
+- `/.well-known/oauth-protected-resource` (RFC 9728)
+
+```json
+{
+  "agent_auth": {
+    "skill": "https://circaevum.com/auth.md",
+    "register_uri": "https://app.circaevum.com/",
+    "claim_uri": "https://app.circaevum.com/",
+    "identity_types_supported": ["anonymous"],
+    "anonymous": {
+      "credential_types_supported": ["access_token"]
+    }
+  }
+}
 ```
+
+### Registration methods (Path B)
+
+| Method | How |
+|--------|-----|
+| **Browser** | Open `register_uri` — sign up or log in at app.circaevum.com (Yin-portal + Nakama session JWT) |
+| **Nakama REST** | `POST https://nakama.circaevum.com/v2/account/authenticate/email` with server key — see [FOR-AGENTS.md](https://circaevum.com/docs/FOR-AGENTS.md) |
+
+**Path A (GL only):** no registration on circaevum.com — embed `?viewer=1` and use your auth + `CIRCAEVUM_INGEST_EVENTS`. See [Path A](https://circaevum.com/docs/FOR-AGENTS.md#path-a--gl-only-bring-your-own-auth-most-common-for-custom-agents).
