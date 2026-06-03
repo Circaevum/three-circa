@@ -4,23 +4,23 @@
     {
       "name": "circaevum-gl-embed",
       "type": "skill-md",
-      "description": "Integrate the Circaevum Graphics Library via iframe postMessage and circaevum-gl.js (viewer mode, ingest events, layers).",
+      "description": "Integrate the Circaevum GL via iframe postMessage (Path A). Read llms.txt and FOR-AGENTS.md first.",
       "url": "/.well-known/agent-skills/circaevum-gl-embed/SKILL.md",
-      "digest": "sha256:2a13fbc9b0e9d13591b5d7c875df8285953abab1853f8deb6ff2c00d2eda7af1"
+      "digest": "sha256:d79cc762184ead5a63e6cb0cd67fda864a3b1397af743971061a94436e967a53"
     },
     {
       "name": "circaevum-site",
       "type": "skill-md",
-      "description": "Overview of circaevum.com — public GL viewer, llms.txt, relationship to app.circaevum.com and three-circa on GitHub.",
+      "description": "circaevum.com overview. Start at llms.txt, then FOR-AGENTS.md; app login at app.circaevum.com.",
       "url": "/.well-known/agent-skills/circaevum-site/SKILL.md",
-      "digest": "sha256:ad6a3fa74875aaeab86626fc460946761486fda05eeb8c6297df289a907c83f8"
+      "digest": "sha256:2025cba24f0d9fc86126c26e9387319574dca6db8a627ef5a4ece530791213b7"
     },
     {
       "name": "circaevum-developers",
       "type": "skill-md",
-      "description": "Developer and agent integration — discovery URLs, MCP status (none on site), embed/postMessage API, OSC lab streams.",
+      "description": "Developer and agent integration — read llms.txt then FOR-AGENTS.md; embed API, MCP card, OSC lab.",
       "url": "/.well-known/agent-skills/circaevum-developers/SKILL.md",
-      "digest": "sha256:91fb6ba0d658f5e563afda986b0807c390fbb24373ee21d100d3b46b4c4145f1"
+      "digest": "sha256:750eaa66f983a882858f834b78c66fa8e81b1252c3ec397bdcceacdf7f9dbd4c"
     }
   ]
 }

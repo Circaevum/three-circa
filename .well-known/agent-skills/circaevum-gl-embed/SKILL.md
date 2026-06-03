@@ -2,6 +2,8 @@
 
 Use when integrating the Circaevum Graphics Library in an iframe or calling it from a host app — **with your own auth** or as a reference for the Yin-portal wrapper.
 
+**Agents:** Read https://circaevum.com/llms.txt then https://circaevum.com/docs/FOR-AGENTS.md before this skill.
+
 ## Path A — GL + your auth (default for this skill)
 
 The GL does **not** require Circaevum login or Nakama.

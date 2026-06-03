@@ -37,6 +37,15 @@
                 <a href="/docs/FOR-AGENTS.md">FOR-AGENTS.md</a> ·
                 <a href="https://isitagentready.com/circaevum.com" rel="noopener noreferrer">agent readiness scan</a>
             </p>
+            <section class="dev-doc-section dev-doc-section--muted dev-doc-agent-start" aria-labelledby="dev-agent-start">
+                <h2 id="dev-agent-start">AI agents — read in this order</h2>
+                <ol class="dev-doc-list">
+                    <li><a href="/llms.txt"><strong>llms.txt</strong></a> — site map and discovery URLs (start here)</li>
+                    <li><a href="/docs/FOR-AGENTS.md"><strong>FOR-AGENTS.md</strong></a> — full reference: paths, embed API, postMessage, OAuth optional</li>
+                    <li><a href="/.well-known/agent-skills/index.json">Agent Skills index</a> — <code>circaevum-gl-embed</code>, <code>circaevum-site</code>, <code>circaevum-developers</code></li>
+                </ol>
+                <p>No content negotiation on <code>/</code> without Cloudflare — fetch <a href="/index.md">/index.md</a> or FOR-AGENTS.md directly.</p>
+            </section>
             <p class="dev-doc-lede">
                 <strong>Modular:</strong> embed the GL with <em>your</em> auth, or plug into Circaevum accounts — see
                 <a href="#paths">integration paths</a>.
@@ -83,7 +92,8 @@
             <table class="dev-doc-table">
                 <thead><tr><th>Resource</th><th>URL</th></tr></thead>
                 <tbody>
-                    <tr><td>LLM site map</td><td><a href="/llms.txt">/llms.txt</a></td></tr>
+                    <tr><td><strong>Start — LLM site map</strong></td><td><a href="/llms.txt">/llms.txt</a> (read first)</td></tr>
+                    <tr><td><strong>Full agent reference</strong></td><td><a href="/docs/FOR-AGENTS.md">/docs/FOR-AGENTS.md</a> (read second)</td></tr>
                     <tr><td>Homepage (markdown)</td><td><a href="/index.md">/index.md</a></td></tr>
                     <tr><td>API catalog (RFC 9727)</td><td><a href="/.well-known/api-catalog">/.well-known/api-catalog</a></td></tr>
                     <tr><td>Agent Skills</td><td><a href="/.well-known/agent-skills/index.json">/.well-known/agent-skills/index.json</a></td></tr>

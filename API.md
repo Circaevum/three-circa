@@ -1,5 +1,7 @@
 # Circaevum Three.js API Reference
 
+> **AI agents:** Read [llms.txt](https://circaevum.com/llms.txt) then [FOR-AGENTS.md](https://circaevum.com/docs/FOR-AGENTS.md) before this API. Path A embed: `?viewer=1` + `CIRCAEVUM_INGEST_EVENTS`.
+
 ## Overview
 
 `CircaevumAPI` is the public interface for integrating event data with the Circaevum 3D time visualization. This API is designed to be **framework-agnostic** and **backend-agnostic**—you can use it with any data source (Nakama, Google Calendar, local files, etc.).

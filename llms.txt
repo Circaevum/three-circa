@@ -2,6 +2,16 @@
 
 > Open-source 3D time visualization: planetary orbits, circadian rhythm, and calendar events in space-time. Auth-free viewer at circaevum.com; account sync via app.circaevum.com.
 
+## Start here (AI agents)
+
+Read in this order:
+
+1. **This file** (`/llms.txt`) — curated links and discovery URLs.
+2. **[FOR-AGENTS.md](https://circaevum.com/docs/FOR-AGENTS.md)** — full integrator reference (paths, embed API, postMessage, OAuth optional).
+3. **[Agent Skills](https://circaevum.com/.well-known/agent-skills/index.json)** — task-specific SKILL.md files (`circaevum-gl-embed`, `circaevum-site`, `circaevum-developers`).
+
+No Cloudflare required: fetch markdown directly (`/index.md`, `/docs/FOR-AGENTS.md`) instead of `Accept: text/markdown` on `/`.
+
 ## Core site
 
 - [Home (interactive GL)](https://circaevum.com/): Three.js timeline — zoom from years to hours, WebXR on supported browsers.
