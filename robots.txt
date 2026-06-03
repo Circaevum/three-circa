@@ -1,5 +1,10 @@
 # Circaevum — https://circaevum.com
 # Agent-ready crawl policy (RFC 9309). See docs/AGENT-READINESS.md
+#
+# AI agents — start here:
+#   1. https://circaevum.com/llms.txt
+#   2. https://circaevum.com/docs/FOR-AGENTS.md
+#   3. https://circaevum.com/.well-known/agent-skills/index.json
 
 User-agent: *
 Allow: /

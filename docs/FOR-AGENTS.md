@@ -2,6 +2,8 @@
 
 **Site:** https://circaevum.com · **Human page:** https://circaevum.com/developers.html · **Markdown:** https://circaevum.com/docs/FOR-AGENTS.md
 
+> **AI agents — start here:** Read [llms.txt](https://circaevum.com/llms.txt) first (site map), then **this file** for integration paths, embed API, and discovery. Human-readable summary: [developers.html](https://circaevum.com/developers.html).
+
 circaevum.com hosts the **Graphics Library (GL)** — auth-free 3D timeline. Login, calendars, and Garmin sync live on **https://app.circaevum.com/** (separate origin).
 
 **Modular integration:** pick only the pieces you need. The GL does **not** require Circaevum login, Nakama, or the OAuth metadata below. Many agents embed the viewer and supply events from **their own** auth and backend.

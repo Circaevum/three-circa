@@ -2,6 +2,14 @@
 
 Circaevum is an open-source **3D time visualization** (Graphics Library / GL). Time flows upward; Earth's orbit maps dates to horizontal position. Calendar events render as arcs on a circadian timeline. WebXR supported on HTTPS and localhost.
 
+## AI agents — start here
+
+1. **[llms.txt](https://circaevum.com/llms.txt)** — curated site map and discovery URLs  
+2. **[FOR-AGENTS.md](https://circaevum.com/docs/FOR-AGENTS.md)** — full integrator reference (embed, postMessage, optional OAuth)  
+3. **[Agent Skills](https://circaevum.com/.well-known/agent-skills/index.json)** — task-specific SKILL.md files  
+
+Human summary: [developers.html](https://circaevum.com/developers.html)
+
 ## Quick links
 
 | Resource | URL |

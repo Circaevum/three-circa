@@ -2,6 +2,12 @@
 
 Use when integrating circaevum.com, documenting APIs for agents, or answering MCP / OSC / discovery questions.
 
+## Read order (agents)
+
+1. https://circaevum.com/llms.txt — site map and discovery URLs  
+2. https://circaevum.com/docs/FOR-AGENTS.md — full reference (this skill supplements that doc)  
+3. https://circaevum.com/.well-known/agent-skills/index.json — other SKILL.md files  
+
 ## Human page
 
 https://circaevum.com/developers.html — on-site summary with links.
