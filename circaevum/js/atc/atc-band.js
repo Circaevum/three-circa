@@ -14,15 +14,18 @@
   /** Pad past globe surface so rings never sit inside the Earth shell. */
   const EARTH_OCCLUDE_PAD = 1.025;
 
-  /** @type {Array<{ id: number, key: string, name: string, hint: string, color: string }>} */
+  /**
+   * Day-disk ATC guides (friction / load on the circadian plane).
+   * Neutral atmosphere + ionosphere altitudes are drawn to scale on the Earth globe (IonosphereShell).
+   */
   const BANDS = [
-    { id: 0, key: 'lithosphere', name: 'Lithosphere', hint: 'Hard workout, max output', color: '#ff4d3a' },
-    { id: 1, key: 'troposphere', name: 'Troposphere', hint: 'Eat, chores, deep sleep recovery', color: '#ff8a4a' },
-    { id: 2, key: 'boundary', name: 'Boundary', hint: 'Social, commute, light movement', color: '#ffc14a' },
-    { id: 3, key: 'stratosphere', name: 'Stratosphere', hint: 'Mixed work, light sleep', color: '#9ed84a' },
-    { id: 4, key: 'mesosphere', name: 'Mesosphere', hint: 'Deep cognitive work', color: '#4ad8a8' },
-    { id: 5, key: 'thermosphere', name: 'Thermosphere', hint: 'Meditation, rest, breath', color: '#4ab8ff' },
-    { id: 6, key: 'exosphere', name: 'Exosphere', hint: 'REM, dream edges', color: '#b46cff' },
+    { id: 0, key: 'personal-inner', name: 'Personal · load', hint: 'Body load, workout · troposphere-scale (disk)', color: '#ff4d3a' },
+    { id: 1, key: 'personal-mid', name: 'Personal · care', hint: 'Eat, chores, sleep recovery · low atmosphere (disk)', color: '#ff8a4a' },
+    { id: 2, key: 'social-inner', name: 'Social · near', hint: 'Commute, light social · mid atmosphere (disk)', color: '#ffc14a' },
+    { id: 3, key: 'social-mid', name: 'Social · work', hint: 'Meetings, mixed work · stratosphere (disk)', color: '#9ed84a' },
+    { id: 4, key: 'social-outer', name: 'Social · focus', hint: 'Deep work, focus blocks · mesosphere (disk)', color: '#4ad8a8' },
+    { id: 5, key: 'global-inner', name: 'Global · field', hint: 'Rest, breath, coherence · thermosphere / E–F (disk)', color: '#4ab8ff' },
+    { id: 6, key: 'global-outer', name: 'Global · sky', hint: 'REM, dreams, ionosphere F2 · exosphere (disk)', color: '#b46cff' },
   ];
 
   const SLEEP_STAGE_BAND = {
@@ -102,15 +105,15 @@
     return Number.isFinite(n) ? n : 0x8899aa;
   }
 
-  /** Keyword rules for calendar categories / summaries (phase A — visual band only). */
+  /** Keyword rules: personal (0–1) · social (2–4) · global (5–6) on the day disk. */
   const CATEGORY_RULES = [
-    { re: /\b(run|workout|fitness|gym|crossfit|hiit|cycle|cycling|swim|hike|sport|training)\b/i, band: 0 },
-    { re: /\b(eat|meal|breakfast|lunch|dinner|snack|nutrition|shower|chore)\b/i, band: 1 },
-    { re: /\b(coffee|walk|social|party|hang|friend|family|call)\b/i, band: 2 },
-    { re: /\b(meeting|email|admin|standup|sync|errand)\b/i, band: 3 },
-    { re: /\b(deep work|focus|code|write|study|research|design)\b/i, band: 4 },
-    { re: /\b(meditat|mindful|breath|yoga|rest|nap|relax|prayer)\b/i, band: 5 },
-    { re: /\b(sleep|rem|dream)\b/i, band: 6 },
+    { re: /\b(run|workout|fitness|gym|crossfit|hiit|cycle|cycling|swim|hike|sport|training|garmin|hr|sleep)\b/i, band: 0 },
+    { re: /\b(eat|meal|breakfast|lunch|dinner|snack|nutrition|shower|chore|therapy|health)\b/i, band: 1 },
+    { re: /\b(coffee|walk|commute|errand|friend|family|call|hang|party)\b/i, band: 2 },
+    { re: /\b(meeting|email|admin|standup|sync|social|edge\s*esmeralda)\b/i, band: 3 },
+    { re: /\b(deep work|focus|code|write|study|research|design|collab)\b/i, band: 4 },
+    { re: /\b(meditat|mindful|breath|yoga|rest|nap|relax|prayer|coherence|field)\b/i, band: 5 },
+    { re: /\b(sleep|rem|dream|ionosphere|radio|gps|satellite|global|climate|civic|world)\b/i, band: 6 },
   ];
 
   function resolveEventBand(event) {
@@ -349,9 +352,9 @@
       '</div>'
     )).join('');
     return (
-      '<div class="atc-legend">' +
-      '<div class="calendar-layers-section-title">ATC bands</div>' +
-      '<p class="atc-legend-intro">Earth → sky: load &amp; friction. Sleep crosses bands each night.</p>' +
+      '<div class="atc-legend atc-disk-legend">' +
+      '<div class="calendar-layers-section-title">Day disk · coherence bands</div>' +
+      '<p class="atc-legend-intro">Inner Personal → mid Social → outer Global on the selected day plane. Altitude shells sit on the Earth globe at true scale.</p>' +
       rows +
       '</div>'
     );

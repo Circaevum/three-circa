@@ -209,9 +209,44 @@ class CircaevumGL {
       return;
     }
 
-    layer.visible = visible;
-    this._updateLayerVisibility(layerId, visible);
-    this._emit('layerVisibilityChanged', { layerId, visible });
+    layer.visible = !!visible;
+    this._renderLayer(layerId);
+    this._emit('layerVisibilityChanged', { layerId, visible: !!visible });
+  }
+
+  /**
+   * Toggle visibility for a category within a layer (portal layer name or demo category).
+   * @param {string} layerId
+   * @param {string} category
+   * @param {boolean} visible
+   */
+  setCategoryVisibility(layerId, category, visible) {
+    const layer = this.layers.get(layerId);
+    if (!layer || !category) return;
+    if (!layer.categoryStyles || typeof layer.categoryStyles !== 'object') {
+      layer.categoryStyles = {};
+    }
+    const prev = layer.categoryStyles[category] || {};
+    layer.categoryStyles[category] = { ...prev, visible: !!visible };
+    if (layerId === 'user-events') {
+      this.layerStylesByCategory = { ...layer.categoryStyles };
+    }
+    this._renderLayer(layerId);
+    this._emit('categoryVisibilityChanged', { layerId, category, visible: !!visible });
+  }
+
+  /**
+   * Category-level styles scoped to one GL layer (portal layer names / demo categories).
+   * @private
+   */
+  _getCategoryStylesForLayer(layerId, layer) {
+    if (layer && layer.categoryStyles && typeof layer.categoryStyles === 'object') {
+      return layer.categoryStyles;
+    }
+    if (layerId === 'user-events') {
+      return this.layerStylesByCategory || {};
+    }
+    return {};
   }
 
   /**
@@ -445,8 +480,31 @@ class CircaevumGL {
    * @param {Object} options - Optional: { sessionId?: string } e.g. { sessionId: '26Q1W01' }
    */
   ingestEvents(layerId, events, options = {}) {
+    const hadLayer = this.layers.has(layerId);
     if (options.layerStyles && typeof options.layerStyles === 'object') {
-      this.layerStylesByCategory = options.layerStyles;
+      if (!hadLayer) {
+        this.addLayer(layerId, {
+          name: options.sessionId ? `Session ${options.sessionId}` : layerId,
+          plotType: 'polygon3d',
+          visible: options.visible !== false,
+          categoryStyles: { ...options.layerStyles },
+          ...(options.sessionId && { sessionId: options.sessionId })
+        });
+      }
+      const layerForStyles = this.layers.get(layerId);
+      if (layerForStyles) {
+        layerForStyles.categoryStyles = { ...options.layerStyles };
+      }
+      if (layerId === 'user-events') {
+        this.layerStylesByCategory = options.layerStyles;
+      }
+    } else if (!hadLayer) {
+      this.addLayer(layerId, {
+        name: options.sessionId ? `Session ${options.sessionId}` : layerId,
+        plotType: 'polygon3d',
+        visible: options.visible !== false,
+        ...(options.sessionId && { sessionId: options.sessionId })
+      });
     }
     if (options.timelineEventFilter === 'all' || options.timelineEventFilter === 'year') {
       this.setTimelineEventFilter(options.timelineEventFilter);
@@ -456,19 +514,19 @@ class CircaevumGL {
         window.setCircadianShortEventScope(options.circadianShortEventScope);
       }
     }
-    if (!this.layers.has(layerId)) {
-      this.addLayer(layerId, {
-        name: options.sessionId ? `Session ${options.sessionId}` : layerId,
-        plotType: 'polygon3d',
-        visible: true,
-        ...(options.sessionId && { sessionId: options.sessionId })
-      });
-    }
     const layer = this.layers.get(layerId);
+    if (!layer) {
+      console.warn(`[CircaevumGL] ingestEvents: layer missing after add: ${layerId}`);
+      return;
+    }
     if (options.sessionId) {
       layer.sessionId = options.sessionId;
     }
-    layer.visible = true;
+    if (typeof options.visible === 'boolean') {
+      layer.visible = options.visible;
+    } else if (!hadLayer) {
+      layer.visible = true;
+    }
     if (!layer.plotType) layer.plotType = 'polygon3d';
     this.updateEvents(layerId, Array.isArray(events) ? events : [events]);
     this._emit('eventsIngested', { layerId, count: (Array.isArray(events) ? events : [events]).length, sessionId: options.sessionId });
@@ -904,7 +962,7 @@ class CircaevumGL {
     // Per-category styles from wrapper (layer name -> style); apply when rendering each event
     const layerConfigWithStyles = {
       ...layer,
-      layerStylesByCategory: this.layerStylesByCategory || {}
+      layerStylesByCategory: this._getCategoryStylesForLayer(layerId, layer)
     };
 
     // Create event objects using event renderer

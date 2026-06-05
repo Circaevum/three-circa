@@ -27,6 +27,25 @@
       window.openKeyboardControlsPanel();
       return;
     }
+    if (data.type === 'CIRCAEVUM_INGEST_GIT_TIMELINE' && typeof window.ingestGitTimeline === 'function') {
+      var glGit = window.circaevumGL || (window.getGL && window.getGL());
+      if (!glGit) return;
+      try {
+        var counts = window.ingestGitTimeline(
+          { commits: data.commits, branches: data.branches },
+          data.options || {}
+        );
+        console.log('[Circaevum GL] Git timeline ingested:', counts);
+      } catch (eGit) {
+        console.error('[Circaevum GL] Git timeline ingest failed:', eGit);
+      }
+      if (typeof TimeseriesRenderer !== 'undefined' && typeof TimeseriesRenderer.resetRefreshCache === 'function') {
+        TimeseriesRenderer.resetRefreshCache();
+      }
+      if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
+      if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
+      return;
+    }
     var gl = window.circaevumGL || (window.getGL && window.getGL());
     if (!gl || typeof gl.ingestEvents !== 'function') return;
     if (data.type === 'CIRCAEVUM_INGEST_EVENTS' && data.layerId && Array.isArray(data.events)) {

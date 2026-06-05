@@ -20,6 +20,9 @@
     --scene-moon-layer-icon: #aec4dc;
     --scene-moon-layer-icon-active: #7dd3fc;
     --nav-height: 56px;
+    /** Intro tour editor dock (left panel when Edit is open). */
+    --tour-editor-dock-width: 380px;
+    --tour-bar-compact-height: 124px;
 
     --ui-font-display: 'Orbitron', sans-serif;
     --ui-font-body: 'DM Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -434,6 +437,22 @@ body.light-mode .nav-dropdown-item:hover {
     display: flex;
     flex-direction: column;
     z-index: 1;
+}
+
+/* Tour editor open: canvas uses area right of dock, above compact transport bar */
+body.is-tour-editor-open #main-after-nav {
+    left: var(--tour-editor-dock-width);
+    bottom: var(--tour-bar-compact-height);
+    transition: left 0.18s ease, bottom 0.18s ease;
+}
+
+body.is-tour-editor-open .controls {
+    left: calc(var(--tour-editor-dock-width) + (100vw - var(--tour-editor-dock-width)) * 0.5);
+}
+
+body.is-tour-editor-open .circaevum-tour-cal-strip {
+    left: calc(var(--tour-editor-dock-width) + (100vw - var(--tour-editor-dock-width)) * 0.5);
+    bottom: calc(var(--tour-bar-compact-height) + 12px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Account: left-side overlay panel (same format as Event List) */
@@ -881,6 +900,22 @@ body.viewer-no-nav .left-panel.calendars-left-panel {
     font-size: 12px;
     line-height: 1.45;
     color: rgba(142, 202, 230, 0.78);
+}
+
+.ionosphere-shell-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(230, 241, 255, 0.95);
+    cursor: pointer;
+    user-select: none;
+}
+
+.ionosphere-shell-toggle input {
+    accent-color: #b46cff;
 }
 
 .atc-legend-row {
@@ -1753,6 +1788,62 @@ body.light-mode .event-list-horizon-ring-caption {
     flex-wrap: wrap;
     align-items: center;
     gap: 4px;
+}
+
+.calendar-layer-categories {
+    margin-top: 6px;
+    padding-left: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.calendar-layer-category-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 0.72rem;
+    opacity: 0.92;
+}
+
+.calendar-layer-category-row-muted {
+    opacity: 0.45;
+}
+
+.calendar-layer-category-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.calendar-layer-category-visibility-btn {
+    flex-shrink: 0;
+}
+
+.git-timeline-repo-preset {
+    font-size: 0.7rem;
+    padding: 2px 4px;
+    margin: 0 4px 0 0;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.35);
+    color: inherit;
+    max-width: 6.5rem;
+}
+
+.git-timeline-repo-input {
+    width: 6.5rem;
+    max-width: 22vw;
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    margin: 0 4px 0 0;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.35);
+    color: inherit;
 }
 
 .edge-esmeralda-strip-label {
@@ -4368,6 +4459,238 @@ body.light-mode .circaevum-tour-personas-chip,
 body.sky-theme .circaevum-tour-personas-chip {
     color: #334155;
     border-color: rgba(51, 65, 85, 0.35);
+}
+
+/* Intro tour timeline editor (layers + speed envelope per segment) */
+.circaevum-intro-tour-bar.is-editor-open {
+    left: var(--tour-editor-dock-width);
+    right: 0;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    max-height: none;
+    overflow: visible;
+}
+.circaevum-intro-tour-bar.is-editor-open .circaevum-intro-tour-bar-inner {
+    max-width: none;
+}
+.circaevum-intro-tour-edit {
+    font-size: 0.72rem;
+}
+.circaevum-intro-tour-editor {
+    border-top: 1px solid rgba(148, 163, 184, 0.25);
+    padding-top: 12px;
+    margin-top: 4px;
+}
+.circaevum-intro-tour-bar.is-editor-open .circaevum-intro-tour-editor {
+    position: fixed;
+    top: var(--nav-height);
+    left: 0;
+    bottom: var(--tour-bar-compact-height);
+    width: var(--tour-editor-dock-width);
+    margin: 0;
+    padding: 12px 14px 16px;
+    border-top: none;
+    border-right: 1px solid rgba(148, 163, 184, 0.28);
+    background: rgba(15, 23, 42, 0.96);
+    overflow-x: hidden;
+    overflow-y: auto;
+    z-index: 11991;
+    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.28);
+}
+body.light-mode .circaevum-intro-tour-bar.is-editor-open .circaevum-intro-tour-editor,
+body.sky-theme .circaevum-intro-tour-bar.is-editor-open .circaevum-intro-tour-editor {
+    background: rgba(255, 255, 255, 0.98);
+}
+.circaevum-intro-tour-bar.is-editor-open .circaevum-intro-tour-editor-grid {
+    grid-template-columns: 1fr;
+}
+.circaevum-intro-tour-editor-resize {
+    position: fixed;
+    top: var(--nav-height);
+    bottom: var(--tour-bar-compact-height);
+    width: 10px;
+    left: calc(var(--tour-editor-dock-width) - 5px);
+    cursor: col-resize;
+    z-index: 11992;
+    touch-action: none;
+}
+.circaevum-intro-tour-editor-resize::after {
+    content: '';
+    position: absolute;
+    top: 12px;
+    bottom: 12px;
+    left: 4px;
+    width: 2px;
+    border-radius: 1px;
+    background: rgba(148, 163, 184, 0.35);
+    transition: background 0.15s ease;
+}
+.circaevum-intro-tour-editor-resize:hover::after,
+.circaevum-intro-tour-editor-resize.is-dragging::after {
+    background: var(--cosmic-cyan, #22d3ee);
+}
+@media (max-width: 720px) {
+    body.is-tour-editor-open #main-after-nav {
+        left: 0;
+        bottom: calc(var(--tour-bar-compact-height) + min(46vh, 360px));
+    }
+    .circaevum-intro-tour-bar.is-editor-open {
+        left: 0;
+    }
+    .circaevum-intro-tour-bar.is-editor-open .circaevum-intro-tour-editor {
+        left: 0;
+        right: 0;
+        top: auto;
+        width: auto;
+        height: min(46vh, 360px);
+        bottom: var(--tour-bar-compact-height);
+        border-right: none;
+        border-top: 1px solid rgba(148, 163, 184, 0.28);
+        box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.22);
+    }
+    .circaevum-intro-tour-editor-resize {
+        display: none;
+    }
+    body.is-tour-editor-open .controls,
+    body.is-tour-editor-open .circaevum-tour-cal-strip {
+        left: 50%;
+    }
+}
+.circaevum-intro-tour-editor-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.circaevum-intro-tour-editor-steppick {
+    font-size: 0.8rem;
+    color: var(--ui-text-muted, #94a3b8);
+}
+.circaevum-intro-tour-editor-steppick select {
+    margin-left: 6px;
+    background: rgba(15, 23, 42, 0.6);
+    color: inherit;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+.circaevum-intro-tour-editor-label {
+    flex: 1 1 200px;
+    min-width: 140px;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: inherit;
+    font-size: 0.85rem;
+}
+.circaevum-intro-tour-editor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+}
+.circaevum-intro-tour-editor-fieldset {
+    margin: 0;
+    padding: 10px 12px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    min-width: 0;
+}
+.circaevum-intro-tour-editor-fieldset legend {
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ui-text-muted, #94a3b8);
+    padding: 0 4px;
+}
+.circaevum-intro-tour-editor-layers {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 6px 10px;
+    margin-bottom: 10px;
+}
+.circaevum-intro-tour-editor-visuals {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+.circaevum-intro-tour-inclination-row {
+    align-items: center;
+}
+.circaevum-intro-tour-inclination-scale {
+    font-size: 0.68rem;
+    color: var(--ui-text-muted, #94a3b8);
+    min-width: 2.5rem;
+}
+.circaevum-intro-tour-inclination-readout {
+    flex: 1 1 100%;
+    font-size: 0.72rem;
+    color: var(--cosmic-cyan, #22d3ee);
+}
+.circaevum-intro-tour-inclination-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+.circaevum-intro-tour-inclination-preset {
+    font-size: 0.68rem;
+    padding: 4px 8px;
+}
+.circaevum-intro-tour-editor-check {
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+.circaevum-intro-tour-editor-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    margin-bottom: 8px;
+}
+.circaevum-intro-tour-editor-row input[type='range'] {
+    flex: 1 1 120px;
+    min-width: 100px;
+}
+.circaevum-intro-tour-editor-row select,
+.circaevum-intro-tour-editor-row input[type='number'] {
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 6px;
+    color: inherit;
+    padding: 4px 8px;
+}
+.circaevum-intro-tour-speed-canvas {
+    width: 100%;
+    max-width: 640px;
+    height: 56px;
+    border-radius: 6px;
+    display: block;
+    margin-top: 6px;
+}
+.circaevum-intro-tour-editor-hint {
+    margin: 8px 0 0;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    color: var(--ui-text-muted, #94a3b8);
+}
+.circaevum-intro-tour-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+body.light-mode .circaevum-intro-tour-editor-label,
+body.sky-theme .circaevum-intro-tour-editor-label,
+body.light-mode .circaevum-intro-tour-editor-steppick select,
+body.sky-theme .circaevum-intro-tour-editor-steppick select {
+    background: rgba(255, 255, 255, 0.9);
+    color: #0f172a;
 }
 
 /* ============================================

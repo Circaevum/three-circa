@@ -107,6 +107,12 @@
                 <button type="button" id="edge-esmeralda-w3-btn" class="strip-btn strip-btn-compact" data-ee-week="3" title="Emergent Futures & World Building — art, decentralized tech, creative AI, spatial computing (June 15–21)">W3</button>
                 <button type="button" id="edge-esmeralda-w4-btn" class="strip-btn strip-btn-compact" data-ee-week="4" title="Environments of Tomorrow — new urbanism, education, energy & climate, food systems (June 22–27)">W4</button>
             </div>
+            <div class="edge-esmeralda-strip" role="group" aria-label="Git calendar layer — Circaevum repos">
+                <span class="edge-esmeralda-strip-label">Git:</span>
+                <select id="git-timeline-repo-preset" class="git-timeline-repo-preset" aria-label="Circaevum repository preset" title="Preloaded Circaevum product repos (self-reflective timeline)"></select>
+                <input type="text" id="git-timeline-repo-input" class="git-timeline-repo-input" placeholder="or custom path" title="Subfolder with .git relative to CIR workspace" aria-label="Git repository path" />
+                <button type="button" id="git-timeline-load-btn" class="strip-btn strip-btn-compact" title="Load commits (STE) and branches (LTE) into Calendar Layers. Needs yang-portal :5174 or Zhong :5175.">Load</button>
+            </div>
         </div>
         <div id="events-panel-list" class="event-list-panel-list"></div>
         <div id="event-list-panel-footer" class="event-list-panel-footer" style="display: none;">
@@ -128,7 +134,7 @@
                 <div class="keyboard-controls-item" role="listitem"><kbd>0-9</kbd> Set zoom level</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>Shift</kbd>+<kbd>A</kbd> / <kbd>D</kbd> Coarser time step (e.g. day at Moment, week at Day)</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>[</kbd> / <kbd>]</kbd> Nudge 15 minutes (any zoom)</div>
-                <div class="keyboard-controls-item" role="listitem"><kbd>Shift</kbd> (hold) Show short-term events as simple lines; full color at Moment</div>
+                <div class="keyboard-controls-item" role="listitem"><kbd>Shift</kbd> (hold) Peek nearby short events as ribbon polygons (brighter when closer); full detail on selected day</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>Esc</kbd> Clear selected event highlight</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>N</kbd> Return to present</div>
                 <div class="keyboard-controls-item" role="listitem"><kbd>C</kbd> Focus target (Sun/Earth)</div>
@@ -217,6 +223,14 @@
                     <path d="M4 18c3-6 5-9 8-12 3 3 5 6 8 12"/>
                     <path d="M6 16h12" opacity="0.45"/>
                     <path d="M7 8h10v8H7z" opacity="0.35" fill="currentColor" stroke="none"/>
+                </svg>
+            </button>
+            <button type="button" class="scene-icon-btn active" id="geophysical-shells-toggle" title="Geophysical shells: atmosphere, ionosphere, magnetosphere (G)" aria-label="Hide atmosphere, ionosphere, Van Allen belts, and magnetosphere shells (G)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" opacity="0.92"/>
+                    <ellipse cx="12" cy="12" rx="5.2" ry="3.6" opacity="0.85"/>
+                    <ellipse cx="12" cy="12" rx="7.8" ry="5.4" opacity="0.6"/>
+                    <ellipse cx="12" cy="12" rx="10.2" ry="7.2" opacity="0.38"/>
                 </svg>
             </button>
             <button type="button" class="scene-icon-btn active" id="moon-layer-toggle" title="Moon, lunar path &amp; Artemis II (M)" aria-label="Toggle Moon mesh, lunar worldline, and Artemis II trajectory (M)">
@@ -579,6 +593,9 @@
     <script src="circaevum/js/astro/state-to-scene.js"></script>
     <script src="circaevum/js/astro/trajectory-sampler.js"></script>
     <script src="circaevum/js/astro/ephemeris-engine.js"></script>
+    <script src="circaevum/js/geo/geophysical-shells.js"></script>
+    <script src="circaevum/js/geo/ionosphere-shell.js"></script>
+    <script src="circaevum/js/geo/magnetosphere-shell.js"></script>
     <script src="circaevum/js/geo/earth-globe.js"></script>
     
     <!-- Utils (geometry helpers) -->
@@ -597,12 +614,13 @@
     <script src="circaevum/js/renderers/event-renderer.js"></script>
     <script src="circaevum/js/renderers/circadian-renderer.js"></script>
     <script src="circaevum/js/atc/atc-band.js"></script>
-    <script src="circaevum/js/renderers/garmin-renderer.js"></script>
+    <script src="circaevum/js/renderers/garmin-renderer.js?v=red-smooth-v4"></script>
     
     <!-- Models (VEVENT format) -->
     <script src="circaevum/js/models/vevent.js"></script>
     <script src="circaevum/js/data/edge-esmeralda-2026.js"></script>
     <script src="circaevum/js/data/edge-esmeralda-2026-sessions.js"></script>
+    <script src="circaevum/js/data/git-timeline.js"></script>
     
     <!-- html2canvas for XR in-scene UI panel (capture DOM to texture) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>
@@ -625,6 +643,8 @@
     <script src="circaevum/js/ui/panels.js"></script>
     <!-- Share state: get/apply for "Open full app" (Option B – same-tab navigate with state in URL) -->
     <script src="circaevum/js/ui/share-state.js"></script>
+    <!-- Intro tour config (layers + timing defaults) -->
+    <script src="circaevum/js/presentation/intro-tour-config.js"></script>
     <!-- Intro tour: scripted steps + playbar (before intro.js) -->
     <script src="circaevum/js/presentation/intro-tour.js"></script>
     <!-- Intro: startup gate, prompt (uses CircaevumIntroTour when present) -->

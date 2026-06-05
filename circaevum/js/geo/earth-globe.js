@@ -737,6 +737,15 @@ const EarthGlobe = (function () {
             baseHeight: position.y
         };
 
+        if (typeof IonosphereShell !== 'undefined' && IonosphereShell.ensureShellGroup) {
+            IonosphereShell.ensureShellGroup(earthGroup);
+            IonosphereShell.refreshShellGroup(earthGroup, new Date(), zoomLevel);
+        }
+        if (typeof MagnetosphereShell !== 'undefined' && MagnetosphereShell.ensureMagnetosphereShells) {
+            MagnetosphereShell.ensureMagnetosphereShells(earthGroup);
+            MagnetosphereShell.refreshMagnetosphereShells(earthGroup, new Date(), zoomLevel);
+        }
+
         parentGroup.add(earthGroup);
         return earthGroup;
     }
@@ -745,6 +754,20 @@ const EarthGlobe = (function () {
         if (!earthGroup || !earthGroup.userData || !earthGroup.userData.orientGroup) return;
         const q = computeEarthOrientationQuat(date, earthGroup);
         if (q) earthGroup.userData.orientGroup.quaternion.copy(q);
+        if (typeof IonosphereShell !== 'undefined' && IonosphereShell.refreshShellGroup) {
+            const zl =
+                typeof window !== 'undefined' && typeof window.currentZoom === 'number'
+                    ? window.currentZoom
+                    : 9;
+            IonosphereShell.refreshShellGroup(earthGroup, date, zl);
+        }
+        if (typeof MagnetosphereShell !== 'undefined' && MagnetosphereShell.refreshMagnetosphereShells) {
+            const zl =
+                typeof window !== 'undefined' && typeof window.currentZoom === 'number'
+                    ? window.currentZoom
+                    : 9;
+            MagnetosphereShell.refreshMagnetosphereShells(earthGroup, date, zl);
+        }
     }
 
     function getEarthCenterAndRadius(earthGroup) {
@@ -1455,12 +1478,33 @@ const EarthGlobe = (function () {
         if (earthGroup.userData.orbitalPlaneInterior) {
             applyOrbitalPlaneInteriorStyle(earthGroup.userData.orbitalPlaneInterior, zoomLevel);
         }
+        if (typeof IonosphereShell !== 'undefined') {
+            if (IonosphereShell.ensureShellGroup) IonosphereShell.ensureShellGroup(earthGroup);
+            if (IonosphereShell.refreshShellGroup) {
+                const d =
+                    typeof window !== 'undefined' && typeof window.getSelectedDateTime === 'function'
+                        ? window.getSelectedDateTime()
+                        : new Date();
+                IonosphereShell.refreshShellGroup(earthGroup, d, zoomLevel);
+            }
+        }
+        if (typeof MagnetosphereShell !== 'undefined') {
+            if (MagnetosphereShell.ensureMagnetosphereShells) MagnetosphereShell.ensureMagnetosphereShells(earthGroup);
+            if (MagnetosphereShell.refreshMagnetosphereShells) {
+                const d =
+                    typeof window !== 'undefined' && typeof window.getSelectedDateTime === 'function'
+                        ? window.getSelectedDateTime()
+                        : new Date();
+                MagnetosphereShell.refreshMagnetosphereShells(earthGroup, d, zoomLevel);
+            }
+        }
         const orient = earthGroup.userData.orientGroup;
         if (orient) {
             const detail = isGlobeDetailZoom(zoomLevel);
             orient.traverse(function (child) {
                 if (!child.isMesh || !child.material) return;
                 if (child === earthGroup.userData.earthMesh) return;
+                if (child.userData && (child.userData.ionoShell || child.userData.magnetoPart)) return;
                 if (
                     child.material.isMeshBasicMaterial ||
                     child.material.isMeshStandardMaterial ||
@@ -1478,6 +1522,12 @@ const EarthGlobe = (function () {
     function disposeEarthGroup(earthGroup) {
         disposeHandObjects();
         if (!earthGroup) return;
+        if (typeof IonosphereShell !== 'undefined' && IonosphereShell.disposeShellGroup) {
+            IonosphereShell.disposeShellGroup(earthGroup);
+        }
+        if (typeof MagnetosphereShell !== 'undefined' && MagnetosphereShell.disposeMagnetosphereShells) {
+            MagnetosphereShell.disposeMagnetosphereShells(earthGroup);
+        }
         disposeObject3D(earthGroup);
     }
 

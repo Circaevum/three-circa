@@ -90,12 +90,38 @@
   window.preferredZoomForEventSpan = preferredZoomForEventSpan;
   window.zoomDisplayName = zoomDisplayName;
 
+  function categoryStyleVisible(gl, layerId, category) {
+    var layer = gl.getLayer(layerId);
+    if (!layer) return true;
+    var styles = layer.categoryStyles;
+    if (!styles || !styles[category]) return true;
+    return styles[category].visible !== false;
+  }
+
+  /** Effective on-scene visibility: layer on AND category style on. */
+  function categoryVisibleInLayer(gl, layerId, category) {
+    var layer = gl.getLayer(layerId);
+    if (!layer || layer.visible === false) return false;
+    return categoryStyleVisible(gl, layerId, category);
+  }
+
   function calendarLayerVisibilityToggle(ev, gl, layerId) {
     ev.preventDefault();
     ev.stopPropagation();
     var cur = gl.getLayer(layerId);
     var v = cur ? cur.visible !== false : true;
     if (typeof gl.setLayerVisibility === 'function') gl.setLayerVisibility(layerId, !v);
+    refreshCalendarLayersList();
+    refreshEventsList(false);
+  }
+
+  function calendarCategoryVisibilityToggle(ev, gl, layerId, category) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    var vis = categoryStyleVisible(gl, layerId, category);
+    if (typeof gl.setCategoryVisibility === 'function') {
+      gl.setCategoryVisibility(layerId, category, !vis);
+    }
     refreshCalendarLayersList();
     refreshEventsList(false);
   }
@@ -110,17 +136,25 @@
     gl.on('layerAdded', r);
     gl.on('layerRemoved', r);
     gl.on('layerVisibilityChanged', r);
+    gl.on('categoryVisibilityChanged', r);
     gl.on('eventsIngested', r);
   }
 
   function refreshAtcLegend() {
     var host = document.getElementById('atc-legend-host');
     if (!host) return;
-    if (typeof AtcBand !== 'undefined' && typeof AtcBand.renderLegendHtml === 'function') {
-      host.innerHTML = AtcBand.renderLegendHtml();
-    } else {
-      host.innerHTML = '';
+    var parts = [];
+    if (typeof IonosphereShell !== 'undefined' && typeof IonosphereShell.renderLegendHtml === 'function') {
+      parts.push(IonosphereShell.renderLegendHtml());
     }
+    if (typeof MagnetosphereShell !== 'undefined' && typeof MagnetosphereShell.renderLegendHtml === 'function') {
+      parts.push(MagnetosphereShell.renderLegendHtml());
+    }
+    if (typeof AtcBand !== 'undefined' && typeof AtcBand.renderLegendHtml === 'function') {
+      parts.push(AtcBand.renderLegendHtml());
+    }
+    host.innerHTML = parts.length ? parts.join('') : '';
+    if (typeof window.syncGeophysicalShellsIcon === 'function') window.syncGeophysicalShellsIcon();
   }
 
   function refreshCalendarLayersList() {
@@ -185,6 +219,40 @@
       meta.className = 'calendar-layer-meta';
       meta.textContent = layerId + (nEv ? ' · ' + nEv + ' event' + (nEv !== 1 ? 's' : '') : '');
       body.appendChild(meta);
+
+      var catSet = {};
+      if (gl.getEventObjects) {
+        (gl.getEventObjects(layerId) || []).forEach(function (ev) {
+          var c = ev.category != null ? String(ev.category).trim() : '';
+          if (!c) c = 'Default';
+          catSet[c] = (catSet[c] || 0) + 1;
+        });
+      }
+      var catNames = Object.keys(catSet).sort();
+      if (catNames.length > 1) {
+        var catList = document.createElement('div');
+        catList.className = 'calendar-layer-categories';
+        catNames.forEach(function (cat) {
+          var layerOn = layer ? layer.visible !== false : true;
+          var catVis = categoryStyleVisible(gl, layerId, cat);
+          var row = document.createElement('div');
+          row.className = 'calendar-layer-category-row' + (layerOn ? '' : ' calendar-layer-category-row-muted');
+          var catLabel = document.createElement('span');
+          catLabel.className = 'calendar-layer-category-label';
+          catLabel.textContent = cat + (catSet[cat] ? ' (' + catSet[cat] + ')' : '');
+          var catBtn = document.createElement('button');
+          catBtn.type = 'button';
+          catBtn.className = 'calendar-layer-visibility-btn calendar-layer-category-visibility-btn' + (catVis ? ' is-on' : ' is-off');
+          catBtn.setAttribute('aria-label', catVis ? 'Hide ' + cat : 'Show ' + cat);
+          catBtn.innerHTML = calendarVisibilitySvg(catVis);
+          catBtn.onclick = function (e) { calendarCategoryVisibilityToggle(e, gl, layerId, cat); };
+          row.appendChild(catLabel);
+          row.appendChild(catBtn);
+          catList.appendChild(row);
+        });
+        body.appendChild(catList);
+      }
+
       det.appendChild(sum);
       det.appendChild(body);
       listEl.appendChild(det);
