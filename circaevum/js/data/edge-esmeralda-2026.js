@@ -4,7 +4,11 @@
  */
 (function (global) {
   var LOC = 'Edge Esmeralda, Healdsburg, CA';
-  var LAYER_ID = 'edge-esmeralda-2026';
+  /** Festival span + week banners (shared across all week loads). */
+  var BASE_LAYER_ID = 'edge-esmeralda-2026';
+  /** @deprecated use weekLayerId() — kept for git-timeline and debug helpers */
+  var LAYER_ID = BASE_LAYER_ID;
+  var loadedWeeks = {};
 
   var longTermEvents = [
     {
@@ -152,6 +156,10 @@
    * @param {Array} base sessions that belong to this week
    * @returns {Array} base + bordering-weekend extras
    */
+  function weekLayerId(week) {
+    return BASE_LAYER_ID + '-w' + Number(week);
+  }
+
   function appendAdjacentWeekendEvents(week, base) {
     base = base || [];
     var out = [];
@@ -176,6 +184,8 @@
     var hi = winEnd + WEEKEND_PAD_MS;
     for (var wk = 1; wk <= 4; wk++) {
       if (wk === Number(week)) continue;
+      // Neighbor week already loaded on its own layer — skip bleed to avoid duplicates.
+      if (loadedWeeks[wk]) continue;
       var pool = sessionsByWeek[wk] || [];
       for (var j = 0; j < pool.length; j++) {
         var ev = pool[j];
@@ -239,6 +249,27 @@
     return Object.assign(base, extra || {});
   }
 
+  function ensureBaseLayer(gl, mergedStyles) {
+    var existing = gl.getEvents && gl.getEvents(BASE_LAYER_ID);
+    if (existing && existing.length > 0) return;
+    gl.ingestEvents(BASE_LAYER_ID, toVEvents(longTermEvents), {
+      sessionId: 'edge-esmeralda-2026-base',
+      layerStyles: mergedStyles,
+      timelineEventFilter: 'all',
+      circadianShortEventScope: 'year'
+    });
+    var baseLayerObj = gl.getLayer && gl.getLayer(BASE_LAYER_ID);
+    if (baseLayerObj) {
+      baseLayerObj.name = 'Edge Esmeralda 2026';
+      baseLayerObj.plotType = 'polygon3d';
+      baseLayerObj.opacity = 0.92;
+      baseLayerObj.visible = true;
+    }
+    if (typeof gl.setLayerVisibility === 'function') {
+      gl.setLayerVisibility(BASE_LAYER_ID, true);
+    }
+  }
+
   /**
    * @param {1|2|3|4} week
    * @param {{ navigateTo?: Date, zoomLevel?: number }} opts
@@ -258,44 +289,36 @@
       return 0;
     }
 
-    // No concurrency cap: pass every real session through. The GL packs
-    // overlapping sub-day events into readable radial lanes (see event-renderer).
-    // Also fold in the weekend that borders this week (from neighbor weeks) for
-    // continuity, deduped by uid so nothing loads twice.
-    var weekSessions = dedupeVeventRows(appendAdjacentWeekendEvents(w, sessionsByWeek[w] || []));
-    var combined = dedupeVeventRows(longTermEvents.concat(weekSessions));
-    var vevents = toVEvents(combined);
-    var mergedStyles = buildLayerStyles(
-      gl.layerStylesByCategory && typeof gl.layerStylesByCategory === 'object'
-        ? gl.layerStylesByCategory
-        : {}
-    );
+    var mergedStyles = buildLayerStyles({});
+    var weekLayer = weekLayerId(w);
 
     if (typeof gl.setTimelineEventFilter === 'function') {
       gl.setTimelineEventFilter('all');
     }
 
-    var layer = gl.getLayer && gl.getLayer(LAYER_ID);
-    if (!layer && typeof gl.addLayer === 'function') {
-      gl.addLayer(LAYER_ID, {
-        name: meta.layerName,
-        plotType: 'polygon3d',
-        opacity: 0.92,
-        visible: true
-      });
-    } else if (layer) {
-      layer.name = meta.layerName;
-      layer.plotType = 'polygon3d';
-      layer.opacity = 0.92;
-      layer.visible = true;
-    }
+    ensureBaseLayer(gl, mergedStyles);
 
-    gl.ingestEvents(LAYER_ID, vevents, {
+    // Each week gets its own layer so W1 stays when you load W2. Toggle off in Calendar Layers.
+    var weekSessions = dedupeVeventRows(appendAdjacentWeekendEvents(w, sessionsByWeek[w] || []));
+    var vevents = toVEvents(weekSessions);
+
+    gl.ingestEvents(weekLayer, vevents, {
       sessionId: 'edge-esmeralda-2026-w' + w,
       layerStyles: mergedStyles,
       timelineEventFilter: 'all',
-      circadianShortEventScope: 'year'
+      circadianShortEventScope: 'year',
+      visible: true
     });
+
+    var weekLayerObj = gl.getLayer && gl.getLayer(weekLayer);
+    if (weekLayerObj) {
+      weekLayerObj.name = meta.layerName;
+      weekLayerObj.plotType = 'polygon3d';
+      weekLayerObj.opacity = 0.92;
+      weekLayerObj.visible = true;
+    }
+
+    loadedWeeks[w] = true;
 
     if (typeof global.setCircadianShortEventScope === 'function') {
       global.setCircadianShortEventScope('year');
@@ -317,10 +340,10 @@
       global.createPlanets(global.currentZoom);
     }
     if (typeof gl.setLayerVisibility === 'function') {
-      gl.setLayerVisibility(LAYER_ID, true);
+      gl.setLayerVisibility(weekLayer, true);
     }
     if (typeof global.circaevumSelectedLayerId !== 'undefined') {
-      global.circaevumSelectedLayerId = LAYER_ID;
+      global.circaevumSelectedLayerId = weekLayer;
     }
     if (typeof gl.refreshAllEventLayers === 'function') {
       gl.refreshAllEventLayers();
@@ -331,7 +354,8 @@
   }
 
   global.edgeEsmeralda2026LongTermEvents = longTermEvents;
-  global.edgeEsmeralda2026LayerId = LAYER_ID;
+  global.edgeEsmeralda2026LayerId = BASE_LAYER_ID;
+  global.edgeEsmeralda2026WeekLayerId = weekLayerId;
   global.registerEdgeEsmeraldaWeekSessions = registerEdgeEsmeraldaWeekSessions;
   global.registerEdgeEsmeraldaCategoryColors = registerEdgeEsmeraldaCategoryColors;
   global.loadEdgeEsmeraldaWeek = loadEdgeEsmeraldaWeek;

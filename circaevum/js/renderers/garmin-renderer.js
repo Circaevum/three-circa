@@ -6,15 +6,15 @@
  *              summary: [...], dense: { collection, key, id } }
  *
  *   - metric 'hr': a polyline per day where RADIUS from Earth encodes bpm (low hugs the
- *     surface, high reaches toward the hour ticks), colored by activity zone.
+ *     surface, high reaches toward the hour ticks), solid red smooth tube.
  *     summary = [{ tOff, v }]  (tOff = ms from dtstart, v = bpm)
  *   - metric 'sleepStage': arcs at ATC band radii (deep = recovery band 1, REM = band 6).
  *     summary = [{ tOff, dur, stage }]  (tOff/dur in ms from dtstart)
  *
  * These events flow through the normal event pipeline (they are layer-toggleable calendar
  * objects); the event-renderer suppresses their default dot/ribbon and this module draws the
- * arc instead. Selected calendar day draws when the layer is on; Shift peeks other days.
- * Sleep sessions plot on the wake day (Garmin calendarDate, or local sleep-start date + 1).
+ * arc instead. Selected calendar day when the layer is on; Shift peeks other days (one HR arc
+ * per calendar day). Sleep sessions plot on the wake day (Garmin calendarDate, or local sleep-start date + 1).
  *
  * Geometry rebuilds when day, blend bucket, shift, or event set changes — not every frame.
  *
@@ -40,13 +40,17 @@
   // Small fore/aft lift along the local day-disk normal (not world Y) so lines stay near the selected-time plane.
   const HR_FORE_OFFSET = 0.038; // × hand, in front of the sky canvas
   const SLEEP_AFT_OFFSET = 0.032; // × hand, behind the sky canvas
-  // Thin world-space tubes — WebGL ignores LineBasicMaterial.linewidth.
-  const HR_TUBE_RADIUS = 0.009; // × hand
-  const HR_AVERAGE_TUBE_RADIUS = 0.013; // × hand — slightly heavier than daily HR
   const SLEEP_TUBE_RADIUS = 0.008; // × hand
   const SLEEP_CONNECTOR_TUBE_RADIUS = 0.006; // × hand — radial links at stage changes
-  const HR_LINE_OPACITY = 0.98;
-  const HR_AVERAGE_LINE_OPACITY = 1;
+  /** Solid Garmin HR red — no zone gradient (resting BPM was reading as purple). */
+  const HR_RGB = [0.92, 0.18, 0.22];
+  const HR_HEX = 0xeb2e38;
+  /** Bump when HR stroke material changes so cached geometry rebuilds. */
+  const HR_STROKE_REV = 'red-smooth-v4';
+  const HR_TUBE_RADIUS = 0.007; // × hand — smooth red tube, thinner than sleep
+  const HR_AVERAGE_TUBE_RADIUS = 0.009; // × hand
+  const HR_LINE_OPACITY = 0.92;
+  const HR_AVERAGE_LINE_OPACITY = 0.98;
   const HR_AVERAGE_RGB = [1, 0.96, 0.78];
   const SLEEP_LINE_OPACITY = 0.94;
 
@@ -68,7 +72,7 @@
   }
 
   // Sleep: concentric rings by ATC band (deep = recovery near Earth, not workout band).
-  // HR: radius tracks live metabolic band from BPM.
+  // HR: continuous radius from BPM (low → inner disk, high → hour ticks) — not stepped bands.
   function sleepStageRadius(stage) {
     const AB = global.AtcBand;
     if (AB && typeof AB.sleepStageToBand === 'function' && typeof AB.bandToRadius === 'function') {
@@ -79,33 +83,36 @@
   }
 
   function hrRadius(bpm) {
-    const AB = global.AtcBand;
-    if (AB && typeof AB.bpmToBand === 'function' && typeof AB.bandToRadius === 'function') {
-      return AB.bandToRadius(AB.bpmToBand(bpm));
-    }
     const b = Math.max(HR_BPM_MIN, Math.min(HR_BPM_MAX, bpm));
     const t = (b - HR_BPM_MIN) / (HR_BPM_MAX - HR_BPM_MIN);
     return hand() * (HR_R_MIN + (HR_R_MAX - HR_R_MIN) * t);
   }
 
-  /** Smooth blue → soft purple → red (resting → exertion). */
-  const HR_COLOR_BLUE = [0.12, 0.32, 0.92];
-  const HR_COLOR_PURPLE = [0.62, 0.48, 0.88];
-  const HR_COLOR_RED = [0.92, 0.18, 0.22];
-
-  function lerpUnit(a, b, t) {
-    return a + (b - a) * t;
+  /** Insert substeps between sparse summary points so CatmullRom + radius glide smoothly. */
+  function densifyHrSummary(summary) {
+    const pts = (summary || [])
+      .map((s) => ({ tOff: Number(s.tOff || 0), v: Number(s.v) }))
+      .filter((s) => s.v > 0)
+      .sort((a, b) => a.tOff - b.tOff);
+    if (pts.length < 2) return pts;
+    const out = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const dt = b.tOff - a.tOff;
+      if (dt <= 0) continue;
+      const steps = Math.max(2, Math.min(16, Math.ceil(dt / (2 * 60 * 1000))));
+      for (let k = 0; k < steps; k++) {
+        const u = k / steps;
+        out.push({ tOff: a.tOff + dt * u, v: a.v + (b.v - a.v) * u });
+      }
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
   }
 
-  function lerpRgb(c0, c1, t) {
-    return [lerpUnit(c0[0], c1[0], t), lerpUnit(c0[1], c1[1], t), lerpUnit(c0[2], c1[2], t)];
-  }
-
-  function hrColor(bpm) {
-    const b = Math.max(HR_BPM_MIN, Math.min(HR_BPM_MAX, bpm));
-    const t = (b - HR_BPM_MIN) / (HR_BPM_MAX - HR_BPM_MIN);
-    if (t <= 0.5) return lerpRgb(HR_COLOR_BLUE, HR_COLOR_PURPLE, t / 0.5);
-    return lerpRgb(HR_COLOR_PURPLE, HR_COLOR_RED, (t - 0.5) / 0.5);
+  function hrColor(_bpm) {
+    return HR_RGB;
   }
 
   /** Skip flat all-day rings (constant BPM, no real intraday curve). */
@@ -184,6 +191,11 @@
     line.renderOrder = TS_RENDER_ORDER;
     line.raycast = function () {};
     return line;
+  }
+
+  /** HR / average overlay — uniform-color tube (CatmullRom smooth, no BPM gradient). */
+  function makeUniformTube(THREE, points, hex, radius, opacity) {
+    return makeTube(THREE, points, null, radius, opacity, hex != null ? hex : HR_HEX);
   }
 
   /** Unit normal of the day disk at `date`/`r`, scaled by `offsetMul` (× hand). */
@@ -367,10 +379,77 @@
     return plotAnchorMs + (wallMs - sleepStartMs);
   }
 
-  function sleepOverlapsSelectedDay(event, startMs, selDayStart, selDayEnd) {
-    const wakeStart = sleepWakeDayStartMs(event, startMs);
-    if (!isFinite(wakeStart)) return false;
-    return wakeStart >= selDayStart && wakeStart < selDayEnd;
+  /** Local-midnight key for which calendar day a timeseries event belongs on. */
+  function timeseriesDayStartMs(ev, startMs) {
+    const render = ev && ev.render;
+    if (render && render.metric === 'sleepStage') {
+      return sleepWakeDayStartMs(ev, startMs);
+    }
+    if (render && typeof render.displayDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(render.displayDate)) {
+      const p = render.displayDate.slice(0, 10).split('-').map(Number);
+      return new Date(p[0], p[1] - 1, p[2], 0, 0, 0, 0).getTime();
+    }
+    if (!isFinite(startMs)) return NaN;
+    const s = new Date(startMs);
+    return new Date(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0, 0).getTime();
+  }
+
+  /** Prefer daily Garmin HR over sleep/sim/average when several land on the same day. */
+  function scoreHrEvent(ev) {
+    const uid = ev && ev.uid != null ? String(ev.uid) : '';
+    let rank = 2;
+    if (ev?.render?.average) rank = 0;
+    else if (ev?.render?.simulated || ev?.circaevumSource === 'simulated') rank = 1;
+    else if (uid.startsWith('garmin-hr-sleep')) rank = 2;
+    else if (uid.startsWith('garmin-demo-hr') || ev?.render?.demo) rank = 4
+    else if (uid.startsWith('garmin-hr')) rank = 4;
+    const summary = ev?.render?.summary;
+    const n = Array.isArray(summary) ? summary.length : 0;
+    let range = 0;
+    if (n >= 2) {
+      const bpms = summary.map((s) => Number(s.v)).filter((v) => v > 0);
+      if (bpms.length >= 2) range = Math.max(...bpms) - Math.min(...bpms);
+    }
+    return rank * 100000 + range * 100 + n;
+  }
+
+  /**
+   * Without Shift: selected calendar day only. With Shift: all days in window.
+   * HR: at most one arc per calendar day (best daily plot wins).
+   */
+  function filterVisibleTimeseries(items, opts) {
+    const { selDayStart, selDayEnd, showOtherDays, winStart, winEnd, zl } = opts;
+    const out = [];
+    const hrByDay = new Map();
+
+    for (const item of items) {
+      const ev = item && item.ev ? item.ev : item;
+      const layerId = item && item.layerId ? item.layerId : USER_EVENTS_LAYER;
+      const render = ev && ev.render;
+      if (isSleepOnlyTimeseriesZoom(zl) && (!render || render.metric !== 'sleepStage')) continue;
+
+      const sMs = eventStartMs(ev);
+      if (!isFinite(sMs)) continue;
+      const dayStart = timeseriesDayStartMs(ev, sMs);
+      if (!isFinite(dayStart) || dayStart < winStart || dayStart > winEnd) continue;
+
+      if (!showOtherDays && (dayStart < selDayStart || dayStart >= selDayEnd)) continue;
+
+      if (render && render.metric === 'hr') {
+        const prev = hrByDay.get(dayStart);
+        if (!prev || scoreHrEvent(ev) > scoreHrEvent(prev.ev)) {
+          hrByDay.set(dayStart, { ev, layerId });
+        }
+        continue;
+      }
+
+      if (render && render.metric === 'sleepStage') {
+        out.push({ ev, layerId });
+      }
+    }
+
+    for (const hrItem of hrByDay.values()) out.push(hrItem);
+    return out;
   }
 
   function currentZoomLevel() {
@@ -393,7 +472,7 @@
       const e = events[i] && events[i].ev ? events[i].ev : events[i];
       evKey += '|' + (e && e.uid != null ? e.uid : i);
     }
-    return blendQ + ':' + dayKey + ':' + spanDays + ':' + (zl != null ? zl : 'x') + ':' + (shiftActive() ? 1 : 0) + ':' + evKey;
+    return HR_STROKE_REV + ':' + blendQ + ':' + dayKey + ':' + spanDays + ':' + (zl != null ? zl : 'x') + ':' + (shiftActive() ? 1 : 0) + ':' + evKey;
   }
 
   function resetRefreshCache() {
@@ -462,50 +541,26 @@
       const isAverage = render.average === true;
       const endMs = eventEndMs(event, startMs);
       if (!isAverage && isDegenerateFlatHr(summary, startMs, endMs)) return;
-      const tubeRadius = hand() * (isAverage ? HR_AVERAGE_TUBE_RADIUS : HR_TUBE_RADIUS);
       const opacity = isAverage ? HR_AVERAGE_LINE_OPACITY : HR_LINE_OPACITY;
-      const samples = [];
+      const strokeHex = isAverage ? 0xfff2cc : HR_HEX;
+      const tubeRadius = hand() * (isAverage ? HR_AVERAGE_TUBE_RADIUS : HR_TUBE_RADIUS);
+      const dense = densifyHrSummary(summary);
+      const points = [];
 
-      for (const s of summary) {
+      for (const s of dense) {
         const bpm = Number(s.v);
         if (!(bpm > 0)) continue;
         const ms = startMs + Number(s.tOff || 0);
         const p = point(ms, hrRadius(bpm), HR_FORE_OFFSET);
         if (!p) continue;
-        samples.push({
-          bpm,
-          point: new THREE.Vector3(p.x, p.y, p.z),
-          color: isAverage ? HR_AVERAGE_RGB : hrColor(bpm)
-        });
+        points.push(new THREE.Vector3(p.x, p.y, p.z));
       }
 
-      if (samples.length < 2) return;
+      if (points.length < 2) return;
 
-      if (isAverage) {
-        const tube = makeTube(
-          THREE,
-          samples.map((s) => s.point),
-          samples.map((s) => s.color),
-          tubeRadius,
-          opacity
-        );
-        addTimeseriesMesh(group, tube, event, layerId, { timeseriesMetric: 'hr' });
-        return;
-      }
-
-      // One short tube per summary interval; gradient from start → end BPM within each slice.
-      for (let i = 0; i < samples.length - 1; i++) {
-        const a = samples[i];
-        const b = samples[i + 1];
-        const tube = makeTube(
-          THREE,
-          [a.point, b.point],
-          [a.color, hrColor(b.bpm)],
-          tubeRadius,
-          opacity
-        );
-        addTimeseriesMesh(group, tube, event, layerId, { timeseriesMetric: 'hr' });
-      }
+      const tube = makeUniformTube(THREE, points, strokeHex, tubeRadius, opacity);
+      if (tube) tube.userData.hrStrokeRev = HR_STROKE_REV;
+      addTimeseriesMesh(group, tube, event, layerId, { timeseriesMetric: 'hr' });
       return;
     }
 
@@ -624,7 +679,7 @@
     const selMid = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0).getTime();
     const winStart = selMid - pad * MS_PER_DAY;
     const winEnd = selMid + (pad + 1) * MS_PER_DAY;
-    // Selected day is always shown (when the layer is on); Shift additionally reveals other days.
+    // Selected day when layer on; Shift additionally reveals other days (one HR arc per day).
     const selDayStart = selMid;
     const selDayEnd = selMid + MS_PER_DAY;
     const showOtherDays = shiftActive();
@@ -637,30 +692,26 @@
       blend: straightenBlend
     };
 
-    for (const item of events) {
-      const ev = item && item.ev ? item.ev : item;
-      const layerId = item && item.layerId ? item.layerId : USER_EVENTS_LAYER;
-      const render = ev && ev.render;
-      const zl = currentZoomLevel();
-      if (isSleepOnlyTimeseriesZoom(zl) && (!render || render.metric !== 'sleepStage')) continue;
-      const sMs = eventStartMs(ev);
-      const eMs = eventEndMs(ev, sMs);
-      if (!isFinite(sMs)) continue;
-      if (render && render.metric === 'sleepStage') {
-        const wakeStart = sleepWakeDayStartMs(ev, sMs);
-        if (!isFinite(wakeStart) || wakeStart < winStart || wakeStart > winEnd) continue;
-        if (!sleepOverlapsSelectedDay(ev, sMs, selDayStart, selDayEnd) && !showOtherDays) continue;
-      } else {
-        if (eMs < winStart || sMs > winEnd) continue;
-        const overlapsSelectedDay = sMs < selDayEnd && eMs > selDayStart;
-        if (!overlapsSelectedDay && !showOtherDays) continue;
-      }
+    const zl = currentZoomLevel();
+    const visible = filterVisibleTimeseries(events, {
+      selDayStart,
+      selDayEnd,
+      showOtherDays,
+      winStart,
+      winEnd,
+      zl
+    });
+
+    for (const item of visible) {
+      const ev = item.ev;
+      const layerId = item.layerId;
       buildArcForEvent(ev, group, { ...ctx, layerId });
     }
     syncEventFocusIfNeeded();
   }
 
   const TimeseriesRenderer = {
+    HR_STROKE_REV,
     hasData,
     createGroup,
     refreshGroup,

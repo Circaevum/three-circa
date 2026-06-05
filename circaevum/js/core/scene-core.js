@@ -7,6 +7,43 @@
  * Dependencies: THREE.js, config.js, datetime.js
  */
 
+function isTourEditorLayoutActive() {
+    return (
+        typeof document !== 'undefined' &&
+        document.body &&
+        document.body.classList.contains('is-tour-editor-open')
+    );
+}
+
+/** Full window by default; shrink to #canvas-container only while tour editor dock is open. */
+function getCircaevumViewportSize() {
+    if (typeof window === 'undefined') {
+        return { width: 0, height: 0 };
+    }
+    if (!isTourEditorLayoutActive()) {
+        return { width: window.innerWidth, height: window.innerHeight };
+    }
+    const container = document.getElementById('canvas-container');
+    const width = container && container.clientWidth > 0 ? container.clientWidth : window.innerWidth;
+    const height = container && container.clientHeight > 0 ? container.clientHeight : window.innerHeight;
+    return { width, height };
+}
+
+function resizeCircaevumViewport() {
+    const cam = typeof camera !== 'undefined' ? camera : window.camera;
+    const rend = typeof renderer !== 'undefined' ? renderer : window.renderer;
+    if (!cam || !rend) return;
+    const { width, height } = getCircaevumViewportSize();
+    if (width <= 0 || height <= 0) return;
+    cam.aspect = width / height;
+    cam.updateProjectionMatrix();
+    rend.setSize(width, height);
+}
+
+if (typeof window !== 'undefined') {
+    window.circaevumResizeViewport = resizeCircaevumViewport;
+}
+
 // Global scene variables (will be set by initScene)
 // Note: These are declared in main.js, we just assign to them here
 // We don't declare them here to avoid "already declared" errors
@@ -52,7 +89,8 @@ function initScene(dependencies = {}) {
     sceneContentGroup = new THREE.Group();
     scene.add(sceneContentGroup);
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
+    const { width: initW, height: initH } = getCircaevumViewportSize();
+    camera = new THREE.PerspectiveCamera(75, initW / initH, 0.1, 20000);
     // Position camera to view current time (2025) - will adjust based on zoom
     const currentYearHeight = getHeightForYear(currentYear, 1);
     
@@ -69,7 +107,7 @@ function initScene(dependencies = {}) {
     scene.add(camera);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(initW, initH);
     // Limit pixel ratio on mobile for better performance (max 2)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     // Enable WebXR support
@@ -133,11 +171,7 @@ function initScene(dependencies = {}) {
     createSunWorldline(dependencies);
 
     window.addEventListener('resize', () => {
-        if (camera && renderer) {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
+        resizeCircaevumViewport();
     });
 
     // Variables are already assigned above (they're declared in main.js, so we just assign to them)

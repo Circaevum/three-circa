@@ -177,7 +177,7 @@
       !isNaN(start.getTime()) &&
       !isLongTermEventSpanForPlotType(start, end)
     ) {
-      return 'lines';
+      return 'polygon3d';
     }
     if (mode === 'lines') return 'lines';
     if (mode === 'polygon3d' || mode === 'polygon2d') return 'polygon3d';
@@ -656,10 +656,36 @@
     if (!pickable) disablePointerRaycastSubtree(root);
   }
 
-  /** Hold Shift: peek all STEs as one centerline per event (no ribbon fill / labels). */
+  /** Hold Shift: peek off-day STEs as filled ribbons (inner + outer edges); selected day unchanged. */
   function isCircadianShortEventsShiftPreview() {
     return typeof global.getCircadianShortEventsShiftPreview === 'function' &&
       !!global.getCircadianShortEventsShiftPreview();
+  }
+
+  /** 1 on selected calendar day; falls off with |day delta| for Shift peek. */
+  function getShiftPreviewDayProximity(start, end) {
+    const selFn = getSelectedDateTimeFn();
+    const sel = selFn ? selFn() : null;
+    if (!sel || !start || isNaN(start.getTime())) return 0;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    const mid = new Date((start.getTime() + evEnd.getTime()) / 2);
+    const ua = Date.UTC(mid.getFullYear(), mid.getMonth(), mid.getDate());
+    const ub = Date.UTC(sel.getFullYear(), sel.getMonth(), sel.getDate());
+    const diffDays = Math.abs(Math.round((ua - ub) / 86400000));
+    return Math.exp(-diffDays / 3.5);
+  }
+
+  /** Opacity multiplier for off-day STE geometry while Shift is held (day-sky zooms). */
+  function getShiftPreviewSteVisibilityMul(start, end) {
+    if (!isCircadianShortEventsShiftPreview() || !start || isNaN(start.getTime())) return 1;
+    if (eventTouchesSelectedCalendarDay(start, end)) return 1;
+    const prox = getShiftPreviewDayProximity(start, end);
+    return Math.max(0.5, Math.min(0.92, 0.52 + 0.4 * prox));
+  }
+
+  function getShiftPreviewSteOutlineMul(start, end) {
+    if (!isCircadianShortEventsShiftPreview() || eventTouchesSelectedCalendarDay(start, end)) return 1;
+    return 1.28;
   }
 
   function isCircadianShortEventScopeYear() {
@@ -747,7 +773,7 @@
       if (eventTouchesSelectedCalendarDay(start, end)) {
         op = Math.max(op, 0.9);
       } else {
-        op = Math.max(op, 0.3);
+        op = Math.max(op, 0.55 * getShiftPreviewSteVisibilityMul(start, end));
       }
     }
     return op;
@@ -880,10 +906,16 @@
 
     const isShort = isSub24HourSpan(start, end);
 
+    if (
+      isCircadianShortEventsShiftPreview() &&
+      isShort &&
+      !onSelDay &&
+      (zl === 0 || zl === 8 || zl === 9)
+    ) {
+      return getShiftPreviewSteVisibilityMul(start, end);
+    }
+
     if ((zl === 0 || zl === 9) && isShort && !onSelDay) {
-      if (isCircadianShortEventsShiftPreview()) {
-        return Math.max(0.18, Math.min(0.55, 0.32 * dayDiffProx));
-      }
       return 0;
     }
 
@@ -4594,7 +4626,8 @@
           const roFill = roOrders.roFill;
           const roLine = roOrders.roLine;
           const fillOpacity = Math.min(0.98,
-            opacity * getDurationFillOpacityFactor(durationDays) * getShortTermEventFillOpacityMul());
+            opacity * getDurationFillOpacityFactor(durationDays) * getShortTermEventFillOpacityMul() *
+              (isCircadianShortEventsShiftPreview() && !eventTouchesSelectedCalendarDay(start, end) ? 1.12 : 1));
           let fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
           fillHex = applyEventDisplayColor(fillHex, anchorMsShort, start, end);
           const borderStyle = layerConfig.borderStyle || 'event';
@@ -4603,7 +4636,8 @@
             outlineColorHex = applyEventDisplayColor(outlineColorHex, anchorMsShort, start, end);
           }
           let outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
-          outlineOp *= 0.74 * getShortCircadianOutlineOpacityMul(zl);
+          outlineOp *= 0.74 * getShortCircadianOutlineOpacityMul(zl) *
+            getShiftPreviewSteOutlineMul(start, end);
 
           const innerFlat = ribbonPair.innerFlat;
           const outerFlat = ribbonPair.outerFlat;
@@ -5113,7 +5147,8 @@
             const roFill = -4 + roBoost;
             const roLine = -2 + roBoost;
             const fillOpacity = Math.min(0.98,
-              opacity * getDurationFillOpacityFactor(durationDaysSmall) * getShortTermEventFillOpacityMul());
+              opacity * getDurationFillOpacityFactor(durationDaysSmall) * getShortTermEventFillOpacityMul() *
+                (isCircadianShortEventsShiftPreview() && !eventTouchesSelectedCalendarDay(start, end) ? 1.12 : 1));
             const layerColorHex = parseColor(layerConfig.color || '#00b4d8');
             let eventColorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
             eventColorHex = applyTemporalVividnessToHex(eventColorHex, anchorMs, start, end);
@@ -5124,7 +5159,7 @@
             let outlineColorHexEvt = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
             if (outlineColorHexEvt != null) outlineColorHexEvt = applyTemporalVividnessToHex(outlineColorHexEvt, anchorMs, start, end);
             let outlineOpEvt = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
-            outlineOpEvt *= 0.74;
+            outlineOpEvt *= 0.74 * getShiftPreviewSteOutlineMul(start, end);
             const innerFlat = ribbonPair.innerFlat;
             const outerFlat = ribbonPair.outerFlat;
             const circTubeMulLines = getShortCircadianRibbonTubeScale();

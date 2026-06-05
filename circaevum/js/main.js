@@ -89,7 +89,51 @@ let tourFlatCalendarStrip = false;
 let tourMarkerDensityOverride = null;
 /** Planet ribbons use shader Y-clip while intro worldline reveal is active. */
 let tourNarrativeShaderWorldlinesActive = false;
+/** Intro tour: multiply planetary orbit ring opacity (0–1). */
+let tourPlanetOrbitRingOpacityMul = 1;
+/** Intro tour: multiply helical worldline mesh opacity (0–1). */
+let tourWorldlineOpacityMul = 1;
+/** Intro tour: when false, hide the event-list context arc at selected time. */
+let tourContextArcVisible = true;
 let tourSceneLightRebuildLast = 0;
+
+function applyTourSceneOpacityOverrides() {
+    const orbitMul =
+        typeof tourPlanetOrbitRingOpacityMul === 'number' && !isNaN(tourPlanetOrbitRingOpacityMul)
+            ? Math.max(0, Math.min(1, tourPlanetOrbitRingOpacityMul))
+            : 1;
+    const wlMul =
+        typeof tourWorldlineOpacityMul === 'number' && !isNaN(tourWorldlineOpacityMul)
+            ? Math.max(0, Math.min(1, tourWorldlineOpacityMul))
+            : 1;
+
+    orbitLines.forEach((line) => {
+        if (!line || !line.material) return;
+        if (line.userData.tourBaseOpacity == null) line.userData.tourBaseOpacity = line.material.opacity;
+        line.material.opacity = line.userData.tourBaseOpacity * orbitMul;
+        line.material.visible = orbitMul > 0.01;
+    });
+    if (ghostOrbitLine && ghostOrbitLine.material) {
+        if (ghostOrbitLine.userData.tourBaseOpacity == null) {
+            ghostOrbitLine.userData.tourBaseOpacity = ghostOrbitLine.material.opacity;
+        }
+        ghostOrbitLine.material.opacity = ghostOrbitLine.userData.tourBaseOpacity * orbitMul;
+        ghostOrbitLine.material.visible = orbitMul > 0.01;
+    }
+    worldlines.forEach((wl) => {
+        if (!wl || typeof wl.traverse !== 'function') return;
+        wl.traverse((child) => {
+            if (!child.material) return;
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat) => {
+                if (mat.opacity == null) return;
+                if (child.userData.tourBaseOpacity == null) child.userData.tourBaseOpacity = mat.opacity;
+                mat.opacity = child.userData.tourBaseOpacity * wlMul;
+                mat.visible = wlMul > 0.01;
+            });
+        });
+    });
+}
 
 function clearTourNarrativeSceneFlags() {
     tourWorldlineRevealProgress = null;
@@ -100,6 +144,9 @@ function clearTourNarrativeSceneFlags() {
     tourFlatCalendarStrip = false;
     tourMarkerDensityOverride = null;
     tourNarrativeShaderWorldlinesActive = false;
+    tourPlanetOrbitRingOpacityMul = 1;
+    tourWorldlineOpacityMul = 1;
+    tourContextArcVisible = true;
     try {
         const el = typeof document !== 'undefined' ? document.getElementById('circaevum-tour-cal-strip') : null;
         if (el && el.parentNode) el.parentNode.removeChild(el);
@@ -168,7 +215,7 @@ let listHorizonHelixTimeKey = null;
 /** Context arc always on at zoom; hidden only when Event List uses Draw all. */
 /** Short (<24h) circadian-scoped events: 'day' = selected calendar day only, 'year' = whole selected year. */
 let circadianShortEventScope = 'year';
-/** Hold Shift: show all STEs as lightweight centerlines (see event-renderer). Suppressed while ⌘/Meta is held (screenshots). */
+/** Hold Shift: peek nearby STEs as ribbon polygons (inner + outer edges); full detail on selected day. Suppressed while ⌘/Meta is held (screenshots). */
 let circadianShortEventsShiftPreview = false;
 let modifierMetaHeld = false;
 /** Default on so the circadian frame is visible at helix-capable zoom levels. */
@@ -899,7 +946,11 @@ function initScene() {
         camera.position.set(0, currentYearHeight + 400, 800);
         scene.add(camera);
         renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        const fbSize =
+            typeof getCircaevumViewportSize === 'function'
+                ? getCircaevumViewportSize()
+                : { width: window.innerWidth, height: window.innerHeight };
+        renderer.setSize(fbSize.width, fbSize.height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.xr.enabled = true;
         document.getElementById('canvas-container').appendChild(renderer.domElement);
@@ -931,7 +982,9 @@ function initScene() {
         sceneContentGroup.add(sunGlow);
         createSunWorldline();
         window.addEventListener('resize', () => {
-            if (camera && renderer) {
+            if (typeof resizeCircaevumViewport === 'function') {
+                resizeCircaevumViewport();
+            } else if (camera && renderer) {
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -2167,6 +2220,33 @@ function isEarthDaylightSkyZoom(zoomLevel) {
     return zoomLevel === 0 || zoomLevel === 8 || zoomLevel === 9;
 }
 
+window.getFocusTargetOverride = function () {
+    return focusTargetOverride;
+};
+
+window.refreshGeophysicalShells = function () {
+    if (typeof window.refreshIonosphereShells === 'function') window.refreshIonosphereShells();
+    if (typeof window.refreshMagnetosphereShells === 'function') window.refreshMagnetosphereShells();
+};
+
+window.refreshIonosphereShells = function () {
+    const earth = planetMeshes.find((p) => p && p.userData && p.userData.name === 'Earth');
+    if (!earth || typeof IonosphereShell === 'undefined') return;
+    if (IonosphereShell.ensureShellGroup) IonosphereShell.ensureShellGroup(earth);
+    if (IonosphereShell.refreshShellGroup) {
+        IonosphereShell.refreshShellGroup(earth, getSelectedDateTime(), currentZoom);
+    }
+};
+
+window.refreshMagnetosphereShells = function () {
+    const earth = planetMeshes.find((p) => p && p.userData && p.userData.name === 'Earth');
+    if (!earth || typeof MagnetosphereShell === 'undefined') return;
+    if (MagnetosphereShell.ensureMagnetosphereShells) MagnetosphereShell.ensureMagnetosphereShells(earth);
+    if (MagnetosphereShell.refreshMagnetosphereShells) {
+        MagnetosphereShell.refreshMagnetosphereShells(earth, getSelectedDateTime(), currentZoom);
+    }
+};
+
 /** Sky zooms show all timeseries; month/week show sleep on the selected day only. */
 function isTimeseriesArcZoom(zoomLevel) {
     return isEarthDaylightSkyZoom(zoomLevel) || zoomLevel === 5 || zoomLevel === 7;
@@ -3066,6 +3146,7 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
  * Hidden when list Draw-all is on.
  */
 function isContextDiscEnabled() {
+    if (tourContextArcVisible === false) return false;
     if (typeof window !== 'undefined' && window.eventsListHorizonRingActive === false) return false;
     return true;
 }
@@ -4205,6 +4286,8 @@ function createPlanets(zoomLevel) {
     if (zoomLevel === 0) {
         syncZoom0CameraToSelectedHourHand('delta');
     }
+
+    applyTourSceneOpacityOverrides();
 
     tourNarrativeShaderWorldlinesActive =
         typeof tourWorldlineRevealProgress === 'number' &&
@@ -5513,6 +5596,9 @@ function initControls() {
             toggleWebXR(); // XR mode
         } else if (e.key.toLowerCase() === 'r' && !blockMomentModeShortcuts) {
             rotate90Right(); // Rotate system 90 degrees clockwise
+        } else if (e.key.toLowerCase() === 'g' && !blockMomentModeShortcuts) {
+            e.preventDefault();
+            if (typeof toggleGeophysicalShells === 'function') toggleGeophysicalShells();
         } else if (e.key.toLowerCase() === 'f' && !blockMomentModeShortcuts) {
             toggleFlattenWithKey();
         }
@@ -5659,6 +5745,14 @@ function initControls() {
     if (eventsPlotLinesBtn) {
         eventsPlotLinesBtn.addEventListener('click', toggleEventPlotType);
         updateEventPlotTypeButton();
+    }
+
+    const geophysicalShellsBtn = document.getElementById('geophysical-shells-toggle');
+    if (geophysicalShellsBtn) {
+        if (typeof syncGeophysicalShellsIcon === 'function') syncGeophysicalShellsIcon();
+        geophysicalShellsBtn.addEventListener('click', function () {
+            if (typeof toggleGeophysicalShells === 'function') toggleGeophysicalShells();
+        });
     }
 
     const moonLayerBtn = document.getElementById('moon-layer-toggle');
@@ -7357,6 +7451,17 @@ if (typeof window !== 'undefined') {
             const o = partial.tourMarkerDensityOverride;
             tourMarkerDensityOverride = o == null || o === '' ? null : String(o);
         }
+        if ('tourPlanetOrbitRingOpacityMul' in partial) {
+            const v = Number(partial.tourPlanetOrbitRingOpacityMul);
+            tourPlanetOrbitRingOpacityMul = Number.isNaN(v) ? 1 : Math.max(0, Math.min(1, v));
+        }
+        if ('tourWorldlineOpacityMul' in partial) {
+            const v = Number(partial.tourWorldlineOpacityMul);
+            tourWorldlineOpacityMul = Number.isNaN(v) ? 1 : Math.max(0, Math.min(1, v));
+        }
+        if ('tourContextArcVisible' in partial) {
+            tourContextArcVisible = partial.tourContextArcVisible !== false;
+        }
         if ('moonLayer' in partial) {
             showMoonLayer = !!partial.moonLayer;
             syncMoonLayerButton();
@@ -7398,16 +7503,28 @@ if (typeof window !== 'undefined') {
         }
 
         const partialKeys = Object.keys(partial);
-        const onlyProgressAndCamera =
-            partialKeys.length > 0 &&
-            partialKeys.every((k) => k === 'tourWorldlineRevealProgress' || k === 'cameraRotation');
-        if (
-            onlyProgressAndCamera &&
-            tourNarrativeShaderWorldlinesActive &&
-            typeof Worldlines !== 'undefined' &&
-            typeof Worldlines.setNarrativeClipYMax === 'function'
-        ) {
-            if ('tourWorldlineRevealProgress' in partial) {
+        const lightweightSceneKeys = new Set([
+            'tourWorldlineRevealProgress',
+            'cameraRotation',
+            'tourPlanetOrbitRingOpacityMul',
+            'tourWorldlineOpacityMul',
+            'tourContextArcVisible'
+        ]);
+        const onlyLightweightScenePatch =
+            partialKeys.length > 0 && partialKeys.every((k) => lightweightSceneKeys.has(k));
+        if (onlyLightweightScenePatch) {
+            if ('tourPlanetOrbitRingOpacityMul' in partial || 'tourWorldlineOpacityMul' in partial) {
+                applyTourSceneOpacityOverrides();
+            }
+            if ('tourContextArcVisible' in partial) {
+                updateListHorizonEarthRing(currentZoom);
+            }
+            if (
+                'tourWorldlineRevealProgress' in partial &&
+                tourNarrativeShaderWorldlinesActive &&
+                typeof Worldlines !== 'undefined' &&
+                typeof Worldlines.setNarrativeClipYMax === 'function'
+            ) {
                 const sel = typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : new Date();
                 const heights = computeSceneDateHeights(currentZoom);
                 const hJan = calculateDateHeight(sel.getFullYear(), 0, 1, 0);
@@ -7434,6 +7551,9 @@ if (typeof window !== 'undefined') {
             showTimeMarkerText,
             tourMinimalOrbitMode: !!tourMinimalOrbitMode,
             tourYearMarkerReveal: tourYearMarkerReveal == null ? null : tourYearMarkerReveal,
+            tourPlanetOrbitRingOpacityMul,
+            tourWorldlineOpacityMul,
+            tourContextArcVisible: tourContextArcVisible !== false,
             showMoonLayer: !!showMoonLayer,
             cameraRotation:
                 typeof window.cameraRotation === 'object' && window.cameraRotation
@@ -7459,6 +7579,11 @@ if (typeof window !== 'undefined') {
             showTimeMarkerText: snap.showTimeMarkerText !== false,
             tourMinimalOrbitMode: snap.tourMinimalOrbitMode === true,
             tourYearMarkerReveal: 'tourYearMarkerReveal' in snap ? snap.tourYearMarkerReveal : null,
+            tourPlanetOrbitRingOpacityMul:
+                typeof snap.tourPlanetOrbitRingOpacityMul === 'number' ? snap.tourPlanetOrbitRingOpacityMul : 1,
+            tourWorldlineOpacityMul:
+                typeof snap.tourWorldlineOpacityMul === 'number' ? snap.tourWorldlineOpacityMul : 1,
+            tourContextArcVisible: snap.tourContextArcVisible !== false,
             moonLayer: snap.showMoonLayer !== false,
             cameraRotation: snap.cameraRotation || undefined
         });
@@ -8201,6 +8326,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     try {
         initScene();
+        requestAnimationFrame(function () {
+            if (typeof resizeCircaevumViewport === 'function') {
+                resizeCircaevumViewport();
+            }
+        });
         if (typeof EarthGlobe !== 'undefined' && EarthGlobe.initGeolocationObserver) {
             EarthGlobe.initGeolocationObserver();
         }

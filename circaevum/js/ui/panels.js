@@ -62,6 +62,57 @@
     wireEdgeEsmeraldaWeekButton(document.getElementById('edge-esmeralda-w3-btn'));
     wireEdgeEsmeraldaWeekButton(document.getElementById('edge-esmeralda-w4-btn'));
 
+    var gitRepoInput = document.getElementById('git-timeline-repo-input');
+    var gitRepoPreset = document.getElementById('git-timeline-repo-preset');
+    var gitLoadBtn = document.getElementById('git-timeline-load-btn');
+    if (typeof window.populateGitTimelinePresetSelect === 'function') {
+      window.populateGitTimelinePresetSelect(gitRepoPreset, gitRepoInput);
+    } else if (gitRepoInput && typeof window.getGitTimelineRepoPath === 'function') {
+      gitRepoInput.value = window.getGitTimelineRepoPath() || '';
+    }
+    if (gitRepoPreset && gitRepoInput) {
+      gitRepoPreset.onchange = function() {
+        if (gitRepoPreset.value) gitRepoInput.value = gitRepoPreset.value;
+      };
+      gitRepoInput.oninput = function() {
+        if (typeof window.syncGitTimelinePresetFromInput === 'function') {
+          window.syncGitTimelinePresetFromInput(gitRepoPreset, gitRepoInput);
+        }
+      };
+    }
+    if (gitLoadBtn) {
+      gitLoadBtn.onclick = function(e) {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        var repo = gitRepoInput ? String(gitRepoInput.value || '').trim() : '';
+        if (typeof window.setGitTimelineRepoPath === 'function') window.setGitTimelineRepoPath(repo);
+        if (typeof window.syncGitTimelinePresetFromInput === 'function') {
+          window.syncGitTimelinePresetFromInput(gitRepoPreset, gitRepoInput);
+        }
+        var label = gitLoadBtn.textContent;
+        gitLoadBtn.disabled = true;
+        gitLoadBtn.textContent = '…';
+        var done = function(n) {
+          gitLoadBtn.disabled = false;
+          gitLoadBtn.textContent = n ? ('+' + n) : 'Load';
+          setTimeout(function() { gitLoadBtn.textContent = label; }, 3500);
+          if (typeof window.openCalendarLayersPanel === 'function') window.openCalendarLayersPanel();
+        };
+        if (typeof window.loadGitTimeline !== 'function') {
+          console.warn('git-timeline.js not loaded');
+          done(0);
+          return;
+        }
+        window.loadGitTimeline(repo, {}).then(done).catch(function(err) {
+          console.error('[git-timeline]', err);
+          alert(err && err.message ? err.message : String(err));
+          done(0);
+        });
+      };
+    }
+
     function openCalendarsLeftPanel() {
       if (window.self !== window.top && window.parent && typeof window.parent.postMessage === 'function') {
         try { window.parent.postMessage({ type: 'CIRCAEVUM_OPEN_ACCOUNT' }, '*'); } catch (err) {}
