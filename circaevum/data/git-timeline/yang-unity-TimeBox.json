@@ -1,0 +1,678 @@
+{
+  "gitRoot": "/Users/adamsauer/Documents/GitHub/CIR/yang/unity/TimeBox",
+  "repoPath": "yang/unity/TimeBox",
+  "defaultBranch": "main",
+  "commits": [
+    {
+      "hash": "a1d1ebdee3b4",
+      "hashFull": "a1d1ebdee3b413b3edadc2bacf1d7eba84b1601b",
+      "timestamp": 1770676720,
+      "subject": "Changelog notes"
+    },
+    {
+      "hash": "578b5658f754",
+      "hashFull": "578b5658f7544c4a34a21000eaa941482c53a49b",
+      "timestamp": 1770676408,
+      "subject": "About to begin 0412"
+    },
+    {
+      "hash": "4b10645989fd",
+      "hashFull": "4b10645989fdf8d6924635d5109733548813e154",
+      "timestamp": 1769787608,
+      "subject": "Update Changelog for 0.4.11 updates"
+    },
+    {
+      "hash": "f24f3facf506",
+      "hashFull": "f24f3facf506496474817f37a5e24c41ec0aa35b",
+      "timestamp": 1769752054,
+      "subject": "On main: Unity UserSettings"
+    },
+    {
+      "hash": "f237d76af85d",
+      "hashFull": "f237d76af85d004a30eec8332e2f9d46ac4083d9",
+      "timestamp": 1769752054,
+      "subject": "index on main: 10e46415c Try to make current with Unity 6.3, but Calendar Menu toggles not working"
+    },
+    {
+      "hash": "27d96e558c66",
+      "hashFull": "27d96e558c66827d52bfbb64d5e1394bce9deff4",
+      "timestamp": 1769751748,
+      "subject": "Merge pull request #3 from Circaevum/feature/ai-friendly-logging"
+    },
+    {
+      "hash": "36f0dc0ce545",
+      "hashFull": "36f0dc0ce545a4163e3df2d06420ac337643a248",
+      "timestamp": 1769749443,
+      "subject": "Folder restructuring to new spec cleanup"
+    },
+    {
+      "hash": "080f8ec00e74",
+      "hashFull": "080f8ec00e747aa000ae4a53c370810ebfc03196",
+      "timestamp": 1769730820,
+      "subject": "Ignore the spec"
+    },
+    {
+      "hash": "436d8da832e7",
+      "hashFull": "436d8da832e7ab22fa06c9002647d1220e0a62cc",
+      "timestamp": 1769727246,
+      "subject": "Closer to recovering the Inspector values that were lost"
+    },
+    {
+      "hash": "a830f758d8f1",
+      "hashFull": "a830f758d8f1e772c56b58f5dd15b698b61d928d",
+      "timestamp": 1769720590,
+      "subject": "More cleanup but not finished"
+    },
+    {
+      "hash": "a45d16a77d7a",
+      "hashFull": "a45d16a77d7a53b34fd305744d08b5270f52f1fd",
+      "timestamp": 1769717062,
+      "subject": "Clean up filebase"
+    },
+    {
+      "hash": "9ecfa421b4d1",
+      "hashFull": "9ecfa421b4d1787a6c8e6e99e210c0d9bf34e7e3",
+      "timestamp": 1769715641,
+      "subject": "Filebase restructuring to new spec"
+    },
+    {
+      "hash": "3358b6225ec5",
+      "hashFull": "3358b6225ec572c31d5593022ff52a89e440cc9c",
+      "timestamp": 1769713853,
+      "subject": "Update spec submodule"
+    },
+    {
+      "hash": "d4cb9a0633b3",
+      "hashFull": "d4cb9a0633b3d297a4f06093db7ee2de5518d91d",
+      "timestamp": 1769713464,
+      "subject": "Add spec submodule"
+    },
+    {
+      "hash": "10e46415c246",
+      "hashFull": "10e46415c24632898588df1309abd3c2e3325a6e",
+      "timestamp": 1769118695,
+      "subject": "Try to make current with Unity 6.3, but Calendar Menu toggles not working"
+    },
+    {
+      "hash": "947d3fcdc910",
+      "hashFull": "947d3fcdc91039cc92f286b47bef4788dba998e3",
+      "timestamp": 1768172827,
+      "subject": "Fixed several issues but URP is being stubborn when trying to Build"
+    },
+    {
+      "hash": "f88b0c306432",
+      "hashFull": "f88b0c30643219f1f49b5d00f0d5fe6f0a54fd95",
+      "timestamp": 1767451119,
+      "subject": "Trivial changes before Unity version test"
+    },
+    {
+      "hash": "2d2c71ebda78",
+      "hashFull": "2d2c71ebda7885e82442c556a028cf86ece27569",
+      "timestamp": 1767297758,
+      "subject": "Revert to Polyspatial 2.4.2 and Unity 6.2 because people break things"
+    },
+    {
+      "hash": "deab32193ad4",
+      "hashFull": "deab32193ad4b05ec5f303620e5108fe701345cb",
+      "timestamp": 1766523403,
+      "subject": "Pre 2025 Wrap"
+    },
+    {
+      "hash": "825ba9dcc864",
+      "hashFull": "825ba9dcc864b7779d7a1be32a4018236446917d",
+      "timestamp": 1762758905,
+      "subject": "Not quite done with 0410 Z2 mode shifter"
+    },
+    {
+      "hash": "d4ef7efb7431",
+      "hashFull": "d4ef7efb7431aed392b5e3776812901cee1aeb08",
+      "timestamp": 1762237211,
+      "subject": "ISS updates, needs consolidation. v0.4.09 last AVP before first MacBook version attempt"
+    },
+    {
+      "hash": "a368b76ee877",
+      "hashFull": "a368b76ee877421a73d5302267ddf195cd2566d6",
+      "timestamp": 1757263563,
+      "subject": "ISS Pods are properly clickable"
+    },
+    {
+      "hash": "17be6b882071",
+      "hashFull": "17be6b882071fd68cd284e9b70697470b82130c3",
+      "timestamp": 1754234147,
+      "subject": "HR sprites work"
+    },
+    {
+      "hash": "b3c9c068ba84",
+      "hashFull": "b3c9c068ba8465a5e981d6079b50809333fefa42",
+      "timestamp": 1753929632,
+      "subject": "Vibecoding worked for once, things fixed. 0.4.05"
+    },
+    {
+      "hash": "6a0e4db1027e",
+      "hashFull": "6a0e4db1027e2bfbf50279748475452575ce6be8",
+      "timestamp": 1753742696,
+      "subject": "Adjust naming for station lighting"
+    },
+    {
+      "hash": "24f0c9eaa53f",
+      "hashFull": "24f0c9eaa53fb9f13d45587511072274d1910261",
+      "timestamp": 1753741955,
+      "subject": "v0403 ControlStation"
+    },
+    {
+      "hash": "abaa48ceeeb2",
+      "hashFull": "abaa48ceeeb26d00a5732c763b52e4c73cf5eb06",
+      "timestamp": 1750435656,
+      "subject": "0402 updates and fresh shift to Windsurf editor"
+    },
+    {
+      "hash": "d897aa0225da",
+      "hashFull": "d897aa0225da55383b555db35cc45df4633157fc",
+      "timestamp": 1748994480,
+      "subject": "Update README"
+    },
+    {
+      "hash": "f5b83519b477",
+      "hashFull": "f5b83519b4772536c3f622733cf0f8279bd54819",
+      "timestamp": 1748993855,
+      "subject": "v0402 complete DDMMYY buttons"
+    },
+    {
+      "hash": "6174354ea040",
+      "hashFull": "6174354ea040c166c8afdf87219b89c3f1793ef4",
+      "timestamp": 1748806708,
+      "subject": "Year Up/DN remove but not recreate trips"
+    },
+    {
+      "hash": "965819de9207",
+      "hashFull": "965819de920752618f287bafd487439a47c47964",
+      "timestamp": 1748706000,
+      "subject": "Year UP/DN 3D buttons work now"
+    },
+    {
+      "hash": "20a105e86ae4",
+      "hashFull": "20a105e86ae45e657ddc3ff0edc18d629924bbcb",
+      "timestamp": 1748584225,
+      "subject": "Changelog updated"
+    },
+    {
+      "hash": "0b55d82af021",
+      "hashFull": "0b55d82af0218754b357262260368cfa218331aa",
+      "timestamp": 1748584044,
+      "subject": "Part way through 0.4.02 but needs more refinement on timeframemanager to controllers"
+    },
+    {
+      "hash": "80b19324d07a",
+      "hashFull": "80b19324d07afb3f8c5739c7305ff4f8115ebad1",
+      "timestamp": 1748529771,
+      "subject": "Version 0402 good"
+    },
+    {
+      "hash": "0c3b15118283",
+      "hashFull": "0c3b15118283313c752dfa5021ef3f0b0f5de740",
+      "timestamp": 1748462678,
+      "subject": "Adjusted to 2025 as base"
+    },
+    {
+      "hash": "df6a84de52b6",
+      "hashFull": "df6a84de52b62a204357f8f282a3e1f80c95ebdf",
+      "timestamp": 1748452126,
+      "subject": "Return to stability after tax branch failure"
+    },
+    {
+      "hash": "f0dfa6f8e1fb",
+      "hashFull": "f0dfa6f8e1fb88b53d377df0a7a04acd55d5c646",
+      "timestamp": 1748442672,
+      "subject": "Reverted to Unity 2022 and this still blows"
+    },
+    {
+      "hash": "555bd07e0626",
+      "hashFull": "555bd07e06261356f289b4f2d0eff811658802ab",
+      "timestamp": 1748110976,
+      "subject": "After reinstalling Polyspatial I can now click a button god help me"
+    },
+    {
+      "hash": "754bf07c10c4",
+      "hashFull": "754bf07c10c41bcaa7357272bac181694742a43d",
+      "timestamp": 1748104172,
+      "subject": "More updates but stuff doesn't work still grr"
+    },
+    {
+      "hash": "e17c395270cc",
+      "hashFull": "e17c395270ccae6d19070cb08fbb870477f56a4f",
+      "timestamp": 1748051249,
+      "subject": "Remove REFLECTION and other adjustments"
+    },
+    {
+      "hash": "4e6920091851",
+      "hashFull": "4e6920091851af5776f25cef4237c3f7128a2998",
+      "timestamp": 1748049609,
+      "subject": "Trips to Chapters"
+    },
+    {
+      "hash": "25fbb681b67e",
+      "hashFull": "25fbb681b67e263af286d4869d2e81c014be3064",
+      "timestamp": 1747771253,
+      "subject": "AI destroyed this"
+    },
+    {
+      "hash": "e77b128b4601",
+      "hashFull": "e77b128b4601afaa53cd0b461f6a9a0bc3d61176",
+      "timestamp": 1747416981,
+      "subject": "Probably first v0401 commit"
+    },
+    {
+      "hash": "62ddbadae301",
+      "hashFull": "62ddbadae30166d7de134073eeece12190affd94",
+      "timestamp": 1738885340,
+      "subject": "Last working version before striking Nakama for tax version"
+    },
+    {
+      "hash": "f748f791c9cc",
+      "hashFull": "f748f791c9cc00dc2b307e2587f844b73e6aa543",
+      "timestamp": 1735642461,
+      "subject": "Begin LT event creation"
+    },
+    {
+      "hash": "b25fc2dcdcf5",
+      "hashFull": "b25fc2dcdcf5f35706fdd3d9c6d8fda512de750b",
+      "timestamp": 1735449127,
+      "subject": "Add plane cross-sync and fix day incrememnt buttons"
+    },
+    {
+      "hash": "6675a0fa4fcd",
+      "hashFull": "6675a0fa4fcdd4fa0390e99a1217e5b0486227bd",
+      "timestamp": 1735365315,
+      "subject": "MonthSelector complete"
+    },
+    {
+      "hash": "8d5dce1e53ae",
+      "hashFull": "8d5dce1e53ae40ba7034814a2b986b56edea807a",
+      "timestamp": 1735016824,
+      "subject": "Account restored, mid MonthSelector change"
+    },
+    {
+      "hash": "9a72a0129c90",
+      "hashFull": "9a72a0129c90277e6972ee9623c0e64954045e00",
+      "timestamp": 1734889507,
+      "subject": "Errors are from Polyspatial account payment lapse"
+    },
+    {
+      "hash": "3517f039c0df",
+      "hashFull": "3517f039c0df445541d978754022a1bd5992c2a9",
+      "timestamp": 1734825004,
+      "subject": "Remove errors"
+    },
+    {
+      "hash": "ec808341c695",
+      "hashFull": "ec808341c6951eaa0802ea222e572929557eefaf",
+      "timestamp": 1734816754,
+      "subject": "Repaired mystery bugs"
+    },
+    {
+      "hash": "9f27bbf1645b",
+      "hashFull": "9f27bbf1645b6bffc9d313427f0465f01af053a0",
+      "timestamp": 1733632418,
+      "subject": "Login System Progress"
+    },
+    {
+      "hash": "427204af1230",
+      "hashFull": "427204af1230b1df906813ec10882e07275b27b4",
+      "timestamp": 1733368044,
+      "subject": "v0358 Long Menu Start"
+    },
+    {
+      "hash": "a8f004e27b0f",
+      "hashFull": "a8f004e27b0fe2d69ae929f0e1b2e7e1d976cae9",
+      "timestamp": 1733093209,
+      "subject": "Merge pull request #2 from Circaevum/broken-tripselector"
+    },
+    {
+      "hash": "3f9fdf8681c9",
+      "hashFull": "3f9fdf8681c9aa8f3b5e0b1cd05cf0f19af1ef06",
+      "timestamp": 1733093064,
+      "subject": "v0358 icloud nonsense"
+    },
+    {
+      "hash": "ac7d2e7d89d8",
+      "hashFull": "ac7d2e7d89d82afab189c96c04ebfbaf8a457eb0",
+      "timestamp": 1732645205,
+      "subject": "pre selected-day event clickability"
+    },
+    {
+      "hash": "e62d43576c4a",
+      "hashFull": "e62d43576c4ae959ecf7447caa79e1d19bcc2de5",
+      "timestamp": 1732043953,
+      "subject": "v0.3.58 Start"
+    },
+    {
+      "hash": "918c64656502",
+      "hashFull": "918c6465650261995e5e0d6ab6d84eb97b8932aa",
+      "timestamp": 1730999894,
+      "subject": "Merge broken-tripselector: resolve .DS_Store conflicts"
+    },
+    {
+      "hash": "18a4635398d8",
+      "hashFull": "18a4635398d85d55eb711db19241ace5d4aeb006",
+      "timestamp": 1730999156,
+      "subject": "Add .DS_Store to gitignore"
+    },
+    {
+      "hash": "7894683e57bd",
+      "hashFull": "7894683e57bd746010284ff0219bfecdc4f96f0d",
+      "timestamp": 1730999002,
+      "subject": "Ignore .DS_Store files"
+    },
+    {
+      "hash": "bd9a4b26db81",
+      "hashFull": "bd9a4b26db810fbe9e0d34dbf13b9540f15daf5b",
+      "timestamp": 1730998133,
+      "subject": "v0.3.56F"
+    },
+    {
+      "hash": "ed1d4c1251c5",
+      "hashFull": "ed1d4c1251c574ae6d62bbb5e37082f61221d9e3",
+      "timestamp": 1730966483,
+      "subject": "Hopefully correct not-selected event color transparency"
+    },
+    {
+      "hash": "817a9a297847",
+      "hashFull": "817a9a2978471800f9475ec1d2c43817fd12b223",
+      "timestamp": 1730877103,
+      "subject": "Event text is billboard"
+    },
+    {
+      "hash": "2cc177fb4ef4",
+      "hashFull": "2cc177fb4ef46023ea57e7adae8849421a3dfabc",
+      "timestamp": 1730875932,
+      "subject": "Somewhat cleaned calendar management, not perfect"
+    },
+    {
+      "hash": "3e10d897b53a",
+      "hashFull": "3e10d897b53a51bbe6c927f89846540e70608adb",
+      "timestamp": 1730802761,
+      "subject": "Cleaner CSV and Gcal/Nakama in parallel"
+    },
+    {
+      "hash": "de16a5586c5b",
+      "hashFull": "de16a5586c5b9b41dfbf0ff8593e6db9adc80647",
+      "timestamp": 1730800569,
+      "subject": "Nakama added to Toggle"
+    },
+    {
+      "hash": "6294c2d370b0",
+      "hashFull": "6294c2d370b07c7effe5a22e2729aadaa8340d7c",
+      "timestamp": 1730797526,
+      "subject": "Slider for event color transparency"
+    },
+    {
+      "hash": "0af07e335233",
+      "hashFull": "0af07e335233de9b517f67c3e9ebd3dd576cca2e",
+      "timestamp": 1730782003,
+      "subject": "Events hide better on big load"
+    },
+    {
+      "hash": "7fc9fa20c235",
+      "hashFull": "7fc9fa20c23518289c9c9dab2b9e4655656bd7ca",
+      "timestamp": 1730721920,
+      "subject": "White platform with crashes"
+    },
+    {
+      "hash": "0811c5a21db0",
+      "hashFull": "0811c5a21db0282c9c10f37390be60a416724f40",
+      "timestamp": 1730714066,
+      "subject": "Add screenshot of events"
+    },
+    {
+      "hash": "fd25af7646f5",
+      "hashFull": "fd25af7646f5edce4e7cd873cad10bf1db0c0af5",
+      "timestamp": 1730713999,
+      "subject": "Clean up Edge City calender view"
+    },
+    {
+      "hash": "b4ede68ca946",
+      "hashFull": "b4ede68ca9465c9a7ec0f33446f79b32037aa04d",
+      "timestamp": 1730712801,
+      "subject": "EdgeCity calendar added to CSV toggle menu"
+    },
+    {
+      "hash": "986ffe5f1153",
+      "hashFull": "986ffe5f1153ce7edcdcaecdbdd1c66459fea372",
+      "timestamp": 1730457022,
+      "subject": "v0.3.53F Phase 1 of Event Data Sync Complete"
+    },
+    {
+      "hash": "8ccbaab68bff",
+      "hashFull": "8ccbaab68bff16af7aeac8231b84f6b2e094ee16",
+      "timestamp": 1730451415,
+      "subject": "New and updated events from Google stats console for user"
+    },
+    {
+      "hash": "dea99c87c245",
+      "hashFull": "dea99c87c245df2bfa97a8ef5ed22c56357b8ac2",
+      "timestamp": 1730450615,
+      "subject": "Phase 1 data sync more complete"
+    },
+    {
+      "hash": "c9a8200918c7",
+      "hashFull": "c9a8200918c7b730748607c98f4c8ca36ea95e7c",
+      "timestamp": 1730447363,
+      "subject": "Data sync update Phase 1 pre-clean"
+    },
+    {
+      "hash": "25303059313a",
+      "hashFull": "25303059313a3e6cfdc557392537f573d0feb8d7",
+      "timestamp": 1730446431,
+      "subject": "DayPlane selector works much better"
+    },
+    {
+      "hash": "3cbdb94690f8",
+      "hashFull": "3cbdb94690f8c39029039bb93c3e5a3be9730c88",
+      "timestamp": 1730378430,
+      "subject": "First successful calendar toggle build with circa expander"
+    },
+    {
+      "hash": "3e82c8771d32",
+      "hashFull": "3e82c8771d3223b9932d267007f92007b26c1c26",
+      "timestamp": 1730285903,
+      "subject": "Remove error"
+    },
+    {
+      "hash": "c1fc9de5bd5c",
+      "hashFull": "c1fc9de5bd5c1ed12ddfa608652149ba23a05612",
+      "timestamp": 1730276117,
+      "subject": "Toggle multiple calendars early"
+    },
+    {
+      "hash": "c51d560a1b5b",
+      "hashFull": "c51d560a1b5bf3e4586e66bf62e0adf917f4950d",
+      "timestamp": 1730193969,
+      "subject": "CSV mgmt starting to work"
+    },
+    {
+      "hash": "cf0f3a1b2017",
+      "hashFull": "cf0f3a1b20176c148d183001cf0569848c73c3c3",
+      "timestamp": 1730192182,
+      "subject": "0.3.52 Upgraded to Polyspatial 2.0.4"
+    },
+    {
+      "hash": "e1f2556a7045",
+      "hashFull": "e1f2556a7045148e8460421d6e6bb323e2e314bf",
+      "timestamp": 1729758921,
+      "subject": "0.3.51 begin DaySelector"
+    },
+    {
+      "hash": "a41a822785f8",
+      "hashFull": "a41a822785f8ecd40f25b002932c2b944446fe9b",
+      "timestamp": 1729740459,
+      "subject": "Nothingness"
+    },
+    {
+      "hash": "f3a7da7381f3",
+      "hashFull": "f3a7da7381f3917c01267700293f9756d4fa845f",
+      "timestamp": 1729739989,
+      "subject": "Not fixed yet"
+    },
+    {
+      "hash": "24e612339296",
+      "hashFull": "24e61233929676bd9b0584d793c370445993a761",
+      "timestamp": 1729584859,
+      "subject": "TripSelector is broken"
+    },
+    {
+      "hash": "5d7846cae58f",
+      "hashFull": "5d7846cae58f72b122b47217b9071d36fd45d6af",
+      "timestamp": 1729499161,
+      "subject": "\"Made some errors for sure, SunSelector is all wonky\""
+    },
+    {
+      "hash": "ba12e80468a4",
+      "hashFull": "ba12e80468a47c5c78a4f604435980a53bf31735",
+      "timestamp": 1729228656,
+      "subject": "Reduced lag, broke event loads"
+    },
+    {
+      "hash": "3668dbdc14e6",
+      "hashFull": "3668dbdc14e6d55da69514e9fb511523c4d3cf35",
+      "timestamp": 1729138698,
+      "subject": "DayPlaneController buggy"
+    },
+    {
+      "hash": "b47b3807c564",
+      "hashFull": "b47b3807c564197c09bd340a2b5e68d32db488e4",
+      "timestamp": 1729128893,
+      "subject": "Google2Nakama replication and OrbitalPlane movement"
+    },
+    {
+      "hash": "f34279e442da",
+      "hashFull": "f34279e442da1f3f0b603417b01c40d0ce683bb8",
+      "timestamp": 1728886115,
+      "subject": "Organize files and fix Nakama EventLoads"
+    },
+    {
+      "hash": "0ecd50d0a6d2",
+      "hashFull": "0ecd50d0a6d284fa64392bcd4c2fb53c75de6ab9",
+      "timestamp": 1728812265,
+      "subject": "Nakama Event Pairing Step 1"
+    },
+    {
+      "hash": "77623b4a34a6",
+      "hashFull": "77623b4a34a67bdcf6962ec5eb92b0743ef5cad2",
+      "timestamp": 1727580726,
+      "subject": "Add Debug Blocks and local CSV mgmt"
+    },
+    {
+      "hash": "cad52a863403",
+      "hashFull": "cad52a8634034ed87554448ef54e165b8d6f9191",
+      "timestamp": 1723579281,
+      "subject": "Remember to save project first"
+    },
+    {
+      "hash": "9e0236796f8c",
+      "hashFull": "9e0236796f8cf967d2cb3686467a63bec84ce90f",
+      "timestamp": 1723579245,
+      "subject": "Month markers attempt 1"
+    },
+    {
+      "hash": "1f654d68eb13",
+      "hashFull": "1f654d68eb13c1e5fa35b72c539da93133f40c05",
+      "timestamp": 1723563318,
+      "subject": "Add weekend markers"
+    },
+    {
+      "hash": "cca0193949d5",
+      "hashFull": "cca0193949d57b17fedb6f476f1b75caa0471497",
+      "timestamp": 1723548209,
+      "subject": "Pre-flight to Alaska"
+    },
+    {
+      "hash": "4bdceaf5194c",
+      "hashFull": "4bdceaf5194c882c63c10ecdc72595231ab6a2fb",
+      "timestamp": 1722289167,
+      "subject": "Add screenshots"
+    },
+    {
+      "hash": "e6a661260cb7",
+      "hashFull": "e6a661260cb79c522e8c25434991fcf5aa8df64a",
+      "timestamp": 1722288473,
+      "subject": "Apple store reboot"
+    },
+    {
+      "hash": "69814c9c1605",
+      "hashFull": "69814c9c160518f0aedab63c86eeb445992b6d6f",
+      "timestamp": 1721497625,
+      "subject": "Switch to separate day objects"
+    },
+    {
+      "hash": "73f7837597ac",
+      "hashFull": "73f7837597ac3e35dc837876f1e78f84d3584cfd",
+      "timestamp": 1719108503,
+      "subject": "Annual selector decent"
+    },
+    {
+      "hash": "cb1a0d706bc6",
+      "hashFull": "cb1a0d706bc6f2f3e3b05c45f50791fcead9409c",
+      "timestamp": 1718351385,
+      "subject": "Sun moves when grabbed"
+    },
+    {
+      "hash": "16e6251ab6c4",
+      "hashFull": "16e6251ab6c44627e13fd94c96319c67b97eee32",
+      "timestamp": 1717705548,
+      "subject": "Add latest screenshot"
+    },
+    {
+      "hash": "27fe3706e6d1",
+      "hashFull": "27fe3706e6d112dd081136266bf16db39b1a9403",
+      "timestamp": 1717704987,
+      "subject": "Add 2024 hopefully builds removed"
+    },
+    {
+      "hash": "dfc71e41db65",
+      "hashFull": "dfc71e41db656e8d2dc7f6209af6918f871adb12",
+      "timestamp": 1717198008,
+      "subject": "Update PolySpatial to 1.2.3 or something"
+    },
+    {
+      "hash": "f7c2c0f32927",
+      "hashFull": "f7c2c0f329272d4fa66fcfeaeacc89d2822bd76e",
+      "timestamp": 1717195945,
+      "subject": "Add slider functionality"
+    },
+    {
+      "hash": "c2c054eeb7b3",
+      "hashFull": "c2c054eeb7b323588de7cfa1d1d5107eed24a05a",
+      "timestamp": 1710886926,
+      "subject": "Ground Zero"
+    },
+    {
+      "hash": "442bc56d5fee",
+      "hashFull": "442bc56d5fee8a1fac787e72d845806ec08a8aac",
+      "timestamp": 1710883911,
+      "subject": "Initial commit"
+    }
+  ],
+  "branches": [
+    {
+      "name": "feature/ai-friendly-logging",
+      "tipShort": "36f0dc0ce",
+      "creatorUnix": 1769749443,
+      "startSec": 1769749443,
+      "tipSec": 1769749443,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1769749443
+    },
+    {
+      "name": "main",
+      "tipShort": "a1d1ebdee",
+      "creatorUnix": 1770676720,
+      "startSec": 1770676720,
+      "tipSec": 1770676720,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1770676720
+    }
+  ],
+  "collectedAt": "2026-06-05T22:38:52.283Z"
+}

@@ -1,0 +1,272 @@
+{
+  "gitRoot": "/Users/adamsauer/Documents/GitHub/CIR/yang/yin-portal",
+  "repoPath": "yang/yin-portal",
+  "defaultBranch": "main",
+  "commits": [
+    {
+      "hash": "2bc60feb7bc6",
+      "hashFull": "2bc60feb7bc6a65cc2bbf05c52cd261b042512d4",
+      "timestamp": 1780443383,
+      "subject": "Merge pull request #11 from EarthAdam/earth-lines"
+    },
+    {
+      "hash": "3ff6614a95b6",
+      "hashFull": "3ff6614a95b65d14b363ac9e2fb55c6d1c468988",
+      "timestamp": 1780443355,
+      "subject": "Update Hamburger menu and Agent/Dev Page"
+    },
+    {
+      "hash": "5f0970d7c6b6",
+      "hashFull": "5f0970d7c6b613dce59c382cc958407436cc68ac",
+      "timestamp": 1780271664,
+      "subject": "Merge pull request #10 from EarthAdam/earth-lines"
+    },
+    {
+      "hash": "67c4cbaed189",
+      "hashFull": "67c4cbaed1893b7dd159a7d1f2cc6afdbefb9bac",
+      "timestamp": 1780270947,
+      "subject": "Edge City Prep"
+    },
+    {
+      "hash": "9af5c2c815d6",
+      "hashFull": "9af5c2c815d6693e35b19c0d55d9b56fef847ba0",
+      "timestamp": 1779318272,
+      "subject": "Merge pull request #9 from EarthAdam/earth-zoom"
+    },
+    {
+      "hash": "8bbfbcfdd5d1",
+      "hashFull": "8bbfbcfdd5d1f4fd541378d56e20c0d553210b3c",
+      "timestamp": 1779318210,
+      "subject": "Daily event updates mostly"
+    },
+    {
+      "hash": "542e39e52158",
+      "hashFull": "542e39e52158627b73f1e18342e722366bed1e9b",
+      "timestamp": 1778474840,
+      "subject": "Zhong integration"
+    },
+    {
+      "hash": "8aeba9dc7de1",
+      "hashFull": "8aeba9dc7de1ee667ef92329e8eb1fdc47338c71",
+      "timestamp": 1776805730,
+      "subject": "Sky blue context disk added, and smaller UI tweaks"
+    },
+    {
+      "hash": "ed065ed864a9",
+      "hashFull": "ed065ed864a9790d56dab2cbdcfed4aacdd49e77",
+      "timestamp": 1776011455,
+      "subject": "Merge pull request #8 from EarthAdam/import-and-share-calendars"
+    },
+    {
+      "hash": "1c799e31ed0e",
+      "hashFull": "1c799e31ed0e0d52ee1426b9fb2580c800cdf3a6",
+      "timestamp": 1776010289,
+      "subject": "Add artemis ii mission and lunar worldline and add smooth hop to selected events"
+    },
+    {
+      "hash": "6336f9f179f4",
+      "hashFull": "6336f9f179f40f8e92c69bd617f302fe4300642f",
+      "timestamp": 1775456861,
+      "subject": "Merge pull request #7 from EarthAdam/import-and-share-calendars"
+    },
+    {
+      "hash": "1cd5a5744aa8",
+      "hashFull": "1cd5a5744aa87f6b6438a93166c1a411117a6f5d",
+      "timestamp": 1775456751,
+      "subject": "Clean up UI after changes"
+    },
+    {
+      "hash": "18aa8ccd3526",
+      "hashFull": "18aa8ccd3526b48473fe09b2d8534beef0a57d8e",
+      "timestamp": 1775455743,
+      "subject": "Fix public calendar links"
+    },
+    {
+      "hash": "d9aa9c5fb440",
+      "hashFull": "d9aa9c5fb4407ec0a625be8a0295e0a2817a49be",
+      "timestamp": 1775369184,
+      "subject": "Merge pull request #6 from EarthAdam/import-and-share-calendars"
+    },
+    {
+      "hash": "8467482cd854",
+      "hashFull": "8467482cd854c3b56e09ddf19b713b1e5d32ee4b",
+      "timestamp": 1775369021,
+      "subject": "New layout with Calendar Layers, Styling, and Data menus. Login and account mgmt moved to centered popup. About page brought back. Daily view somewhat improved but still shoddy"
+    },
+    {
+      "hash": "08d714ad3352",
+      "hashFull": "08d714ad3352ca2c849b3114a6ed11b8cf239716",
+      "timestamp": 1774764020,
+      "subject": "Mirror some design principles noticed in kepler gl for UI simplicity"
+    },
+    {
+      "hash": "3f5a5f203156",
+      "hashFull": "3f5a5f2031566211cff2f3d3832b02ceae685062",
+      "timestamp": 1774763448,
+      "subject": "Last commit before restyling"
+    },
+    {
+      "hash": "9d8661d2fb0e",
+      "hashFull": "9d8661d2fb0e48b01306b9edfa24d72a1937a457",
+      "timestamp": 1774762665,
+      "subject": "Larger long-term event objects, improved styling, heirarchical calendar and layer management, icon improvements, camera transition improvements, an draft of long-term core vs rendering package based codebase in MD"
+    },
+    {
+      "hash": "5d3d2a7c34be",
+      "hashFull": "5d3d2a7c34bedea27951a60124e8503e093ebb69",
+      "timestamp": 1773964027,
+      "subject": "Merge pull request #5 from EarthAdam/import-and-share-calendars"
+    },
+    {
+      "hash": "281ecfd5be52",
+      "hashFull": "281ecfd5be523af083c14230604a742ec24683d6",
+      "timestamp": 1773963953,
+      "subject": "Add ICS calendar layer creation via URL"
+    },
+    {
+      "hash": "0cc6c6afddc9",
+      "hashFull": "0cc6c6afddc90ee02ce8205ec7f6f2a08e20eb42",
+      "timestamp": 1773794254,
+      "subject": "Merge pull request #4 from EarthAdam/import-and-share-calendars"
+    },
+    {
+      "hash": "769c0457f5c7",
+      "hashFull": "769c0457f5c7ac0d8b70678480fcbd7464cf3b67",
+      "timestamp": 1773792923,
+      "subject": "Creating shortlinks for public calendars is possible"
+    },
+    {
+      "hash": "1b19d3121de0",
+      "hashFull": "1b19d3121de0e775b0882a1aabbf2616a79e83b9",
+      "timestamp": 1773788908,
+      "subject": "Merge pull request #3 from EarthAdam/import-and-share-calendars"
+    },
+    {
+      "hash": "3534bd143153",
+      "hashFull": "3534bd1431532a6e2a51ccbf1c310e46b02c3b13",
+      "timestamp": 1773788866,
+      "subject": "Fixing coloring?"
+    },
+    {
+      "hash": "d046f26aff6d",
+      "hashFull": "d046f26aff6d5d979fb1808bb7b2cd7c7bbae435",
+      "timestamp": 1773774670,
+      "subject": "Merge pull request #2 from EarthAdam/import-and-share-calendars"
+    },
+    {
+      "hash": "9267c286eded",
+      "hashFull": "9267c286ededd6ec3e9f61afe7c242e6a32e746a",
+      "timestamp": 1773774617,
+      "subject": "fix sharable link stuff"
+    },
+    {
+      "hash": "e16f22c0113c",
+      "hashFull": "e16f22c0113c074677955a112a1cd043d614e25b",
+      "timestamp": 1773773313,
+      "subject": "Merge pull request #1 from EarthAdam/import-and-share-calendars"
+    },
+    {
+      "hash": "996c12de63b6",
+      "hashFull": "996c12de63b63d6de95826f02890a35e7d7a1f47",
+      "timestamp": 1773773195,
+      "subject": "Nakama lua updated to support RPC messages for sharing public calendar"
+    },
+    {
+      "hash": "f2fc296eb74e",
+      "hashFull": "f2fc296eb74e4b15984ae2c72027a5086aabbd65",
+      "timestamp": 1773420484,
+      "subject": "Take 1 at sharable calendars, getting some errors though"
+    },
+    {
+      "hash": "500878c185b5",
+      "hashFull": "500878c185b520be3bc39e069a8f6bda532e5739",
+      "timestamp": 1772865387,
+      "subject": "Get XR mode working on app Take 1"
+    },
+    {
+      "hash": "46c8c0db8921",
+      "hashFull": "46c8c0db8921f182f89e30e696009da25410daa8",
+      "timestamp": 1772849567,
+      "subject": "Save layer display configs"
+    },
+    {
+      "hash": "bf50c8158b3e",
+      "hashFull": "bf50c8158b3e0f7a7e64042b7c743d40788edb79",
+      "timestamp": 1772838770,
+      "subject": "Add vite stuff for deploy"
+    },
+    {
+      "hash": "d61d7b41ba9f",
+      "hashFull": "d61d7b41ba9f0cd770a0690be09baea7bdde2c07",
+      "timestamp": 1772838549,
+      "subject": "Add Pages workflow: build Vite app and deploy dist"
+    },
+    {
+      "hash": "4f9e2e86ee26",
+      "hashFull": "4f9e2e86ee26dd3732184b7323c68e5cc975d8ba",
+      "timestamp": 1772838327,
+      "subject": "Force redeploy"
+    },
+    {
+      "hash": "4b7f41da6609",
+      "hashFull": "4b7f41da6609d7d3cb6dfc989a46b2b6781201ff",
+      "timestamp": 1772838327,
+      "subject": "Add gitignore and hopefully force a redeploy"
+    },
+    {
+      "hash": "984ea3e3a388",
+      "hashFull": "984ea3e3a388a6fe6194f61cbc8b35762a6c5307",
+      "timestamp": 1772836006,
+      "subject": "Create CNAME"
+    },
+    {
+      "hash": "122e4740ddc5",
+      "hashFull": "122e4740ddc5883eee2a0b9b97af50d27e611e61",
+      "timestamp": 1772835938,
+      "subject": "Fork from account-wrapper"
+    }
+  ],
+  "branches": [
+    {
+      "name": "earth-lines",
+      "tipShort": "3ff6614",
+      "creatorUnix": 1780443355,
+      "startSec": 1780443355,
+      "tipSec": 1780443355,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1780443355
+    },
+    {
+      "name": "earth-zoom",
+      "tipShort": "8bbfbcf",
+      "creatorUnix": 1779318210,
+      "startSec": 1779318210,
+      "tipSec": 1779318210,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1779318210
+    },
+    {
+      "name": "edge-esmeralda-26",
+      "tipShort": "2bc60fe",
+      "creatorUnix": 1780443383,
+      "startSec": 1780443383,
+      "tipSec": 1780443383,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1780443383
+    },
+    {
+      "name": "main",
+      "tipShort": "2bc60fe",
+      "creatorUnix": 1780443383,
+      "startSec": 1780443383,
+      "tipSec": 1780443383,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1780443383
+    }
+  ],
+  "collectedAt": "2026-06-05T22:38:51.479Z"
+}

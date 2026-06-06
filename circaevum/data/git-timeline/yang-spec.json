@@ -1,0 +1,32 @@
+{
+  "gitRoot": "/Users/adamsauer/Documents/GitHub/CIR/yang/spec",
+  "repoPath": "yang/spec",
+  "defaultBranch": "main",
+  "commits": [
+    {
+      "hash": "2532fb69d371",
+      "hashFull": "2532fb69d37129bd115f770fde3e01a2dbaacdb0",
+      "timestamp": 1769713849,
+      "subject": "Test: update README"
+    },
+    {
+      "hash": "d7798e42ce7e",
+      "hashFull": "d7798e42ce7e0385afb52773782ff41dfab23a7c",
+      "timestamp": 1769713236,
+      "subject": "Initial spec: RFC 5545 VEVENT, API contract, Nakama schema"
+    }
+  ],
+  "branches": [
+    {
+      "name": "main",
+      "tipShort": "2532fb6",
+      "creatorUnix": 1769713849,
+      "startSec": 1769713849,
+      "tipSec": 1769713849,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1769713849
+    }
+  ],
+  "collectedAt": "2026-06-05T22:38:51.810Z"
+}
