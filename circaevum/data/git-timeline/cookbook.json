@@ -1,0 +1,104 @@
+{
+  "gitRoot": "/Users/adamsauer/Documents/GitHub/CIR/cookbook",
+  "repoPath": "cookbook",
+  "defaultBranch": "main",
+  "commits": [
+    {
+      "hash": "2f326663d3be",
+      "hashFull": "2f326663d3be5a3a86a4d11b679dbe8355259a36",
+      "timestamp": 1777659183,
+      "subject": "Merge pull request #7 from cursor/add-dag-task-runner-example"
+    },
+    {
+      "hash": "6fea8eaa9143",
+      "hashFull": "6fea8eaa91435223b049cefe0400e31802be0534",
+      "timestamp": 1777657991,
+      "subject": "Harden DAG runner timeout parsing"
+    },
+    {
+      "hash": "d7fe7c69d9bc",
+      "hashFull": "d7fe7c69d9bcd74bf00c6ddfdde7d8120b4b2a74",
+      "timestamp": 1777657303,
+      "subject": "Make DAG runner model override precedence explicit"
+    },
+    {
+      "hash": "ddaad902bf04",
+      "hashFull": "ddaad902bf04ba71fe23616bd2560d066254b062",
+      "timestamp": 1777656700,
+      "subject": "Fix DAG runner timeout and canvas write handling"
+    },
+    {
+      "hash": "e6c3da9fe699",
+      "hashFull": "e6c3da9fe6994901bdbab031e3071d5439e9c9b1",
+      "timestamp": 1777655424,
+      "subject": "Add copyable DAG runner skill"
+    },
+    {
+      "hash": "6a5e7cea3986",
+      "hashFull": "6a5e7cea39866b9624ef729aed498a56243694b2",
+      "timestamp": 1777641899,
+      "subject": "Fix DAG runner skill defaults"
+    },
+    {
+      "hash": "0d85a459d8a1",
+      "hashFull": "0d85a459d8a126b713cf422086812f7bc104bebe",
+      "timestamp": 1777484634,
+      "subject": "Make DAG runner model mapping configurable"
+    },
+    {
+      "hash": "115bac274d43",
+      "hashFull": "115bac274d43b7e55f5be46598e8a6e64caaebf9",
+      "timestamp": 1777484186,
+      "subject": "Add DAG task runner SDK example"
+    },
+    {
+      "hash": "df5f5a05e89a",
+      "hashFull": "df5f5a05e89a7e63d42fccdc4152c20f5ad97cd3",
+      "timestamp": 1777483693,
+      "subject": "Migrate coding agent CLI to OpenTUI (#1)"
+    },
+    {
+      "hash": "0c48387e96d4",
+      "hashFull": "0c48387e96d45a90603955c2dbd8cca6e71a1964",
+      "timestamp": 1777483365,
+      "subject": "Fix TUI picker panel row calculations"
+    },
+    {
+      "hash": "82ca3d3471c1",
+      "hashFull": "82ca3d3471c1cfd4d96f84003d681eab1bdc910b",
+      "timestamp": 1777476695,
+      "subject": "Update README.md"
+    },
+    {
+      "hash": "bdb4a9831233",
+      "hashFull": "bdb4a98312339c7ea8f002844166aa8fa9259039",
+      "timestamp": 1777429561,
+      "subject": "Address OpenTUI runtime and typing review"
+    },
+    {
+      "hash": "ea3df9d0d925",
+      "hashFull": "ea3df9d0d925adf3728b1b8487078ca1e5c8ea57",
+      "timestamp": 1777427235,
+      "subject": "Migrate coding agent CLI to OpenTUI"
+    },
+    {
+      "hash": "3e17d2ced6dd",
+      "hashFull": "3e17d2ced6dde2106d50ea916f17f12edfb3b04f",
+      "timestamp": 1777397934,
+      "subject": "Cursor Cookbook: SDK examples, demos, and documentation"
+    }
+  ],
+  "branches": [
+    {
+      "name": "main",
+      "tipShort": "2f32666",
+      "creatorUnix": 1777659183,
+      "startSec": 1777659183,
+      "tipSec": 1777659183,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1777659183
+    }
+  ],
+  "collectedAt": "2026-06-05T22:38:52.900Z"
+}

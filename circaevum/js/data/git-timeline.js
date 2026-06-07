@@ -1,5 +1,5 @@
 /**
- * Git timeline layer (like Edge Esmeralda): load from local git API, show in Calendar Layers.
+ * Git timeline layer (like Edge Esmeralda): GitHub API, local git API, or bundled snapshots.
  * Commits → STE (1h spans). Branches ≥1 day → LTE; shorter → noon day marker.
  */
 (function (global) {
@@ -10,17 +10,18 @@
   var ONE_DAY_MS = 86400000;
   var BRANCH_COLORS = ['#58a6ff', '#3fb950', '#d2a8ff', '#f0883e', '#ff7b72', '#79c0ff', '#56d364', '#e3b341'];
   var GIT_REPO_STORAGE_KEY = 'circaevum_git_repo_path';
-  var DEFAULT_API_BASES = ['http://localhost:5174', 'http://localhost:5175'];
+  var DEFAULT_PUBLIC_GL_ORIGIN = 'https://circaevum.com';
+  var DEFAULT_LOCAL_API_BASES = ['http://localhost:5174', 'http://localhost:5175'];
   var DEFAULT_PRESET_PATH = 'yang/web';
 
-  /** Circaevum product repos (nested git roots) — self-reflective timeline presets. */
+  /** Circaevum product repos — preset path maps to GitHub in git-timeline-github.js */
   var GIT_TIMELINE_REPO_PRESETS = [
-    { path: 'yang/web', label: 'GL', title: 'Circaevum graphics library (yang/web)' },
-    { path: 'yang/yin-portal', label: 'Yin-portal', title: 'Account wrapper + Nakama client' },
-    { path: 'yang/spec', label: 'Nakama spec', title: 'Lua modules and Nakama deploy spec' },
-    { path: 'yang/unity/TimeBox', label: 'Unity', title: 'TimeBox XR client' },
-    { path: 'Zhong', label: 'Zhong', title: 'Session / project admin hub' },
-    { path: 'cookbook', label: 'Cookbook', title: 'Circaevum cookbook' }
+    { path: 'yang/web', label: 'GL', title: 'Circaevum/three-circa (GL)' },
+    { path: 'yang/yin-portal', label: 'Yin-portal', title: 'EarthAdam/yin-portal' },
+    { path: 'yang/spec', label: 'Nakama spec', title: 'Circaevum/circaevum-spec' },
+    { path: 'yang/unity/TimeBox', label: 'Unity', title: 'Circaevum/TimeBox' },
+    { path: 'Zhong', label: 'Zhong', title: 'Circaevum/zhong' },
+    { path: 'cookbook', label: 'Cookbook', title: 'cursor/cookbook' }
   ];
 
   function isoDateTime(ms) {
@@ -61,7 +62,10 @@
         dtstart: isoDateTime(startMs),
         dtend: isoDateTime(startMs + COMMIT_STE_MS),
         summary: (c.subject || hash || 'commit').slice(0, 96),
-        description: (hash ? hash + '\n' : '') + (c.subject || ''),
+        description:
+          (hash ? hash + '\n' : '') +
+          (c.subject || '') +
+          (c.url ? '\n' + c.url : ''),
         categories: ['Git Commit'],
         color: '#8b949e'
       };
@@ -101,15 +105,57 @@
     }).filter(Boolean);
   }
 
+  function publicGlOrigin() {
+    if (typeof global.CIRCAEVUM_PUBLIC_GL_ORIGIN === 'string' && global.CIRCAEVUM_PUBLIC_GL_ORIGIN) {
+      return global.CIRCAEVUM_PUBLIC_GL_ORIGIN.replace(/\/$/, '');
+    }
+    return DEFAULT_PUBLIC_GL_ORIGIN;
+  }
+
+  function repoPathToSlug(repoPath) {
+    var p = String(repoPath || '').trim();
+    return p ? p.replace(/\//g, '-') : 'root';
+  }
+
+  function snapshotPath(repoPath) {
+    return 'circaevum/data/git-timeline/' + repoPathToSlug(repoPath) + '.json';
+  }
+
+  function snapshotUrlsToTry(repoPath) {
+    var path = snapshotPath(repoPath);
+    var out = [];
+    function add(url) {
+      var u = String(url || '').replace(/\/$/, '');
+      if (u && out.indexOf(u) < 0) out.push(u);
+    }
+    try {
+      if (global.location && global.location.origin && global.location.protocol !== 'file:') {
+        add(global.location.origin + '/' + path);
+      }
+    } catch (e) { /* ignore */ }
+    add(publicGlOrigin() + '/' + path);
+    return out;
+  }
+
   function apiBasesToTry() {
     var out = [];
     if (typeof global.CIRCAEVUM_GIT_API_BASE === 'string' && global.CIRCAEVUM_GIT_API_BASE) {
       out.push(global.CIRCAEVUM_GIT_API_BASE.replace(/\/$/, ''));
     }
-    DEFAULT_API_BASES.forEach(function (b) {
+    DEFAULT_LOCAL_API_BASES.forEach(function (b) {
       if (out.indexOf(b) < 0) out.push(b);
     });
     return out;
+  }
+
+  function fetchGitTimelineSnapshotFromUrl(url) {
+    return fetch(url).then(function (r) {
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error((body && body.error) || r.statusText);
+        if (!body || !Array.isArray(body.commits)) throw new Error('Invalid git snapshot');
+        return body;
+      });
+    });
   }
 
   function fetchGitTimelineFromApi(repoPath, apiBase) {
@@ -123,19 +169,45 @@
     });
   }
 
+  function gitTimelineLoadError(repoPath) {
+    return new Error(
+      'Git timeline unavailable for "' +
+        (repoPath || 'repo') +
+        '". Tried GitHub API, local git (:5174/:5175), and snapshots. Use a preset, owner/repo, or github.com URL.'
+    );
+  }
+
   function fetchGitTimelineWithFallback(repoPath) {
-    var bases = apiBasesToTry();
-    function tryAt(i) {
-      if (i >= bases.length) {
-        return Promise.reject(
-          new Error('Git API not reachable. Run npm run all (yang-portal :5174 or Zhong :5175).')
-        );
+    var apiBases = apiBasesToTry();
+    var snapshotUrls = snapshotUrlsToTry(repoPath);
+
+    function trySnapshots(j) {
+      if (j >= snapshotUrls.length) {
+        return Promise.reject(gitTimelineLoadError(repoPath));
       }
-      return fetchGitTimelineFromApi(repoPath, bases[i]).catch(function () {
-        return tryAt(i + 1);
+      return fetchGitTimelineSnapshotFromUrl(snapshotUrls[j]).catch(function () {
+        return trySnapshots(j + 1);
       });
     }
-    return tryAt(0);
+
+    function tryApis(i) {
+      if (i >= apiBases.length) return trySnapshots(0);
+      return fetchGitTimelineFromApi(repoPath, apiBases[i]).catch(function () {
+        return tryApis(i + 1);
+      });
+    }
+
+    function tryGitHub() {
+      if (typeof global.fetchGitTimelineFromGitHub !== 'function') return tryApis(0);
+      if (typeof global.parseGitHubRepoInput !== 'function' || !global.parseGitHubRepoInput(repoPath)) {
+        return tryApis(0);
+      }
+      return global.fetchGitTimelineFromGitHub(repoPath).catch(function () {
+        return tryApis(0);
+      });
+    }
+
+    return tryGitHub();
   }
 
   function getStoredRepoPath() {

@@ -1568,6 +1568,20 @@ function getEventListHalfSpanMs(zoomLevel, refDate) {
     return 365 * EVENT_LIST_MS_PER_DAY;
 }
 
+/** Zoom 7 visible week (Sun 00:00 – Sat end) around selected time — matches week markers, not lunar month. */
+function getZoom7WeekTimeBoundsMs(refDate) {
+    const ref =
+        refDate instanceof Date && !isNaN(refDate.getTime())
+            ? refDate
+            : typeof getSelectedDateTime === 'function'
+              ? getSelectedDateTime()
+              : new Date();
+    const dayMs = EVENT_LIST_MS_PER_DAY;
+    const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), 0, 0, 0, 0);
+    start.setDate(start.getDate() - start.getDay());
+    return { t0: start.getTime(), t1: start.getTime() + 7 * dayMs - 1, ref };
+}
+
 /** Event-list time window [t0, t1] in ms (matches events-list.js filters). */
 function getListContextDiscTimeBoundsMs(zoomLevel, refDate) {
     const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
@@ -1622,13 +1636,7 @@ function getListContextDiscArcTimeBoundsMs(zoomLevel, refDate) {
         return { t0: start.getTime(), t1: start.getTime() + dayMs / 24, ref };
     }
     if (z === 7) {
-        if (typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
-            const b = MoonMechanics.fullMoonBoundsAroundRef(ref);
-            return { t0: b.t0, t1: b.t1, ref };
-        }
-        const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), 0, 0, 0, 0);
-        start.setDate(start.getDate() - start.getDay());
-        return { t0: start.getTime(), t1: start.getTime() + 7 * dayMs - 1, ref };
+        return getZoom7WeekTimeBoundsMs(ref);
     }
     if (z === 5 || z === 6) {
         return {

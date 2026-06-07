@@ -39,7 +39,8 @@ const MoonMechanics = (function () {
     }
 
     /**
-     * Zoom 7 list/arc window: previous full moon through next full moon around `refDate`.
+     * Lunar list/arc window around `refDate` (prev full moon → next full moon).
+     * Event list at zoom 7 may use this; the 3D context arc uses {@link getZoom7WeekTimeBoundsMs} instead.
      * @param {Date} [refDate]
      * @returns {{ t0: number, t1: number, prevFullMs: number, nextFullMs: number, ref: Date }}
      */

@@ -1,0 +1,62 @@
+{
+  "gitRoot": "/Users/adamsauer/Documents/GitHub/CIR/Zhong",
+  "repoPath": "Zhong",
+  "defaultBranch": "main",
+  "commits": [
+    {
+      "hash": "43313e88a825",
+      "hashFull": "43313e88a825ffb664ee8486aa9f2c76097af52a",
+      "timestamp": 1779319038,
+      "subject": "Update hex grid and whatnot"
+    },
+    {
+      "hash": "cd906789d485",
+      "hashFull": "cd906789d4856949163088b2ba96451cf4ae1f3d",
+      "timestamp": 1778535088,
+      "subject": "Hex-yin-yang"
+    },
+    {
+      "hash": "3bd7492a8d75",
+      "hashFull": "3bd7492a8d75d38d0c14b37a89be20cbf5a07f22",
+      "timestamp": 1778474905,
+      "subject": "Integrate Zhong into app.circaevum"
+    },
+    {
+      "hash": "eaf9dceb84e2",
+      "hashFull": "eaf9dceb84e2df10eab7736f2d2ddc4fa4cb14c8",
+      "timestamp": 1770602613,
+      "subject": "Hide env stuff"
+    },
+    {
+      "hash": "7a204317febe",
+      "hashFull": "7a204317febe944b8e480245158032744a22dd1b",
+      "timestamp": 1770315990,
+      "subject": "Update styles, move Zhong updates to Zhong dot"
+    },
+    {
+      "hash": "f13f3a177d4d",
+      "hashFull": "f13f3a177d4d76e0a76597ad99437a8c5d597348",
+      "timestamp": 1770161718,
+      "subject": "26Q1W22"
+    },
+    {
+      "hash": "fb487510b315",
+      "hashFull": "fb487510b315c7425dcc0df05326d4469e0f5fab",
+      "timestamp": 1770160063,
+      "subject": "26Q1W21 and initial commit I guess"
+    }
+  ],
+  "branches": [
+    {
+      "name": "main",
+      "tipShort": "43313e8",
+      "creatorUnix": 1779319038,
+      "startSec": 1779319038,
+      "tipSec": 1779319038,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1779319038
+    }
+  ],
+  "collectedAt": "2026-06-05T22:38:52.614Z"
+}

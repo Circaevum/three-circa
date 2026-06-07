@@ -1,0 +1,740 @@
+{
+  "gitRoot": "/Users/adamsauer/Documents/GitHub/CIR/yang/web",
+  "repoPath": "yang/web",
+  "defaultBranch": "main",
+  "commits": [
+    {
+      "hash": "355cc0537c60",
+      "hashFull": "355cc0537c60cff8d4452d3db5b49548da2d4e25",
+      "timestamp": 1780698336,
+      "subject": "Demo Day update w HR sample"
+    },
+    {
+      "hash": "1bbf4e829ff8",
+      "hashFull": "1bbf4e829ff831c5e897aca7ca5f5261769eb8f1",
+      "timestamp": 1780445822,
+      "subject": "Point AI agents at llms.txt then FOR-AGENTS.md across published docs."
+    },
+    {
+      "hash": "2a0c04672bd8",
+      "hashFull": "2a0c04672bd87425330c476fe3347cc54aff58db",
+      "timestamp": 1780444726,
+      "subject": "Add agent discovery bundle for isitagentready checks."
+    },
+    {
+      "hash": "5a850636b089",
+      "hashFull": "5a850636b0893d24d3c8f78a0a98d24f6a5cdb37",
+      "timestamp": 1780444298,
+      "subject": "Add RFC 8288 Link header discovery for agent readiness."
+    },
+    {
+      "hash": "2be89e555399",
+      "hashFull": "2be89e555399f3e77e3e1ab6fdac7c84040fec57",
+      "timestamp": 1780444007,
+      "subject": "OAuth / OIDC discovery improvements applied by cursor"
+    },
+    {
+      "hash": "5fc078faf5cf",
+      "hashFull": "5fc078faf5cf03b834e1a9341758c659b2c8bb5a",
+      "timestamp": 1780443247,
+      "subject": "Merge pull request #23 from Circaevum/garmin"
+    },
+    {
+      "hash": "21c58324bae5",
+      "hashFull": "21c58324bae5feb4d5b3ecb90a090c2fd42687c4",
+      "timestamp": 1780443193,
+      "subject": "Hamburger menu and Dev page updates"
+    },
+    {
+      "hash": "4e91df166fb7",
+      "hashFull": "4e91df166fb7d7aa538032aefc6de7ade574a890",
+      "timestamp": 1780442668,
+      "subject": "Fix dev page navigability"
+    },
+    {
+      "hash": "949d2f38bc46",
+      "hashFull": "949d2f38bc46d136e2606556e77a499fd1a2151c",
+      "timestamp": 1780442440,
+      "subject": "Merge pull request #22 from Circaevum/garmin"
+    },
+    {
+      "hash": "2bed1bb158f8",
+      "hashFull": "2bed1bb158f884fa1b406086d846fb283c6b5b31",
+      "timestamp": 1780442356,
+      "subject": "Improve bot stuff"
+    },
+    {
+      "hash": "02fb0eb86720",
+      "hashFull": "02fb0eb867202eed20da0407798f14857df78668",
+      "timestamp": 1780441923,
+      "subject": "Merge pull request #21 from Circaevum/garmin"
+    },
+    {
+      "hash": "30f3f64da72a",
+      "hashFull": "30f3f64da72ac563c468084d3a39d19cb85b0e81",
+      "timestamp": 1780441600,
+      "subject": "Make agent and developer friendly"
+    },
+    {
+      "hash": "49f7a9701183",
+      "hashFull": "49f7a9701183af5c3281328c26ce39b017a118cd",
+      "timestamp": 1780271622,
+      "subject": "Merge pull request #20 from Circaevum/garmin"
+    },
+    {
+      "hash": "c6744b9b61ce",
+      "hashFull": "c6744b9b61ce6c482f32bf76a5b5b090c3526b9a",
+      "timestamp": 1780271326,
+      "subject": "Prep for Edge City"
+    },
+    {
+      "hash": "87310c0defb1",
+      "hashFull": "87310c0defb1d7e0fd0200bb996a5e212cc677b0",
+      "timestamp": 1780029832,
+      "subject": "Smooth out some rendering kinks"
+    },
+    {
+      "hash": "fccc4c84a58f",
+      "hashFull": "fccc4c84a58f8782a1fc652aca38db1b71366532",
+      "timestamp": 1780013673,
+      "subject": "Merge pull request #19 from Circaevum/earth-lines"
+    },
+    {
+      "hash": "15e374be46e3",
+      "hashFull": "15e374be46e3f1d3048604d8435206a3988b3f58",
+      "timestamp": 1780013585,
+      "subject": "SHIFT key for seeing other day's Short Term Events"
+    },
+    {
+      "hash": "5d764befa35f",
+      "hashFull": "5d764befa35f56063c13200283ba602c8d973f09",
+      "timestamp": 1779903026,
+      "subject": "Merge pull request #18 from Circaevum/earth-lines"
+    },
+    {
+      "hash": "90e39894eb76",
+      "hashFull": "90e39894eb76591d28c90002b77b5d0345d5277c",
+      "timestamp": 1779902996,
+      "subject": "Clean up Short Term Events"
+    },
+    {
+      "hash": "bfcdf7eb7f4f",
+      "hashFull": "bfcdf7eb7f4f57afa12906664a95ca9bec539083",
+      "timestamp": 1779859051,
+      "subject": "Merge pull request #17 from Circaevum/earth-lines"
+    },
+    {
+      "hash": "e35bd3793dbf",
+      "hashFull": "e35bd3793dbf591fcdb3fa58d82c389337a9755a",
+      "timestamp": 1779859014,
+      "subject": "Day Sky and refined daily zoom levels"
+    },
+    {
+      "hash": "a1e512f950d9",
+      "hashFull": "a1e512f950d951f2c13e0b409ce2dd75f50d876e",
+      "timestamp": 1779751427,
+      "subject": "Merge pull request #16 from Circaevum/earth-lines"
+    },
+    {
+      "hash": "832220f7be55",
+      "hashFull": "832220f7be556d46aa683b79e7042b5e7787aa4c",
+      "timestamp": 1779751377,
+      "subject": "Context Arc reconciled to Time Markers"
+    },
+    {
+      "hash": "e8948fdd8e36",
+      "hashFull": "e8948fdd8e36021a60cfab742da8681cdbe7df61",
+      "timestamp": 1779346804,
+      "subject": "Merge pull request #15 from Circaevum/earth-lines"
+    },
+    {
+      "hash": "5b9d2f74ca46",
+      "hashFull": "5b9d2f74ca46e5d07cfa1cd37fa5ab807adcfaac",
+      "timestamp": 1779346754,
+      "subject": "Green Graticule"
+    },
+    {
+      "hash": "54d5800cd59a",
+      "hashFull": "54d5800cd59ab99978c5349ffa79e3d6e8e55d24",
+      "timestamp": 1779344139,
+      "subject": "Fix duplicate earth-globe script and tourMinimalOrbitMode declaration"
+    },
+    {
+      "hash": "55cec3142b7d",
+      "hashFull": "55cec3142b7d0f11f50c338b687bc5b8a284b988",
+      "timestamp": 1779321505,
+      "subject": "Merge earth-zoom into earth-lines; fix stash conflicts"
+    },
+    {
+      "hash": "b3705716e685",
+      "hashFull": "b3705716e68575c6ccd0fba229b949cb47e89be3",
+      "timestamp": 1779321343,
+      "subject": "On earth-lines: wip before earth-zoom merge"
+    },
+    {
+      "hash": "8b96ef0e3fdf",
+      "hashFull": "8b96ef0e3fdfe0182b31d145e0ad823cd98ecea9",
+      "timestamp": 1779321343,
+      "subject": "index on earth-lines: ba98d46 Merge pull request #12 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "86300ac62deb",
+      "hashFull": "86300ac62debfa8c30dade05fceeafcdc0f0deb5",
+      "timestamp": 1779321343,
+      "subject": "untracked files on earth-lines: ba98d46 Merge pull request #12 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "b6704dcf6b43",
+      "hashFull": "b6704dcf6b43c00e54c9d221e51190b3ee4ccfe7",
+      "timestamp": 1779318169,
+      "subject": "Merge pull request #14 from Circaevum/earth-zoom"
+    },
+    {
+      "hash": "1ed25acaa814",
+      "hashFull": "1ed25acaa8147e95e7969a543f3f3923e8177dc5",
+      "timestamp": 1779318100,
+      "subject": "More cohesive daily events, zoom filtering"
+    },
+    {
+      "hash": "d8b3de1bd4b7",
+      "hashFull": "d8b3de1bd4b77f4eeac14d20cbbeeb6ef5f2166a",
+      "timestamp": 1778474819,
+      "subject": "Add zhong integration"
+    },
+    {
+      "hash": "e796c1d5fd2d",
+      "hashFull": "e796c1d5fd2db3b02693291e345797642f97b0be",
+      "timestamp": 1778472186,
+      "subject": "Improved day event selection and viewing"
+    },
+    {
+      "hash": "d1b912d14fa3",
+      "hashFull": "d1b912d14fa308910b51642edfc0db68d8e6d02d",
+      "timestamp": 1777421193,
+      "subject": "Merge pull request #13 from Circaevum/earth-zoom"
+    },
+    {
+      "hash": "f3e097278be8",
+      "hashFull": "f3e097278be8a1ae1179f4a658ef0be0a3d1dc34",
+      "timestamp": 1777421097,
+      "subject": "Small Earth Hand impropvements"
+    },
+    {
+      "hash": "1ca9b5c435b7",
+      "hashFull": "1ca9b5c435b7383c35927be62f383bfa41bd0019",
+      "timestamp": 1777404873,
+      "subject": "Earth hands added"
+    },
+    {
+      "hash": "ba98d463a5fa",
+      "hashFull": "ba98d463a5fa7535add4c7181354cbc2ba090ed4",
+      "timestamp": 1777398605,
+      "subject": "Merge pull request #12 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "e4684fd9d0de",
+      "hashFull": "e4684fd9d0de900915aa2c383c3479b1e9dc0710",
+      "timestamp": 1777398557,
+      "subject": "Always default to Kepler postioning"
+    },
+    {
+      "hash": "70fcee43d0b9",
+      "hashFull": "70fcee43d0b94033beb4f68f5ab820c8dc140f69",
+      "timestamp": 1777398408,
+      "subject": "Merge pull request #11 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "483ff1fab2fb",
+      "hashFull": "483ff1fab2fb163b4dd27d511a26d5c45f2a3309",
+      "timestamp": 1777398256,
+      "subject": "Set Kepler positioning of worldlines by default"
+    },
+    {
+      "hash": "b302974f9841",
+      "hashFull": "b302974f98415711ad6856e7128e7e934ea5419b",
+      "timestamp": 1777145279,
+      "subject": "Break up index singleton again"
+    },
+    {
+      "hash": "4b101d62a895",
+      "hashFull": "4b101d62a895dee14a1a07df4451a5a37ca12440",
+      "timestamp": 1776805697,
+      "subject": "Sky blue context disk added, and smaller UI tweaks"
+    },
+    {
+      "hash": "69c5e3c19a0f",
+      "hashFull": "69c5e3c19a0f2ddf715322807576efcdd3e0f1de",
+      "timestamp": 1776175649,
+      "subject": "Merge pull request #10 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "74de8ef8166d",
+      "hashFull": "74de8ef8166d999451c55e5c2cfe3c35f91d3a8f",
+      "timestamp": 1776175617,
+      "subject": "Transparency grandients"
+    },
+    {
+      "hash": "2063b2a35ab2",
+      "hashFull": "2063b2a35ab21db46b87b6aa2cb9624057476f84",
+      "timestamp": 1776017485,
+      "subject": "Merge pull request #9 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "6c9bac5948df",
+      "hashFull": "6c9bac5948dfc88085aa371509fd761552b5bf34",
+      "timestamp": 1776016572,
+      "subject": "Grayscale and smoothing"
+    },
+    {
+      "hash": "ea6252c1e0cf",
+      "hashFull": "ea6252c1e0cfd1255fc854ceb2b7539511333d00",
+      "timestamp": 1776011424,
+      "subject": "Merge pull request #8 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "34af1715696d",
+      "hashFull": "34af1715696d18ff2c3af4676a1db41857288361",
+      "timestamp": 1776011365,
+      "subject": "Add artemis ii mission and lunar worldline and add smooth hop to selected events"
+    },
+    {
+      "hash": "9e28bc88ccfa",
+      "hashFull": "9e28bc88ccfa817ad157f58c8ea84feb6112d3e1",
+      "timestamp": 1775456825,
+      "subject": "Fix sharing public links and small UI stuff"
+    },
+    {
+      "hash": "c6ec7c4a0666",
+      "hashFull": "c6ec7c4a0666bba41ed74c07dd5570a57e4fc26d",
+      "timestamp": 1775369089,
+      "subject": "Merge pull request #7 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "06a054c8821e",
+      "hashFull": "06a054c8821e77771a27b80d7c63797384073ff6",
+      "timestamp": 1775369005,
+      "subject": "New layout with Calendar Layers, Styling, and Data menus. Login and account mgmt moved to centered popup. About page brought back. Daily view somewhat improved but still shoddy"
+    },
+    {
+      "hash": "dbe5976c0c18",
+      "hashFull": "dbe5976c0c18b9290674c9ede3bd799985e8fb70",
+      "timestamp": 1774764002,
+      "subject": "Mirror some design principles noticed in kepler gl for UI simplicity"
+    },
+    {
+      "hash": "7880c8848dea",
+      "hashFull": "7880c8848deaa7c655b39e029768da389971c0a3",
+      "timestamp": 1774762643,
+      "subject": "Larger long-term event objects, improved styling, heirarchical calendar and layer management, icon improvements, camera transition improvements, an draft of long-term core vs rendering package based codebase in MD"
+    },
+    {
+      "hash": "a332c141d5a2",
+      "hashFull": "a332c141d5a2b15671019e2a60dd07687fd327cd",
+      "timestamp": 1773963994,
+      "subject": "Merge pull request #6 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "86e5d45dda9d",
+      "hashFull": "86e5d45dda9d98811da8816be3c9ede47f93bba7",
+      "timestamp": 1773963935,
+      "subject": "Add ICS calendar layer creation via URL"
+    },
+    {
+      "hash": "3cba3663998c",
+      "hashFull": "3cba3663998cbd6c3af3f84b868bec6de0660052",
+      "timestamp": 1773788935,
+      "subject": "Merge pull request #5 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "74e1c4ded817",
+      "hashFull": "74e1c4ded8178f557f2c100d3285f12655454769",
+      "timestamp": 1773788880,
+      "subject": "Fixing coloring?"
+    },
+    {
+      "hash": "d90f226cf914",
+      "hashFull": "d90f226cf914023587f420dd31a8616219ae8265",
+      "timestamp": 1773773473,
+      "subject": "Merge pull request #4 from Circaevum/import-and-share-calendars"
+    },
+    {
+      "hash": "3ce9ed1998f1",
+      "hashFull": "3ce9ed1998f171bd55ccbf15ded8553ceee199cb",
+      "timestamp": 1773437510,
+      "subject": "Clean up time markers a bit"
+    },
+    {
+      "hash": "e42c380acdcf",
+      "hashFull": "e42c380acdcf762db3e33808be2ebe13a21348d8",
+      "timestamp": 1773357246,
+      "subject": "Add annual display, camera toggle, and minor icon tweaks"
+    },
+    {
+      "hash": "b09266cda2a4",
+      "hashFull": "b09266cda2a44e878f6b2e215bbb97182d4d6c9a",
+      "timestamp": 1772867491,
+      "subject": "Update WebXR UI"
+    },
+    {
+      "hash": "ad9d5ef6f397",
+      "hashFull": "ad9d5ef6f39717f6583f8dc8ae6ddd3317bafc84",
+      "timestamp": 1772865137,
+      "subject": "Remove 2D DOM screen from XR mode"
+    },
+    {
+      "hash": "8408a6cbe9b7",
+      "hashFull": "8408a6cbe9b7e819d0c2b0074eae581481c31971",
+      "timestamp": 1772861934,
+      "subject": "XR Mode more changes"
+    },
+    {
+      "hash": "b23eb9ffbef1",
+      "hashFull": "b23eb9ffbef1673e1139c0fbadc66639e889e228",
+      "timestamp": 1772859392,
+      "subject": "XR Mode Take 10"
+    },
+    {
+      "hash": "f76d4edf42c1",
+      "hashFull": "f76d4edf42c1171f0f53ae4425355f86a94c3225",
+      "timestamp": 1772854106,
+      "subject": "XR-mode Take 9"
+    },
+    {
+      "hash": "ca3d8620d622",
+      "hashFull": "ca3d8620d622ba9e62faef8a868b9ea1d5616ff6",
+      "timestamp": 1772853928,
+      "subject": "XR-mode Take 8"
+    },
+    {
+      "hash": "f1b117bb52ec",
+      "hashFull": "f1b117bb52ec704caf5d27f8e5cd6b5802eb8c7b",
+      "timestamp": 1772853708,
+      "subject": "XR-mode Take 7"
+    },
+    {
+      "hash": "f2b2bd9e8df4",
+      "hashFull": "f2b2bd9e8df4c4c239ad7f975929c4977a694c2b",
+      "timestamp": 1772853163,
+      "subject": "XR mode taske 6"
+    },
+    {
+      "hash": "23d34fd42921",
+      "hashFull": "23d34fd429210ecdd0dc0ba4a069342eea28d3d1",
+      "timestamp": 1772852687,
+      "subject": "XR mode Take 5"
+    },
+    {
+      "hash": "ab61ff949d6d",
+      "hashFull": "ab61ff949d6d93bfeefbaf4f0c47bed12f86a1e2",
+      "timestamp": 1772852299,
+      "subject": "XR Mode Take 3"
+    },
+    {
+      "hash": "e8597c953b54",
+      "hashFull": "e8597c953b5482b48896bd7831fc2e01ec94be62",
+      "timestamp": 1772851965,
+      "subject": "XR mode shift: take 2"
+    },
+    {
+      "hash": "52100939fbc4",
+      "hashFull": "52100939fbc46329178ccbdc26ba2b368979f10a",
+      "timestamp": 1772851473,
+      "subject": "Experimental XR mode"
+    },
+    {
+      "hash": "0793deb49863",
+      "hashFull": "0793deb498630debc762f706d61f4568a18234ca",
+      "timestamp": 1772850086,
+      "subject": "Fix XR scene errors"
+    },
+    {
+      "hash": "19d099391177",
+      "hashFull": "19d099391177d4a712c4e2a9b3e446e71cb8758f",
+      "timestamp": 1772849590,
+      "subject": "Improve layer display configs"
+    },
+    {
+      "hash": "15e68e69eeac",
+      "hashFull": "15e68e69eeac221e5380f05e17f2eaec66896244",
+      "timestamp": 1772846016,
+      "subject": "Retain camera perspective going from GL to app, improve layer table UI, import/export CSVs"
+    },
+    {
+      "hash": "f99f1112aeb7",
+      "hashFull": "f99f1112aeb752633a886bfbb79882b7e5c825e6",
+      "timestamp": 1772760986,
+      "subject": "Merge pull request #3 from Circaevum/event-mgmt"
+    },
+    {
+      "hash": "788b4b0356c4",
+      "hashFull": "788b4b0356c43dcd761736fe59c13f07480b2ebc",
+      "timestamp": 1772760811,
+      "subject": "Improve event styling and event layer display system"
+    },
+    {
+      "hash": "4dca2f9f0005",
+      "hashFull": "4dca2f9f000537c0c1fdb0149dca633d4caad5a1",
+      "timestamp": 1772578572,
+      "subject": "Events List gets populated and option to Draw All events"
+    },
+    {
+      "hash": "9b865e365095",
+      "hashFull": "9b865e36509572bb7a84edf90df7df7d4fb5d76f",
+      "timestamp": 1772433199,
+      "subject": "Pushing github and vercel to redeploy"
+    },
+    {
+      "hash": "9aa7cd0a8a11",
+      "hashFull": "9aa7cd0a8a11177db9b9b0b27e9f763c6cc55bd6",
+      "timestamp": 1772430318,
+      "subject": "Fix default view to include navbar"
+    },
+    {
+      "hash": "d41f2da4453c",
+      "hashFull": "d41f2da4453c3cecd77e23bc4e9305dfe24f1a06",
+      "timestamp": 1772429620,
+      "subject": "Merge pull request #2 from Circaevum/xr-mode"
+    },
+    {
+      "hash": "a54c6dd99241",
+      "hashFull": "a54c6dd99241fda1967d398a155dfd56c4adc44e",
+      "timestamp": 1772429560,
+      "subject": "Remove Nakama stuff"
+    },
+    {
+      "hash": "455a58480c57",
+      "hashFull": "455a58480c57ac00457ebd9276a281bb4061690d",
+      "timestamp": 1772415834,
+      "subject": "Merge pull request #1 from Circaevum/xr-mode"
+    },
+    {
+      "hash": "8b555d3cefb3",
+      "hashFull": "8b555d3cefb3ad36a1b932280eec24cc2906b01d",
+      "timestamp": 1772415716,
+      "subject": "Preparing for prod"
+    },
+    {
+      "hash": "36dbeb1b18f0",
+      "hashFull": "36dbeb1b18f07a85c5f915eacef328a7cb548129",
+      "timestamp": 1772074317,
+      "subject": "Merge remote-tracking branch 'origin/main' into xr-mode"
+    },
+    {
+      "hash": "ce1e1df51ddd",
+      "hashFull": "ce1e1df51ddd3038dfbaf6ca14be265a1bb5ea66",
+      "timestamp": 1772074107,
+      "subject": "Add LICENSE file"
+    },
+    {
+      "hash": "8b0d8f7c894a",
+      "hashFull": "8b0d8f7c894a34f0cea20c4fe3e0f71b9d4593d6",
+      "timestamp": 1771982594,
+      "subject": "Remove nakama stuff from this version so we can have open-sourced GL separate from database security"
+    },
+    {
+      "hash": "680f8ec20539",
+      "hashFull": "680f8ec20539dc60fc226f3df8a78f1ffa9e8951",
+      "timestamp": 1771822974,
+      "subject": "The flattening"
+    },
+    {
+      "hash": "6cf6cade5754",
+      "hashFull": "6cf6cade5754c6d952ce7ed6325a19d1ac6cc53f",
+      "timestamp": 1771821473,
+      "subject": "Add navbar, hamburger menu, account mgmt, event list, eventLines"
+    },
+    {
+      "hash": "aa4390193057",
+      "hashFull": "aa439019305700139b593a9590f44a48cab0b131",
+      "timestamp": 1769794276,
+      "subject": "Ignore spec.meta files and add vercel-dash to gitignore"
+    },
+    {
+      "hash": "189bafb22f90",
+      "hashFull": "189bafb22f9061b6eec7facc6705ed56a3aadc50",
+      "timestamp": 1769794066,
+      "subject": "Adjust files to align with new spec"
+    },
+    {
+      "hash": "28ad8edaf160",
+      "hashFull": "28ad8edaf160ea16ddc4e2000cbe520490536820",
+      "timestamp": 1769713852,
+      "subject": "Update spec submodule"
+    },
+    {
+      "hash": "14887d453069",
+      "hashFull": "14887d4530699bda1129b713347c552aa7bd0845",
+      "timestamp": 1769713443,
+      "subject": "Add spec submodule"
+    },
+    {
+      "hash": "1eb8d459b7ae",
+      "hashFull": "1eb8d459b7ae486d797be56b2464f9129591df26",
+      "timestamp": 1769439782,
+      "subject": "Add .gitignore and remove SSL certificates from tracking"
+    },
+    {
+      "hash": "1208c2ab350b",
+      "hashFull": "1208c2ab350bfc41f21555a516944cfe30040d56",
+      "timestamp": 1769439729,
+      "subject": "Add WebXR mode with Quest controller input and improved positioning"
+    },
+    {
+      "hash": "18e2246e429a",
+      "hashFull": "18e2246e429a0f2b2d705c413ba95d735761e4a3",
+      "timestamp": 1769391269,
+      "subject": "Add three min js for offline use"
+    },
+    {
+      "hash": "bc546ad81e83",
+      "hashFull": "bc546ad81e83fa26ee770a65b09f5ac75e09df1c",
+      "timestamp": 1769386877,
+      "subject": "Clean up Zoom 1, 2, 8, 9"
+    },
+    {
+      "hash": "2997fd1eeba9",
+      "hashFull": "2997fd1eeba900d7cb1b823911025b96f1426dc8",
+      "timestamp": 1769108810,
+      "subject": "Remove unused code from main.js"
+    },
+    {
+      "hash": "1794fe06af20",
+      "hashFull": "1794fe06af20214718e7430b6324f43edee76398",
+      "timestamp": 1769060188,
+      "subject": "Split into new files for worldlines and geometry"
+    },
+    {
+      "hash": "1fca973dad48",
+      "hashFull": "1fca973dad48caeb1ff9f53fa8cc2bc7b2c39914",
+      "timestamp": 1769059276,
+      "subject": "Clean up distilled file work"
+    },
+    {
+      "hash": "2b186c3a8e04",
+      "hashFull": "2b186c3a8e04648d3848f8081bc9a2ea161bc180",
+      "timestamp": 1769054517,
+      "subject": "Simplifying code a little bit"
+    },
+    {
+      "hash": "b9d99b57309f",
+      "hashFull": "b9d99b57309f7f354e1cb9925c0a730e8cd2b4f8",
+      "timestamp": 1768783594,
+      "subject": "Better BLUE in LIGHT mode"
+    },
+    {
+      "hash": "ebcb28b4ac08",
+      "hashFull": "ebcb28b4ac08c060c4e9d4719574cd2c38f8a659",
+      "timestamp": 1768676148,
+      "subject": "Quick Earth position fix"
+    },
+    {
+      "hash": "4be857f699ff",
+      "hashFull": "4be857f699ff09d56e636ec641623a7fe57a86d3",
+      "timestamp": 1768636517,
+      "subject": "Clean up lines corresponding to current and selected days"
+    },
+    {
+      "hash": "8dc589aba8b7",
+      "hashFull": "8dc589aba8b7238ce387c2ff7bce4631f7083125",
+      "timestamp": 1768635944,
+      "subject": "Zooms 3-7 (excluding 6) work nicely"
+    },
+    {
+      "hash": "155c355fb787",
+      "hashFull": "155c355fb787eb6db0f93135ca2d98b3e438b2c5",
+      "timestamp": 1768631965,
+      "subject": "Begin refactoring Time Marker file"
+    },
+    {
+      "hash": "4cadd48b1237",
+      "hashFull": "4cadd48b1237d0a0d80702245cc8b7385930238c",
+      "timestamp": 1768604928,
+      "subject": "Fix Zoom 3"
+    },
+    {
+      "hash": "b1af2d37857d",
+      "hashFull": "b1af2d37857db3f6e9d270f9b1b271d27f941e53",
+      "timestamp": 1768603098,
+      "subject": "Clean up Time Marker system"
+    },
+    {
+      "hash": "d6298e65e790",
+      "hashFull": "d6298e65e79049a5532103f88f38b339e76354d4",
+      "timestamp": 1768525917,
+      "subject": "I think this is three-circa inside dao repo"
+    }
+  ],
+  "branches": [
+    {
+      "name": "agent-doc-entrypoints",
+      "tipShort": "355cc05",
+      "creatorUnix": 1780698336,
+      "startSec": 1780698336,
+      "tipSec": 1780698336,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1780698336
+    },
+    {
+      "name": "agent-readiness-discovery",
+      "tipShort": "2a0c046",
+      "creatorUnix": 1780444726,
+      "startSec": 1780444726,
+      "tipSec": 1780444726,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1780444726
+    },
+    {
+      "name": "agent-readiness-link-headers",
+      "tipShort": "5a85063",
+      "creatorUnix": 1780444298,
+      "startSec": 1780444298,
+      "tipSec": 1780444298,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1780444298
+    },
+    {
+      "name": "agent-readiness-oauth",
+      "tipShort": "2be89e5",
+      "creatorUnix": 1780444007,
+      "startSec": 1780444007,
+      "tipSec": 1780444007,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1780444007
+    },
+    {
+      "name": "edge-esmeralda-26",
+      "tipShort": "5fc078f",
+      "creatorUnix": 1780443247,
+      "startSec": 1780443247,
+      "tipSec": 1780443247,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1780443247
+    },
+    {
+      "name": "garmin",
+      "tipShort": "21c5832",
+      "creatorUnix": 1780443193,
+      "startSec": 1780443193,
+      "tipSec": 1780443193,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1780443193
+    },
+    {
+      "name": "main",
+      "tipShort": "5fc078f",
+      "creatorUnix": 1780443247,
+      "startSec": 1780443247,
+      "tipSec": 1780443247,
+      "durationSec": 0,
+      "kind": "marker",
+      "markerSec": 1780443247
+    }
+  ],
+  "collectedAt": "2026-06-05T22:38:50.214Z"
+}
