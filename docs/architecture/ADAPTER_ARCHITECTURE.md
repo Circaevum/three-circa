@@ -1,5 +1,7 @@
 # Adapter Architecture: Pluggable Seeds
 
+> **CIR operational layer (2026):** Deployed OAuth/webhook adapters use the **stem + leaf** model in [`yang/spec/integrations/ARCHITECTURE.md`](../../../spec/integrations/ARCHITECTURE.md) (`registry.json`, `@circaevum/adapter-kit`). This document describes the earlier **yin-seed / yang-seed** GL contract — align with Patrick when merging manifests.
+
 ## Overview
 
 The **seeds** (种子) are designed as **pluggable adapters** that allow each system to work with different implementations of the other:
