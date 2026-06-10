@@ -58,6 +58,80 @@
   }
 
   /**
+   * Per-zoom event geometry budget. When a layer's event count exceeds the budget
+   * at the current zoom, events are priority-sorted and only the top N are rendered
+   * as full geometry. A count indicator arc is appended for the overflow.
+   *
+   * Rationale: at wide zooms (Century/Decade) individual markers are sub-pixel and
+   * serve no informational purpose — TubeGeometry / Frenet-frame work still runs
+   * for each one. The budget caps geometry count per zoom tier.
+   *
+   * Priority order within a layer: duration (longer first), then recency (later first).
+   */
+  const DENSITY_BUDGET = {
+    0: 40,    // MOMENT (hour) — clock zoom; limited visible time window
+    1: 20,    // CENTURY — 100 years; individual dots sub-pixel
+    2: 40,    // DECADE — 10 years
+    3: 120,   // YEAR — 1 year; most useful detail level
+    4: 150,   // QUARTER — 3 months
+    5: 150,   // MONTH — 1 month
+    6: 150,   // LUNAR CYCLE — 28 days
+    7: 120,   // WEEK
+    8: 60,    // DAY — daily sky; few visible hours
+    9: 40,    // CLOCK — polar day disk
+  };
+
+  /**
+   * Return the budget for the given zoom level (default 100 for unknown zooms).
+   */
+  function getEventDensityBudget(zoomLevel) {
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
+    return DENSITY_BUDGET[z] ?? 100;
+  }
+
+  /**
+   * Score an event for priority rendering. Higher = more important to show as geometry.
+   * Longer-duration events and more recent events rank higher.
+   */
+  function scoreEventPriority(event) {
+    const start = getEventStart(event);
+    const end = getEventEnd(event);
+    const durationMs = (end && start) ? Math.max(0, end.getTime() - start.getTime()) : 0;
+    const recencyScore = start ? start.getTime() / 1e12 : 0;
+    return durationMs / 86400000 + recencyScore;
+  }
+
+  /**
+   * Build a simple arc + count sprite indicating N overflow events at the layer's radius.
+   * Returns a THREE.Group or null.
+   */
+  function createOverflowIndicatorArc(overflowCount, earthDist, layerConfig) {
+    if (!THREE || overflowCount <= 0) return null;
+    try {
+      const r = earthDist * EVENT_RADIUS_INNER_FRACTION;
+      const arc = new THREE.RingGeometry(r * 0.995, r * 1.005, 64, 1, 0, Math.PI * 0.25);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xffd060,
+        transparent: true,
+        opacity: 0.35,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(arc, mat);
+      mesh.userData.type = 'OverflowIndicator';
+      mesh.userData.overflowCount = overflowCount;
+
+      const group = new THREE.Group();
+      group.userData.type = 'OverflowIndicator';
+      group.userData.__layerId = layerConfig.layerId;
+      group.add(mesh);
+      return group;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
    * Event-marker shapes (sphere + its edges, or disk circle/ring) are identical
    * per shape — only position/scale/color differ. Building SphereGeometry +
    * EdgesGeometry per marker is the `Ga` hotspot. Build each unit geometry once,
@@ -6040,22 +6114,34 @@
     const objects = [];
     if (!events || !layerConfig) return objects;
     ensureSceneGeometryInitialized();
-    _eventTubeQualityScale = computeEventTubeQualityScale(events.length);
+
+    // Density budget: cap geometry per zoom level. Priority-sort, render top N, badge the rest.
+    const zl = getZoomLevelForEvents();
+    const budget = getEventDensityBudget(zl);
+    let renderEvents = events;
+    let overflowCount = 0;
+    if (events.length > budget) {
+      const scored = events.map((e, i) => ({ e, i, score: scoreEventPriority(e) }));
+      scored.sort((a, b) => b.score - a.score);
+      renderEvents = scored.slice(0, budget).map((x) => x.e);
+      overflowCount = events.length - budget;
+    }
+
+    _eventTubeQualityScale = computeEventTubeQualityScale(renderEvents.length);
     _eventOutlineLineMode = false;
     const group = sceneContentGroup || null;
     const worldGroup = worldSpaceGroup || null;
     const byCategory = layerConfig.layerStylesByCategory || {};
-    const eventTimeRange = getTimeRange(events);
-    const zl = getZoomLevelForEvents();
-    const durationRanks = buildDurationRankMapForEvents(events);
-    const titleAlongByEventIdx = computeTitleAlongForLayerEvents(events);
-    const overlapLayout = buildTemporalOverlapLayoutForEvents(events);
-    const diskRibbonByUid = shouldAssignCircadianDiskLanes(events)
-      ? buildCircadianDiskRibbonByUid(events, overlapLayout)
+    const eventTimeRange = getTimeRange(renderEvents);
+    const durationRanks = buildDurationRankMapForEvents(renderEvents);
+    const titleAlongByEventIdx = computeTitleAlongForLayerEvents(renderEvents);
+    const overlapLayout = buildTemporalOverlapLayoutForEvents(renderEvents);
+    const diskRibbonByUid = shouldAssignCircadianDiskLanes(renderEvents)
+      ? buildCircadianDiskRibbonByUid(renderEvents, overlapLayout)
       : null;
 
-    for (let i = 0; i < events.length; i++) {
-      const event = events[i];
+    for (let i = 0; i < renderEvents.length; i++) {
+      const event = renderEvents[i];
       // Timeseries events (e.g. Garmin HR/sleep) render as varying-radius arcs via TimeseriesRenderer,
       // not as default dots/ribbons. Suppress the default geometry when the render flag disables the arc.
       if (event && event.render && event.render.kind === 'timeseries' && event.render.arc === false) continue;
@@ -6088,10 +6174,23 @@
       }
     }
 
+    // Density overflow indicator — dim arc + count when budget was hit
+    if (overflowCount > 0 && SceneGeometry) {
+      const earthDist = (SceneGeometry.earthDistance != null) ? SceneGeometry.earthDistance : EARTH_RADIUS;
+      const indicator = createOverflowIndicatorArc(overflowCount, earthDist, layerConfig);
+      if (indicator) {
+        const parent = group || worldGroup;
+        if (parent) {
+          parent.add(indicator);
+          objects.push(indicator);
+        }
+      }
+    }
+
     const seriesBaseConfig = { ...layerConfig, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange };
     // Timeseries-arc events (e.g. Garmin sleep/HR) draw their own arcs; keep them out of the standard
     // time-series decoration spines/connectors so no extra "standard event arcs" appear for them.
-    const decorationEvents = events.filter(
+    const decorationEvents = renderEvents.filter(
       (e) => !(e && e.render && e.render.kind === 'timeseries' && e.render.arc === false)
     );
     let seriesRoots = [];
