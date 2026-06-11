@@ -72,12 +72,12 @@
     0: 40,    // MOMENT (hour) — clock zoom; limited visible time window
     1: 20,    // CENTURY — 100 years; individual dots sub-pixel
     2: 40,    // DECADE — 10 years
-    3: 120,   // YEAR — 1 year; most useful detail level
-    4: 150,   // QUARTER — 3 months
-    5: 150,   // MONTH — 1 month
+    3: 300,   // YEAR — raised; calendar + timeseries years can run deep
+    4: 300,   // QUARTER
+    5: 300,   // MONTH — helix zoom, circadian STEs visible here
     6: 150,   // LUNAR CYCLE — 28 days
-    7: 120,   // WEEK
-    8: 60,    // DAY — daily sky; few visible hours
+    7: 300,   // WEEK — helix zoom, year-wide STEs in scope
+    8: 120,   // DAY — daily sky; month window of LTEs + week window STEs
     9: 40,    // CLOCK — polar day disk
   };
 
@@ -91,14 +91,23 @@
 
   /**
    * Score an event for priority rendering. Higher = more important to show as geometry.
-   * Longer-duration events and more recent events rank higher.
+   * Uses log₂-duration so a 1h meeting is not systematically crowded out by a 30-day trip
+   * (previously a linear scale gave trips a 720× advantage over 1h events, which caused
+   * short-term events to be cut first whenever the density budget was hit).
    */
   function scoreEventPriority(event) {
+    const zl = getZoomLevelForEvents();
     const start = getEventStart(event);
     const end = getEventEnd(event);
     const durationMs = (end && start) ? Math.max(0, end.getTime() - start.getTime()) : 0;
     const recencyScore = start ? start.getTime() / 1e12 : 0;
-    return durationMs / 86400000 + recencyScore;
+    const durationDays = durationMs / 86400000;
+    // log₂ compresses the range: 1h→0.06, 8h→0.41, 1d→1.0, 7d→3.0, 30d→4.95
+    const durationScore = durationDays > 0 ? Math.log2(1 + durationDays) : 0;
+    // At circadian helix zooms, short events render as ribbons — give them a visibility boost
+    // so they survive budget cuts over long-duration LTEs.
+    const steBoost = (durationDays < 1 && isCircadianHelixZoom(zl)) ? 1.5 : 0;
+    return durationScore + recencyScore + steBoost;
   }
 
   /**
@@ -6143,15 +6152,27 @@
 
     // Density budget: cap geometry per zoom level. Priority-sort, render top N, badge the rest.
     const zl = getZoomLevelForEvents();
+    // Timeseries events (Garmin HR, sleep arcs) render via TimeseriesRenderer, not as
+    // worldline ribbons. Excluding them from the worldline density budget prevents hundreds
+    // of Garmin daily entries from crowding out regular calendar events and STEs.
+    const timeseriesEvents = events.filter(
+      (e) => e && e.render && e.render.kind === 'timeseries'
+    );
+    const standardEvents = events.filter(
+      (e) => !(e && e.render && e.render.kind === 'timeseries')
+    );
+
     const budget = getEventDensityBudget(zl);
-    let renderEvents = events;
+    let renderStandard = standardEvents;
     let overflowCount = 0;
-    if (events.length > budget) {
-      const scored = events.map((e, i) => ({ e, i, score: scoreEventPriority(e) }));
+    if (standardEvents.length > budget) {
+      const scored = standardEvents.map((e, i) => ({ e, i, score: scoreEventPriority(e) }));
       scored.sort((a, b) => b.score - a.score);
-      renderEvents = scored.slice(0, budget).map((x) => x.e);
-      overflowCount = events.length - budget;
+      renderStandard = scored.slice(0, budget).map((x) => x.e);
+      overflowCount = standardEvents.length - budget;
     }
+    // Recombine: standard events (budget-capped) + timeseries events (unlimited)
+    const renderEvents = [...renderStandard, ...timeseriesEvents];
 
     _eventTubeQualityScale = computeEventTubeQualityScale(renderEvents.length);
     _eventOutlineLineMode = false;
