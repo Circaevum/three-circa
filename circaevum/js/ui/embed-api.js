@@ -19,6 +19,12 @@
       }
       return;
     }
+    if (data.type === 'CIRCAEVUM_SET_SHIFT_PREVIEW') {
+      if (typeof window.setCircadianShortEventsShiftPreview === 'function') {
+        window.setCircadianShortEventsShiftPreview(!!data.active);
+      }
+      return;
+    }
     if (data.type === 'CIRCAEVUM_TOGGLE_ABOUT' && typeof window.toggleAboutPanel === 'function') {
       window.toggleAboutPanel();
       return;
