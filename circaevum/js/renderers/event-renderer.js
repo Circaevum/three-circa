@@ -711,9 +711,12 @@
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (isLongTermSpanForDailySky(start, evEnd)) {
-      return zl === 8 && eventTouchesSelectedCalendarDay(start, evEnd);
+      // Day zoom: LTEs visible across the full calendar month.
+      return zl === 8 && eventTouchesSelectedMonthWindow(start, evEnd);
     }
     if (isCircadianShortEventsShiftPreview()) return true;
+    // Day zoom in year scope: show STEs within a 7-day window of the selected day.
+    if (zl === 8 && isCircadianShortEventScopeYear()) return eventTouchesSelectedWeekWindow(start, evEnd);
     return eventTouchesSelectedCalendarDay(start, evEnd);
   }
 
@@ -906,9 +909,9 @@
 
     if (shouldHideLongTermOnDailySkySte(start, evEnd)) return true;
 
-    // Day zoom: every long-term span on the selected day stays visible (all-day DATE fixes included).
-    if (zl === 8 && isLongTermSpanForDailySky(start, evEnd) && eventTouchesSelectedCalendarDay(start, evEnd)) {
-      return false;
+    // Day zoom: long-term spans visible across the full calendar month.
+    if (zl === 8 && isLongTermSpanForDailySky(start, evEnd)) {
+      return !eventTouchesSelectedMonthWindow(start, evEnd);
     }
 
     if (isCircadianShortEventsShiftPreview()) return false;
@@ -922,8 +925,9 @@
     }
 
     if (isCircadianShortEventScopeYear()) {
-      // Week zoom still shows year-wide STE; day-sky STE (8/9) stays on selected day only.
+      // Week zoom (7): year-wide STEs; day zoom (8): 7-day window around selected day.
       if (zl === 7) return false;
+      if (zl === 8) return !eventTouchesSelectedWeekWindow(start, evEnd);
     }
 
     if (zl === 9) {
@@ -1400,7 +1404,7 @@
   function areEventTextLabelsVisibleAtCurrentZoom(start, end) {
     if (!start || !end || !(end > start)) return false;
     const zlLbl = getZoomLevelForEvents();
-    if (zlLbl === 8 && isLongTermSpanForDailySky(start, end) && eventTouchesSelectedCalendarDay(start, end)) {
+    if (zlLbl === 8 && isLongTermSpanForDailySky(start, end) && eventTouchesSelectedMonthWindow(start, end)) {
       return true;
     }
     if (isSub24HourSpan(start, end) && !eventTouchesSelectedCalendarDay(start, end)) return false;
@@ -1418,7 +1422,7 @@
   function areEventNameLabelsVisibleAtCurrentZoom(start, end) {
     if (!start || !end || !(end > start)) return false;
     const zlLbl = getZoomLevelForEvents();
-    if (zlLbl === 8 && isLongTermSpanForDailySky(start, end) && eventTouchesSelectedCalendarDay(start, end)) {
+    if (zlLbl === 8 && isLongTermSpanForDailySky(start, end) && eventTouchesSelectedMonthWindow(start, end)) {
       return true;
     }
     if (isSub24HourSpan(start, end) && !eventTouchesSelectedCalendarDay(start, end)) return false;
@@ -1468,6 +1472,28 @@
     dayEnd.setDate(dayEnd.getDate() + 1);
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     return evEnd > dayStart && start < dayEnd;
+  }
+
+  /** Zoom 8 STE: show sub-day events within ±3 days of the selected day (7-day window). */
+  function eventTouchesSelectedWeekWindow(start, end) {
+    const fn = getSelectedDateTimeFn();
+    if (!fn || !start || isNaN(start.getTime())) return false;
+    const sel = fn();
+    const winStart = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() - 3, 0, 0, 0, 0);
+    const winEnd = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() + 4, 0, 0, 0, 0);
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    return evEnd > winStart && start < winEnd;
+  }
+
+  /** Zoom 8 LTE: show long-term events that fall anywhere in the selected calendar month. */
+  function eventTouchesSelectedMonthWindow(start, end) {
+    const fn = getSelectedDateTimeFn();
+    if (!fn || !start || isNaN(start.getTime())) return false;
+    const sel = fn();
+    const winStart = new Date(sel.getFullYear(), sel.getMonth(), 1, 0, 0, 0, 0);
+    const winEnd = new Date(sel.getFullYear(), sel.getMonth() + 1, 1, 0, 0, 0, 0);
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    return evEnd > winStart && start < winEnd;
   }
 
   /** True if the event overlaps the selected local hour window [floor hour, +1h). */
