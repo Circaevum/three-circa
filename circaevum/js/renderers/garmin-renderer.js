@@ -675,7 +675,9 @@
 
     const sel = selectedDate instanceof Date ? selectedDate : new Date();
     const span = spanDays != null ? spanDays : 2;
-    const pad = Math.ceil(span / 2) + 1;
+    // Shift preview: expand window so nearby days show even when navigated to a past date.
+    const effectiveSpan = shiftActive() ? Math.max(span, 30) : span;
+    const pad = Math.ceil(effectiveSpan / 2) + 1;
     const selMid = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0).getTime();
     const winStart = selMid - pad * MS_PER_DAY;
     const winEnd = selMid + (pad + 1) * MS_PER_DAY;

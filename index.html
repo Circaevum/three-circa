@@ -291,6 +291,12 @@
                         <input type="range" id="off-selected-line-dim-slider" min="0" max="1" step="0.05" value="1" aria-label="Dim short event lines outside the selected day or hour" title="0 = off-day lines match selected day brightness; 100 = maximum dim">
                         <div class="offday-line-dim-hint" id="off-selected-line-dim-hint" aria-live="polite">Off-day line dim: 100%</div>
                     </div>
+                    <div class="ste-month-range-row">
+                        <div class="scene-slider-heading">Event window</div>
+                        <div class="scene-slider-caption"><span>1 month</span><span>12 months</span></div>
+                        <input type="range" id="ste-month-range-slider" min="1" max="12" step="1" value="2" aria-label="How many months of events to include at Clock, Day, and Moment zooms" title="Expand to see more calendar events at daily zooms">
+                        <div class="ste-month-range-hint" id="ste-month-range-hint" aria-live="polite">2 months</div>
+                    </div>
                 </div>
             </div>
             <div class="scene-slider-wrap scene-slider-wrap--timeline" id="flatten-slider-wrap" style="display: none;" aria-label="Year timeline flatten">

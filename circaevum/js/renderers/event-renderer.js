@@ -267,6 +267,10 @@
     if (start && !isNaN(start.getTime()) && eventTouchesSelectedCalendarDay(start, end)) {
       return 'polygon3d';
     }
+    // Clock zoom: month-range off-day STEs get filled ribbons (not just lines) so they're visible.
+    if (start && !isNaN(start.getTime()) && getZoomLevelForEvents() === 9 && eventTouchesSelectedMonthRangeWindow(start, end)) {
+      return 'polygon3d';
+    }
     if (mode !== 'auto') {
       for (let i = 2; i < arguments.length; i++) {
         const src = arguments[i];
@@ -685,12 +689,14 @@
     return eventTouchesSelectedCalendarDay(start, evEnd);
   }
 
-  /** Moment (0) & Clock (9): hide LTE on flat day-sky disk. Day zoom (8) keeps them. */
+  /** Moment (0): hide all LTEs. Clock (9): hide multi-day LTEs only; single all-day (24h) events pass through. Day zoom (8) keeps all LTEs. */
   function shouldHideLongTermOnDailySkySte(start, end) {
     const zl = getZoomLevelForEvents();
     if (zl !== 0 && zl !== 9) return false;
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    // Clock zoom: allow single all-day events (24h) to render; only hide multi-day spans.
+    if (zl === 9) return durationDaysBetween(start, evEnd) >= 2;
     if (isLongTermEventSpanForPlotType(start, evEnd)) return true;
     if (durationDaysBetween(start, evEnd) >= 2) return true;
     return false;
@@ -721,11 +727,15 @@
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (isLongTermSpanForDailySky(start, evEnd)) {
       // Day zoom: LTEs visible across the full calendar month.
-      return zl === 8 && eventTouchesSelectedMonthWindow(start, evEnd);
+      if (zl === 8) return eventTouchesSelectedMonthWindow(start, evEnd);
+      // Clock zoom: same-day all-day events only (multi-day already blocked above).
+      if (zl === 9) return eventTouchesSelectedCalendarDay(start, evEnd);
+      return false;
     }
     if (isCircadianShortEventsShiftPreview()) return true;
-    // Day zoom in year scope: show STEs within a 7-day window of the selected day.
-    if (zl === 8 && isCircadianShortEventScopeYear()) return eventTouchesSelectedWeekWindow(start, evEnd);
+    // Day zoom in year scope, Clock zoom, Moment zoom: use the slider-controlled month-range window.
+    if (zl === 8 && isCircadianShortEventScopeYear()) return eventTouchesSelectedMonthRangeWindow(start, evEnd);
+    if (zl === 9 || zl === 0) return eventTouchesSelectedMonthRangeWindow(start, evEnd);
     return eventTouchesSelectedCalendarDay(start, evEnd);
   }
 
@@ -925,27 +935,15 @@
 
     if (isCircadianShortEventsShiftPreview()) return false;
 
-    if (zl === 0) {
-      const dayStart = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
-      const dayEnd = new Date(dayStart.getTime());
-      dayEnd.setDate(dayEnd.getDate() + 1);
-      const overlap = evEnd > dayStart && start < dayEnd;
-      return !overlap;
-    }
+    if (zl === 0) return !eventTouchesSelectedMonthRangeWindow(start, evEnd);
 
     if (isCircadianShortEventScopeYear()) {
-      // Week zoom (7): year-wide STEs; day zoom (8): 7-day window around selected day.
+      // Week zoom (7): year-wide STEs; day/clock zooms: month-range window.
       if (zl === 7) return false;
-      if (zl === 8) return !eventTouchesSelectedWeekWindow(start, evEnd);
+      if (zl === 8) return !eventTouchesSelectedMonthRangeWindow(start, evEnd);
     }
 
-    if (zl === 9) {
-      const dayStart = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
-      const dayEnd = new Date(dayStart.getTime());
-      dayEnd.setDate(dayEnd.getDate() + 1);
-      const overlap = evEnd > dayStart && start < dayEnd;
-      return !overlap;
-    }
+    if (zl === 9) return !eventTouchesSelectedMonthRangeWindow(start, evEnd);
 
     const circ = normalizedCircadianState();
     if (!isCircadianHelixZoom(zl) || circ === 'off') return false;
@@ -1002,7 +1000,10 @@
       return getShiftPreviewSteVisibilityMul(start, end);
     }
 
-    if ((zl === 0 || zl === 9) && isShort && !onSelDay) {
+    if (zl === 0 && isShort && !onSelDay) return 0;
+    if (zl === 9 && isShort && !onSelDay) {
+      // Month-range events fade by day distance; events outside the window are hidden.
+      if (eventTouchesSelectedMonthRangeWindow(start, end)) return Math.max(0.28, dayDiffProx * 0.82);
       return 0;
     }
 
@@ -1490,6 +1491,23 @@
     const sel = fn();
     const winStart = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() - 3, 0, 0, 0, 0);
     const winEnd = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() + 4, 0, 0, 0, 0);
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    return evEnd > winStart && start < winEnd;
+  }
+
+  /** Read user-controlled STE month-range setting (default 2 = current + next month). */
+  function getSteWindowMonths() {
+    return typeof global.getSteWindowMonths === 'function' ? Math.max(1, global.getSteWindowMonths()) : 2;
+  }
+
+  /** STEs visible from the start of the selected month through N months ahead (slider-controlled). */
+  function eventTouchesSelectedMonthRangeWindow(start, end) {
+    const fn = getSelectedDateTimeFn();
+    if (!fn || !start || isNaN(start.getTime())) return false;
+    const sel = fn();
+    const months = getSteWindowMonths();
+    const winStart = new Date(sel.getFullYear(), sel.getMonth(), 1, 0, 0, 0, 0);
+    const winEnd = new Date(sel.getFullYear(), sel.getMonth() + months, 1, 0, 0, 0, 0);
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     return evEnd > winStart && start < winEnd;
   }
@@ -6145,6 +6163,73 @@
     return (c != null && String(c).trim()) ? String(c).trim() : 'Default';
   }
 
+  /**
+   * Is this event on-screen (within the visible window) at the current daily-sky
+   * zoom? Reuses {@link shouldDrawDailySkySteGeometry} — the same predicate that
+   * gates whether the event's geometry is drawn — so the budget pre-filter and the
+   * downstream window filter agree on "what's visible."
+   *
+   * At non daily-sky zooms (everything except Moment 0 / Day 8 / Clock 9) there is
+   * no on-screen window, so every event is in scope and nothing is pre-filtered.
+   *
+   * @param {Object} event
+   * @param {number} zl current zoom level
+   * @returns {boolean}
+   */
+  function isEventOnScreenForDensityBudget(event, zl) {
+    if (!isEarthDailySkyEventZoom(zl)) return true;
+    const start = getEventStart(event);
+    const end = getEventEnd(event);
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    // Budget window is SHIFT-agnostic: SHIFT changes what's visible, not what competes for slots.
+    // Using shouldDrawDailySkySteGeometry here would let SHIFT's "return true" re-admit the full
+    // timeline, flooding the narrow budget (40) with far-away LTEs and culling in-window STEs again.
+    if (isLongTermSpanForDailySky(start, evEnd)) {
+      if (zl === 8) return eventTouchesSelectedMonthWindow(start, evEnd);
+      if (zl === 9) return eventTouchesSelectedCalendarDay(start, evEnd);
+      return false; // zl === 0: LTEs excluded from moment budget
+    }
+    // STEs at all daily-sky zooms: use the slider-controlled month-range window.
+    return eventTouchesSelectedMonthRangeWindow(start, evEnd);
+  }
+
+  /**
+   * Apply the per-zoom density budget to a layer's standard (non-timeseries) events.
+   * Pure selection step extracted from createEventObjects so it can be unit-tested:
+   * priority-sort by scoreEventPriority and keep the top `budget` events.
+   *
+   * Fix (window-before-budget): at the daily-sky narrow zooms (Moment 0, Day 8,
+   * Clock 9) the budget is applied to the ON-SCREEN window only — off-window events
+   * are dropped from the candidate pool first. Previously the budget ran over the
+   * *entire* layer, so long multi-day events anywhere in time outscored in-window
+   * short events (STEs) and consumed every budget slot, culling STEs before the
+   * downstream window filters ever ran (STEs vanished at Clock/Moment). Budgeting
+   * the on-screen set means the cap now limits what is actually visible.
+   *
+   * @param {Array} standardEvents events already filtered to exclude timeseries arcs
+   * @param {number} zl current zoom level (for the budget lookup)
+   * @returns {{ rendered: Array, overflowCount: number }}
+   */
+  function selectEventsForDensityBudget(standardEvents, zl) {
+    const budget = getEventDensityBudget(zl);
+    const list = standardEvents || [];
+    // Window-before-budget: cull off-screen events at daily-sky zooms so the budget
+    // caps the visible set rather than deleting in-window STEs.
+    const inScope = isEarthDailySkyEventZoom(zl)
+      ? list.filter((e) => isEventOnScreenForDensityBudget(e, zl))
+      : list;
+    if (inScope.length <= budget) {
+      return { rendered: inScope, overflowCount: 0 };
+    }
+    const scored = inScope.map((e, i) => ({ e, i, score: scoreEventPriority(e) }));
+    scored.sort((a, b) => b.score - a.score);
+    return {
+      rendered: scored.slice(0, budget).map((x) => x.e),
+      overflowCount: inScope.length - budget
+    };
+  }
+
   function createEventObjects(events, layerConfig, sceneContentGroup, scene, worldSpaceGroup) {
     const objects = [];
     if (!events || !layerConfig) return objects;
@@ -6162,15 +6247,7 @@
       (e) => !(e && e.render && e.render.kind === 'timeseries')
     );
 
-    const budget = getEventDensityBudget(zl);
-    let renderStandard = standardEvents;
-    let overflowCount = 0;
-    if (standardEvents.length > budget) {
-      const scored = standardEvents.map((e, i) => ({ e, i, score: scoreEventPriority(e) }));
-      scored.sort((a, b) => b.score - a.score);
-      renderStandard = scored.slice(0, budget).map((x) => x.e);
-      overflowCount = standardEvents.length - budget;
-    }
+    const { rendered: renderStandard, overflowCount } = selectEventsForDensityBudget(standardEvents, zl);
     // Recombine: standard events (budget-capped) + timeseries events (unlimited)
     const renderEvents = [...renderStandard, ...timeseriesEvents];
 
@@ -6313,6 +6390,14 @@
     getEventStart,
     getEventEnd,
     getShortEventRenderDiagnostics,
+    // Exposed for tests: per-zoom density-budget selection and its inputs.
+    selectEventsForDensityBudget,
+    isEventOnScreenForDensityBudget,
+    getEventDensityBudget,
+    scoreEventPriority,
+    isCircadianHelixZoom,
+    isEarthDailySkyEventZoom,
+    DENSITY_BUDGET,
     isShortEventPointerPickableAtCurrentZoom,
     markShortEventPointerPickability,
     /** Same inner/outer radii as multi-day event ribbons (used by list-horizon shell in main.js). */

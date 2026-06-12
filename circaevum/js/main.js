@@ -277,6 +277,8 @@ let currentCircadianStraightenAmount = 0;
 let flattenIntensity = 1;
 /** UI 0 = circadian helix tight along time, 1 = spread; 0.5 → 1× natural calendar scale (see getCircadianHelixYStretchMult). */
 let circadianHelixStretchSlider = 0.5;
+/** Months from start of selected month to include STEs at zoom 8/9/0 (1 = current month only, 2 = current + next, …). */
+let steWindowMonths = 2;
 let focusTargetOverride = null; // 'sun' | 'earth' | 'mid' | 'moon' | null – null = use ZOOM_LEVELS default
 /** When true (long-term event click), use day-number/day-name radial band for mid focus geometry (same as week view mid). */
 let focusMidFromLongTermEventClick = false;
@@ -326,6 +328,7 @@ if (typeof window !== 'undefined') {
     window.getCircadianShortEventsShiftPreview = function () {
         return !!circadianShortEventsShiftPreview && !modifierMetaHeld;
     };
+    window.getSteWindowMonths = function () { return steWindowMonths; };
     function metaModifierFromKeyboardEvent(e) {
         if (!e) return false;
         return !!(e.metaKey || (typeof e.getModifierState === 'function' && e.getModifierState('Meta')));
@@ -5840,7 +5843,22 @@ function initControls() {
         });
         updateOffSelectedLineDimSliderUi();
     }
-    
+    const steMonthSlider = document.getElementById('ste-month-range-slider');
+    if (steMonthSlider) {
+        steMonthSlider.addEventListener('input', (e) => {
+            const v = parseInt(e.target.value, 10);
+            if (!isNaN(v)) {
+                steWindowMonths = Math.max(1, Math.min(12, v));
+                updateSteMonthRangeHint();
+                const gl = window.circaevumGL;
+                if (gl && typeof gl.refreshAllEventLayers === 'function') {
+                    try { gl.refreshAllEventLayers(); } catch (err) {}
+                }
+            }
+        });
+        updateSteMonthRangeHint();
+    }
+
     // WebXR toggle (using adapter system) – show whenever adapter loads so user can try (e.g. on headset over HTTP)
     const webxrToggle = document.getElementById('webxr-toggle');
     if (webxrToggle) {
@@ -6010,6 +6028,12 @@ function updateOffSelectedLineDimSliderUi() {
     slider.title = 'Dim short event lines on days/hours outside selected time (' + pct + '%)';
 }
 
+function updateSteMonthRangeHint() {
+    const hint = document.getElementById('ste-month-range-hint');
+    if (!hint) return;
+    hint.textContent = steWindowMonths === 1 ? '1 month' : steWindowMonths + ' months';
+}
+
 function updateCircadianHelixSliderVisibility() {
     const helixWrap = document.getElementById('circadian-helix-slider-wrap');
     if (!helixWrap) return;
@@ -6023,6 +6047,7 @@ function updateCircadianHelixSliderVisibility() {
         updateCircadianHelixSpanHint();
         syncCircadianShortEventScopeButtons();
         updateOffSelectedLineDimSliderUi();
+        updateSteMonthRangeHint();
     }
 }
 
