@@ -7,109 +7,32 @@
     var panel = document.getElementById('event-list-panel');
     var leftPanel = document.getElementById('calendars-left-panel');
     var keyboardPanel = document.getElementById('keyboard-controls-panel');
-    var testBtn = document.getElementById('test-event-lines-btn');
     var navDropdown = document.getElementById('nav-dropdown');
     var navAccountBtn = document.getElementById('nav-account-btn');
     var landingPage = document.getElementById('landing-page');
 
     if (typeof window.circaevumSelectedLayerId === 'undefined') window.circaevumSelectedLayerId = getUserEventsLayerId();
 
-    if (testBtn) {
-      testBtn.onclick = function() {
-        if (typeof window.sendEventLines === 'function') {
-          window.sendEventLines([
-            { start: new Date('2025-01-01'), end: new Date('2025-01-31'), label: 'The January Run' },
-            { start: new Date('2025-06-01'), end: new Date('2025-06-15'), label: 'Midsummer Span' }
-          ], 'test-lines');
+    var eeAllBtn = document.getElementById('edge-esmeralda-all-btn');
+    if (eeAllBtn) {
+      eeAllBtn.onclick = function() {
+        if (typeof window.getGL === 'function') window.getGL();
+        var total = 0;
+        var loaders = [
+          window.loadEdgeEsmeraldaWeek1Samples,
+          window.loadEdgeEsmeraldaWeek2Samples,
+          window.loadEdgeEsmeraldaWeek3Samples,
+          window.loadEdgeEsmeraldaWeek4Samples
+        ];
+        var fallback = typeof window.loadEdgeEsmeraldaWeek === 'function';
+        for (var w = 1; w <= 4; w++) {
+          var fn = loaders[w - 1] || (fallback ? (function(wk) { return function(opts) { return window.loadEdgeEsmeraldaWeek(wk, opts); }; })(w) : null);
+          if (fn) total += (fn({}) || 0);
         }
-        testBtn.textContent = 'Added!';
-        setTimeout(function() { testBtn.textContent = 'Test event lines'; }, 4000);
-      };
-    }
-
-    function runLoadEdgeEsmeraldaWeek(week) {
-      if (typeof window.getGL === 'function') window.getGL();
-      var w = Number(week);
-      var loaders = {
-        1: window.loadEdgeEsmeraldaWeek1Samples,
-        2: window.loadEdgeEsmeraldaWeek2Samples,
-        3: window.loadEdgeEsmeraldaWeek3Samples,
-        4: window.loadEdgeEsmeraldaWeek4Samples
-      };
-      var loadFn = loaders[w] || (typeof window.loadEdgeEsmeraldaWeek === 'function'
-        ? function (opts) { return window.loadEdgeEsmeraldaWeek(w, opts); }
-        : null);
-      if (!loadFn) {
-        console.warn('edge-esmeralda-2026.js not loaded');
-        return 0;
-      }
-      var n = loadFn({});
-      if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
-      return n;
-    }
-    function wireEdgeEsmeraldaWeekButton(btn) {
-      if (!btn) return;
-      var week = parseInt(btn.getAttribute('data-ee-week'), 10);
-      var label = btn.textContent || ('W' + week);
-      btn.onclick = function() {
-        var n = runLoadEdgeEsmeraldaWeek(week);
-        btn.textContent = n ? ('+' + n) : '…';
-        setTimeout(function() { btn.textContent = label; }, 3500);
-      };
-    }
-    wireEdgeEsmeraldaWeekButton(document.getElementById('edge-esmeralda-w1-btn'));
-    wireEdgeEsmeraldaWeekButton(document.getElementById('edge-esmeralda-w2-btn'));
-    wireEdgeEsmeraldaWeekButton(document.getElementById('edge-esmeralda-w3-btn'));
-    wireEdgeEsmeraldaWeekButton(document.getElementById('edge-esmeralda-w4-btn'));
-
-    var gitRepoInput = document.getElementById('git-timeline-repo-input');
-    var gitRepoPreset = document.getElementById('git-timeline-repo-preset');
-    var gitLoadBtn = document.getElementById('git-timeline-load-btn');
-    if (typeof window.populateGitTimelinePresetSelect === 'function') {
-      window.populateGitTimelinePresetSelect(gitRepoPreset, gitRepoInput);
-    } else if (gitRepoInput && typeof window.getGitTimelineRepoPath === 'function') {
-      gitRepoInput.value = window.getGitTimelineRepoPath() || '';
-    }
-    if (gitRepoPreset && gitRepoInput) {
-      gitRepoPreset.onchange = function() {
-        if (gitRepoPreset.value) gitRepoInput.value = gitRepoPreset.value;
-      };
-      gitRepoInput.oninput = function() {
-        if (typeof window.syncGitTimelinePresetFromInput === 'function') {
-          window.syncGitTimelinePresetFromInput(gitRepoPreset, gitRepoInput);
-        }
-      };
-    }
-    if (gitLoadBtn) {
-      gitLoadBtn.onclick = function(e) {
-        if (e) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        var repo = gitRepoInput ? String(gitRepoInput.value || '').trim() : '';
-        if (typeof window.setGitTimelineRepoPath === 'function') window.setGitTimelineRepoPath(repo);
-        if (typeof window.syncGitTimelinePresetFromInput === 'function') {
-          window.syncGitTimelinePresetFromInput(gitRepoPreset, gitRepoInput);
-        }
-        var label = gitLoadBtn.textContent;
-        gitLoadBtn.disabled = true;
-        gitLoadBtn.textContent = '…';
-        var done = function(n) {
-          gitLoadBtn.disabled = false;
-          gitLoadBtn.textContent = n ? ('+' + n) : 'Load';
-          setTimeout(function() { gitLoadBtn.textContent = label; }, 3500);
-          if (typeof window.openCalendarLayersPanel === 'function') window.openCalendarLayersPanel();
-        };
-        if (typeof window.loadGitTimeline !== 'function') {
-          console.warn('git-timeline.js not loaded');
-          done(0);
-          return;
-        }
-        window.loadGitTimeline(repo, {}).then(done).catch(function(err) {
-          console.error('[git-timeline]', err);
-          alert(err && err.message ? err.message : String(err));
-          done(0);
-        });
+        if (!total) { console.warn('edge-esmeralda-2026.js not loaded'); }
+        eeAllBtn.textContent = total ? ('+' + total) : '…';
+        if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
+        setTimeout(function() { eeAllBtn.textContent = 'Load all'; }, 3500);
       };
     }
 

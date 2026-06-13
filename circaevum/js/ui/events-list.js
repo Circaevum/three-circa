@@ -587,7 +587,7 @@
     var totalEv = events.length;
     var totalLn = lines.length;
     if (totalEv === 0 && totalLn === 0) {
-      listEl.innerHTML = '<p class="event-horizon-empty">No events or lines yet. Click <strong>Test event lines</strong> in the nav to add sample lines, then Refresh.</p>';
+      listEl.innerHTML = '<p class="event-horizon-empty">No events or lines yet. Add calendars from the Layers panel to see events here.</p>';
       return;
     }
 
@@ -679,7 +679,7 @@
 
     updateEventListHorizonRing(drawAll, z, halfMs, ref);
     if (events.length === 0 && lines.length === 0 && contextArcFinerZoom.length === 0) {
-      listEl.innerHTML = '<p class="event-horizon-empty">Nothing in this time window (' + totalEv + ' event(s), ' + totalLn + ' line(s) loaded overall). Move <strong>selected time</strong> or zoom, use <strong>Draw all</strong>, or switch the 1Y / all-time events control, then Refresh.</p>';
+      listEl.innerHTML = '<p class="event-horizon-empty">Nothing in this time window (' + totalEv + ' event(s), ' + totalLn + ' line(s) loaded overall). Move <strong>selected time</strong> or zoom to see more, then Refresh.</p>';
       return;
     }
 
@@ -723,7 +723,11 @@
         : 'In the time window but hidden until you zoom in (same dimming as the 3D view). Click to focus.';
       var details = [];
       if (ev.location) details.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
-      if (ev.description) details.push('<div class="event-detail event-description">' + linkifyText(ev.description) + '</div>');
+      if (ev.description) {
+        var rawDesc = ev.description;
+        var shortDesc = rawDesc.length > 120 ? rawDesc.slice(0, 120).trimEnd() + '…' : rawDesc;
+        details.push('<div class="event-detail event-description">' + linkifyText(shortDesc) + '</div>');
+      }
       if (ev.url) details.push('<div class="event-detail event-url"><a class="event-link" href="' + escapeHtml(ev.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(ev.url) + '</a></div>');
       row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
       row.onclick = function() {
@@ -825,7 +829,11 @@
         row.title = 'Shown in context arc at ' + zoomDisplayName(z) + '. Click to jump to ' + zoomDisplayName(targetZ) + ' and focus this span.';
         var details = [];
         if (ev.location) details.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
-        if (ev.description) details.push('<div class="event-detail event-description">' + linkifyText(ev.description) + '</div>');
+        if (ev.description) {
+          var rawDescArc = ev.description;
+          var shortDescArc = rawDescArc.length > 120 ? rawDescArc.slice(0, 120).trimEnd() + '…' : rawDescArc;
+          details.push('<div class="event-detail event-description">' + linkifyText(shortDescArc) + '</div>');
+        }
         row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + ' · opens at ' + zoomDisplayName(targetZ) + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
         row.onclick = function() {
           setCircaevumSelectedLayerId(item.layerId || USER_EVENTS_LAYER);
@@ -899,8 +907,6 @@
     if (clearFocusBtn) clearFocusBtn.onclick = function() { clearEventFocus(); };
     var refreshBtn = document.getElementById('events-panel-refresh');
     if (refreshBtn) refreshBtn.onclick = function() { refreshEventsList(false); };
-    var drawAllBtn = document.getElementById('events-panel-draw-all');
-    if (drawAllBtn) drawAllBtn.onclick = function() { refreshEventsList(true); };
 
     var _circaevumUIRefreshRaf = 0;
     window.circaevumOnSelectedTimeOrViewChanged = function() {
