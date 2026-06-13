@@ -97,6 +97,7 @@
         </div>
         <div class="event-list-panel-header-actions">
             <button type="button" id="events-focus-clear-btn" class="strip-btn" title="Clear highlighted event (Esc or click empty scene)" style="display: none;">Clear selection</button>
+            <button type="button" id="events-show-all-btn" class="strip-btn strip-btn-compact" title="Show all loaded events, ignoring zoom window">All events</button>
             <div class="edge-esmeralda-strip" role="group" aria-label="Edge Esmeralda 2026">
                 <span class="edge-esmeralda-strip-label">Edge Esmeralda:</span>
                 <button type="button" id="edge-esmeralda-all-btn" class="strip-btn strip-btn-compact" title="Load all 4 weeks — Protocols for Flourishing, Intelligence &amp; Autonomy, Emergent Futures, Environments of Tomorrow (June 1–27)">Load all</button>
@@ -605,13 +606,13 @@
     <script src="circaevum/js/renderers/planet-renderer.js"></script>
     <!-- Optional mission overlays (use core MoonMechanics for geometry) -->
     <script src="circaevum/js/missions/artemis-ii-mission.js"></script>
-    <script src="circaevum/js/renderers/event-renderer.js"></script>
+    <script src="circaevum/js/renderers/event-renderer.js?v=2"></script>
     <script src="circaevum/js/renderers/circadian-renderer.js"></script>
     <script src="circaevum/js/atc/atc-band.js"></script>
     <script src="circaevum/js/renderers/garmin-renderer.js?v=red-smooth-v4"></script>
     
     <!-- Models (VEVENT format) -->
-    <script src="circaevum/js/models/vevent.js"></script>
+    <script src="circaevum/js/models/vevent.js?v=2"></script>
     <script src="circaevum/js/data/edge-esmeralda-2026.js"></script>
     <script src="circaevum/js/data/edge-esmeralda-2026-sessions.js"></script>
     <script src="circaevum/js/data/git-timeline-github.js"></script>
@@ -628,12 +629,12 @@
     <script src="circaevum/js/main.js"></script>
     
     <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
-    <script src="circaevum/js/api/circaevum-gl.js"></script>
+    <script src="circaevum/js/api/circaevum-gl.js?v=2"></script>
     
     <!-- Circaevum GL API helpers: use from console or scripts -->
     <script src="circaevum/js/ui/gl-api-bridge.js"></script>
     <script src="circaevum/js/ui/common.js"></script>
-    <script src="circaevum/js/ui/events-list.js"></script>
+    <script src="circaevum/js/ui/events-list.js?v=2"></script>
     <script src="circaevum/js/ui/event-detail-sheet.js"></script>
     <script src="circaevum/js/ui/panels.js"></script>
     <!-- Share state: get/apply for "Open full app" (Option B – same-tab navigate with state in URL) -->

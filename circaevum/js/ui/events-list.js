@@ -293,7 +293,7 @@
     }
     if (z === 0) return hour / 2;
     if (z >= 9) return day;
-    if (z >= 8) return 2 * day;
+    if (z === 8) return 30 * day;  // match circadian disk STE month-range window
     if (z >= 5) return 30 * day;
     if (z >= 3) return 120 * day;
     return 365 * day;
@@ -412,10 +412,11 @@
     var panelArc = (typeof window.getListContextDiscArcForPanel === 'function')
       ? window.getListContextDiscArcForPanel(z)
       : null;
+    var spanHint = ' Dashed inner ring = spans not in the list at this zoom (context disc optional).';
     if (z === 0) {
-      cap.textContent = ref.getHours() + ':00–' + ((ref.getHours() + 1) % 24) + ':00';
+      cap.textContent = 'Outer arc ≈ selected hour (' + ref.getHours() + ':00–' + ((ref.getHours() + 1) % 24) + ':00).' + spanHint;
     } else {
-      cap.textContent = '±' + Math.max(1, Math.round(halfMs / dayMs)) + 'd';
+      cap.textContent = 'Outer arc ≈ list time window near selected time (±' + Math.max(1, Math.round(halfMs / dayMs)) + 'd).' + spanHint;
     }
     var len = panelArc ? panelArc.arcLen : Math.max(1.5, Math.min(100, (2 * halfMs) / (365 * dayMs) * EVENT_LIST_RING_C));
     var gap = panelArc ? panelArc.arcGap : EVENT_LIST_RING_C - len;
@@ -532,6 +533,8 @@
     var ctxEl = document.getElementById('events-panel-context');
     if (!listEl) return;
     window.eventsListHorizonRingActive = !drawAll;
+    // Set context immediately so something is always visible even if an error occurs below.
+    if (ctxEl) ctxEl.textContent = drawAll ? 'Showing all loaded events.' : 'Loading event list…';
     try {
       if (typeof window.updateListHorizonEarthRingScene === 'function') {
         window.updateListHorizonEarthRingScene();
@@ -543,6 +546,7 @@
       listEl.innerHTML = '<p class="event-horizon-empty">Circaevum GL not available. Reload the page and try again.</p>';
       return;
     }
+    try {
     ensureCalendarLayersGLListeners(gl);
 
     var ref = (typeof getSelectedDateTime === 'function') ? getSelectedDateTime() : new Date();
@@ -551,17 +555,21 @@
     var halfMs = nearbyHalfSpanMs(z, ref);
     var yearBounds = getSelectedCalendarYearLocalBounds(ref);
     if (ctxEl) {
-      if (z === 0) {
+      if (drawAll) {
+        ctxEl.textContent = 'Showing all loaded events and lines.';
+      } else if (z === 0) {
         var hourCtx = getSelectedHourLocalBounds(ref);
-        ctxEl.textContent = formatDate(ref) + ‘ · ‘ + hourCtx.start.getHours() + ‘:00–‘ + hourCtx.end.getHours() + ‘:00’;
-      } else if (z === 3) {
-        ctxEl.textContent = ref.getFullYear() + ‘ · spans >31d’;
-      } else if (z === 4) {
-        ctxEl.textContent = ref.getFullYear() + ‘ · spans >7d’;
+        ctxEl.textContent = 'Hour zoom: ' + hourCtx.start.getHours() + ':00–' + hourCtx.end.getHours() + ':00 on '
+          + formatDate(ref) + '. List shows sub-day spans in that hour only.';
+      } else if (z === 3 || z === 4) {
+        ctxEl.textContent = z === 3
+          ? ('Year zoom: calendar ' + ref.getFullYear() + '. List only includes spans longer than 31 days; shorter events stay gray in-scene. Use All events to see everything.')
+          : ('Quarter zoom: calendar ' + ref.getFullYear() + '. List includes spans longer than 7 days; shorter events stay gray in-scene. Use All events to see everything.');
       } else if (z >= 5) {
-        ctxEl.textContent = ref.getFullYear() + ‘ · ±’ + Math.max(1, Math.round(halfMs / 86400000)) + ‘d’;
+        ctxEl.textContent = 'Calendar ' + ref.getFullYear() + ' only at month zoom and finer — ±'
+          + Math.max(1, Math.round(halfMs / 86400000)) + 'd near selected time. Span band matches zoom (no longer-scale items).';
       } else {
-        ctxEl.textContent = formatDate(ref) + ‘ · ±’ + Math.max(1, Math.round(halfMs / 86400000)) + ‘d’;
+        ctxEl.textContent = 'Near selected time ' + formatDate(ref) + ' — ±' + Math.max(1, Math.round(halfMs / 86400000)) + 'd at zoom ' + z + '. List matches this zoom\'s span band only.';
       }
     }
 
@@ -667,12 +675,17 @@
       }
     }
     if (ctxEl && !drawAll && contextArcFinerZoom.length > 0) {
-      ctxEl.textContent += ' · +' + contextArcFinerZoom.length + ' on arc (zoom in ↓)';
+      ctxEl.textContent += ' ' + contextArcFinerZoom.length + ' on context arc need finer zoom (section below). Click one to jump.';
     }
 
     updateEventListHorizonRing(drawAll, z, halfMs, ref);
     if (events.length === 0 && lines.length === 0 && contextArcFinerZoom.length === 0) {
-      listEl.innerHTML = '<p class="event-horizon-empty">Nothing here — ' + totalEv + ' event' + (totalEv !== 1 ? 's' : '') + ' loaded. Move <strong>selected time</strong> or zoom to see them.</p>';
+      if (!drawAll && totalEv > 0) {
+        // Auto-expand: nothing in the zoom window but events exist — show all so the list isn't blank.
+        refreshEventsList(true);
+        return;
+      }
+      listEl.innerHTML = '<p class="event-horizon-empty">No events or lines yet. Add calendars from the Layers panel to see events here.</p>';
       return;
     }
 
@@ -892,12 +905,19 @@
       var targetScrollTop = dividerCenter - (listEl.clientHeight / 2);
       listEl.scrollTop = Math.max(0, targetScrollTop);
     });
+    } catch (evListErr) {
+      listEl.innerHTML = '<p class="event-horizon-empty" style="color:#f87171;white-space:pre-wrap;">Event list error: ' + String(evListErr) + '\n' + (evListErr && evListErr.stack ? evListErr.stack : '') + '</p>';
+      if (ctxEl && ctxEl.textContent === 'Loading event list…') ctxEl.textContent = 'Error loading events.';
+    }
   }
   window.refreshEventsList = refreshEventsList;
 
   document.addEventListener('DOMContentLoaded', function() {
     var clearFocusBtn = document.getElementById('events-focus-clear-btn');
     if (clearFocusBtn) clearFocusBtn.onclick = function() { clearEventFocus(); };
+
+    var showAllBtn = document.getElementById('events-show-all-btn');
+    if (showAllBtn) showAllBtn.onclick = function() { refreshEventsList(true); };
 
     var _circaevumUIRefreshRaf = 0;
     window.circaevumOnSelectedTimeOrViewChanged = function() {

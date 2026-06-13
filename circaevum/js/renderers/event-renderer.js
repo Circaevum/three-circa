@@ -69,16 +69,16 @@
    * Priority order within a layer: duration (longer first), then recency (later first).
    */
   const DENSITY_BUDGET = {
-    0: 40,    // MOMENT (hour) — clock zoom; limited visible time window
+    0: 120,   // MOMENT (hour) — clock zoom; limited visible time window
     1: 20,    // CENTURY — 100 years; individual dots sub-pixel
     2: 40,    // DECADE — 10 years
     3: 300,   // YEAR — raised; calendar + timeseries years can run deep
     4: 300,   // QUARTER
-    5: 300,   // MONTH — helix zoom, circadian STEs visible here
+    5: 500,   // MONTH — helix zoom, circadian STEs visible here
     6: 150,   // LUNAR CYCLE — 28 days
-    7: 300,   // WEEK — helix zoom, year-wide STEs in scope
-    8: 120,   // DAY — daily sky; month window of LTEs + week window STEs
-    9: 40,    // CLOCK — polar day disk
+    7: 500,   // WEEK — helix zoom, year-wide STEs in scope
+    8: 500,   // DAY — daily sky; ±1-month STE window can hold 60-200 STEs at typical cadence
+    9: 120,   // CLOCK — polar day disk
   };
 
   /**
@@ -104,9 +104,11 @@
     const durationDays = durationMs / 86400000;
     // log₂ compresses the range: 1h→0.06, 8h→0.41, 1d→1.0, 7d→3.0, 30d→4.95
     const durationScore = durationDays > 0 ? Math.log2(1 + durationDays) : 0;
-    // At circadian helix zooms, short events render as ribbons — give them a visibility boost
-    // so they survive budget cuts over long-duration LTEs.
-    const steBoost = (durationDays < 1 && isCircadianHelixZoom(zl)) ? 1.5 : 0;
+    // At circadian helix zooms, short events render as ribbons — boost them so they survive
+    // budget cuts over long-duration LTEs. At Day Sky (zoom 8), STEs are the primary content
+    // so they get a stronger boost to beat multi-day LTEs in priority scoring.
+    const steBoostMag = (zl === 8 || zl === 9 || zl === 0) ? 5.0 : 1.5;
+    const steBoost = (durationDays < 1 && isCircadianHelixZoom(zl)) ? steBoostMag : 0;
     return durationScore + recencyScore + steBoost;
   }
 

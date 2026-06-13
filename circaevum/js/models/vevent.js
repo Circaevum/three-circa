@@ -32,6 +32,7 @@ class VEvent {
     this.rrule = data.rrule || null;
     this.exdate = data.exdate || [];
     this.categories = data.categories || [];
+    this.category = data.category != null ? String(data.category) : null;
     this.isTrip = data.isTrip === true;
     this.isWorkEvent = data.isWorkEvent === true;
     this.color = data.color || null;
@@ -42,6 +43,10 @@ class VEvent {
     //   { kind: 'timeseries', metric: 'hr'|'sleepStage', arc: false,
     //     summary: [{ tOff, v }], dense: { collection, key, id } }
     this.render = data.render || null;
+    this.circaevumSource = data.circaevumSource || null;
+    this.circaevumEdited = data.circaevumEdited === true;
+    this.circaevumSourceDetail = data.circaevumSourceDetail || null;
+    this.key = data.key || null;
   }
 
   /**
@@ -213,11 +218,26 @@ class VEvent {
 
   _getDateTime(dt) {
     if (!dt) return null;
-    if (dt.dateTime) return new Date(dt.dateTime);
+    if (dt instanceof Date) return isNaN(dt.getTime()) ? null : dt;
+    if (dt.dateTime) { const d = new Date(dt.dateTime); return isNaN(d.getTime()) ? null : d; }
     if (dt.date) {
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dt.date));
       if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
       return new Date(dt.date + 'T00:00:00');
+    }
+    // Plain string (ISO 8601 or iCal compact format like 20260612T090000Z)
+    if (typeof dt === 'string') {
+      const s = dt.trim();
+      // iCal compact: 20260612T090000Z or 20260612T090000
+      const ic = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/.exec(s);
+      if (ic) {
+        const iso = `${ic[1]}-${ic[2]}-${ic[3]}T${ic[4]}:${ic[5]}:${ic[6]}${ic[7] || ''}`;
+        const d = new Date(iso); return isNaN(d.getTime()) ? null : d;
+      }
+      // iCal date-only: 20260612
+      const id = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
+      if (id) return new Date(Number(id[1]), Number(id[2]) - 1, Number(id[3]), 0, 0, 0, 0);
+      const d = new Date(s); return isNaN(d.getTime()) ? null : d;
     }
     return null;
   }
