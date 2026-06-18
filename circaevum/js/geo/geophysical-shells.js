@@ -11,7 +11,7 @@
   function readStored() {
     try {
       const ls = global.localStorage;
-      if (!ls) return true;
+      if (!ls) return false;
       const v = ls.getItem(STORAGE_KEY);
       if (v === '0' || v === 'false') return false;
       if (v === '1' || v === 'true') return true;
@@ -20,7 +20,7 @@
       if (li === '0' || lm === '0') return false;
       if (li === '1' || lm === '1') return true;
     } catch (e) { /* ignore */ }
-    return true;
+    return false;
   }
 
   function areGeophysicalShellsEnabled() {
