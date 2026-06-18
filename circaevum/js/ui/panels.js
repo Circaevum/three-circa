@@ -62,6 +62,10 @@
       panel.setAttribute('aria-hidden', 'false');
       document.body.classList.add('event-list-panel-open');
       if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
+      var searchInput = document.getElementById('event-list-search');
+      if (searchInput) {
+        setTimeout(function() { searchInput.focus(); }, 0);
+      }
     }
 
     function closeEventListPanel() {

@@ -528,6 +528,221 @@
   }
   window.syncEventListFocusHighlightRows = syncEventListFocusHighlightRows;
 
+  window.syncEventListFocusHighlightRows = syncEventListFocusHighlightRows;
+
+  var eventListSearchQuery = '';
+
+  function gatherAllLoadedEvents(gl) {
+    var events = [];
+    if (!gl || typeof gl.getEventObjects !== 'function') return events;
+    if (typeof gl.getLayerIds === 'function') {
+      gl.getLayerIds().forEach(function(lid) {
+        (gl.getEventObjects(lid) || []).forEach(function(o) { events.push({ layerId: lid, ev: o }); });
+      });
+    } else {
+      (gl.getEventObjects(USER_EVENTS_LAYER) || []).forEach(function(o) {
+        events.push({ layerId: USER_EVENTS_LAYER, ev: o });
+      });
+    }
+    return events;
+  }
+
+  function eventMatchesSearchQuery(ev, q) {
+    if (!q) return true;
+    var hay = [
+      ev.summary,
+      ev.description,
+      ev.location,
+      ev.url,
+      ev.category,
+      ev.uid,
+      ev.id
+    ].filter(function(v) { return v != null && String(v).trim() !== ''; }).join(' ').toLowerCase();
+    return hay.indexOf(q) >= 0;
+  }
+
+  function listTimeBoundsMs(z, ref) {
+    var halfMs = nearbyHalfSpanMs(z, ref);
+    var yearBounds = getSelectedCalendarYearLocalBounds(ref);
+    if (z === 0) {
+      var hourBounds = getSelectedHourLocalBounds(ref);
+      return { t0: hourBounds.start.getTime(), t1: hourBounds.end.getTime() };
+    }
+    if (z === 3 || z === 4) {
+      return { t0: yearBounds.start.getTime(), t1: yearBounds.end.getTime() };
+    }
+    var t0;
+    var t1;
+    if (z === 7 && typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
+      var moonBounds = MoonMechanics.fullMoonBoundsAroundRef(ref);
+      t0 = moonBounds.t0;
+      t1 = moonBounds.t1;
+    } else {
+      t0 = ref.getTime() - halfMs;
+      t1 = ref.getTime() + halfMs;
+    }
+    if (z >= 5) {
+      t0 = Math.max(t0, yearBounds.start.getTime());
+      t1 = Math.min(t1, yearBounds.end.getTime());
+    }
+    return { t0: t0, t1: t1 };
+  }
+
+  function eventIncludedInDefaultList(item, z, ref) {
+    var ev = item.ev;
+    var s = ev.start;
+    if (!s || isNaN(s.getTime())) return false;
+    var e = ev.end && ev.end > s ? ev.end : oneDayLater(s);
+    if (!e || isNaN(e.getTime())) e = s;
+    var bounds = listTimeBoundsMs(z, ref);
+    if (!rangesOverlap(s.getTime(), e.getTime(), bounds.t0, bounds.t1)) return false;
+    return eventDurationEligible(eventDurationDaysForListItem(ev), z);
+  }
+
+  function createEventListRow(gl, item, opts) {
+    opts = opts || {};
+    var z = opts.z != null ? opts.z : (typeof currentZoom !== 'undefined' ? currentZoom : 2);
+    var drawAll = !!opts.drawAll;
+    var evFocus = opts.evFocus;
+    var metaExtra = opts.metaExtra || '';
+    var forceInList = opts.forceInList;
+    var rowClassExtra = opts.rowClassExtra || '';
+    var titleOverride = opts.titleOverride;
+
+    var ev = item.ev;
+    var start = ev.start;
+    if (!start || !(start instanceof Date) || isNaN(start.getTime())) return null;
+    var end = ev.end;
+    var endForLine = end && end > start ? end : oneDayLater(start);
+    var endForNav = end && end > start ? end : endForLine;
+    var name = ev.summary || ev.uid || 'Event';
+    var inList = forceInList != null
+      ? !!forceInList
+      : (!!drawAll || shouldShowEventTextAtZoomLocal(ev.start, ev.end && ev.end > start ? ev.end : null, z));
+    var row = document.createElement('div');
+    var rowUidStr = String(ev.uid || ev.id || '');
+    row.className = 'event-row' + (inList ? ' event-row--in-list' : ' event-row--outside-list') + (rowClassExtra ? ' ' + rowClassExtra : '');
+    row.setAttribute('data-event-layer', item.layerId || '');
+    row.setAttribute('data-event-uid', rowUidStr);
+    if (evFocus && evFocus.uid) {
+      var matchFocus = evFocus.layerId === item.layerId && String(evFocus.uid) === rowUidStr;
+      if (matchFocus) row.classList.add('event-row--focus-selected');
+      else row.classList.add('event-row--focus-dim');
+    }
+    var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
+    var borderColor = ev.color || ev.colorId || layerSwatchColor(layer) || 'rgba(0, 180, 216, 0.5)';
+    row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:8px;cursor:pointer;border-left:' + (inList ? '4px' : '3px') + ' solid ' + borderColor + ';background:' + eventColorToRgbaPanelBackground(ev.color || ev.colorId, layerSwatchColor(layer), 0.22, 0.09, inList) + ';' + (inList ? '' : 'opacity:0.5;filter:saturate(0.4) brightness(0.92);');
+    row.title = titleOverride || (inList
+      ? 'Click to focus; click again or Clear selection / Esc / empty scene to unselect.'
+      : 'In the time window but hidden until you zoom in (same dimming as the 3D view). Click to focus.');
+    var details = [];
+    if (ev.location) details.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
+    if (ev.description) {
+      var rawDesc = ev.description;
+      var shortDesc = rawDesc.length > 120 ? rawDesc.slice(0, 120).trimEnd() + '…' : rawDesc;
+      details.push('<div class="event-detail event-description">' + linkifyText(shortDesc) + '</div>');
+    }
+    if (ev.url) details.push('<div class="event-detail event-url"><a class="event-link" href="' + escapeHtml(ev.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(ev.url) + '</a></div>');
+    var metaLine = formatDate(start) + (end ? ' → ' + formatDate(end) : '') + metaExtra;
+    row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + metaLine + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
+    row.onclick = function() {
+      setCircaevumSelectedLayerId(item.layerId || USER_EVENTS_LAYER);
+      var lid = item.layerId || USER_EVENTS_LAYER;
+      var curFocus = typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
+      if (
+        rowUidStr &&
+        typeof gl.setEventHighlight === 'function' &&
+        curFocus &&
+        curFocus.uid &&
+        curFocus.layerId === lid &&
+        String(curFocus.uid) === rowUidStr
+      ) {
+        gl.setEventHighlight(lid, null);
+        updateEventFocusClearButton();
+        return;
+      }
+      if (rowUidStr && typeof gl.setEventHighlight === 'function') {
+        gl.setEventHighlight(lid, rowUidStr);
+      }
+      updateEventFocusClearButton();
+      navigateToEvent(start, endForNav);
+      if (typeof window.isMobileEventSheetViewport === 'function' && window.isMobileEventSheetViewport() &&
+          typeof window.showMobileEventDetailSheet === 'function') {
+        window.showMobileEventDetailSheet({
+          vevent: ev,
+          layerId: item.layerId || USER_EVENTS_LAYER,
+          start: start,
+          end: endForNav
+        });
+      } else {
+        requestAnimationFrame(function() { scrollEventListToFocusedEvent(); });
+      }
+    };
+    row.querySelectorAll('a').forEach(function(a) { a.onclick = function(e) { e.stopPropagation(); }; });
+    var editBtn = row.querySelector('.events-panel-edit-btn');
+    if (editBtn && window.self !== window.top && window.parent.postMessage) {
+      editBtn.onclick = function(e) {
+        e.stopPropagation();
+        window.parent.postMessage({
+          type: 'CIRCAEVUM_EDIT_EVENT',
+          event: {
+            uid: ev.uid || ev.id,
+            key: ev.key,
+            summary: ev.summary || name,
+            description: ev.description || null,
+            location: ev.location || null,
+            url: ev.url || null,
+            color: ev.color || ev.colorId || null,
+            layerId: item.layerId || USER_EVENTS_LAYER,
+            dtstart: ev.dtstart || { dateTime: start.toISOString() },
+            dtend: ev.dtend || (end && end > start ? { dateTime: end.toISOString() } : { dateTime: new Date(start.getTime() + 86400000).toISOString() }),
+            isTrip: ev.isTrip === true,
+            isWorkEvent: ev.isWorkEvent === true
+          }
+        }, '*');
+      };
+    } else if (editBtn) editBtn.style.display = 'none';
+    return row;
+  }
+
+  function renderEventListSearchResults(listEl, ctxEl, gl, searchQ, ref, z) {
+    var all = gatherAllLoadedEvents(gl);
+    var matches = all.filter(function(item) { return eventMatchesSearchQuery(item.ev, searchQ); });
+    matches.sort(function(a, b) {
+      var as = a.ev && a.ev.start instanceof Date ? a.ev.start.getTime() : 0;
+      var bs = b.ev && b.ev.start instanceof Date ? b.ev.start.getTime() : 0;
+      return as - bs;
+    });
+    if (ctxEl) {
+      ctxEl.textContent = matches.length
+        ? ('Search “' + searchQ + '”: ' + matches.length + ' of ' + all.length + ' loaded events (ignores list time window).')
+        : ('No events match “' + searchQ + '” among ' + all.length + ' loaded events.');
+    }
+    updateEventListHorizonRing(true, z, 0, ref);
+    if (!matches.length) {
+      listEl.innerHTML = '<p class="event-horizon-empty">No matches. Check spelling or use <strong>All events</strong>.</p>';
+      updateEventFocusClearButton();
+      return;
+    }
+    var evFocus = (typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null);
+    matches.forEach(function(item) {
+      var inWindow = eventIncludedInDefaultList(item, z, ref);
+      var metaExtra = inWindow ? '' : ' · outside current list window';
+      var row = createEventListRow(gl, item, {
+        z: z,
+        drawAll: false,
+        evFocus: evFocus,
+        metaExtra: metaExtra,
+        forceInList: inWindow
+      });
+      if (row) listEl.appendChild(row);
+    });
+    updateEventFocusClearButton();
+    requestAnimationFrame(function() {
+      if (evFocus && evFocus.uid && scrollEventListToFocusedEvent()) return;
+    });
+  }
+
   function refreshEventsList(drawAll) {
     var listEl = document.getElementById('events-panel-list');
     var ctxEl = document.getElementById('events-panel-context');
@@ -552,6 +767,12 @@
     var ref = (typeof getSelectedDateTime === 'function') ? getSelectedDateTime() : new Date();
     if (!ref || !(ref instanceof Date) || isNaN(ref.getTime())) ref = new Date();
     var z = typeof currentZoom !== 'undefined' ? currentZoom : 2;
+    var searchQ = (eventListSearchQuery || '').trim().toLowerCase();
+    if (searchQ) {
+      renderEventListSearchResults(listEl, ctxEl, gl, searchQ, ref, z);
+      return;
+    }
+
     var halfMs = nearbyHalfSpanMs(z, ref);
     var yearBounds = getSelectedCalendarYearLocalBounds(ref);
     if (ctxEl) {
@@ -703,97 +924,8 @@
     var evFocus = (typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null);
 
     events.forEach(function(item) {
-      var ev = item.ev;
-      var start = ev.start;
-      if (!start || !(start instanceof Date) || isNaN(start.getTime())) return;
-      var end = ev.end;
-      var endForLine = end && end > start ? end : oneDayLater(start);
-      var endForNav = end && end > start ? end : endForLine;
-      var name = ev.summary || ev.uid || 'Event';
-      var row = document.createElement('div');
-      var inList = !!drawAll || shouldShowEventTextAtZoomLocal(ev.start, ev.end && ev.end > ev.start ? ev.end : null, z);
-      row.className = 'event-row' + (inList ? ' event-row--in-list' : ' event-row--outside-list');
-      var rowUidStr = String(ev.uid || ev.id || '');
-      row.setAttribute('data-event-layer', item.layerId || '');
-      row.setAttribute('data-event-uid', rowUidStr);
-      if (evFocus && evFocus.uid) {
-        var matchFocus = evFocus.layerId === item.layerId && String(evFocus.uid) === rowUidStr;
-        if (matchFocus) row.classList.add('event-row--focus-selected');
-        else row.classList.add('event-row--focus-dim');
-      }
-      var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
-      var borderColor = ev.color || ev.colorId || layerSwatchColor(layer) || 'rgba(0, 180, 216, 0.5)';
-      row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:8px;cursor:pointer;border-left:' + (inList ? '4px' : '3px') + ' solid ' + borderColor + ';background:' + eventColorToRgbaPanelBackground(ev.color || ev.colorId, layerSwatchColor(layer), 0.22, 0.09, inList) + ';' + (inList ? '' : 'opacity:0.5;filter:saturate(0.4) brightness(0.92);');
-      row.title = inList
-        ? 'Click to focus; click again or Clear selection / Esc / empty scene to unselect.'
-        : 'In the time window but hidden until you zoom in (same dimming as the 3D view). Click to focus.';
-      var details = [];
-      if (ev.location) details.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
-      if (ev.description) {
-        var rawDesc = ev.description;
-        var shortDesc = rawDesc.length > 120 ? rawDesc.slice(0, 120).trimEnd() + '…' : rawDesc;
-        details.push('<div class="event-detail event-description">' + linkifyText(shortDesc) + '</div>');
-      }
-      if (ev.url) details.push('<div class="event-detail event-url"><a class="event-link" href="' + escapeHtml(ev.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(ev.url) + '</a></div>');
-      row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
-      row.onclick = function() {
-        setCircaevumSelectedLayerId(item.layerId || USER_EVENTS_LAYER);
-        var lid = item.layerId || USER_EVENTS_LAYER;
-        var curFocus = typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
-        if (
-          rowUidStr &&
-          typeof gl.setEventHighlight === 'function' &&
-          curFocus &&
-          curFocus.uid &&
-          curFocus.layerId === lid &&
-          String(curFocus.uid) === rowUidStr
-        ) {
-          gl.setEventHighlight(lid, null);
-          updateEventFocusClearButton();
-          return;
-        }
-        if (rowUidStr && typeof gl.setEventHighlight === 'function') {
-          gl.setEventHighlight(lid, rowUidStr);
-        }
-        updateEventFocusClearButton();
-        navigateToEvent(start, endForNav);
-        if (typeof window.isMobileEventSheetViewport === 'function' && window.isMobileEventSheetViewport() &&
-            typeof window.showMobileEventDetailSheet === 'function') {
-          window.showMobileEventDetailSheet({
-            vevent: ev,
-            layerId: item.layerId || USER_EVENTS_LAYER,
-            start: start,
-            end: endForNav
-          });
-        } else {
-          requestAnimationFrame(function() { scrollEventListToFocusedEvent(); });
-        }
-      };
-      row.querySelectorAll('a').forEach(function(a) { a.onclick = function(e) { e.stopPropagation(); }; });
-      var editBtn = row.querySelector('.events-panel-edit-btn');
-      if (editBtn && window.self !== window.top && window.parent.postMessage) {
-        editBtn.onclick = function(e) {
-          e.stopPropagation();
-          window.parent.postMessage({
-            type: 'CIRCAEVUM_EDIT_EVENT',
-            event: {
-              uid: ev.uid || ev.id,
-              key: ev.key,
-              summary: ev.summary || name,
-              description: ev.description || null,
-              location: ev.location || null,
-              url: ev.url || null,
-              color: ev.color || ev.colorId || null,
-              layerId: item.layerId || USER_EVENTS_LAYER,
-              dtstart: ev.dtstart || { dateTime: start.toISOString() },
-              dtend: ev.dtend || (end && end > start ? { dateTime: end.toISOString() } : { dateTime: new Date(start.getTime() + 86400000).toISOString() }),
-              isTrip: ev.isTrip === true,
-              isWorkEvent: ev.isWorkEvent === true
-            }
-          }, '*');
-        };
-      } else if (editBtn) editBtn.style.display = 'none';
-      listEl.appendChild(row);
+      var row = createEventListRow(gl, item, { z: z, drawAll: drawAll, evFocus: evFocus });
+      if (row) listEl.appendChild(row);
     });
 
     if (contextArcFinerZoom.length > 0) {
@@ -918,6 +1050,39 @@
 
     var showAllBtn = document.getElementById('events-show-all-btn');
     if (showAllBtn) showAllBtn.onclick = function() { refreshEventsList(true); };
+
+    var searchInput = document.getElementById('event-list-search');
+    var searchClear = document.getElementById('event-list-search-clear');
+    function syncEventListSearchClearBtn() {
+      if (!searchClear) return;
+      searchClear.hidden = !(eventListSearchQuery || '').trim();
+    }
+    if (searchInput) {
+      searchInput.addEventListener('input', function() {
+        eventListSearchQuery = searchInput.value;
+        syncEventListSearchClearBtn();
+        refreshEventsList(false);
+      });
+      searchInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          eventListSearchQuery = '';
+          searchInput.value = '';
+          syncEventListSearchClearBtn();
+          refreshEventsList(false);
+          searchInput.blur();
+        }
+      });
+    }
+    if (searchClear) {
+      searchClear.onclick = function() {
+        eventListSearchQuery = '';
+        if (searchInput) searchInput.value = '';
+        syncEventListSearchClearBtn();
+        refreshEventsList(false);
+        if (searchInput) searchInput.focus();
+      };
+    }
+    syncEventListSearchClearBtn();
 
     var _circaevumUIRefreshRaf = 0;
     window.circaevumOnSelectedTimeOrViewChanged = function() {

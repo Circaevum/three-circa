@@ -196,9 +196,14 @@ let earthHandMarkerSelected = null;
 /** Orbital sky at Earth (zoom 0/8/9): thin flat ring + wedge in the XZ plane. */
 let earthDaylightSkyMesh = null;
 let earthDaylightSkyRadiiKey = null;
+let earthDaylightSkyColorKey = null;
+let earthDaylightSkyAltitudeCache = { key: '', alts: null };
 /** Local +Z in the sky group points sunward after {@link syncEarthDaylightSkyTransform}. */
 const EARTH_DAYLIGHT_SKY_LOCAL_SUN_AZIMUTH = Math.PI / 2;
 const EARTH_DAYLIGHT_SKY_RENDER_ORDER = 7;
+const LIST_HORIZON_SKY_DISK_OPACITY = 0.66;
+/** Hold Shift: fade sky canvas so fore/aft STEs and timeseries arcs stay readable. */
+const LIST_HORIZON_SKY_DISK_SHIFT_OPACITY = 0.08;
 /** List-context circle: sky-filled disks to Sun axis + rim wall; Day/Clock outer radius to Earth orbit. */
 let listHorizonEarthRingMesh = null;
 let listHorizonEarthRingCurrentRadius = null;
@@ -2183,8 +2188,35 @@ function getListHorizonSkySunPositionWorld() {
     return new T.Vector3(0, y, 0);
 }
 
-/** No-op (sky fill uses vertex colors; kept for call sites). */
-function updateListHorizonSkyDiskUniforms() {}
+function isSkyDiskShiftPreviewActive() {
+    return typeof window.getCircadianShortEventsShiftPreview === 'function' &&
+        !!window.getCircadianShortEventsShiftPreview();
+}
+
+function applySkyDiskOpacityForShift(mesh) {
+    if (!mesh || !mesh.isMesh || !mesh.material) return;
+    const ud = mesh.userData || {};
+    if (!ud.listHorizonSkyFill && ud.type !== 'EarthDaylightSky') return;
+    if (typeof ud.skyDiskBaseOpacity !== 'number') {
+        ud.skyDiskBaseOpacity = mesh.material.opacity;
+    }
+    const target = isSkyDiskShiftPreviewActive()
+        ? LIST_HORIZON_SKY_DISK_SHIFT_OPACITY
+        : ud.skyDiskBaseOpacity;
+    if (Math.abs(mesh.material.opacity - target) > 1e-4) {
+        mesh.material.opacity = target;
+    }
+}
+
+/** Sky annulus + Earth daylight disk opacity while Shift peeks fore/aft events. */
+function updateListHorizonSkyDiskUniforms() {
+    const roots = [listHorizonEarthRingMesh, earthDaylightSkyMesh];
+    for (let i = 0; i < roots.length; i++) {
+        const root = roots[i];
+        if (!root || !root.traverse) continue;
+        root.traverse((child) => applySkyDiskOpacityForShift(child));
+    }
+}
 
 /** Radial band color t∈[0,1]: inner zenith → outer cyan hoop. */
 function skyAnnulusColorFromT(t, isLight, edgeColorHex) {
@@ -2356,6 +2388,148 @@ function skyDiurnalWeightsAtHour(h) {
     return { day, dawn, dusk, twi, night };
 }
 
+function normalizeSkyObserverLon(lonDeg) {
+    let lon = lonDeg;
+    while (lon > 180) lon -= 360;
+    while (lon < -180) lon += 360;
+    return lon;
+}
+
+/** Observer lat/lon + selected instant for sky canvas (EarthGlobe chain: URL → geo → events → timezone). */
+function getSkyCanvasObserverContext(zoomLevel) {
+    const zl = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+    let selectedDate = new Date();
+    if (typeof getSelectedDateTime === 'function') {
+        const sel = getSelectedDateTime();
+        if (sel instanceof Date && !isNaN(sel.getTime())) selectedDate = sel;
+    }
+    let lat = 0;
+    let lon = null;
+    if (typeof EarthGlobe !== 'undefined' && typeof EarthGlobe.getObserver === 'function') {
+        const obs = EarthGlobe.getObserver(selectedDate, zl);
+        if (obs) {
+            if (obs.lat != null && !isNaN(obs.lat)) lat = obs.lat;
+            if (obs.lon != null && !isNaN(obs.lon)) lon = normalizeSkyObserverLon(obs.lon);
+        }
+    }
+    let observerHour = 12;
+    if (lon != null && typeof EarthGlobe !== 'undefined' && typeof EarthGlobe.getSceneHourDecimal === 'function') {
+        observerHour = EarthGlobe.getSceneHourDecimal(selectedDate, lon);
+    } else {
+        observerHour =
+            selectedDate.getHours() +
+            selectedDate.getMinutes() / 60 +
+            selectedDate.getSeconds() / 3600;
+    }
+    return { lat, lon, selectedDate, observerHour };
+}
+
+function buildEarthDaylightSkyColorKey(ctx) {
+    const dayKey = ctx.selectedDate.toISOString().slice(0, 10);
+    const latQ = Math.round(ctx.lat * 4) / 4;
+    const lonQ = ctx.lon != null ? Math.round(ctx.lon * 4) / 4 : 'na';
+    const hourQ = Math.round(ctx.observerHour * 12) / 12;
+    return `${dayKey}:${latQ}:${lonQ}:${hourQ}:${isLightMode ? 1 : 0}`;
+}
+
+function instantAtObserverLocalHour(selectedDate, lonDeg, hourDecimal) {
+    const ref = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date();
+    const h = ((hourDecimal % 24) + 24) % 24;
+    const utcH = h - normalizeSkyObserverLon(lonDeg) / 15;
+    const dayStart = Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate());
+    return new Date(dayStart + utcH * 3600000);
+}
+
+function solarAltitudeDegAtObserver(lat, lon, selectedDate, hourDecimal) {
+    if (
+        lon == null ||
+        isNaN(lon) ||
+        typeof Astronomy === 'undefined' ||
+        !Astronomy.Observer ||
+        !Astronomy.Equator ||
+        !Astronomy.Horizon ||
+        !Astronomy.MakeTime ||
+        !Astronomy.Body
+    ) {
+        return null;
+    }
+    try {
+        const instant = instantAtObserverLocalHour(selectedDate, lon, hourDecimal);
+        const obs = new Astronomy.Observer(lat, lon, 0);
+        const t = Astronomy.MakeTime(instant);
+        const eq = Astronomy.Equator(Astronomy.Body.Sun, t, obs, true, true);
+        return Astronomy.Horizon(t, obs, eq.ra, eq.dec, 'normal').altitude;
+    } catch (e) {
+        return null;
+    }
+}
+
+function getObserverSolarAltitudeSeries(ctx) {
+    if (!ctx || ctx.lon == null) return null;
+    const key =
+        ctx.selectedDate.toISOString().slice(0, 10) +
+        ':' +
+        ctx.lat.toFixed(2) +
+        ':' +
+        ctx.lon.toFixed(2);
+    if (earthDaylightSkyAltitudeCache.key === key && earthDaylightSkyAltitudeCache.alts) {
+        return earthDaylightSkyAltitudeCache.alts;
+    }
+    const alts = new Array(24);
+    for (let h = 0; h < 24; h++) {
+        alts[h] = solarAltitudeDegAtObserver(ctx.lat, ctx.lon, ctx.selectedDate, h + 0.5);
+    }
+    earthDaylightSkyAltitudeCache = { key, alts };
+    return alts;
+}
+
+function interpolateObserverSolarAltitude(alts, hour) {
+    if (!alts) return null;
+    const h = ((hour % 24) + 24) % 24;
+    const i = Math.floor(h) % 24;
+    const f = h - Math.floor(h);
+    const a0 = alts[i];
+    const a1 = alts[(i + 1) % 24];
+    if (a0 == null || a1 == null || isNaN(a0) || isNaN(a1)) return null;
+    return a0 + f * (a1 - a0);
+}
+
+/** Diurnal palette from true solar altitude at the observer (latitude + season on selected day). */
+function skyDiurnalWeightsFromSolarAltitude(altDeg, hourDecimal) {
+    if (altDeg == null || isNaN(altDeg)) return skyDiurnalWeightsAtHour(hourDecimal);
+    const day = skySmoothstep(-0.5, 6, altDeg);
+    const golden = skySmoothstep(-2, 0.5, altDeg) * (1 - skySmoothstep(4, 6.5, altDeg));
+    const dawn = hourDecimal < 12 ? golden : 0;
+    const dusk = hourDecimal >= 12 ? golden : 0;
+    const twi = skySmoothstep(-8.5, -0.5, altDeg) * (1 - skySmoothstep(-0.5, 2, altDeg));
+    let night = 1 - Math.min(1, day + dawn + dusk + twi);
+    if (night < 0) night = 0;
+    return { day, dawn, dusk, twi, night };
+}
+
+function skyDiurnalWeightsForObserverDiskHour(diskHour, observerCtx, altitudeSeries) {
+    if (!observerCtx || observerCtx.lon == null) return skyDiurnalWeightsAtHour(diskHour);
+    const alt = interpolateObserverSolarAltitude(altitudeSeries, diskHour);
+    return skyDiurnalWeightsFromSolarAltitude(alt, diskHour);
+}
+
+function skySelectedHourHighlightMul(diskHour, observerHour) {
+    if (observerHour == null || isNaN(observerHour)) return 1;
+    let d = Math.abs(diskHour - observerHour);
+    if (d > 12) d = 24 - d;
+    return 1 + 0.34 * Math.exp(-(d * d) / 1.44);
+}
+
+function applySelectedHourSkyHighlight(col, diskHour, observerCtx, THREE, isLight) {
+    if (!col || !observerCtx || observerCtx.lon == null || !THREE || !THREE.Color) return col;
+    const mul = skySelectedHourHighlightMul(diskHour, observerCtx.observerHour);
+    if (mul <= 1.002) return col;
+    const hi = new THREE.Color(isLight ? 0xd4ecff : 0x6aaeff);
+    const out = col.clone ? col.clone() : new THREE.Color(col.r, col.g, col.b);
+    out.lerp(hi, Math.min(1, ((mul - 1) / 0.34) * 0.42));
+    return out;
+}
+
 function skyGoldenColorFromT(t, isLight, isDawn) {
     const T = getThreeNamespace();
     if (!T) return { r: 0.55, g: 0.38, b: 0.28 };
@@ -2440,7 +2614,7 @@ function skyColorFromDiurnalWeights(weights, radialT, isLight, edgeColorHex) {
     return c;
 }
 
-function applyEarthDaylightSkyVertexColors(geom, ri, ro, sunwardAzimuth, isLight, edgeColorHex) {
+function applyEarthDaylightSkyVertexColors(geom, ri, ro, sunwardAzimuth, isLight, edgeColorHex, observerCtx, altitudeSeries) {
     const T = getThreeNamespace();
     if (!T || !geom || !geom.attributes || !geom.attributes.position) return;
     const pos = geom.attributes.position;
@@ -2452,9 +2626,10 @@ function applyEarthDaylightSkyVertexColors(geom, ri, ro, sunwardAzimuth, isLight
         const r = Math.sqrt(x * x + z * z);
         const phi = Math.atan2(z, x);
         const hour = orbitalClockHourAtPhiSunward(phi, sunwardAzimuth);
-        const weights = skyDiurnalWeightsAtHour(hour);
+        const weights = skyDiurnalWeightsForObserverDiskHour(hour, observerCtx, altitudeSeries);
         const radialT = Math.max(0, Math.min(1, (r - ri) / span));
-        const col = skyColorFromDiurnalWeights(weights, radialT, isLight, edgeColorHex);
+        let col = skyColorFromDiurnalWeights(weights, radialT, isLight, edgeColorHex);
+        col = applySelectedHourSkyHighlight(col, hour, observerCtx, T, isLight);
         colors[i * 3] = col.r;
         colors[i * 3 + 1] = col.g;
         colors[i * 3 + 2] = col.b;
@@ -2465,6 +2640,8 @@ function applyEarthDaylightSkyVertexColors(geom, ri, ro, sunwardAzimuth, isLight
 function disposeEarthDaylightSky() {
     if (!earthDaylightSkyMesh) {
         earthDaylightSkyRadiiKey = null;
+        earthDaylightSkyColorKey = null;
+        earthDaylightSkyAltitudeCache = { key: '', alts: null };
         return;
     }
     if (earthDaylightSkyMesh.parent) earthDaylightSkyMesh.parent.remove(earthDaylightSkyMesh);
@@ -2477,6 +2654,8 @@ function disposeEarthDaylightSky() {
     });
     earthDaylightSkyMesh = null;
     earthDaylightSkyRadiiKey = null;
+    earthDaylightSkyColorKey = null;
+    earthDaylightSkyAltitudeCache = { key: '', alts: null };
 }
 
 function earthDaylightSkyGradientT(r, y, ri, ro, halfH) {
@@ -2485,7 +2664,7 @@ function earthDaylightSkyGradientT(r, y, ri, ro, halfH) {
     return Math.max(radialT * 0.35, verticalT * 0.92);
 }
 
-function applyEarthDaylightSkySkirtVertexColors(geom, ri, ro, halfH, sunwardAzimuth, isLight, edgeColorHex) {
+function applyEarthDaylightSkySkirtVertexColors(geom, ri, ro, halfH, sunwardAzimuth, isLight, edgeColorHex, observerCtx, altitudeSeries) {
     const T = getThreeNamespace();
     if (!T || !geom || !geom.attributes || !geom.attributes.position) return;
     const pos = geom.attributes.position;
@@ -2497,9 +2676,10 @@ function applyEarthDaylightSkySkirtVertexColors(geom, ri, ro, halfH, sunwardAzim
         const r = Math.sqrt(x * x + z * z);
         const phi = Math.atan2(z, x);
         const hour = orbitalClockHourAtPhiSunward(phi, sunwardAzimuth);
-        const weights = skyDiurnalWeightsAtHour(hour);
+        const weights = skyDiurnalWeightsForObserverDiskHour(hour, observerCtx, altitudeSeries);
         const t = earthDaylightSkyGradientT(r, y, ri, ro, halfH);
-        const col = skyColorFromDiurnalWeights(weights, t, isLight, edgeColorHex);
+        let col = skyColorFromDiurnalWeights(weights, t, isLight, edgeColorHex);
+        col = applySelectedHourSkyHighlight(col, hour, observerCtx, T, isLight);
         colors[i * 3] = col.r;
         colors[i * 3 + 1] = col.g;
         colors[i * 3 + 2] = col.b;
@@ -2633,9 +2813,11 @@ function syncEarthDaylightSkyTransform(earthGroup) {
     earthDaylightSkyMesh.rotation.y = Math.PI / 2 - noonAz;
 }
 
-function refreshEarthDaylightSkyColors(earthGroup, ri, ro, sunwardAzimuth) {
+function refreshEarthDaylightSkyColors(earthGroup, ri, ro, sunwardAzimuth, observerCtx) {
     void earthGroup;
     if (!earthDaylightSkyMesh || !earthDaylightSkyMesh.traverse) return;
+    const ctx = observerCtx || getSkyCanvasObserverContext(currentZoom);
+    const altitudeSeries = getObserverSolarAltitudeSeries(ctx);
     const edgeHex = getListHorizonRingColorHex();
     earthDaylightSkyMesh.traverse((child) => {
         if (!child.isMesh || !child.geometry) return;
@@ -2647,7 +2829,9 @@ function refreshEarthDaylightSkyColors(earthGroup, ri, ro, sunwardAzimuth) {
                 ro,
                 sunwardAzimuth,
                 isLightMode,
-                edgeHex
+                edgeHex,
+                ctx,
+                altitudeSeries
             );
         } else {
             applyEarthDaylightSkyVertexColors(
@@ -2656,7 +2840,9 @@ function refreshEarthDaylightSkyColors(earthGroup, ri, ro, sunwardAzimuth) {
                 ro,
                 sunwardAzimuth,
                 isLightMode,
-                edgeHex
+                edgeHex,
+                ctx,
+                altitudeSeries
             );
         }
         if (child.material) child.material.needsUpdate = true;
@@ -2690,16 +2876,21 @@ function updateEarthDaylightSky(earthGroup, zoomLevel) {
     const radiiKey = `${ri.toFixed(3)}:${ro.toFixed(3)}`;
     const sunwardAzimuth = EARTH_DAYLIGHT_SKY_LOCAL_SUN_AZIMUTH;
     const edgeHex = getListHorizonRingColorHex();
+    const observerCtx = getSkyCanvasObserverContext(zoomLevel);
+    const colorKey = buildEarthDaylightSkyColorKey(observerCtx);
 
     if (!earthDaylightSkyMesh || earthDaylightSkyRadiiKey !== radiiKey) {
         disposeEarthDaylightSky();
         earthDaylightSkyMesh = buildEarthDaylightSkyGroup(T, ri, ro, sunwardAzimuth, isLightMode, edgeHex);
         earthDaylightSkyRadiiKey = radiiKey;
+        earthDaylightSkyColorKey = colorKey;
         if (earthDaylightSkyMesh && sceneContentGroup) {
             sceneContentGroup.add(earthDaylightSkyMesh);
         }
-    } else {
-        refreshEarthDaylightSkyColors(earthGroup, ri, ro, sunwardAzimuth);
+        refreshEarthDaylightSkyColors(earthGroup, ri, ro, sunwardAzimuth, observerCtx);
+    } else if (earthDaylightSkyColorKey !== colorKey) {
+        earthDaylightSkyColorKey = colorKey;
+        refreshEarthDaylightSkyColors(earthGroup, ri, ro, sunwardAzimuth, observerCtx);
     }
     syncEarthDaylightSkyTransform(earthGroup);
     if (
@@ -2735,7 +2926,7 @@ function createListHorizonSkyDiskMaterial(THREE) {
     return new THREE.MeshBasicMaterial({
         vertexColors: true,
         transparent: true,
-        opacity: 0.66,
+        opacity: LIST_HORIZON_SKY_DISK_OPACITY,
         side: THREE.DoubleSide,
         depthTest: true,
         depthWrite: false,
