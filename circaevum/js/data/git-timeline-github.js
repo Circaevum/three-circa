@@ -195,12 +195,18 @@
             if (acc.length >= MAX_COMMITS) return;
             var ts = parseCommitDate(c);
             if (!ts || !c.sha) return;
-            var subject = (c.commit && c.commit.message ? c.commit.message : '').split('\n')[0];
+            var fullMessage = (c.commit && c.commit.message) ? c.commit.message : '';
+            var subject = fullMessage.split('\n')[0];
+            var firstParent = (c.parents && c.parents[0] && c.parents[0].sha) ? c.parents[0].sha : '';
             acc.push({
               hash: c.sha.slice(0, 12),
               hashFull: c.sha,
+              parentHash: firstParent ? firstParent.slice(0, 12) : '',
               timestamp: ts,
               subject: subject,
+              body: fullMessage,                          // full message → DCO `Signed-off-by:` sniff
+              verification: c.commit && c.commit.verification ? c.commit.verification : null, // GitHub Verified badge → signature state
+              author: c.commit && c.commit.author ? c.commit.author.name : (c.author && c.author.login) || '',
               url: commitUrl(owner, repo, c.sha)
             });
           });

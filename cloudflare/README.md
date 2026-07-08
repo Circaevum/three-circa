@@ -1,6 +1,8 @@
-# Cloudflare agent discovery — circaevum.com
+# Cloudflare edge runbook — circaevum.com
 
-GitHub Pages serves static files. **Cloudflare** (proxy in front of circaevum.com) must set HTTP headers, markdown negotiation, and **DNS-AID** records the repo cannot.
+**Production today:** GitHub Pages only (DNS → GitHub; no Cloudflare proxy). This folder is a **runbook for when you add an edge layer** — not something already live.
+
+GitHub Pages serves static files but **cannot** set custom response headers. To pass isitagentready **Link / markdown / DNS-AID** checks and HTTP security audits (HSTS, CSP, etc.), add **Cloudflare** (proxy or Pages), **Netlify**, or similar — see **[`docs/AGENT-READINESS.md`](../docs/AGENT-READINESS.md)** for all options and current gaps.
 
 | Task | Doc | Scan check |
 |------|-----|------------|

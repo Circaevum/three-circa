@@ -40,12 +40,59 @@
     return BRANCH_COLORS[(Math.abs(h) + idx) % BRANCH_COLORS.length];
   }
 
+  /**
+   * Encryption / attestation level for a commit (the Cryptographic layer's color grammar).
+   * Two independent signing layers ride the hash chain:
+   *   - DCO sign-off  : a `Signed-off-by:` line inside the hashed message (attestation, not crypto)
+   *   - GPG/SSH sig   : real key-based signature → GitHub "Verified" badge
+   * Maps to git's `%G?` codes where available: G good, U good+unknown-trust, X good+expired,
+   * Y good+expired-key, R good+revoked-key, B bad, E can't-check, N none.
+   * Returns one of: 'verified' | 'unverified' | 'dco' | 'unsigned'.
+   */
+  var SIG_STYLES = {
+    verified:   { color: '#3fb950', glyph: '◉', label: 'Signed + Verified' },   // ◉ solid seal
+    unverified: { color: '#f0883e', glyph: '◎', label: 'Signed, Unverified' },  // ◎ broken seal
+    dco:        { color: '#58a6ff', glyph: '◌', label: 'DCO sign-off only' },    // ◌ dotted
+    unsigned:   { color: '#8b949e', glyph: '○', label: 'Unsigned' }             // ○ hollow
+  };
+
+  function gitSigState(c) {
+    if (!c || typeof c !== 'object') return 'unsigned';
+    // 1) explicit git `%G?` single-char code, if the API forwarded it
+    var code = (c.gpgStatus || c.sigStatus || c.G || c.signatureCode || '').toString().trim().toUpperCase();
+    if (code) {
+      if (code === 'G') return 'verified';
+      if (code === 'U' || code === 'X' || code === 'Y' || code === 'R' || code === 'B' || code === 'E') return 'unverified';
+      if (code === 'N') return hasDco(c) ? 'dco' : 'unsigned';
+    }
+    // 2) GitHub/GitLab verification object: { verified: bool, reason }
+    var v = c.verification || c.commitVerification;
+    if (v && typeof v === 'object') {
+      if (v.verified === true) return 'verified';
+      if (v.verified === false && (v.signature || v.reason && v.reason !== 'unsigned')) return 'unverified';
+    }
+    if (c.verified === true) return 'verified';
+    if (c.signed === true || c.signature) return c.verified === true ? 'verified' : 'unverified';
+    // 3) no cryptographic signature → DCO attestation, or nothing
+    return hasDco(c) ? 'dco' : 'unsigned';
+  }
+
+  function hasDco(c) {
+    var body = ((c.body || '') + '\n' + (c.message || '') + '\n' + (c.subject || ''));
+    return /^\s*Signed-off-by:\s*.+<.+@.+>/im.test(body);
+  }
+
   function buildLayerStyles(extra) {
     var meshStyle = { plotType: 'auto' };
     return Object.assign(
       {
         'Git Commit': Object.assign({ color: '#8b949e' }, meshStyle),
-        'Git Branch': Object.assign({ color: '#58a6ff' }, meshStyle)
+        'Git Branch': Object.assign({ color: '#58a6ff' }, meshStyle),
+        // Per-signature-state styles so each encryption level is its own legend row / toggle
+        'Signed + Verified': Object.assign({ color: SIG_STYLES.verified.color }, meshStyle),
+        'Signed, Unverified': Object.assign({ color: SIG_STYLES.unverified.color }, meshStyle),
+        'DCO sign-off only': Object.assign({ color: SIG_STYLES.dco.color }, meshStyle),
+        'Unsigned': Object.assign({ color: SIG_STYLES.unsigned.color }, meshStyle)
       },
       extra || {}
     );
@@ -57,17 +104,23 @@
       var startMs = (c.timestamp || 0) * 1000;
       if (!startMs) return null;
       var hash = c.hashFull || c.hash || '';
+      var state = gitSigState(c);
+      var style = SIG_STYLES[state] || SIG_STYLES.unsigned;
       return {
         uid: 'git-commit-' + (hash || startMs),
         dtstart: isoDateTime(startMs),
         dtend: isoDateTime(startMs + COMMIT_STE_MS),
-        summary: (c.subject || hash || 'commit').slice(0, 96),
+        summary: style.glyph + ' ' + (c.subject || hash || 'commit').slice(0, 94),
         description:
           (hash ? hash + '\n' : '') +
+          'Signature: ' + style.label + '\n' +
+          (c.parentHash || c.parent ? 'Parent: ' + (c.parentHash || c.parent) + '\n' : '') +
           (c.subject || '') +
           (c.url ? '\n' + c.url : ''),
-        categories: ['Git Commit'],
-        color: '#8b949e'
+        // categories[0] keeps it in the Git layer; [1] = encryption level (toggle + legend)
+        categories: ['Git Commit', style.label],
+        sigState: state,
+        color: style.color
       };
     }).filter(Boolean);
   }
@@ -364,6 +417,8 @@
   }
 
   global.gitTimelineLayerId = LAYER_ID;
+  global.GIT_SIGNATURE_STYLES = SIG_STYLES;        // legend: state -> { color, glyph, label }
+  global.getGitSignatureState = gitSigState;       // commit -> 'verified'|'unverified'|'dco'|'unsigned'
   global.GIT_TIMELINE_REPO_PRESETS = GIT_TIMELINE_REPO_PRESETS;
   global.populateGitTimelinePresetSelect = populateGitTimelinePresetSelect;
   global.syncGitTimelinePresetFromInput = syncGitTimelinePresetFromInput;

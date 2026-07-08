@@ -67,6 +67,8 @@
   function buildEditPayload(ve, layerId, start, end) {
     var name = ve.summary || ve.title || ve.uid || ve.id || 'Event';
     var endUse = end && end > start ? end : (start ? new Date(start.getTime() + 3600000) : null);
+    var cat = ve.category;
+    if (cat == null && Array.isArray(ve.categories) && ve.categories[0]) cat = ve.categories[0];
     return {
       uid: ve.uid || ve.id,
       key: ve.key,
@@ -75,7 +77,13 @@
       location: ve.location || null,
       url: ve.url || null,
       color: ve.color || ve.colorId || null,
-      layerId: layerId || null,
+      category: cat != null ? String(cat) : null,
+      layerId: layerId || ve.layerId || null,
+      calendarId: ve.calendarId || null,
+      googleAccountEmail: ve.googleAccountEmail || null,
+      googleCalendarId: ve.googleCalendarId || ve.calendarId || null,
+      circaevumSource: ve.circaevumSource || null,
+      circaevumSourceDetail: ve.circaevumSourceDetail || null,
       dtstart: ve.dtstart || (start ? { dateTime: start.toISOString() } : null),
       dtend: ve.dtend || (endUse ? { dateTime: endUse.toISOString() } : null),
       isTrip: ve.isTrip === true,
@@ -211,4 +219,5 @@
   window.isMobileEventSheetViewport = isMobileEventSheetViewport;
   window.showMobileEventDetailSheet = showMobileEventDetailSheet;
   window.closeMobileEventDetailSheet = closeMobileEventDetailSheet;
+  window.buildCircaevumEditPayload = buildEditPayload;
 })();

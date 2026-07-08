@@ -5,7 +5,7 @@ Return `text/markdown` when clients send `Accept: text/markdown` on HTML URLs.
 Skill: https://isitagentready.com/.well-known/agent-skills/markdown-negotiation/SKILL.md  
 Cloudflare: [Markdown for Agents](https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/)
 
-GitHub Pages **cannot** negotiate content types. circaevum.com is proxied through Cloudflare — enable negotiation there.
+GitHub Pages **cannot** negotiate content types. Enable negotiation at the edge (Cloudflare product, Transform Rules, or Netlify Edge Function) when you add a header-capable host or proxy — **not configured on circaevum.com today**.
 
 ## Option A — Cloudflare product (recommended)
 

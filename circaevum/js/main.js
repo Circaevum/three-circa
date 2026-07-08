@@ -201,9 +201,25 @@ let earthDaylightSkyAltitudeCache = { key: '', alts: null };
 /** Local +Z in the sky group points sunward after {@link syncEarthDaylightSkyTransform}. */
 const EARTH_DAYLIGHT_SKY_LOCAL_SUN_AZIMUTH = Math.PI / 2;
 const EARTH_DAYLIGHT_SKY_RENDER_ORDER = 7;
-const LIST_HORIZON_SKY_DISK_OPACITY = 0.66;
+const LIST_HORIZON_SKY_DISK_OPACITY = 0.88;
 /** Hold Shift: fade sky canvas so fore/aft STEs and timeseries arcs stay readable. */
 const LIST_HORIZON_SKY_DISK_SHIFT_OPACITY = 0.08;
+/**
+ * Radial samples across context-arc sky fill (inner midnight → outer end-of-day).
+ * Must be >1 so noon/dawn/dusk exist as verts — 2-ring lerp of night→night wipes the day.
+ * Matches {@link buildDayFrameLteSkyMesh} diurnal resolution.
+ */
+const CONTEXT_ARC_SKY_RADIAL_SEGMENTS = 24;
+/** Annual-helix day-frame LTE: selected-day sky strip (diurnal hues like day canvas). */
+const DAY_FRAME_LTE_SKY_RENDER_ORDER = -12;
+const DAY_FRAME_LTE_SKY_OPACITY = 0.64;
+let dayFrameLteSkyMesh = null;
+let dayFrameLteSkyGeomKey = null;
+let dayFrameLteSkyColorKey = null;
+/** Per-calendar-day solar altitude samples for context-arc sky coloring. */
+let contextArcSolarAltitudeCache = new Map();
+const CONTEXT_ARC_SOLAR_CACHE_MAX = 400;
+let listHorizonSkyColorKey = null;
 /** List-context circle: sky-filled disks to Sun axis + rim wall; Day/Clock outer radius to Earth orbit. */
 let listHorizonEarthRingMesh = null;
 let listHorizonEarthRingCurrentRadius = null;
@@ -800,6 +816,11 @@ function keepMidFocusOverrideAtZoom(zl) {
     return false;
 }
 
+/** Week/day zoom: camera focus cycles Earth ↔ mid only (no Sun). */
+function focusSunAllowedAtZoom(zl) {
+    return zl !== 7 && zl !== 8;
+}
+
 if (typeof window !== 'undefined') {
     window.setNavigateLongTermEventFocus = function (enabled) {
         focusMidFromLongTermEventClick = !!enabled;
@@ -1261,6 +1282,55 @@ function getPlanetXZAtSelectedDate(planetData, selectedDate, currentDateHeight, 
     };
 }
 
+/**
+ * Orbit guide ring verts in XZ at fixed Y.
+ * Ephemeris ON → sample one orbital period (ellipse, Sun at focus) so ring matches planet mesh.
+ * Ephemeris OFF → circular ring at PLANET_DATA.distance (Sun at center).
+ */
+function fillPlanetOrbitRingPositions(arr, planetData, selectedDate, currentDateHeight, selectedDateHeight, yHeight, segments) {
+    const n = Math.max(8, segments | 0);
+    const y = isFinite(yHeight) ? yHeight : 0;
+    const periodYears =
+        planetData && typeof planetData.orbitalPeriod === 'number' && planetData.orbitalPeriod > 0
+            ? planetData.orbitalPeriod
+            : 1;
+    const periodMs = periodYears * 365.25 * 24 * 60 * 60 * 1000;
+    const baseDate = normalizeSelectedDateForEphemeris(selectedDate, currentDateHeight, selectedDateHeight);
+    const baseMs =
+        baseDate instanceof Date && !isNaN(baseDate.getTime()) ? baseDate.getTime() : Date.now();
+    const useEphemeris =
+        typeof window !== 'undefined' &&
+        window.CircaevumAstro &&
+        typeof window.CircaevumAstro.isEnabled === 'function' &&
+        window.CircaevumAstro.isEnabled() &&
+        typeof window.CircaevumAstro.getPlanetScenePositionAtDate === 'function';
+
+    for (let j = 0; j <= n; j++) {
+        const t = j / n;
+        let x;
+        let z;
+        if (useEphemeris) {
+            const sampleDate = new Date(baseMs + t * periodMs);
+            const p = window.CircaevumAstro.getPlanetScenePositionAtDate(planetData.name, sampleDate);
+            if (p && !isNaN(p.x) && !isNaN(p.z)) {
+                x = p.x;
+                z = p.z;
+            } else {
+                const angle = t * Math.PI * 2;
+                x = Math.cos(angle) * planetData.distance;
+                z = Math.sin(angle) * planetData.distance;
+            }
+        } else {
+            const angle = t * Math.PI * 2;
+            x = Math.cos(angle) * planetData.distance;
+            z = Math.sin(angle) * planetData.distance;
+        }
+        arr[j * 3] = x;
+        arr[j * 3 + 1] = y;
+        arr[j * 3 + 2] = z;
+    }
+}
+
 function sceneHourFractionForEarthHand(safeDate, zoomLevel) {
     const zl = typeof zoomLevel !== 'undefined' ? zoomLevel : currentZoom;
     if (typeof EarthGlobe !== 'undefined' && EarthGlobe.getSceneHourDecimal && EarthGlobe.getObserver) {
@@ -1679,8 +1749,10 @@ function listHorizonSegmentCountForArc(bounds, baseN, arc) {
     const dayMs = EVENT_LIST_MS_PER_DAY;
     const spanDays = bounds && bounds.t1 > bounds.t0 ? (bounds.t1 - bounds.t0) / dayMs : 7;
     const b = baseN != null ? baseN : 52;
+    // Full-year hoop: denser along-arc samples so polar day/night season bands read clearly.
     if (arc && arc.fullCircle) {
-        return Math.max(24, Math.min(96, Math.round(b)));
+        const yearish = spanDays >= 300;
+        return Math.max(yearish ? 72 : 24, Math.min(yearish ? 128 : 96, Math.round(yearish ? Math.max(b, 96) : b)));
     }
     const frac = Math.max(0.06, Math.min(1, spanDays / 365));
     return Math.max(12, Math.min(96, Math.round(b * frac * 2.8)));
@@ -1766,6 +1838,7 @@ function resetListHorizonEarthRingAnimationState() {
     listHorizonEarthRingTargetZoom = null;
     listHorizonEarthRingArcKey = null;
     listHorizonHelixTimeKey = null;
+    listHorizonSkyColorKey = null;
 }
 
 function listContextDiscHelixTimeKey(zoomLevel) {
@@ -1777,7 +1850,17 @@ function listContextDiscHelixTimeKey(zoomLevel) {
     try {
         curH = computeSceneDateHeights(zoomLevel).currentDateHeight.toFixed(4);
     } catch (eCur) { /* keep */ }
-    return bounds.t0 + ':' + bounds.t1 + ':' + bounds.ref.getTime() + ':cur' + curH;
+    return (
+        bounds.t0 +
+        ':' +
+        bounds.t1 +
+        ':' +
+        bounds.ref.getTime() +
+        ':cur' +
+        curH +
+        ':sr' +
+        CONTEXT_ARC_SKY_RADIAL_SEGMENTS
+    );
 }
 
 function listContextDiscArcKey(zoomLevel) {
@@ -1961,6 +2044,7 @@ function rebuildListHorizonEarthRingMesh(outerRadius, innerRadius, yCenter, eart
             ? focusPoint.y
             : yCenter;
     updateListHorizonContextArcFlatten(focusY, getActiveTimelineFlattenAmount());
+    listHorizonSkyColorKey = buildEarthDaylightSkyColorKey(getSkyCanvasObserverContext(z));
 }
 
 /** Legacy accent for the hoop wall (annuli use sky shader). */
@@ -2196,7 +2280,7 @@ function isSkyDiskShiftPreviewActive() {
 function applySkyDiskOpacityForShift(mesh) {
     if (!mesh || !mesh.isMesh || !mesh.material) return;
     const ud = mesh.userData || {};
-    if (!ud.listHorizonSkyFill && ud.type !== 'EarthDaylightSky') return;
+    if (!ud.listHorizonSkyFill && ud.type !== 'EarthDaylightSky' && ud.type !== 'DayFrameLteSky') return;
     if (typeof ud.skyDiskBaseOpacity !== 'number') {
         ud.skyDiskBaseOpacity = mesh.material.opacity;
     }
@@ -2210,12 +2294,149 @@ function applySkyDiskOpacityForShift(mesh) {
 
 /** Sky annulus + Earth daylight disk opacity while Shift peeks fore/aft events. */
 function updateListHorizonSkyDiskUniforms() {
-    const roots = [listHorizonEarthRingMesh, earthDaylightSkyMesh];
+    const roots = [listHorizonEarthRingMesh, earthDaylightSkyMesh, dayFrameLteSkyMesh];
     for (let i = 0; i < roots.length; i++) {
         const root = roots[i];
         if (!root || !root.traverse) continue;
         root.traverse((child) => applySkyDiskOpacityForShift(child));
     }
+}
+
+function getSolarAltitudeSeriesForCalendarDate(lat, lon, date) {
+    if (lon == null || isNaN(lon)) return null;
+    const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
+    const dayKey = d.toISOString().slice(0, 10);
+    const n = 48; // denser than hourly — sunrise/sunset drift smoothly along year arc
+    const ck = dayKey + ':' + lat.toFixed(2) + ':' + lon.toFixed(2) + ':n' + n;
+    if (contextArcSolarAltitudeCache.has(ck)) return contextArcSolarAltitudeCache.get(ck);
+    const alts = new Array(n);
+    const step = 24 / n;
+    for (let i = 0; i < n; i++) {
+        alts[i] = solarAltitudeDegAtObserver(lat, lon, d, (i + 0.5) * step);
+    }
+    if (contextArcSolarAltitudeCache.size >= CONTEXT_ARC_SOLAR_CACHE_MAX) {
+        contextArcSolarAltitudeCache.clear();
+    }
+    contextArcSolarAltitudeCache.set(ck, alts);
+    return alts;
+}
+
+function contextArcDiskHourFromRadialT(radialT) {
+    const t = Math.max(0, Math.min(1, radialT));
+    // Sample inside the band so edge walls do not clip the first/last hour colors.
+    // Inner ~= 00:30, outer ~= 23:30 (still full-day sweep, but not on hidden edges).
+    return 0.5 + t * 23;
+}
+
+function skyColorForContextArcAt(observerCtx, ms, radialT, isLight, edgeColorHex) {
+    const diskHour = contextArcDiskHourFromRadialT(radialT);
+    let weights;
+    if (!observerCtx || observerCtx.lon == null) {
+        weights = skyDiurnalWeightsAtHour(diskHour);
+    } else {
+        const alts = getSolarAltitudeSeriesForCalendarDate(
+            observerCtx.lat,
+            observerCtx.lon,
+            new Date(ms)
+        );
+        weights = skyDiurnalWeightsForContextArcHour(alts, diskHour);
+    }
+    let col = skyColorFromDiurnalWeights(weights, radialT, isLight, edgeColorHex);
+    const T = getThreeNamespace();
+    if (T) col = applySelectedHourSkyHighlight(col, diskHour, observerCtx, T, isLight);
+    // Keep night readable without turning whole arc into legacy blue gradient.
+    if (col && col.lerp) {
+        const legacy = skyAnnulusColorFromT(radialT, isLight, edgeColorHex);
+        const lum = 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b;
+        const floorMix = Math.max(0, Math.min(0.16, (0.16 - lum) * 1.6));
+        if (floorMix > 1e-4) col.lerp(legacy, floorMix);
+    }
+    return col;
+}
+
+function resolveContextArcVertexMsAndRadial(i, pos, ri, ro, opts) {
+    const bounds = opts && opts.bounds;
+    const arc = opts && opts.arc;
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const r = Math.sqrt(x * x + z * z);
+    const span = Math.max(ro - ri, 1e-4);
+    let radialT = Math.max(0, Math.min(1, (r - ri) / span));
+    let ms = bounds && bounds.t0 != null ? bounds.t0 : Date.now();
+
+    if (opts && opts.layout === 'helixStrip' && opts.helixInnerVertexCount > 0) {
+        const rowLen = opts.helixInnerVertexCount;
+        const timeIdx = i % rowLen;
+        const ring = Math.floor(i / rowLen);
+        const nRadial = opts.helixRadialSegments > 0
+            ? opts.helixRadialSegments
+            : Math.max(1, Math.floor((opts.helixRingCount || 2) - 1));
+        radialT = ring / nRadial;
+        const nHelix = Math.max(1, rowLen - 1);
+        if (bounds && bounds.t1 > bounds.t0) {
+            ms = bounds.t0 + (timeIdx / nHelix) * (bounds.t1 - bounds.t0);
+        }
+    } else if (bounds && arc && typeof listHorizonMsAtArcTheta === 'function') {
+        const theta = Math.atan2(z, x);
+        ms = listHorizonMsAtArcTheta(theta, arc, bounds);
+    }
+    return { ms, radialT };
+}
+
+/**
+ * Context-arc sky: along arc = calendar date (polar day/night by season); radial = hour (inner midnight → outer).
+ */
+function applyContextArcSkyVertexColors(geom, ri, ro, zoomLevel, opts) {
+    const T = getThreeNamespace();
+    if (!T || !geom || !geom.attributes || !geom.attributes.position) return;
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+    const refDate = typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : new Date();
+    const bounds = (opts && opts.bounds) || getListContextDiscArcTimeBoundsMs(z, refDate);
+    const arc = (opts && opts.arc) || getListContextDiscArcRad(z, refDate);
+    const colorOpts = Object.assign({ bounds, arc }, opts || {});
+    const edgeHex = getListHorizonRingColorHex();
+    const observerCtx = getSkyCanvasObserverContext(z);
+    const pos = geom.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+        const sample = resolveContextArcVertexMsAndRadial(i, pos, ri, ro, colorOpts);
+        const col = skyColorForContextArcAt(observerCtx, sample.ms, sample.radialT, isLightMode, edgeHex);
+        colors[i * 3] = col.r;
+        colors[i * 3 + 1] = col.g;
+        colors[i * 3 + 2] = col.b;
+    }
+    geom.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
+    geom.userData = geom.userData || {};
+    geom.userData.contextArcSkyColorKey = buildEarthDaylightSkyColorKey(observerCtx);
+    if (geom.attributes.color) geom.attributes.color.needsUpdate = true;
+}
+
+function refreshListHorizonContextArcSkyColors(zoomLevel) {
+    if (!listHorizonEarthRingMesh || !listHorizonEarthRingMesh.traverse) return;
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+    const refDate = typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : new Date();
+    const bounds = getListContextDiscArcTimeBoundsMs(z, refDate);
+    const arc = getListContextDiscArcRad(z, refDate);
+    const observerCtx = getSkyCanvasObserverContext(z);
+    const colorKey = buildEarthDaylightSkyColorKey(observerCtx);
+    listHorizonEarthRingMesh.traverse((child) => {
+        const geom = child.geometry;
+        const ud = child.userData || {};
+        if (!geom || !ud.listHorizonSkyFill) return;
+        if (geom.userData.contextArcSkyColorKey === colorKey) return;
+        const ri = geom.userData.contextArcSkyRi != null ? geom.userData.contextArcSkyRi : ud.listInnerRadius;
+        const ro = geom.userData.contextArcSkyRo != null ? geom.userData.contextArcSkyRo : ud.listOuterRadius;
+        if (ri == null || ro == null) return;
+        applyContextArcSkyVertexColors(geom, ri, ro, z, {
+            bounds,
+            arc,
+            layout: geom.userData.contextArcSkyLayout,
+            helixInnerVertexCount: geom.userData.contextArcSkyInnerCount,
+            helixRadialSegments: geom.userData.contextArcSkyRadialSegments,
+            helixRingCount: geom.userData.contextArcSkyRingCount
+        });
+    });
+    listHorizonSkyColorKey = colorKey;
 }
 
 /** Radial band color t∈[0,1]: inner zenith → outer cyan hoop. */
@@ -2224,10 +2445,10 @@ function skyAnnulusColorFromT(t, isLight, edgeColorHex) {
     if (!T) return { r: 0.2, g: 0.5, b: 0.8 };
     const light = !!isLight;
     const u = Math.max(0, Math.min(1, t));
-    const inner = new T.Color(light ? 0x3d6a9a : 0x1a3d6e);
-    const mid = new T.Color(light ? 0x7eb8e8 : 0x2d6a9e);
-    const hi = new T.Color(light ? 0xa8dcff : 0x4a8ec8);
-    const edge = new T.Color(edgeColorHex != null ? edgeColorHex : light ? 0x0891b2 : 0x22d3ee);
+    const inner = new T.Color(light ? 0x5a9ad0 : 0x3a6eb0);
+    const mid = new T.Color(light ? 0x9ed0f8 : 0x5aa8e0);
+    const hi = new T.Color(light ? 0xc8ecff : 0x7ec8f5);
+    const edge = new T.Color(edgeColorHex != null ? edgeColorHex : light ? 0x22b8d8 : 0x4ae0ff);
     const c = inner.clone();
     if (u < 0.55) {
         c.lerp(mid, u / 0.55);
@@ -2240,23 +2461,15 @@ function skyAnnulusColorFromT(t, isLight, edgeColorHex) {
     return c;
 }
 
-function applySkyAnnulusVertexColors(geom, ri, ro, isLight, edgeColorHex) {
-    const T = getThreeNamespace();
-    if (!T || !geom || !geom.attributes || !geom.attributes.position) return;
-    const pos = geom.attributes.position;
-    const span = Math.max(ro - ri, 1e-4);
-    const colors = new Float32Array(pos.count * 3);
-    for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const z = pos.getZ(i);
-        const r = Math.sqrt(x * x + z * z);
-        const t = Math.max(0, Math.min(1, (r - ri) / span));
-        const col = skyAnnulusColorFromT(t, isLight, edgeColorHex);
-        colors[i * 3] = col.r;
-        colors[i * 3 + 1] = col.g;
-        colors[i * 3 + 2] = col.b;
+function applySkyAnnulusVertexColors(geom, ri, ro, isLight, edgeColorHex, zoomLevel, arcOpts) {
+    void isLight;
+    void edgeColorHex;
+    applyContextArcSkyVertexColors(geom, ri, ro, zoomLevel, Object.assign({ layout: 'annulus' }, arcOpts || {}));
+    if (geom && geom.userData) {
+        geom.userData.contextArcSkyRi = ri;
+        geom.userData.contextArcSkyRo = ro;
+        geom.userData.contextArcSkyLayout = 'annulus';
     }
-    geom.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
 }
 
 function isEarthDaylightSkyZoom(zoomLevel) {
@@ -2484,24 +2697,120 @@ function getObserverSolarAltitudeSeries(ctx) {
 }
 
 function interpolateObserverSolarAltitude(alts, hour) {
-    if (!alts) return null;
+    if (!alts || !alts.length) return null;
+    const n = alts.length;
     const h = ((hour % 24) + 24) % 24;
-    const i = Math.floor(h) % 24;
-    const f = h - Math.floor(h);
+    const t = (h / 24) * n;
+    const i = Math.floor(t) % n;
+    const f = t - Math.floor(t);
     const a0 = alts[i];
-    const a1 = alts[(i + 1) % 24];
+    const a1 = alts[(i + 1) % n];
     if (a0 == null || a1 == null || isNaN(a0) || isNaN(a1)) return null;
     return a0 + f * (a1 - a0);
+}
+
+/** Circular hour distance on 24h clock (0–12). */
+function skyHourCircularDist(a, b) {
+    let d = Math.abs(a - b) % 24;
+    if (d > 12) d = 24 - d;
+    return d;
+}
+
+/** Soft bump in hour-space — stable radial width as sunrise/sunset drift through the year. */
+function skySoftBumpAtHour(hour, center, halfWidthHours) {
+    if (center == null || isNaN(center) || !(halfWidthHours > 0)) return 0;
+    const d = skyHourCircularDist(hour, center);
+    const w = halfWidthHours;
+    // 1 at center → 0 at 2·halfWidth; smoothstep so neighboring days blend.
+    return 1 - skySmoothstep(0, w * 2, d);
+}
+
+/**
+ * Sunrise / sunset hours from altitude series (0° crossings).
+ * Null when polar day/night (no crossing) — twilight then falls back to altitude-only.
+ */
+function findSolarHorizonCrossings(alts) {
+    if (!alts || alts.length < 2) return { sunrise: null, sunset: null };
+    const n = alts.length;
+    const step = 24 / n;
+    let sunrise = null;
+    let sunset = null;
+    for (let i = 0; i < n; i++) {
+        const a0 = alts[i];
+        const a1 = alts[(i + 1) % n];
+        if (a0 == null || a1 == null || isNaN(a0) || isNaN(a1)) continue;
+        if (a0 === a1) continue;
+        // Sample i is at local hour (i+0.5)*step
+        const h0 = (i + 0.5) * step;
+        if (a0 < 0 && a1 >= 0 && sunrise == null) {
+            const u = (0 - a0) / (a1 - a0);
+            sunrise = (h0 + u * step + 24) % 24;
+        } else if (a0 >= 0 && a1 < 0 && sunset == null) {
+            const u = (0 - a0) / (a1 - a0);
+            sunset = (h0 + u * step + 24) % 24;
+        }
+    }
+    return { sunrise, sunset };
 }
 
 /** Diurnal palette from true solar altitude at the observer (latitude + season on selected day). */
 function skyDiurnalWeightsFromSolarAltitude(altDeg, hourDecimal) {
     if (altDeg == null || isNaN(altDeg)) return skyDiurnalWeightsAtHour(hourDecimal);
     const day = skySmoothstep(-0.5, 6, altDeg);
-    const golden = skySmoothstep(-2, 0.5, altDeg) * (1 - skySmoothstep(4, 6.5, altDeg));
+    let golden =
+        skySmoothstep(-1.5, 0.5, altDeg) * (1 - skySmoothstep(2, 5, altDeg)) * (1 - day);
+    if (golden < 0) golden = 0;
     const dawn = hourDecimal < 12 ? golden : 0;
     const dusk = hourDecimal >= 12 ? golden : 0;
-    const twi = skySmoothstep(-8.5, -0.5, altDeg) * (1 - skySmoothstep(-0.5, 2, altDeg));
+    let twi =
+        skySmoothstep(-8.5, -0.5, altDeg) * (1 - skySmoothstep(-0.5, 2, altDeg)) * (1 - day);
+    if (twi < 0) twi = 0;
+    let night = 1 - Math.min(1, day + dawn + dusk + twi);
+    if (night < 0) night = 0;
+    return { day, dawn, dusk, twi, night };
+}
+
+/**
+ * Context-arc diurnal weights: daylight from altitude (width tracks season);
+ * dawn/dusk as soft hour-bumps on true sunrise/sunset so twilight tracks the
+ * terminator with stable radial width (no 1-ring flicker as times drift).
+ */
+function skyDiurnalWeightsForContextArcHour(alts, diskHour) {
+    if (!alts || !alts.length) return skyDiurnalWeightsAtHour(diskHour);
+    const alt = interpolateObserverSolarAltitude(alts, diskHour);
+    if (alt == null || isNaN(alt)) return skyDiurnalWeightsAtHour(diskHour);
+
+    // Daylight width — continuous in altitude, expands/contracts with season.
+    const day = skySmoothstep(-0.5, 5, alt);
+    const crossings = findSolarHorizonCrossings(alts);
+
+    // ~1.35h half-width ≈ 2–3 radial rings at 24-ring resolution; moves with terminator.
+    const twHalf = 1.35;
+    let dawn = 0;
+    let dusk = 0;
+    if (crossings.sunrise != null) {
+        dawn = skySoftBumpAtHour(diskHour, crossings.sunrise, twHalf);
+    }
+    if (crossings.sunset != null) {
+        dusk = skySoftBumpAtHour(diskHour, crossings.sunset, twHalf);
+    }
+    // No horizon crossing (polar day/night): faint altitude-only golden if sun skims horizon.
+    if (crossings.sunrise == null && crossings.sunset == null) {
+        const skim =
+            skySmoothstep(-2, 1, alt) * (1 - skySmoothstep(3, 8, alt)) * (1 - day);
+        if (diskHour < 12) dawn = skim;
+        else dusk = skim;
+    }
+
+    // Civil twilight below horizon — also continuous in altitude.
+    let twi =
+        skySmoothstep(-9, -5, alt) * (1 - skySmoothstep(-1.5, 1, alt)) * (1 - day);
+    if (twi < 0) twi = 0;
+
+    // Don't let golden fight full daylight / deep night.
+    dawn *= 1 - day * 0.85;
+    dusk *= 1 - day * 0.85;
+
     let night = 1 - Math.min(1, day + dawn + dusk + twi);
     if (night < 0) night = 0;
     return { day, dawn, dusk, twi, night };
@@ -2522,6 +2831,10 @@ function skySelectedHourHighlightMul(diskHour, observerHour) {
 
 function applySelectedHourSkyHighlight(col, diskHour, observerCtx, THREE, isLight) {
     if (!col || !observerCtx || observerCtx.lon == null || !THREE || !THREE.Color) return col;
+    // Coarse zooms (century→month): selected-hour stripe reads as twilight “phasing” on the arc.
+    // Keep highlight for week/day/clock where one day fills the band.
+    const z = typeof currentZoom === 'number' ? currentZoom : 9;
+    if (z <= 5) return col;
     const mul = skySelectedHourHighlightMul(diskHour, observerCtx.observerHour);
     if (mul <= 1.002) return col;
     const hi = new THREE.Color(isLight ? 0xd4ecff : 0x6aaeff);
@@ -2534,10 +2847,10 @@ function skyGoldenColorFromT(t, isLight, isDawn) {
     const T = getThreeNamespace();
     if (!T) return { r: 0.55, g: 0.38, b: 0.28 };
     const u = Math.max(0, Math.min(1, t));
-    const zenith = new T.Color(isLight ? 0xffc98a : 0xff9a5c);
-    const mid = new T.Color(isLight ? 0xff9f6e : 0xe86a4a);
-    const horizon = new T.Color(isLight ? 0x8ec8f0 : 0x4a7aa8);
-    const rose = new T.Color(isLight ? 0xffb0c8 : 0x9a4a68);
+    const zenith = new T.Color(isLight ? 0xffd8a0 : 0xffb070);
+    const mid = new T.Color(isLight ? 0xffb888 : 0xff8a5a);
+    const horizon = new T.Color(isLight ? 0xa8d8f8 : 0x6a9ec8);
+    const rose = new T.Color(isLight ? 0xffc0d4 : 0xc06080);
     const c = zenith.clone();
     if (u < 0.5) {
         c.lerp(isDawn ? mid : rose, u / 0.5);
@@ -2554,9 +2867,9 @@ function skyTwilightColorFromT(t, isLight) {
     const T = getThreeNamespace();
     if (!T) return { r: 0.12, g: 0.14, b: 0.28 };
     const u = Math.max(0, Math.min(1, t));
-    const zenith = new T.Color(isLight ? 0x4a5a8a : 0x1a2248);
-    const mid = new T.Color(isLight ? 0x7a6a9a : 0x3a3568);
-    const horizon = new T.Color(isLight ? 0xc88aa8 : 0x6a4a78);
+    const zenith = new T.Color(isLight ? 0x5a6a9a : 0x2a3460);
+    const mid = new T.Color(isLight ? 0x8a7aaa : 0x4a4578);
+    const horizon = new T.Color(isLight ? 0xd89ab8 : 0x8a5a90);
     const c = zenith.clone();
     c.lerp(mid, u < 0.55 ? u / 0.55 : 1);
     if (u > 0.45) {
@@ -2569,8 +2882,9 @@ function skyNightColorFromT(t, isLight) {
     const T = getThreeNamespace();
     if (!T) return { r: 0.02, g: 0.03, b: 0.06 };
     const u = Math.max(0, Math.min(1, t));
-    const inner = new T.Color(isLight ? 0x0a1220 : 0x03060c);
-    const outer = new T.Color(isLight ? 0x141c2e : 0x060a12);
+    // Keep night clearly darker than day, but lift enough to read under opaque scene.
+    const inner = new T.Color(isLight ? 0x121a2c : 0x0a1020);
+    const outer = new T.Color(isLight ? 0x1c2840 : 0x121a30);
     const c = inner.clone();
     c.lerp(outer, u);
     return c;
@@ -2904,21 +3218,232 @@ function updateEarthDaylightSky(earthGroup, zoomLevel) {
     }
 }
 
-/** Helix list-context strip: color by inner vs outer ring (XZ radius varies along the arc). */
-function applySkyAnnulusVertexColorsHelixStrip(geom, innerVertexCount, isLight, edgeColorHex) {
+function isDayFrameLteSkyZoom(zoomLevel) {
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : currentZoom;
+    return z === 7 || z === 8;
+}
+
+function getSelectedCalendarDayHelixBounds() {
+    const sel = typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : new Date();
+    if (!sel || isNaN(sel.getTime()) || typeof calculateDateHeight !== 'function') return null;
+    const dayStartY = calculateDateHeight(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0);
+    const nd = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() + 1);
+    const dayEndY = calculateDateHeight(nd.getFullYear(), nd.getMonth(), nd.getDate(), 0);
+    if (!isFinite(dayStartY) || !isFinite(dayEndY) || dayEndY <= dayStartY) return null;
+    return { dayStartY, dayEndY, dayKey: sel.toISOString().slice(0, 10) };
+}
+
+function getDayFrameLteSkyWorldlineRef() {
+    try {
+        const zl = typeof currentZoom !== 'undefined' ? currentZoom : 8;
+        const pack = computeSceneDateHeights(zl);
+        if (pack && typeof pack.currentDateHeight === 'number' && !isNaN(pack.currentDateHeight)) {
+            return pack.currentDateHeight;
+        }
+    } catch (e) { /* fall through */ }
+    return typeof calculateCurrentDateHeight === 'function' ? calculateCurrentDateHeight() : 0;
+}
+
+function resolveDayFrameLteSkyRadii() {
+    const earth = PLANET_DATA && PLANET_DATA.find((p) => p.name === 'Earth');
+    const W = earth && typeof earth.distance === 'number' ? earth.distance : 50;
+    if (typeof EventRenderer !== 'undefined' && typeof EventRenderer.getDayMarkerFrameRadii === 'function') {
+        return EventRenderer.getDayMarkerFrameRadii(W);
+    }
+    if (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getCanonicalRadialZones === 'function') {
+        const z = TimeMarkers.getCanonicalRadialZones(W);
+        return { inner: z.day.inner, outer: z.day.outer };
+    }
+    return { inner: W * 5 / 8, outer: W * 3 / 4 };
+}
+
+function applyDayFrameLteSkyVertexColors(geom, ri, ro, isLight, edgeColorHex, observerCtx) {
     const T = getThreeNamespace();
     if (!T || !geom || !geom.attributes || !geom.attributes.position) return;
-    const nInner = Math.max(1, innerVertexCount | 0);
+    const ctx = observerCtx || getSkyCanvasObserverContext(8);
     const pos = geom.attributes.position;
+    const span = Math.max(ro - ri, 1e-4);
     const colors = new Float32Array(pos.count * 3);
+    const refDate = ctx.selectedDate || (typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : new Date());
+    const alts = ctx.lon != null
+        ? getSolarAltitudeSeriesForCalendarDate(ctx.lat, ctx.lon, refDate)
+        : null;
     for (let i = 0; i < pos.count; i++) {
-        const t = i < nInner ? 0 : 1;
-        const col = skyAnnulusColorFromT(t, isLight, edgeColorHex);
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+        const r = Math.sqrt(x * x + z * z);
+        const radialT = Math.max(0, Math.min(1, (r - ri) / span));
+        const diskHour = radialT * 24;
+        let weights;
+        if (alts) {
+            const alt = interpolateObserverSolarAltitude(alts, diskHour);
+            weights = skyDiurnalWeightsFromSolarAltitude(alt, diskHour);
+        } else {
+            weights = skyDiurnalWeightsAtHour(diskHour);
+        }
+        let col = skyColorFromDiurnalWeights(weights, 0.5, isLight, edgeColorHex);
+        col = applySelectedHourSkyHighlight(col, diskHour, ctx, T, isLight);
         colors[i * 3] = col.r;
         colors[i * 3 + 1] = col.g;
         colors[i * 3 + 2] = col.b;
     }
     geom.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
+}
+
+function buildDayFrameLteSkyMesh(T, ri, ro, dayStartY, dayEndY, refWorldline) {
+    if (!T || !SceneGeometry || typeof SceneGeometry.getAngle !== 'function') return null;
+    const inner = Math.max(0, ri);
+    const outer = Math.max(inner + 1e-4, ro);
+    const ySpan = dayEndY - dayStartY;
+    if (!(ySpan > 1e-6)) return null;
+    const nHelix = 16;
+    const nRadial = 24;
+    const positions = [];
+    const indices = [];
+    for (let jr = 0; jr <= nRadial; jr++) {
+        const radialT = jr / nRadial;
+        const r = inner + radialT * (outer - inner);
+        for (let i = 0; i <= nHelix; i++) {
+            const u = i / nHelix;
+            const y = dayStartY + u * ySpan;
+            const angle = SceneGeometry.getAngle(y, refWorldline);
+            positions.push(Math.cos(angle) * r, y, Math.sin(angle) * r);
+        }
+    }
+    const rowLen = nHelix + 1;
+    for (let jr = 0; jr < nRadial; jr++) {
+        for (let i = 0; i < nHelix; i++) {
+            const a = jr * rowLen + i;
+            const b = a + 1;
+            const c = (jr + 1) * rowLen + i + 1;
+            const d = (jr + 1) * rowLen + i;
+            indices.push(a, b, c, a, c, d);
+        }
+    }
+    const geom = new T.BufferGeometry();
+    geom.setAttribute('position', new T.Float32BufferAttribute(new Float32Array(positions), 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    geom.userData.dayFrameLteSkyRi = inner;
+    geom.userData.dayFrameLteSkyRo = outer;
+    storeListHorizonLogicalPositions(geom);
+    const mat = createListHorizonSkyDiskMaterial(T);
+    mat.opacity = DAY_FRAME_LTE_SKY_OPACITY;
+    const mesh = new T.Mesh(geom, mat);
+    mesh.renderOrder = DAY_FRAME_LTE_SKY_RENDER_ORDER;
+    mesh.userData = {
+        type: 'DayFrameLteSky',
+        listHorizonSkyFill: true,
+        immuneToFlatten: true,
+        skyDiskBaseOpacity: DAY_FRAME_LTE_SKY_OPACITY
+    };
+    return mesh;
+}
+
+function refreshDayFrameLteSkyColors(mesh, ri, ro, observerCtx) {
+    if (!mesh || !mesh.geometry) return;
+    const edgeHex = getListHorizonRingColorHex();
+    const ctx = observerCtx || getSkyCanvasObserverContext(8);
+    applyDayFrameLteSkyVertexColors(mesh.geometry, ri, ro, isLightMode, edgeHex, ctx);
+}
+
+function disposeDayFrameLteSky() {
+    if (!dayFrameLteSkyMesh) {
+        dayFrameLteSkyGeomKey = null;
+        dayFrameLteSkyColorKey = null;
+        return;
+    }
+    if (dayFrameLteSkyMesh.parent) dayFrameLteSkyMesh.parent.remove(dayFrameLteSkyMesh);
+    if (dayFrameLteSkyMesh.geometry) dayFrameLteSkyMesh.geometry.dispose();
+    if (dayFrameLteSkyMesh.material) dayFrameLteSkyMesh.material.dispose();
+    dayFrameLteSkyMesh = null;
+    dayFrameLteSkyGeomKey = null;
+    dayFrameLteSkyColorKey = null;
+}
+
+function updateDayFrameLteSkyFlatten(focusY, amount) {
+    if (!dayFrameLteSkyMesh) return;
+    dayFrameLteSkyMesh.scale.set(1, 1, 1);
+    dayFrameLteSkyMesh.position.y = 0;
+    const geom = dayFrameLteSkyMesh.geometry;
+    if (!geom || !geom.attributes || !geom.attributes.position || !geom.userData.listHorizonLogical) return;
+    const flat = flattenListHorizonPositionArray(geom.userData.listHorizonLogical, focusY, amount);
+    geom.attributes.position.array.set(flat);
+    geom.attributes.position.needsUpdate = true;
+}
+
+/** Selected-day sky backdrop on annual helix day-marker frame (zoom 7/8). */
+function updateDayFrameLteSkyBackdrop(zoomLevel) {
+    const T = getThreeNamespace();
+    if (!T || !sceneContentGroup || !isDayFrameLteSkyZoom(zoomLevel)) {
+        disposeDayFrameLteSky();
+        return;
+    }
+    const dayBounds = getSelectedCalendarDayHelixBounds();
+    if (!dayBounds) {
+        disposeDayFrameLteSky();
+        return;
+    }
+    const { inner, outer } = resolveDayFrameLteSkyRadii();
+    const refWorldline = getDayFrameLteSkyWorldlineRef();
+    const geomKey =
+        `${zoomLevel}:${dayBounds.dayKey}:${inner.toFixed(3)}:${outer.toFixed(3)}:` +
+        `${dayBounds.dayStartY.toFixed(4)}:${dayBounds.dayEndY.toFixed(4)}:${refWorldline.toFixed(4)}`;
+    const colorKey = buildEarthDaylightSkyColorKey(getSkyCanvasObserverContext(zoomLevel));
+
+    if (!dayFrameLteSkyMesh || dayFrameLteSkyGeomKey !== geomKey) {
+        disposeDayFrameLteSky();
+        dayFrameLteSkyMesh = buildDayFrameLteSkyMesh(
+            T,
+            inner,
+            outer,
+            dayBounds.dayStartY,
+            dayBounds.dayEndY,
+            refWorldline
+        );
+        dayFrameLteSkyGeomKey = geomKey;
+        dayFrameLteSkyColorKey = colorKey;
+        if (dayFrameLteSkyMesh) {
+            refreshDayFrameLteSkyColors(dayFrameLteSkyMesh, inner, outer, getSkyCanvasObserverContext(zoomLevel));
+            sceneContentGroup.add(dayFrameLteSkyMesh);
+        }
+    } else if (dayFrameLteSkyColorKey !== colorKey) {
+        dayFrameLteSkyColorKey = colorKey;
+        refreshDayFrameLteSkyColors(
+            dayFrameLteSkyMesh,
+            inner,
+            outer,
+            getSkyCanvasObserverContext(zoomLevel)
+        );
+    }
+    if (dayFrameLteSkyMesh && dayFrameLteSkyMesh.parent !== sceneContentGroup) {
+        if (dayFrameLteSkyMesh.parent) dayFrameLteSkyMesh.parent.remove(dayFrameLteSkyMesh);
+        sceneContentGroup.add(dayFrameLteSkyMesh);
+    }
+    applySkyDiskOpacityForShift(dayFrameLteSkyMesh);
+}
+
+/** Helix list-context strip: date along arc × hour radial (observer solar model). */
+function applySkyAnnulusVertexColorsHelixStrip(geom, innerVertexCount, ri, ro, zoomLevel, helixCtx) {
+    if (!geom || ri == null || ro == null) return;
+    const z = typeof zoomLevel === 'number' ? zoomLevel : (helixCtx && helixCtx.zoomLevel);
+    const nRadial = (helixCtx && helixCtx.nRadialSegments > 0)
+        ? helixCtx.nRadialSegments
+        : CONTEXT_ARC_SKY_RADIAL_SEGMENTS;
+    applyContextArcSkyVertexColors(geom, ri, ro, z, {
+        bounds: helixCtx && helixCtx.bounds,
+        arc: helixCtx && helixCtx.arc,
+        layout: 'helixStrip',
+        helixInnerVertexCount: innerVertexCount,
+        helixRadialSegments: nRadial,
+        helixRingCount: nRadial + 1
+    });
+    if (geom && geom.userData) {
+        geom.userData.contextArcSkyLayout = 'helixStrip';
+        geom.userData.contextArcSkyInnerCount = innerVertexCount;
+        geom.userData.contextArcSkyRadialSegments = nRadial;
+        geom.userData.contextArcSkyRingCount = nRadial + 1;
+    }
 }
 
 /** Sky annulus fill: vertex-colored MeshBasic (reliable vs custom ShaderMaterial attrs). */
@@ -2953,11 +3478,14 @@ function buildListHorizonSkyFlatAnnulusMesh(THREE, rInner, rOuter, yCenter, nSeg
     const n = fullCircle
         ? Math.max(48, Math.min(128, nSeg * 2))
         : Math.max(24, Math.min(128, Math.round(nSeg * (span / TWO_PI) * 2)));
+    // thetaSegments, radialSegments — radial >1 so diurnal sky (dawn/noon/dusk) exists between ri/ro.
+    const nRadial = CONTEXT_ARC_SKY_RADIAL_SEGMENTS;
 
-    const geom = new THREE.RingGeometry(ri, ro, n, 1, t0, span);
+    const geom = new THREE.RingGeometry(ri, ro, n, nRadial, t0, span);
     geom.rotateX(-Math.PI / 2);
     geom.translate(0, yCenter, 0);
-    applySkyAnnulusVertexColors(geom, ri, ro, isLightMode, colorHex);
+    const zDisc = typeof currentZoom !== 'undefined' ? currentZoom : 9;
+    applySkyAnnulusVertexColors(geom, ri, ro, isLightMode, colorHex, zDisc, { arc });
     storeListHorizonLogicalPositions(geom);
 
     const mat = createListHorizonSkyDiskMaterial(THREE);
@@ -3001,6 +3529,7 @@ function buildListHorizonSkyFillMesh(THREE, rInner, rOuter, yCenter, nSeg, color
 
 /**
  * Sky annulus on the list-context band: helical along the list time arc; flattens with timeline (F).
+ * Radial rings sample hour-of-day (same model as day-marker sky); along-arc samples calendar date.
  */
 function buildListHorizonSkyDiskMesh(THREE, rInner, rOuter, y, nSeg, colorHex, opacity, renderOrder, arc, helixCtx) {
     void opacity;
@@ -3021,6 +3550,7 @@ function buildListHorizonSkyDiskMesh(THREE, rInner, rOuter, y, nSeg, colorHex, o
 
     const useHelix = helixCtx && helixCtx.bounds;
     const bandSign = helixCtx && helixCtx.bandSign != null ? helixCtx.bandSign : 0;
+    const nRadial = CONTEXT_ARC_SKY_RADIAL_SEGMENTS;
 
     const positions = [];
     const indices = [];
@@ -3034,40 +3564,62 @@ function buildListHorizonSkyDiskMesh(THREE, rInner, rOuter, y, nSeg, colorHex, o
         const bandHalfH = helixCtx.bandHalfH != null ? helixCtx.bandHalfH : 0;
         const nHelix = Math.max(2, nTime);
         helixInnerVertexCount = nHelix + 1;
-        for (let ring = 0; ring < 2; ring++) {
-            const r = ring === 0 ? ri : ro;
+        for (let jr = 0; jr <= nRadial; jr++) {
+            const radialT = jr / nRadial;
+            const r = ri + radialT * (ro - ri);
             for (let i = 0; i <= nHelix; i++) {
                 const ms = bounds.t0 + (i / nHelix) * (bounds.t1 - bounds.t0);
                 const p = listHorizonHelixPointAtMs(ms, r, refCur, refSel, bandHalfH, bandSign);
                 positions.push(p.x, p.y, p.z);
             }
         }
-        for (let i = 0; i < nHelix; i++) {
-            indices.push(i, i + 1, helixInnerVertexCount + i + 1, i, helixInnerVertexCount + i + 1, helixInnerVertexCount + i);
+        const rowLen = helixInnerVertexCount;
+        for (let jr = 0; jr < nRadial; jr++) {
+            for (let i = 0; i < nHelix; i++) {
+                const a = jr * rowLen + i;
+                const b = a + 1;
+                const c = (jr + 1) * rowLen + i + 1;
+                const d = (jr + 1) * rowLen + i;
+                indices.push(a, b, c, a, c, d);
+            }
         }
     } else if (fullCircle) {
-        for (let ring = 0; ring < 2; ring++) {
-            const r = ring === 0 ? ri : ro;
+        for (let jr = 0; jr <= nRadial; jr++) {
+            const radialT = jr / nRadial;
+            const r = ri + radialT * (ro - ri);
             for (let i = 0; i < n; i++) {
                 const theta = (i / n) * TWO_PI;
                 positions.push(Math.cos(theta) * r, y, Math.sin(theta) * r);
             }
         }
-        for (let i = 0; i < n; i++) {
-            const i1 = (i + 1) % n;
-            indices.push(i, i1, n + i1, i, n + i1, n + i);
+        for (let jr = 0; jr < nRadial; jr++) {
+            for (let i = 0; i < n; i++) {
+                const i1 = (i + 1) % n;
+                const a = jr * n + i;
+                const b = jr * n + i1;
+                const c = (jr + 1) * n + i1;
+                const d = (jr + 1) * n + i;
+                indices.push(a, b, c, a, c, d);
+            }
         }
     } else {
-        for (let ring = 0; ring < 2; ring++) {
-            const r = ring === 0 ? ri : ro;
+        const rowLen = n + 1;
+        for (let jr = 0; jr <= nRadial; jr++) {
+            const radialT = jr / nRadial;
+            const r = ri + radialT * (ro - ri);
             for (let i = 0; i <= n; i++) {
                 const theta = t0 + (i / n) * span;
                 positions.push(Math.cos(theta) * r, y, Math.sin(theta) * r);
             }
         }
-        const innerCount = n + 1;
-        for (let i = 0; i < n; i++) {
-            indices.push(i, i + 1, innerCount + i + 1, i, innerCount + i + 1, innerCount + i);
+        for (let jr = 0; jr < nRadial; jr++) {
+            for (let i = 0; i < n; i++) {
+                const a = jr * rowLen + i;
+                const b = a + 1;
+                const c = (jr + 1) * rowLen + i + 1;
+                const d = (jr + 1) * rowLen + i;
+                indices.push(a, b, c, a, c, d);
+            }
         }
     }
 
@@ -3075,10 +3627,21 @@ function buildListHorizonSkyDiskMesh(THREE, rInner, rOuter, y, nSeg, colorHex, o
     geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
     geom.setIndex(indices);
     geom.computeVertexNormals();
+    const zDisc = (helixCtx && helixCtx.zoomLevel != null) ? helixCtx.zoomLevel : currentZoom;
+    if (geom.userData) {
+        geom.userData.contextArcSkyRi = ri;
+        geom.userData.contextArcSkyRo = ro;
+    }
     if (useHelix) {
-        applySkyAnnulusVertexColorsHelixStrip(geom, helixInnerVertexCount, isLightMode, colorHex);
+        const colorCtx = Object.assign({}, helixCtx, {
+            arc: arc,
+            nRadialSegments: nRadial
+        });
+        applySkyAnnulusVertexColorsHelixStrip(
+            geom, helixInnerVertexCount, ri, ro, zDisc, colorCtx
+        );
     } else {
-        applySkyAnnulusVertexColors(geom, ri, ro, isLightMode, colorHex);
+        applySkyAnnulusVertexColors(geom, ri, ro, isLightMode, colorHex, zDisc, { arc });
     }
     storeListHorizonLogicalPositions(geom);
 
@@ -3184,7 +3747,11 @@ function buildListHorizonSkyBandRadialWallMesh(THREE, rInner, rOuter, y0, y1, nS
     geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
     geom.setIndex(indices);
     geom.computeVertexNormals();
-    applySkyAnnulusVertexColors(geom, ri, ro, isLightMode, colorHex);
+    const zDisc = (helixCtx && helixCtx.zoomLevel != null) ? helixCtx.zoomLevel : currentZoom;
+    applySkyAnnulusVertexColors(geom, ri, ro, isLightMode, colorHex, zDisc, {
+        bounds: helixCtx && helixCtx.bounds,
+        arc: arc
+    });
     storeListHorizonLogicalPositions(geom);
 
     const mat = createListHorizonSkyDiskMaterial(THREE);
@@ -3325,11 +3892,13 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
         yCenter,
         n,
         colorHex,
-        skyRo - 1,
+        skyRo,
         arc,
         helixCtx
     );
-    if (skyFill) group.add(skyFill);
+    if (skyFill) {
+        group.add(skyFill);
+    }
 
     const wallInner = buildListHorizonHoopWallMesh(
         THREE, ri, y0, y1, n, colorHex, renderOrder, 1.65 * wallOpMul, true, arc, helixCtx
@@ -3401,6 +3970,11 @@ function updateListHorizonEarthRing(zoomLevel) {
             W,
             z
         );
+    } else {
+        const skyColorKey = buildEarthDaylightSkyColorKey(getSkyCanvasObserverContext(z));
+        if (listHorizonSkyColorKey !== skyColorKey) {
+            refreshListHorizonContextArcSkyColors(z);
+        }
     }
 }
 
@@ -3702,6 +4276,9 @@ function applyLightTimeScrubUpdate(zoomLevel) {
     if (focusTargetOverride === 'moon' && zoomLevel !== 6) {
         focusTargetOverride = null;
     }
+    if (!focusSunAllowedAtZoom(zoomLevel) && focusTargetOverride === 'sun') {
+        focusTargetOverride = null;
+    }
     const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
     const MM = typeof MoonMechanics !== 'undefined' ? MoonMechanics : null;
 
@@ -3783,13 +4360,15 @@ function applyLightTimeScrubUpdate(zoomLevel) {
         const line = orbitLines[i];
         if (line && line.geometry && line.geometry.attributes.position) {
             const pos = line.geometry.attributes.position;
-            const arr = pos.array;
-            for (let j = 0; j <= segments; j++) {
-                const angle = (j / segments) * Math.PI * 2;
-                arr[j * 3] = Math.cos(angle) * planetData.distance;
-                arr[j * 3 + 1] = selectedDateHeight;
-                arr[j * 3 + 2] = Math.sin(angle) * planetData.distance;
-            }
+            fillPlanetOrbitRingPositions(
+                pos.array,
+                planetData,
+                selectedDate,
+                currentDateHeight,
+                selectedDateHeight,
+                selectedDateHeight,
+                segments
+            );
             pos.needsUpdate = true;
         }
     });
@@ -3810,13 +4389,15 @@ function applyLightTimeScrubUpdate(zoomLevel) {
         const earthData = PLANET_DATA.find((p) => p.name === 'Earth');
         if (earthData) {
             const pos = ghostOrbitLine.geometry.attributes.position;
-            const arr = pos.array;
-            for (let j = 0; j <= segments; j++) {
-                const angle = (j / segments) * Math.PI * 2;
-                arr[j * 3] = Math.cos(angle) * earthData.distance;
-                arr[j * 3 + 1] = currentDateHeight;
-                arr[j * 3 + 2] = Math.sin(angle) * earthData.distance;
-            }
+            fillPlanetOrbitRingPositions(
+                pos.array,
+                earthData,
+                new Date(),
+                currentDateHeight,
+                currentDateHeight,
+                currentDateHeight,
+                segments
+            );
             pos.needsUpdate = true;
         }
     }
@@ -3884,6 +4465,7 @@ function applyLightTimeScrubUpdate(zoomLevel) {
     } else if (!isEarthDaylightSkyZoom(zoomLevel)) {
         disposeEarthDaylightSky();
     }
+    updateDayFrameLteSkyBackdrop(zoomLevel);
 
     if (zoomLevel === 0 || zoomLevel === 8 || zoomLevel === 9) {
         createTimeMarkers(zoomLevel === 0 ? 9 : zoomLevel);
@@ -4015,6 +4597,9 @@ function createPlanets(zoomLevel) {
         focusTargetOverride = null;
     }
     if (focusTargetOverride === 'moon' && zoomLevel !== 6) {
+        focusTargetOverride = null;
+    }
+    if (!focusSunAllowedAtZoom(zoomLevel) && focusTargetOverride === 'sun') {
         focusTargetOverride = null;
     }
     const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
@@ -4237,17 +4822,17 @@ function createPlanets(zoomLevel) {
         // Validate selectedDateHeight before creating geometry
         if (!isNaN(selectedDateHeight)) {
             const orbitGeometry = new THREE.BufferGeometry();
-            const orbitPoints = [];
             const segments = 128;
-            
-            for (let i = 0; i <= segments; i++) {
-                const angle = (i / segments) * Math.PI * 2;
-                orbitPoints.push(
-                    Math.cos(angle) * planetData.distance,
-                    selectedDateHeight,
-                    Math.sin(angle) * planetData.distance
-                );
-            }
+            const orbitPoints = new Float32Array((segments + 1) * 3);
+            fillPlanetOrbitRingPositions(
+                orbitPoints,
+                planetData,
+                selectedDate,
+                currentDateHeight,
+                selectedDateHeight,
+                selectedDateHeight,
+                segments
+            );
             
             orbitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(orbitPoints, 3));
             const orbitMaterial = new THREE.LineBasicMaterial({
@@ -4269,17 +4854,17 @@ function createPlanets(zoomLevel) {
                 console.warn('createPlanets: currentDateHeight is NaN, skipping ghost orbit line');
             } else {
                 const ghostOrbitGeometry = new THREE.BufferGeometry();
-                const ghostOrbitPoints = [];
                 const segments = 128;
-                
-                for (let i = 0; i <= segments; i++) {
-                    const angle = (i / segments) * Math.PI * 2;
-                    ghostOrbitPoints.push(
-                        Math.cos(angle) * planetData.distance,
-                        currentDateHeight,
-                        Math.sin(angle) * planetData.distance
-                    );
-                }
+                const ghostOrbitPoints = new Float32Array((segments + 1) * 3);
+                fillPlanetOrbitRingPositions(
+                    ghostOrbitPoints,
+                    planetData,
+                    new Date(),
+                    currentDateHeight,
+                    currentDateHeight,
+                    currentDateHeight,
+                    segments
+                );
                 
                 ghostOrbitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(ghostOrbitPoints, 3));
                 const ghostOrbitMaterial = new THREE.LineBasicMaterial({
@@ -4328,6 +4913,7 @@ function createPlanets(zoomLevel) {
     } else {
         disposeEarthDaylightSky();
     }
+    updateDayFrameLteSkyBackdrop(zoomLevel);
 
     if (!tourMinimalOrbitMode && earthPlanet) {
         addLagrangeSunEarthMarkers(earthPlanet, selectedDateHeight, zoomLevel, planetScaleFactor);
@@ -5394,6 +5980,17 @@ function initControls() {
                 end: end
             });
         } else {
+            if (window.self !== window.top && window.parent && window.parent.postMessage) {
+                const buildPayload = typeof window.buildCircaevumEditPayload === 'function'
+                    ? window.buildCircaevumEditPayload
+                    : null;
+                if (buildPayload) {
+                    window.parent.postMessage({
+                        type: 'CIRCAEVUM_EDIT_EVENT',
+                        event: buildPayload(ve, layerId, start, end)
+                    }, '*');
+                }
+            }
             if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
             if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
             const scrollToRow = function () {
@@ -5459,19 +6056,31 @@ function initControls() {
             }
             while (cur) {
                 if (cur.userData && cur.userData.shortEventPickable === false) return false;
-                if (cur.userData && cur.userData.type === 'EventObject' && cur.userData.vevent) return true;
+                if (cur.userData && cur.userData.vevent &&
+                    (cur.userData.type === 'EventObject' || cur.userData.type === 'EventLine')) return true;
                 cur = cur.parent;
             }
             return false;
         });
         if (!eventHit) return false;
         let target = eventHit.object;
-        while (target && !(target.userData && target.userData.type === 'EventObject' && target.userData.vevent)) {
+        while (target && !(target.userData && target.userData.vevent &&
+            (target.userData.type === 'EventObject' || target.userData.type === 'EventLine'))) {
             target = target.parent;
         }
         if (!target || !target.userData || !target.userData.vevent) return false;
         if (target.userData.shortEventPickable === false) return false;
-        return finishEventPickFromVevent(target.userData.vevent, target.userData.layerId);
+        let ve = target.userData.vevent;
+        if (!ve.uid && !ve.id && target.userData.type === 'EventLine' && target.userData.start) {
+            ve = Object.assign({}, ve, {
+                uid: ve.uid || ve.id || `line-${target.userData.index != null ? target.userData.index : 0}`,
+                dtstart: ve.dtstart || { dateTime: target.userData.start.toISOString() },
+                dtend: ve.dtend || (target.userData.end
+                    ? { dateTime: target.userData.end.toISOString() }
+                    : null)
+            });
+        }
+        return finishEventPickFromVevent(ve, target.userData.layerId);
     }
 
     // Mouse events for desktop
@@ -6309,6 +6918,7 @@ function rebuildSceneAndEventsForFlattenChange() {
     }
     if (typeof focusPoint !== 'undefined' && focusPoint) {
         updateListHorizonContextArcFlatten(focusPoint.y, getActiveTimelineFlattenAmount());
+        updateDayFrameLteSkyFlatten(focusPoint.y, getActiveTimelineFlattenAmount());
     }
 }
 
@@ -6478,7 +7088,12 @@ function toggleFocusTarget() {
         const idx = cycle.indexOf(current);
         const i = idx === -1 ? 0 : (idx + 1) % cycle.length;
         next = cycle[i];
-    } else if (currentZoom >= 4 && currentZoom <= 7) {
+    } else if (currentZoom === 7 || currentZoom === 8) {
+        const cycle = ['earth', 'mid'];
+        const idx = cycle.indexOf(current);
+        const i = idx === -1 ? 0 : (idx + 1) % cycle.length;
+        next = cycle[i];
+    } else if (currentZoom >= 4 && currentZoom <= 5) {
         const cycle = ['earth', 'sun', 'mid'];
         const idx = cycle.indexOf(current);
         const i = idx === -1 ? 0 : (idx + 1) % cycle.length;
@@ -6496,7 +7111,9 @@ function toggleFocusTarget() {
         let aria;
         if (currentZoom === 6) {
             aria = `Cycle camera focus: Moon, Earth, Sun, midpoint Sun–Earth at selected time (currently ${next.toUpperCase()})`;
-        } else if (currentZoom >= 4 && currentZoom <= 7) {
+        } else if (currentZoom === 7 || currentZoom === 8) {
+            aria = `Cycle camera focus: Earth, then midpoint between Sun and Earth at selected time (currently ${next.toUpperCase()})`;
+        } else if (currentZoom >= 4 && currentZoom <= 5) {
             aria = `Cycle camera focus: Earth, then Sun, then midpoint between Sun and Earth at selected time (currently ${next.toUpperCase()})`;
         } else {
             aria = `Toggle camera focus between Sun and Earth (currently ${next.toUpperCase()})`;
@@ -7393,6 +8010,9 @@ function setZoomLevel(level, overrideDate) {
     if (level !== 6 && focusTargetOverride === 'moon') {
         focusTargetOverride = null;
     }
+    if (!focusSunAllowedAtZoom(level) && focusTargetOverride === 'sun') {
+        focusTargetOverride = null;
+    }
     const config = ZOOM_LEVELS[level];
     
     // Play transition sound
@@ -8186,6 +8806,7 @@ function animate(time, frame) {
     }
     if (typeof focusPoint !== 'undefined' && focusPoint) {
         updateListHorizonContextArcFlatten(focusPoint.y, getActiveTimelineFlattenAmount());
+        updateDayFrameLteSkyFlatten(focusPoint.y, getActiveTimelineFlattenAmount());
     }
 
     // Smooth context-ring radius/height transitions across zoom and selected-time changes.

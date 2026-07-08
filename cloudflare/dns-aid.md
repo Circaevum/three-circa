@@ -13,7 +13,7 @@ Draft: [DNS-AID](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dns
 
 ## Records to add (Cloudflare DNS)
 
-Zone: **circaevum.com** (DNS managed by Cloudflare if proxied).
+Zone: **circaevum.com** (requires DNS on a provider that supports HTTPS/SVCB records — e.g. Cloudflare DNS). **Not configured today.**
 
 | Name | Type | Content |
 |------|------|---------|

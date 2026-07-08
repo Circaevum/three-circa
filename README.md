@@ -97,7 +97,7 @@ Static files for [isitagentready.com/circaevum.com](https://isitagentready.com/c
 - `/developers.html`, `/docs/FOR-AGENTS.md`
 - `/.well-known/api-catalog`, `/.well-known/agent-skills/`
 
-Full deploy + **Cloudflare** Link / markdown rules: **[docs/AGENT-READINESS.md](./docs/AGENT-READINESS.md)**.
+Improvement backlog (agent discovery, HTTP security headers, hosting options): **[docs/AGENT-READINESS.md](./docs/AGENT-READINESS.md)**. Optional Cloudflare runbooks: **[cloudflare/README.md](./cloudflare/README.md)**.
 
 After push to `main`, verify with:
 
