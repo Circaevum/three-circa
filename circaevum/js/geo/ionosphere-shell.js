@@ -63,7 +63,7 @@
     if (typeof global.GeophysicalShells !== 'undefined' && global.GeophysicalShells.areGeophysicalShellsEnabled) {
       return global.GeophysicalShells.areGeophysicalShellsEnabled();
     }
-    return true;
+    return false;
   }
 
   /** Exaggerate altitude so shells read on the globe (ratios between layers preserved). */

@@ -54,6 +54,12 @@ const ArtemisIIMission = (function () {
 
     /** Ribbon strip (event-style quad strip) from centerline flat [x,y,z,...]. */
     function createRibbonBufferFromFlatArrays(T, innerFlat, outerFlat) {
+        if (typeof RibbonGeometry !== 'undefined' && RibbonGeometry.fromInnerOuter) {
+            return RibbonGeometry.fromInnerOuter(innerFlat, outerFlat, {
+                THREE: T,
+                ribbonEdgeAttr: false
+            });
+        }
         const n = innerFlat.length / 3;
         if (n < 2 || innerFlat.length !== outerFlat.length) return null;
         const pos = new Float32Array(n * 6);
@@ -82,6 +88,9 @@ const ArtemisIIMission = (function () {
 
     /** Offset centerline in XZ by ±halfWidth along binormal (tangent × up). */
     function ribbonInnerOuterFromCenterline(T, smooth, halfWidth) {
+        if (typeof RibbonGeometry !== 'undefined' && RibbonGeometry.innerOuterFromCenterline) {
+            return RibbonGeometry.innerOuterFromCenterline(smooth, halfWidth, { THREE: T });
+        }
         const n = smooth.length / 3;
         const innerFlat = new Float32Array(smooth.length);
         const outerFlat = new Float32Array(smooth.length);
@@ -205,8 +214,10 @@ const ArtemisIIMission = (function () {
         }
 
         const halfWidth = Math.max(earthRadius * 0.065, 0.22);
-        const { innerFlat, outerFlat } = ribbonInnerOuterFromCenterline(T, smooth, halfWidth);
-        const ribbonGeo = createRibbonBufferFromFlatArrays(T, innerFlat, outerFlat);
+        const edges = ribbonInnerOuterFromCenterline(T, smooth, halfWidth);
+        const ribbonGeo = edges
+            ? createRibbonBufferFromFlatArrays(T, edges.innerFlat, edges.outerFlat)
+            : null;
         const wlColor = isLightMode ? 0xc2410c : 0xff6b35;
         const fillHex = wlColor;
         const ribbonMesh = ribbonGeo

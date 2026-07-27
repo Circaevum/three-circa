@@ -3,9 +3,7 @@
  * Scene toolbar icon + keyboard (G); legend panels stay informational only.
  */
 (function (global) {
-  const STORAGE_KEY = 'circaevum-geophysical-shells-visible';
-  const LEGACY_IONO = 'circaevum-ionosphere-shells-visible';
-  const LEGACY_MAG = 'circaevum-magnetosphere-shells-visible';
+  const STORAGE_KEY = 'circaevum-geophysical-shells-visible.v2';
   let override = null;
 
   function readStored() {
@@ -15,10 +13,7 @@
       const v = ls.getItem(STORAGE_KEY);
       if (v === '0' || v === 'false') return false;
       if (v === '1' || v === 'true') return true;
-      const li = ls.getItem(LEGACY_IONO);
-      const lm = ls.getItem(LEGACY_MAG);
-      if (li === '0' || lm === '0') return false;
-      if (li === '1' || lm === '1') return true;
+      // Fresh / unset → off (atmosphere, ionosphere, magnetosphere).
     } catch (e) { /* ignore */ }
     return false;
   }

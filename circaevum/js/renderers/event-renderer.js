@@ -36,8 +36,14 @@
    * frame. Below the budget, quality stays at 1 (no visible change). Above it,
    * tube segment counts fall off so total geometry work stays roughly bounded.
    */
-  const EVENT_TUBE_BUDGET = 80;
+  /** Start degrading tube segments earlier — Frenet work dominates lag before verts do. */
+  const EVENT_TUBE_BUDGET = 48;
   const EVENT_TUBE_QUALITY_FLOOR = 0.34;
+  /**
+   * When adaptive quality drops below this, prefer THREE.Line over low-seg TubeGeometry.
+   * Skinny tubes still pay CatmullRom+Frenet; lines do not.
+   */
+  const EVENT_OUTLINE_PREFER_LINE_QUALITY = 0.55;
   let _eventTubeQualityScale = 1;
 
   /**
@@ -47,8 +53,11 @@
    * desaturated/de-emphasized, so a thin line reads fine. Threshold = this many
    * "in-focus half spans" (zoom-aware) away from selected time. Set to 0/Infinity
    * to disable. `_eventOutlineLineMode` is set per event before its tubes build.
+   *
+   * Prefer Line / ribbon fill / flat borders over tubes wherever fidelity allows
+   * (see MeshPrimitives.COST). Day-frame LTE borders already use flat Lines.
    */
-  const EVENT_LINE_LOD_FAR_FACTOR = 3;
+  const EVENT_LINE_LOD_FAR_FACTOR = 2;
   let _eventOutlineLineMode = false;
   function computeEventTubeQualityScale(eventCount) {
     const n = Math.max(1, eventCount | 0);
@@ -239,6 +248,41 @@
     let endUse = end;
     if (!endUse || !(endUse > start)) endUse = new Date(start.getTime() + 3600000);
     return durationHoursBetween(start, endUse) >= 24;
+  }
+
+  /**
+   * Nesting resolver candidate: sub-day + single all-day (<2 calendar days).
+   * Same VEVENT may resolve as STE (Frame B / day-pitch) or LTE (Frame A manifold) by
+   * viewer scale + Selected Time Frame — coords stay (theta1, theta2, z). See COORDINATES.md.
+   * Multi-day stays LTE. Differs from {@link isLongTermEventSpanForPlotType} so 24h all-day
+   * can still use STE geometry inside the Context Arc window.
+   */
+  function isSteStyleDailySpan(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    return durationDaysBetween(start, evEnd) < 2;
+  }
+
+  /** Event overlaps the 3D Context Arc / Selected Time Frame window for the current zoom. */
+  function eventTouchesSelectedContextArcWindow(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    const zl = getZoomLevelForEvents();
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    const boundsFn =
+      typeof global.getListContextDiscArcTimeBoundsMs === 'function'
+        ? global.getListContextDiscArcTimeBoundsMs
+        : null;
+    if (boundsFn) {
+      const bounds = boundsFn(zl);
+      if (bounds && typeof bounds.t0 === 'number' && typeof bounds.t1 === 'number') {
+        return evEnd.getTime() > bounds.t0 && start.getTime() < bounds.t1;
+      }
+    }
+    // Fallback when arc bounds unavailable: month / week / day windows by zoom.
+    if (zl === 5 || zl === 6) return eventTouchesSelectedMonthWindow(start, evEnd);
+    if (zl === 7) return eventTouchesSelectedWeekWindow(start, evEnd);
+    if (zl === 8 || zl === 9 || zl === 0) return eventTouchesSelectedCalendarDay(start, evEnd);
+    return true;
   }
 
   /**
@@ -1040,6 +1084,10 @@
 
     if (zl === 9) return !eventTouchesSelectedMonthRangeWindow(start, evEnd);
 
+    // Month / lunar / week: do not cull here. Daily STEs gated by Context Arc in
+    // shouldDraw*SteGeometry; multi-day + out-of-window dailies stay on large LTE manifold.
+    if (zl === 5 || zl === 6 || zl === 7) return false;
+
     const circ = normalizedCircadianState();
     if (!isCircadianHelixZoom(zl) || circ === 'off') return false;
 
@@ -1121,12 +1169,17 @@
 
     if (!onSelDay) {
       if (zl === 8) mul *= 0.14;
-      else if (zl === 5 || zl === 7) mul *= 0.22;
-      else mul *= 0.28;
-      mul *= dayDiffProx;
+      else if (zl === 5 || zl === 6 || zl === 7) {
+        // Nesting resolver LTE day grain: keep full read at month/week (no off-day ghost).
+        if (isShort || isSteStyleDailySpan(start, end)) mul = 1;
+        else mul *= 0.22;
+      } else mul *= 0.28;
+      if (!(zl === 5 || zl === 6 || zl === 7) || !(isShort || isSteStyleDailySpan(start, end))) {
+        mul *= dayDiffProx;
+      }
     }
 
-    const floor = zl === 8 ? 0.42 : 0.12;
+    const floor = zl === 8 ? 0.42 : (zl === 5 || zl === 6 || zl === 7 ? 0.85 : 0.12);
     return Math.max(floor, Math.min(1, mul));
   }
 
@@ -1802,9 +1855,22 @@
     return { label: W * DAY_NUMBER_RADIUS_FRAC, dayName: W * DAY_NAME_RADIUS_FRAC };
   }
 
-  /** Day-marker radial frame: inner = midnight spoke, outer = end of day (matches TimeMarkers day system). */
+  /**
+   * Day-marker radial frame: inner = midnight (pedagogical L1 / sunward),
+   * outer = end of day (pedagogical L2). Span = circadian noon↔midnight (2×hand).
+   */
   function getDayMarkerFrameRadii(earthDist) {
     const W = earthDist;
+    if (
+      typeof TimeMarkers !== 'undefined' &&
+      typeof TimeMarkers.getEarthOrbitL1L2DayFrameRadii === 'function' &&
+      typeof window !== 'undefined' &&
+      typeof window.getSingularBandMode === 'function' &&
+      window.getSingularBandMode()
+    ) {
+      const day = TimeMarkers.getEarthOrbitL1L2DayFrameRadii(W);
+      return { inner: day.inner, outer: day.outer };
+    }
     if (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getCanonicalRadialZones === 'function') {
       const z = TimeMarkers.getCanonicalRadialZones(W);
       return { inner: z.day.inner, outer: z.day.outer };
@@ -1893,6 +1959,114 @@
     return hy / (365.25 * 24);
   }
 
+  /** CRTBP γ ≈ (μ/3)^(1/3) — L1/L2 sit at (1±γ)·W from Sun (~0.01·W from Earth). */
+  function getEarthLagrangeGamma() {
+    const cfg =
+      typeof SCENE_CONFIG !== 'undefined' && SCENE_CONFIG && SCENE_CONFIG.lagrangeMarkers
+        ? SCENE_CONFIG.lagrangeMarkers
+        : null;
+    const mu =
+      cfg && typeof cfg.earthToSunMassRatio === 'number' && cfg.earthToSunMassRatio > 0
+        ? cfg.earthToSunMassRatio
+        : 3.00346e-6;
+    return Math.pow(mu / 3, 1 / 3);
+  }
+
+  /**
+   * Nesting resolver — Event Horizon radius (geocentric).
+   * Pedagogical L1↔L2 half-span from Earth orbit (= circadian noon↔midnight hand length).
+   * STE lives inside this sphere; LTE day floor / sky live on or outside it.
+   */
+  function getEventHorizonRadius(earthDist) {
+    const W = typeof earthDist === 'number' && !isNaN(earthDist) ? earthDist : getEarthDistance();
+    if (
+      typeof TimeMarkers !== 'undefined' &&
+      typeof TimeMarkers.getEarthOrbitL1L2DayFrameRadii === 'function'
+    ) {
+      const day = TimeMarkers.getEarthOrbitL1L2DayFrameRadii(W);
+      if (day && day.halfSpan > 0) return day.halfSpan;
+    }
+    const CR = typeof global.CircadianRenderer !== 'undefined' ? global.CircadianRenderer : null;
+    if (CR && typeof CR.getHandLength === 'function') {
+      const h = CR.getHandLength();
+      if (h > 0) return h;
+    }
+    return W * 0.1;
+  }
+
+  /** Earth-marker center on the annual worldline at height `refHeight` (Event Horizon origin). */
+  function getEarthEventHorizonCenter(refHeight, earthDist) {
+    const W = typeof earthDist === 'number' && !isNaN(earthDist) ? earthDist : getEarthDistance();
+    const y =
+      typeof refHeight === 'number' && isFinite(refHeight)
+        ? refHeight
+        : getWorldlineOrbitReferenceHeight();
+    const refWl = getWorldlineOrbitReferenceHeight();
+    const angle =
+      typeof SceneGeometry !== 'undefined' && SceneGeometry.getAngle
+        ? SceneGeometry.getAngle(y, refWl)
+        : 0;
+    return { x: Math.cos(angle) * W, y, z: Math.sin(angle) * W, W };
+  }
+
+  /**
+   * 0 = full annual day-marker / Context Arc frame; 1 = full circadian near-Earth frame.
+   * Nesting resolver / Event Horizon: sharp in time — STE only near SELECTED day;
+   * no week-long mushy warp (that tore LTE day ribbons into diagonals).
+   */
+  function getContextArcToCircadianBlend(when, earthDist) {
+    void earthDist;
+    if (!when || isNaN(when.getTime())) return 0;
+    let sel = null;
+    if (typeof global.getSelectedDateTime === 'function') {
+      const s = global.getSelectedDateTime();
+      if (s instanceof Date && !isNaN(s.getTime())) sel = s;
+    }
+    if (!sel) return 0;
+    const dayMs = 86400000;
+    const absDays = Math.abs(when.getTime() - sel.getTime()) / dayMs;
+    // Hard STE on selected day; hard LTE by ±1.25 days — Event Horizon in calendar time.
+    if (absDays <= 0.35) return 1;
+    if (absDays >= 1.25) return 0;
+    const t = (absDays - 0.35) / (1.25 - 0.35);
+    const u = 1 - Math.max(0, Math.min(1, t));
+    return u * u * (3 - 2 * u);
+  }
+
+  /** Circadian target point for an instant (hour-hand disk); null if unavailable. */
+  function sampleCircadianBlendTarget(when, refHeight) {
+    const CR = typeof global.CircadianRenderer !== 'undefined' ? global.CircadianRenderer : null;
+    if (!CR || typeof CR.blendedDiskPointAtDate !== 'function' || typeof calculateDateHeight !== 'function') {
+      return null;
+    }
+    if (!when || isNaN(when.getTime())) return null;
+    if (normalizedCircadianState() === 'off') return null;
+    const zl = getZoomLevelForEvents();
+    if (!isCircadianHelixZoom(zl) && zl < 7) return null;
+    const r = clampShortCircadianRadiusFromEarth(
+      typeof CR.getHandLength === 'function' ? CR.getHandLength() * 0.88 : 10.5
+    );
+    return CR.blendedDiskPointAtDate(
+      when,
+      r,
+      refHeight,
+      calculateDateHeight,
+      getCircadianStraightenBlendForEvents()
+    );
+  }
+
+  /**
+   * Nesting resolver warp through Event Horizon — currently off for LTE day-frame mapping.
+   * Earth / Event Horizon sit *outside* the LTE day time frame; day ribbons stay on the
+   * day-pitch floor without warping into the Earth nest.
+   */
+  function lerpDayFrameTowardCircadian(dayPos, when, refHeight, earthDist) {
+    void when;
+    void refHeight;
+    void earthDist;
+    return dayPos;
+  }
+
   /**
    * Placement on the annual Earth helix day-marker frame: midnight spoke angle, time-of-day → radius,
    * earlier time zones below / later above the day line (Y), overlap lanes stack in Y.
@@ -1944,7 +2118,8 @@
   }
 
   /**
-   * Map wall-clock time into the day-marker annulus: midnight at inner, noon halfway, evening toward outer.
+   * Map wall-clock time into the day-marker annulus:
+   * midnight at inner (L1 when singular), noon mid-band, evening → outer (L2).
    */
   function getRadiusInDayMarkerFrame(date, earthDist, indexOffset, event) {
     if (!shouldUseDayFrameSubDayHelixPlacement()) {
@@ -2039,10 +2214,13 @@
     return !shouldUseCircadianNearEarthShortPlacement();
   }
 
-  /** Week/day zoom: STE ribbons on the annual helix day-marker frame (alongside circadian when applicable). */
+  /**
+   * Month/week/day: STE ribbons on annual helix day-marker frame (Selected Time Frame).
+   * Month (5) / lunar (6) so a month of daily events can sit in STE view on the Context Arc spine.
+   */
   function shouldRenderDayFrameSubDayOnAnnualHelix(zl) {
     const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : getZoomLevelForEvents();
-    if (z === 7 || z === 8) return true;
+    if (z === 5 || z === 6 || z === 7 || z === 8) return true;
     return shouldUseDayFrameSubDayHelixPlacement();
   }
 
@@ -2050,7 +2228,7 @@
   function prepareDayFrameRibbonUserData(userDataBase) {
     const ud = userDataBase ? { ...userDataBase } : {};
     const zl = getZoomLevelForEvents();
-    if (zl === 7 || zl === 8) {
+    if (zl === 5 || zl === 6 || zl === 7 || zl === 8) {
       delete ud.circadianWorldSpaceLayer;
       ud.useWorldSpaceGroup = true;
       ud.immuneToFlatten = true;
@@ -2099,30 +2277,38 @@
   }
 
   function isAnnualDayFrameSteSpan(start, end) {
-    if (!start || isNaN(start.getTime())) return false;
-    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    return !isLongTermEventSpanForPlotType(start, evEnd) && durationDaysBetween(start, evEnd) < 2;
+    return isSteStyleDailySpan(start, end);
   }
 
-  /** Annual helix day-frame: all sub-day events (not limited to selected calendar day). */
+  /** Annual helix day-frame: daily STEs in Selected Time Frame (not limited to selected calendar day). */
   function shouldDrawAnnualDayFrameSteGeometry(start, end) {
     if (!shouldRenderDayFrameSubDayOnAnnualHelix()) return false;
     if (!isAnnualDayFrameSteSpan(start, end)) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (shouldHideLongTermOnDailySkySte(start, evEnd)) return false;
+    const zl = getZoomLevelForEvents();
+    if (zl === 5 || zl === 6 || zl === 7 || zl === 8) {
+      return eventTouchesSelectedContextArcWindow(start, evEnd);
+    }
     return true;
   }
 
   /** Circadian disk-stack STEs — keep selected-day / scope rules. */
   function shouldDrawCircadianSteGeometry(start, end) {
-    return shouldDrawDailySkySteGeometry(start, end) &&
-      !shouldHideCircadianShortEventForDayScope(start, end);
+    if (!shouldDrawDailySkySteGeometry(start, end)) return false;
+    if (shouldHideCircadianShortEventForDayScope(start, end)) return false;
+    const zl = getZoomLevelForEvents();
+    // Month/week: only dailies inside Selected Time Frame use STE; rest → LTE manifold.
+    if ((zl === 5 || zl === 6 || zl === 7) && isSteStyleDailySpan(start, end)) {
+      return eventTouchesSelectedContextArcWindow(start, end);
+    }
+    return true;
   }
 
   function getAnnualDayFrameRibbonBandHalf(earthDist, frameSpan, durationH) {
     const span = Math.max(frameSpan, earthDist * 0.008);
     const zl = getZoomLevelForEvents();
-    const frac = (zl === 7 || zl === 8) ? 0.17 : 0.14;
+    const frac = (zl === 5 || zl === 6 || zl === 7 || zl === 8) ? 0.17 : 0.14;
     let half = Math.max(span * frac, earthDist * 0.012);
     const hrs = typeof durationH === 'number' && !isNaN(durationH) ? durationH : 2;
     if (hrs < 4) {
@@ -2133,9 +2319,11 @@
   }
 
   function getAnnualDayFrameOffDayOpacityMul(start, end) {
-    if (!start || eventTouchesSelectedCalendarDay(start, end)) return 1;
+    // Nesting resolver LTE day events: full opacity across month/week/day zooms.
+    if (!start) return 1;
     const zl = getZoomLevelForEvents();
-    if (zl === 7 || zl === 8) return 0.78;
+    if (zl === 5 || zl === 6 || zl === 7 || zl === 8) return 1;
+    if (eventTouchesSelectedCalendarDay(start, end)) return 1;
     return 0.88;
   }
 
@@ -2856,6 +3044,13 @@
   }
 
   function createRibbonBufferFromFlatArrays(innerFlat, outerFlat) {
+    if (typeof global.RibbonGeometry !== 'undefined' && global.RibbonGeometry.fromInnerOuter) {
+      return global.RibbonGeometry.fromInnerOuter(innerFlat, outerFlat, {
+        THREE: global.THREE,
+        ribbonEdgeAttr: true
+      });
+    }
+    // Fallback if util script missing (standalone embeds)
     const n = innerFlat.length / 3;
     if (n < 2 || innerFlat.length !== outerFlat.length) return null;
     const pos = new Float32Array(n * 6);
@@ -2870,10 +3065,7 @@
     const idx = [];
     for (let i = 0; i < n - 1; i++) {
       const a = 2 * i;
-      const b = a + 1;
-      const c = a + 2;
-      const d = a + 3;
-      idx.push(a, b, c, b, d, c);
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
     const geo = new global.THREE.BufferGeometry();
     geo.setIndex(idx);
@@ -3070,15 +3262,42 @@
     let clipStart = false;
     let clipEnd = false;
 
+    // Pin day-cross to the start calendar day so midnight-spanning events do not
+    // jump day Y-bounds mid-ribbon (that read as wild diagonals).
+    const startViewerParts = getZonedDateParts(start, viewerTz);
+    const pinnedDayBounds = useDayCross
+      ? getCalendarDayCrossSectionYBounds(startViewerParts)
+      : null;
+    const crossesMidnight =
+      useDayCross &&
+      (() => {
+        const ep = getZonedDateParts(end, viewerTz);
+        return (
+          ep.year !== startViewerParts.year ||
+          ep.month !== startViewerParts.month ||
+          ep.day !== startViewerParts.day
+        );
+      })();
+
     for (let i = 0; i <= n; i++) {
       const u = i / n;
       const when = new Date(startMs + u * spanMs);
+      // After midnight on a multi-day span: stop extending day-cross (clip to start day).
+      if (crossesMidnight && pinnedDayBounds) {
+        const wp = getZonedDateParts(when, viewerTz);
+        if (
+          wp.year !== startViewerParts.year ||
+          wp.month !== startViewerParts.month ||
+          wp.day !== startViewerParts.day
+        ) {
+          break;
+        }
+      }
       const anchor = computeDayFrameAnchor(when, eventTz, viewerTz, earthDist, currentHeight, indexOffset, true);
       let pi;
       let po;
-      if (useDayCross) {
-        const viewerParts = getZonedDateParts(when, viewerTz);
-        const { dayStartY, dayEndY } = getCalendarDayCrossSectionYBounds(viewerParts);
+      if (useDayCross && pinnedDayBounds) {
+        const { dayStartY, dayEndY } = pinnedDayBounds;
         pi = dayFrameCrossSectionEdgePosition(dayStartY, anchor.rMid, currentHeight, laneY);
         po = dayFrameCrossSectionEdgePosition(dayEndY, anchor.rMid, currentHeight, laneY);
       } else {
@@ -3088,9 +3307,41 @@
         pi = dayFramePositionFromAnchor(anchor, edges.rIn);
         po = dayFramePositionFromAnchor(anchor, edges.rOut);
       }
+
+      // Warp ribbon *midpoint* through Event Horizon; rebuild edges along original day-pitch
+      // (or radial band) so Nesting resolve does not shear LTE day floors into diagonals.
+      const mid = {
+        x: (pi.x + po.x) * 0.5,
+        y: (pi.y + po.y) * 0.5,
+        z: (pi.z + po.z) * 0.5
+      };
+      const half = {
+        x: (po.x - pi.x) * 0.5,
+        y: (po.y - pi.y) * 0.5,
+        z: (po.z - pi.z) * 0.5
+      };
+      const warpedMid = lerpDayFrameTowardCircadian(mid, when, currentHeight, earthDist) || mid;
+      const blendW =
+        typeof warpedMid._arcCircadianBlend === 'number' ? warpedMid._arcCircadianBlend : 0;
+      // Collapse day-pitch width as we enter STE nest; keep full width on LTE side.
+      const widthKeep = blendW < 0.12 ? 1 : Math.max(0.08, 1 - blendW * 0.92);
+      pi = {
+        x: warpedMid.x - half.x * widthKeep,
+        y: warpedMid.y - half.y * widthKeep,
+        z: warpedMid.z - half.z * widthKeep,
+        _arcCircadianBlend: blendW
+      };
+      po = {
+        x: warpedMid.x + half.x * widthKeep,
+        y: warpedMid.y + half.y * widthKeep,
+        z: warpedMid.z + half.z * widthKeep
+      };
+
       innerFlat.push(pi.x, pi.y, pi.z);
       outerFlat.push(po.x, po.y, po.z);
     }
+
+    if (innerFlat.length < 6) return null;
 
     const startAnchor = computeDayFrameAnchor(start, eventTz, viewerTz, earthDist, currentHeight, indexOffset, true);
     const endAnchor = computeDayFrameAnchor(end, eventTz, viewerTz, earthDist, currentHeight, indexOffset, true);
@@ -3595,6 +3846,14 @@
     if (zl === 0) {
       if (isCircadianShortEventsShiftPreview()) return hex;
       return applyMomentZoomFocusColor(hex, start, end);
+    }
+    // Nesting resolver: LTE day events keep full chroma at month/week/day (5–8).
+    if (
+      (zl === 5 || zl === 6 || zl === 7 || zl === 8) &&
+      start &&
+      isSteStyleDailySpan(start, end)
+    ) {
+      return hex;
     }
     if (!shouldSkipTemporalVividnessAtDayHelixZooms()) {
       if (typeof durationDays === 'number' && durationDays >= 1) {
@@ -4651,6 +4910,15 @@
   }
 
   function cylinderBetweenPoints(p0, p1, radius, colorHex, opacity, renderOrder) {
+    if (typeof global.MeshPrimitives !== 'undefined' && global.MeshPrimitives.cylinderBetween) {
+      return global.MeshPrimitives.cylinderBetween(p0, p1, {
+        THREE: global.THREE,
+        radius,
+        color: colorHex,
+        opacity,
+        renderOrder
+      });
+    }
     const THREE = global.THREE;
     const dir = new THREE.Vector3().subVectors(p1, p0);
     const len = dir.length();
@@ -4666,21 +4934,42 @@
     const mesh = new THREE.Mesh(geom, mat);
     mesh.renderOrder = renderOrder;
     const axis = new THREE.Vector3(0, 1, 0);
-    const ndir = dir.clone().normalize();
-    mesh.quaternion.setFromUnitVectors(axis, ndir);
+    mesh.quaternion.setFromUnitVectors(axis, dir.clone().normalize());
     mesh.position.copy(new THREE.Vector3().addVectors(p0, p1).multiplyScalar(0.5));
     return mesh;
   }
 
   /**
-   * Thick polyline stroke along flat [x,y,z,...] using TubeGeometry (smooth) or short cylinders (fallback).
-   * @param {number} [radiusScale] - multiply tube radius (e.g. short circadian arcs use {@link getShortCircadianRibbonTubeScale}).
+   * Thick polyline stroke along flat [x,y,z,...].
+   * Prefer Line when far-LOD / low quality; Tube only when close + budget allows.
+   * @param {number} [radiusScale] - multiply tube radius (e.g. short circadian arcs).
    */
   function createTubeOutlineAlongFlat(flat, colorHex, opacity, renderOrder, earthDist, layerConfig, radiusScale) {
+    let r = getRibbonOutlineTubeRadius(earthDist, layerConfig);
+    if (radiusScale != null && isFinite(radiusScale) && radiusScale > 0) r *= radiusScale;
+    const forceLine =
+      _eventOutlineLineMode ||
+      (_eventTubeQualityScale < EVENT_OUTLINE_PREFER_LINE_QUALITY);
+
+    if (typeof global.MeshPrimitives !== 'undefined' && global.MeshPrimitives.strokeAlongFlat) {
+      return global.MeshPrimitives.strokeAlongFlat(flat, {
+        THREE: global.THREE,
+        mode: forceLine ? 'line' : 'auto',
+        forceLine,
+        qualityScale: _eventTubeQualityScale,
+        preferLineBelow: EVENT_OUTLINE_PREFER_LINE_QUALITY,
+        radius: r,
+        color: colorHex,
+        opacity,
+        renderOrder
+      });
+    }
+
+    // Fallback without MeshPrimitives
     const THREE = global.THREE;
     const nPts = flat.length / 3;
     if (nPts < 2) return null;
-    if (_eventOutlineLineMode) {
+    if (forceLine) {
       const lineGeo = new THREE.BufferGeometry();
       lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3));
       const line = new THREE.Line(
@@ -4695,43 +4984,14 @@
       line.renderOrder = renderOrder;
       return line;
     }
-    let r = getRibbonOutlineTubeRadius(earthDist, layerConfig);
-    if (radiusScale != null && isFinite(radiusScale) && radiusScale > 0) r *= radiusScale;
     if (nPts === 2) {
-      const p0 = new THREE.Vector3(flat[0], flat[1], flat[2]);
-      const p1 = new THREE.Vector3(flat[3], flat[4], flat[5]);
-      return cylinderBetweenPoints(p0, p1, r, colorHex, opacity, renderOrder);
+      return cylinderBetweenPoints(
+        new THREE.Vector3(flat[0], flat[1], flat[2]),
+        new THREE.Vector3(flat[3], flat[4], flat[5]),
+        r, colorHex, opacity, renderOrder
+      );
     }
-    if (typeof THREE.CatmullRomCurve3 === 'function' && typeof THREE.TubeGeometry === 'function') {
-      const points = [];
-      for (let i = 0; i < flat.length; i += 3) {
-        points.push(new THREE.Vector3(flat[i], flat[i + 1], flat[i + 2]));
-      }
-      const curve = new THREE.CatmullRomCurve3(points);
-      const q = _eventTubeQualityScale;
-      const maxTub = Math.max(24, Math.round(160 * q));
-      const tubularSegments = Math.max(6, Math.min(maxTub, Math.round((nPts - 1) * 4 * q)));
-      const radialSegments = q < 0.55 ? 3 : (q < 0.8 ? 4 : 5);
-      const geo = new THREE.TubeGeometry(curve, tubularSegments, r, radialSegments, false);
-      const mat = new THREE.MeshBasicMaterial({
-        color: colorHex,
-        transparent: true,
-        opacity: opacity,
-        side: THREE.DoubleSide,
-        depthWrite: false
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.renderOrder = renderOrder;
-      return mesh;
-    }
-    const group = new THREE.Group();
-    for (let i = 0; i < nPts - 1; i++) {
-      const p0 = new THREE.Vector3(flat[i * 3], flat[i * 3 + 1], flat[i * 3 + 2]);
-      const p1 = new THREE.Vector3(flat[(i + 1) * 3], flat[(i + 1) * 3 + 1], flat[(i + 1) * 3 + 2]);
-      const c = cylinderBetweenPoints(p0, p1, r, colorHex, opacity, renderOrder);
-      if (c) group.add(c);
-    }
-    return group.children.length ? group : null;
+    return null;
   }
 
   /** lineThickness scales radial span of inner/outer helix (portal “band width”). */
@@ -5009,13 +5269,19 @@
     return { minMs, maxMs };
   }
 
+  /**
+   * Series spines/connectors used to park short-event “prominence” in the classic month
+   * annulus (~0.34W, sunward of week). That flooded the month time frame with gray lines
+   * and fought the LTE day-frame nest. Disabled — keep day-frame LTE ribbons only.
+   */
+  const SERIES_MONTH_FRAME_DECORATION_ENABLED = false;
   /** Spine + connectors: short events spread over months (heuristic) or explicit circaevumSeriesId. */
   const SERIES_MIN_HEURISTIC_EVENTS = 4;
   const SERIES_MIN_HEURISTIC_SPAN_DAYS = 45;
   const SERIES_MAX_EVENT_HOURS = 48;
   const SERIES_MIN_EXPLICIT_EVENTS = 2;
   const SERIES_MIN_EXPLICIT_SPAN_DAYS = 14;
-  /** Sun-ward centerline of the series spine; radial thickness matches short-event ribbon bands. */
+  /** Sun-ward centerline of the series spine; sits in month band (inside week.inner). */
   const SERIES_SPINE_RADIUS_FRAC = 0.34;
 
   function passesHeuristicTimeSeries(arr) {
@@ -5121,6 +5387,9 @@
    */
   function createTimeSeriesDecorationGroups(events, layerConfig) {
     const groups = [];
+    // Month-frame STE prominence scaffolding (spine @ SERIES_SPINE_RADIUS_FRAC + connectors).
+    // Do not draw — LTE day-frame events stay via tryCreateDayFrameSubDayRibbon.
+    if (!SERIES_MONTH_FRAME_DECORATION_ENABLED) return groups;
     if (!events || !layerConfig || typeof calculateDateHeight !== 'function') return groups;
     const seriesList = clusterEventsIntoTimeSeries(events);
     if (seriesList.length === 0) return groups;
@@ -5462,11 +5731,15 @@
       : startHeight;
 
     const durationH = durationHoursBetween(start, end);
-    const isShortSpan = !isLongTermEventSpanForPlotType(start, end) && durationDaysBetween(start, end) < 2;
+    // Nesting resolver: STE nest inside Selected Time Frame; else LTE manifold (multi-day always LTE).
+    const isShortSpan = isSteStyleDailySpan(start, end);
+    let drawCircadianSte = false;
+    let drawAnnualSte = false;
     if (isShortSpan) {
-      const drawCircadianSte = shouldDrawCircadianSteGeometry(start, end);
-      const drawAnnualSte = shouldDrawAnnualDayFrameSteGeometry(start, end);
-      if (!drawCircadianSte && !drawAnnualSte) return null;
+      drawCircadianSte = shouldDrawCircadianSteGeometry(start, end);
+      drawAnnualSte = shouldDrawAnnualDayFrameSteGeometry(start, end);
+    }
+    if (isShortSpan && (drawCircadianSte || drawAnnualSte)) {
       const anchorMsShort = getEventTemporalAnchorMs(start, end);
       const zl = getZoomLevelForEvents();
       const straightenBlend = getCircadianStraightenBlendForEvents();
@@ -5679,8 +5952,7 @@
         if (dayFrameGrp) return dayFrameGrp;
       }
 
-      if (!drawCircadianSte || !shouldRenderDailySkySteDiskFallbackMarker(start, end)) return null;
-
+      if (drawCircadianSte && shouldRenderDailySkySteDiskFallbackMarker(start, end)) {
       const midDate = new Date((start.getTime() + end.getTime()) / 2);
       const getPos = function (h, rad) {
         const a = getOrbitAngleForShortEventPlacement(h, refSelected);
@@ -5742,10 +6014,46 @@
       markCircadianShortScrubRoot(grp, layerConfig._diskRibbon, false);
       markShortEventPointerPickability(grp, start, end);
       return grp;
+      }
+      // STE attempted but no geometry — fall through to large LTE manifold.
     }
 
     if (shouldHideLongTermOnDailySkySte(start, end)) return null;
     if (shouldHideCircadianEventOutsideSelectedDayAtClockZooms(start, end)) return null;
+
+    // Sub-day / all-day on annual helix: calendar-day pitch (midnight→next), not week-corridor
+    // radial stretch from getEventBandRadii (that path is for multi-day LTE only).
+    if (isSteStyleDailySpan(start, end) && shouldRenderDayFrameSubDayOnAnnualHelix()) {
+      const anchorMsDay = getEventTemporalAnchorMs(start, end);
+      const eventColorRawDay = event.color ?? event.colorId ?? null;
+      const explicitDay = hasExplicitEventColor(event);
+      const fallbackDay = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
+      let eventHexDay = parseColor(explicitDay ? eventColorRawDay : fallbackDay);
+      eventHexDay = applyEventDisplayColor(eventHexDay, anchorMsDay, start, end);
+      const dayFrameLte = tryCreateDayFrameSubDayRibbon({
+        start,
+        end,
+        startHeight,
+        endHeight,
+        layerConfig,
+        earthDist,
+        refSelected,
+        eventHex: eventHexDay,
+        explicitColor: explicitDay,
+        fallbackGradient: fallbackDay,
+        anchorMs: anchorMsDay,
+        durationH,
+        userDataBase: {
+          vevent: event,
+          layerId: layerConfig.id,
+          type: 'EventObject',
+          eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
+        },
+        midTitleAlong01,
+        labelEvent: event
+      });
+      if (dayFrameLte) return dayFrameLte;
+    }
 
     const durationDays = (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000);
     const band = radius != null && !isNaN(radius)
@@ -5999,6 +6307,8 @@
       const start = line.start instanceof Date ? line.start : new Date(line.start);
       const end = line.end instanceof Date ? line.end : new Date(line.end);
       if (!start || isNaN(start.getTime()) || !end || isNaN(end.getTime()) || end <= start) continue;
+      // Same far/density LOD as createEventWorldline — line-objects path used to force tubes always.
+      _eventOutlineLineMode = eventOutlineShouldUseLine(start, end);
 
       const startHeight = typeof calculateDateHeight === 'function'
         ? calculateDateHeight(start.getFullYear(), start.getMonth(), start.getDate(), start.getHours())
@@ -6010,7 +6320,7 @@
       const durationMs = end.getTime() - start.getTime();
       const durationDays = durationMs / (24 * 60 * 60 * 1000);
       const durationH = durationHoursBetween(start, end);
-      const isShortEvent = !isLongTermEventSpanForPlotType(start, end) && durationDaysBetween(start, end) < 2;
+      const isShortEvent = isSteStyleDailySpan(start, end);
 
       const midDate = new Date((start.getTime() + end.getTime()) / 2);
       const anchorMs = midDate.getTime();
@@ -6019,7 +6329,7 @@
       const lineHasExplicitColor = hasExplicitEventColor(line);
       const lineGradient = getTimeGradientHex(getNormalizedTimeForDate(start, lineTimeRange));
       let colorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
-      colorHex = applyTemporalVividnessToHex(colorHex, anchorMs, start, end);
+      colorHex = applyEventDisplayColor(colorHex, anchorMs, start, end, durationDays);
       const midHeight = (startHeight + endHeight) / 2;
 
       const byCategory = layerConfig.layerStylesByCategory || {};
@@ -6034,18 +6344,17 @@
         ...(lineDiskRibbon ? { _diskRibbon: lineDiskRibbon } : {})
       };
 
-      let drawCircadianLine = true;
+      let drawCircadianLine = false;
       let drawAnnualLine = false;
       if (isShortEvent) {
         drawCircadianLine = shouldDrawCircadianSteGeometry(start, end);
         drawAnnualLine = shouldDrawAnnualDayFrameSteGeometry(start, end);
-        if (!drawCircadianLine && !drawAnnualLine) continue;
       } else if (!shouldDrawDailySkySteGeometry(start, end) &&
           !shouldDrawAnnualDayFrameSteGeometry(start, end)) {
         continue;
       }
 
-      if (isShortEvent) {
+      if (isShortEvent && (drawCircadianLine || drawAnnualLine)) {
         const zl = getZoomLevelForEvents();
         const circ = normalizedCircadianState();
         const straightenBlendLines = getCircadianStraightenBlendForEvents();
@@ -6344,10 +6653,7 @@
           }
         }
 
-        if (!drawCircadianLine || !shouldRenderDailySkySteDiskFallbackMarker(start, end)) {
-          continue;
-        }
-
+        if (drawCircadianLine && shouldRenderDailySkySteDiskFallbackMarker(start, end)) {
         let midPos = null;
         if (shouldUseCircadianNearEarthShortPlacement()) {
           midPos = getShortEventCircadianNearEarthPosition(start, end, refSelected);
@@ -6441,6 +6747,8 @@
         addToFlattenOrWorld(shortRoot);
         objects.push(shortRoot);
         continue;
+        }
+        // STE attempted but no geometry — fall through to large LTE manifold.
       }
 
       if (shouldHideCircadianEventOutsideSelectedDayAtClockZooms(start, end)) {
@@ -6448,6 +6756,49 @@
       }
       if (!shouldDrawDailySkySteGeometry(start, end)) {
         continue;
+      }
+
+      // Sub-day LTE on annual helix: day pitch (last→next midnight), not week-corridor radii.
+      if (isShortEvent && shouldRenderDayFrameSubDayOnAnnualHelix()) {
+        const dayFrameLineRoot = tryCreateDayFrameSubDayRibbon({
+          start,
+          end,
+          startHeight,
+          endHeight,
+          layerConfig: outlineLayerCfg,
+          lineStyle,
+          firstStyle,
+          earthDist,
+          refSelected,
+          eventHex: colorHex,
+          explicitColor: lineHasExplicitColor,
+          fallbackGradient: lineGradient,
+          anchorMs,
+          durationH,
+          userDataBase: {
+            layerId: layerConfig.id,
+            type: 'EventObject',
+            eventUid: line.uid || line.id || null,
+            start,
+            end,
+            label: line.label || null,
+            index: i
+          },
+          midTitleAlong01: titleAlongByLineIdx.get(i) ?? 0.5,
+          labelEvent: {
+            summary: (line.label && String(line.label).trim()) || null,
+            title: (line.label && String(line.label).trim()) || null,
+            dtstart: line.dtstart || (line.timeZone
+              ? { dateTime: start.toISOString(), timeZone: line.timeZone }
+              : undefined),
+            timeZone: line.timeZone
+          }
+        });
+        if (dayFrameLineRoot) {
+          addToFlattenOrWorld(dayFrameLineRoot);
+          objects.push(dayFrameLineRoot);
+          continue;
+        }
       }
 
       // Multi-day: inner/outer helices, end connectors, optional ribbon fill
@@ -7276,11 +7627,15 @@
     const seriesBaseConfig = { ...layerConfig, layerStylesByCategory: undefined, _timeColorRange: eventTimeRange };
     // Timeseries-arc events (e.g. Garmin sleep/HR) draw their own arcs; keep them out of the standard
     // time-series decoration spines/connectors so no extra "standard event arcs" appear for them.
+    // Month-frame series spines (0.34W) are disabled in createTimeSeriesDecorationGroups.
     const decorationEvents = renderEvents.filter(
       (e) => !(e && e.render && e.render.kind === 'timeseries' && e.render.arc === false)
     );
     let seriesRoots = [];
-    if (!isEarthDailySkyEventZoom(getZoomLevelForEvents())) {
+    if (
+      SERIES_MONTH_FRAME_DECORATION_ENABLED &&
+      !isEarthDailySkyEventZoom(getZoomLevelForEvents())
+    ) {
       seriesRoots = createTimeSeriesDecorationGroups(decorationEvents, seriesBaseConfig);
     }
     for (let si = 0; si < seriesRoots.length; si++) {
@@ -7375,7 +7730,12 @@
     getListContextRingOuterRadius,
     getListContextRingRadiiForZoom,
     getDayMarkerFrameRadii,
-    getRadiusInDayMarkerFrame
+    getRadiusInDayMarkerFrame,
+    getContextArcToCircadianBlend,
+    getEventHorizonRadius,
+    getEarthEventHorizonCenter,
+    isSteStyleDailySpan,
+    eventTouchesSelectedContextArcWindow
   };
 
   if (typeof module !== 'undefined' && module.exports) {

@@ -196,6 +196,21 @@
                     <path d="M6.34 6.34l1.41 1.41M16.24 16.24l1.41 1.41M17.66 6.34l-1.41 1.41M6.34 17.66l1.41-1.41"/>
                 </svg>
             </button>
+            <button type="button" class="scene-icon-btn" id="markers-singular-band-toggle" title="Singular Earth-radius time bands (demo): thin stack near Earth orbit" aria-label="Toggle singular Earth-radius time marker bands demo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9"/>
+                    <circle cx="12" cy="12" r="7.2" opacity="0.55"/>
+                    <circle cx="12" cy="12" r="5.4" opacity="0.35"/>
+                    <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" opacity="0.9"/>
+                </svg>
+            </button>
+            <button type="button" class="scene-icon-btn active" id="day-frame-lte-sky-toggle" title="Earth LTE sky canvas on day frame (K)" aria-label="Toggle Earth day-frame LTE sky canvas">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 18c2.5-7 5-11 8-14 3 3 5.5 7 8 14"/>
+                    <path d="M6 16h12" opacity="0.4"/>
+                    <path d="M8 10c1.2 2.2 2.4 3.6 4 5 1.6-1.4 2.8-2.8 4-5" opacity="0.75"/>
+                </svg>
+            </button>
             <button type="button" class="scene-icon-btn active" id="events-timeline-scope-toggle" title="Events: selected year only (click for all time)" aria-label="Toggle events between selected year and all time">
                 <!-- Icon swaps in JS: year vs all-time -->
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -219,7 +234,7 @@
                     <path d="M7 8h10v8H7z" opacity="0.35" fill="currentColor" stroke="none"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn active" id="geophysical-shells-toggle" title="Geophysical shells: atmosphere, ionosphere, magnetosphere (G)" aria-label="Hide atmosphere, ionosphere, Van Allen belts, and magnetosphere shells (G)">
+            <button type="button" class="scene-icon-btn" id="geophysical-shells-toggle" title="Geophysical shells: hidden (G)" aria-label="Show atmosphere, ionosphere, Van Allen belts, and magnetosphere shells (G)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" opacity="0.92"/>
                     <ellipse cx="12" cy="12" rx="5.2" ry="3.6" opacity="0.85"/>
@@ -598,8 +613,10 @@
     <script src="circaevum/js/geo/magnetosphere-shell.js"></script>
     <script src="circaevum/js/geo/earth-globe.js"></script>
     
-    <!-- Utils (geometry helpers) -->
+    <!-- Utils (geometry helpers + shared ribbon / stroke primitives) -->
     <script src="circaevum/js/utils/geometry-helpers.js"></script>
+    <script src="circaevum/js/utils/ribbon-geometry.js"></script>
+    <script src="circaevum/js/utils/mesh-primitives.js"></script>
     
     <!-- Core (scene initialization) -->
     <script src="circaevum/js/core/scene-core.js"></script>

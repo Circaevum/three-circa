@@ -41,6 +41,7 @@ GitHub Pages is enough for static agent-discovery files. It is **not** enough fo
 | `/llms.txt` | LLM site map |
 | `/developers.html` | Human-facing integrator & agent docs |
 | `/docs/FOR-AGENTS.md` | Full markdown reference for agents |
+| `/docs/COORDINATES.md` | Circaevum coordinate system (human + machine) |
 | `/index.md` | Markdown fallback URL |
 | `/.well-known/api-catalog` | RFC 9727 API catalog |
 | `/.well-known/agent-skills/index.json` | Agent Skills discovery |

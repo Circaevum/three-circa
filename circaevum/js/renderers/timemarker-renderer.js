@@ -357,6 +357,119 @@ const TimeMarkers = (function() {
         }
     };
 
+    function isSingularBandModeActive() {
+        return typeof window !== 'undefined' &&
+            typeof window.getSingularBandMode === 'function' &&
+            !!window.getSingularBandMode();
+    }
+
+    function getEarthLagrangeGammaForRadii() {
+        const cfg =
+            typeof SCENE_CONFIG !== 'undefined' && SCENE_CONFIG && SCENE_CONFIG.lagrangeMarkers
+                ? SCENE_CONFIG.lagrangeMarkers
+                : null;
+        const mu =
+            cfg && typeof cfg.earthToSunMassRatio === 'number' && cfg.earthToSunMassRatio > 0
+                ? cfg.earthToSunMassRatio
+                : 3.00346e-6;
+        return Math.pow(mu / 3, 1 / 3);
+    }
+
+    /**
+     * Circadian hour-hand length from Earth (noon tip ↔ midnight tip = 2× this along Sun–Earth).
+     * Same as RADII_CONFIG.hour.spiral / CircadianRenderer hand.
+     */
+    function getCircadianNoonMidnightHalfSpan(earthDistance) {
+        const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        if (
+            typeof CircadianRenderer !== 'undefined' &&
+            typeof CircadianRenderer.getHandLength === 'function'
+        ) {
+            const h = CircadianRenderer.getHandLength();
+            if (typeof h === 'number' && isFinite(h) && h > 0) return h;
+        }
+        return RADII_CONFIG.hour.spiral(W);
+    }
+
+    /**
+     * Day-marker / Context Arc sky frame (singular):
+     * Radial span = circadian noon↔midnight difference (2 × hour-hand length).
+     * Centered on Earth orbit W — pedagogical L1 (midnight, sunward) → L2 (end of day, anti-sunward).
+     * Not CRTBP γ·W (too thin to match the daily disk).
+     */
+    function getEarthOrbitL1L2DayFrameRadii(earthDistance) {
+        const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        const half = getCircadianNoonMidnightHalfSpan(W);
+        const inner = W - half;
+        const outer = W + half;
+        return {
+            inner,
+            outer,
+            label: inner + (outer - inner) * 0.4,
+            dayName: inner + (outer - inner) * 0.7,
+            halfSpan: half,
+            gamma: getEarthLagrangeGammaForRadii(),
+            W
+        };
+    }
+
+    /**
+     * Thin residual Δr stack centered on Earth orbit W (demo).
+     * Day band = circadian noon↔midnight radial span (2×hand), midnight at inner / end at outer.
+     * Coarser grains step sunward of day inner.
+     */
+    function getSingularRadialZones(earthDistance) {
+        const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        const day = getEarthOrbitL1L2DayFrameRadii(W);
+        const dayInner = day.inner;
+        const dayOuter = day.outer;
+        const dayWidth = Math.max(dayOuter - dayInner, W * 0.004);
+        // Stack coarser grains sunward of day-inner with similar pitch.
+        const wOuter = dayInner;
+        const wInner = wOuter - dayWidth;
+        const mOuter = wInner;
+        const mInner = mOuter - dayWidth;
+        const qOuter = mInner;
+        const qInner = qOuter - dayWidth;
+        return {
+            quarter: {
+                outer: qOuter,
+                inner: null,
+                label: (qInner + qOuter) * 0.5
+            },
+            month: {
+                outer: mOuter,
+                inner: mInner,
+                label: (mInner + mOuter) * 0.5
+            },
+            week: {
+                outer: wOuter,
+                inner: wInner,
+                label: (wInner + wOuter) * 0.5
+            },
+            day: {
+                outer: dayOuter,
+                inner: dayInner,
+                label: day.label,
+                dayName: day.dayName
+            },
+            hour: {
+                spiral: RADII_CONFIG.hour.spiral(W)
+            }
+        };
+    }
+
+    /** Radii for one marker system — singular stack or classic onion. */
+    function getSystemRadii(systemName, earthDistance) {
+        const zones = getCanonicalRadialZones(earthDistance);
+        if (systemName === 'quarter') return zones.quarter;
+        if (systemName === 'month') return zones.month;
+        if (systemName === 'week') return zones.week;
+        if (systemName === 'day') return zones.day;
+        if (systemName === 'hour') return { spiral: zones.hour.spiral };
+        return zones.month;
+    }
+
     // ============================================
     // SYSTEM DEFINITIONS (Declarative)
     // ============================================
@@ -365,11 +478,7 @@ const TimeMarkers = (function() {
         quarter: {
             name: 'quarter',
             /** Zoom-invariant: same rings at all zoom levels; only which units render changes. */
-            getRadii: (_zoom, dist) => ({
-                outer: RADII_CONFIG.quarter.outer(dist),
-                inner: RADII_CONFIG.quarter.inner(),
-                label: RADII_CONFIG.quarter.label(dist)
-            }),
+            getRadii: (_zoom, dist) => getSystemRadii('quarter', dist),
             // For zoom 3+ always show all 4 quarters of the selected year
             getUnits: (zoom, state) => {
                 const year = state.selectedYear;
@@ -395,11 +504,7 @@ const TimeMarkers = (function() {
         month: {
             name: 'month',
             /** Zoom-invariant: same rings at all zoom levels; only which units render changes. */
-            getRadii: (_zoom, dist) => ({
-                outer: RADII_CONFIG.month.outer(dist),
-                inner: RADII_CONFIG.month.inner(dist),
-                label: RADII_CONFIG.month.label(dist)
-            }),
+            getRadii: (_zoom, dist) => getSystemRadii('month', dist),
             // For zoom 3+ always show all 12 months of the selected year
             getUnits: (zoom, state) => {
                 const year = state.selectedYear;
@@ -906,9 +1011,10 @@ const TimeMarkers = (function() {
     // ============================================
     
     function createWeekSystem(earthDistance, timeState, zoomLevel) {
-        const innerRadius = RADII_CONFIG.week.inner(earthDistance);
-        const outerRadius = RADII_CONFIG.week.outer(earthDistance);
-        const labelRadius = RADII_CONFIG.week.label(earthDistance);
+        const weekRadii = getSystemRadii('week', earthDistance);
+        const innerRadius = weekRadii.inner;
+        const outerRadius = weekRadii.outer;
+        const labelRadius = weekRadii.label;
         
         function getWeeksToShow(zoomLevel, timeState) {
             // New behavior: for zoom 4+ we always show all weeks in the selected year.
@@ -1064,10 +1170,11 @@ const TimeMarkers = (function() {
     // ============================================
     
     function createDaySystem(earthDistance, timeState, zoomLevel) {
-        const innerRadius = RADII_CONFIG.day.inner(earthDistance);
-        const outerRadius = RADII_CONFIG.day.outer(earthDistance);
-        const labelRadius = RADII_CONFIG.day.label(earthDistance);  // Day numbers
-        const dayNameRadius = RADII_CONFIG.day.dayName(earthDistance);  // Day names
+        const dayRadii = getSystemRadii('day', earthDistance);
+        const innerRadius = dayRadii.inner;
+        const outerRadius = dayRadii.outer;
+        const labelRadius = dayRadii.label;  // Day numbers
+        const dayNameRadius = dayRadii.dayName;  // Day names
         
         function getDaysToShow(zoomLevel, timeState) {
             if (_fullYearScope && _fullYearYear != null) {
@@ -1649,7 +1756,7 @@ const TimeMarkers = (function() {
         const sunToEarthAngle = Math.atan2(earthZ, earthX);
         
         // Spiral parameters - wrap around Earth
-        const spiralRadius = RADII_CONFIG.hour.spiral(earthDistance);
+        const spiralRadius = getSystemRadii('hour', earthDistance).spiral;
         // Day height: 24 hours = 0.00274 years = 0.274 units
         const dayHeight = ZOOM_LEVELS[zoomLevel].timeYears * 100;
         const spiralHeight = dayHeight; // Only the height of one day
@@ -1901,6 +2008,9 @@ const TimeMarkers = (function() {
      * Numeric radii for all marker bands at Earth distance W (single source for event-renderer and list UI).
      */
     function getCanonicalRadialZones(earthDistance) {
+        if (isSingularBandModeActive()) {
+            return getSingularRadialZones(earthDistance);
+        }
         const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
         return {
             quarter: {
@@ -1932,25 +2042,80 @@ const TimeMarkers = (function() {
 
     /**
      * List-context annulus radii aligned to the active zoom’s time-marker band (inner/outer curves).
-     * z5 Month / z6 Lunar: month.inner–month.outer. z7 Week: week.inner–week.outer. z8–9: day band. etc.
+     * Singular demo: one grain-wide band; Year/Quarter use the Earth-orbit spine (day band)
+     * so Context Arc stays centered on W and does not span multiple grains.
+     * Classic: z5 Month / z6 Lunar month band; z7 week; z8–9 day; etc.
+     */
+    /**
+     * Classic onion Context Arc radii by zoom — always (even when singular LTE day-spine sky is on).
+     * Simple blue hoop sits sunward of Earth; Earth / Event Horizon stay outside the LTE day frame.
+     */
+    function getClassicListContextRingRadiiForZoom(zoomLevel, earthDistance) {
+        const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
+        const zr = z === 0 ? 9 : z;
+        const classic = {
+            quarter: { outer: W / 4, label: W / 6 },
+            month: { outer: W / 2, inner: W / 4 },
+            week: { outer: W * 5 / 8, inner: W / 2 },
+            day: { outer: W * 3 / 4, inner: W * 5 / 8 }
+        };
+        let rInner;
+        let rOuter;
+        if (zr <= 0) {
+            rInner = classic.day.inner;
+            rOuter = classic.day.inner;
+        } else if (zr <= 2) {
+            rInner = classic.quarter.label;
+            rOuter = classic.quarter.outer;
+        } else if (z === 3 || z === 4) {
+            rInner = classic.quarter.outer;
+            rOuter = classic.month.outer;
+        } else if (z === 5 || z === 6) {
+            rInner = classic.month.inner;
+            rOuter = classic.month.outer;
+        } else if (z === 7) {
+            rInner = classic.week.inner;
+            rOuter = classic.week.outer;
+        } else {
+            rInner = classic.day.inner;
+            rOuter = classic.day.outer;
+        }
+        const rMax = z >= 8 ? W * 0.998 : W * 0.92;
+        rOuter = Math.max(W * 0.08, Math.min(rOuter, rMax));
+        rInner = Math.max(W * 0.06, Math.min(rInner, rOuter - W * 0.02));
+        if (rInner >= rOuter - W * 0.002) {
+            rInner = Math.max(W * 0.06, rOuter - Math.max(W * 0.02, (rOuter - rInner) || W * 0.02));
+        }
+        return { rInner, rOuter };
+    }
+
+    /**
+     * List-context annulus radii aligned to the active zoom’s time-marker band (inner/outer curves).
+     * Singular demo: one grain-wide band; Year/Quarter use the Earth-orbit spine (day band)
+     * so Context Arc stays centered on W and does not span multiple grains.
+     * Classic: z5 Month / z6 Lunar month band; z7 week; z8–9 day; etc.
      */
     function getListContextRingRadiiForZoom(zoomLevel, earthDistance) {
         const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
         const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
         const zr = z === 0 ? 9 : z;
         const zones = getCanonicalRadialZones(W);
+        const singular = isSingularBandModeActive();
         let rInner;
         let rOuter;
-        if (zr <= 0) {
+        if (singular) {
+            // LTE day-spine sky: midnight (inner) → end of day (outer).
+            const day = getEarthOrbitL1L2DayFrameRadii(W);
+            rInner = day.inner;
+            rOuter = day.outer;
+        } else if (zr <= 0) {
             rInner = zones.day.inner;
             rOuter = zones.day.inner;
         } else if (zr <= 2) {
             rInner = zones.quarter.label;
             rOuter = zones.quarter.outer;
-        } else if (z === 3) {
-            rInner = zones.quarter.outer;
-            rOuter = zones.month.outer;
-        } else if (z === 4) {
+        } else if (z === 3 || z === 4) {
             rInner = zones.quarter.outer;
             rOuter = zones.month.outer;
         } else if (z === 5 || z === 6) {
@@ -1964,10 +2129,13 @@ const TimeMarkers = (function() {
             rOuter = zones.day.outer;
         }
         const rMax = z >= 8 ? W * 0.998 : W * 0.92;
-        rOuter = Math.max(W * 0.08, Math.min(rOuter, rMax));
-        rInner = Math.max(W * 0.06, Math.min(rInner, rOuter - W * 0.02));
-        if (rInner >= rOuter - W * 0.01) {
-            rInner = Math.max(W * 0.06, rOuter * 0.5);
+        const dayHalf = singular ? getCircadianNoonMidnightHalfSpan(W) : 0;
+        const rMaxEff = singular ? Math.max(rMax, W + dayHalf * 1.02) : rMax;
+        const minGap = singular ? Math.max(dayHalf * 0.5, W * 0.02) : W * 0.02;
+        rOuter = Math.max(W * 0.08, Math.min(rOuter, rMaxEff));
+        rInner = Math.max(W * 0.06, Math.min(rInner, rOuter - minGap));
+        if (rInner >= rOuter - W * 0.002) {
+            rInner = Math.max(W * 0.06, rOuter - Math.max(minGap, (rOuter - rInner) || minGap));
         }
         return { rInner, rOuter };
     }
@@ -1983,6 +2151,10 @@ const TimeMarkers = (function() {
         updateOffsets,
         getListContextRingRadiusForZoom,
         getListContextRingRadiiForZoom,
-        getCanonicalRadialZones
+        getClassicListContextRingRadiiForZoom,
+        getCanonicalRadialZones,
+        getSingularRadialZones,
+        getEarthOrbitL1L2DayFrameRadii,
+        getSystemRadii
     };
 })();

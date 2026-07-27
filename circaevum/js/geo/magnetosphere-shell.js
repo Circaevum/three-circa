@@ -29,7 +29,7 @@
     if (typeof global.GeophysicalShells !== 'undefined' && global.GeophysicalShells.areGeophysicalShellsEnabled) {
       return global.GeophysicalShells.areGeophysicalShellsEnabled();
     }
-    return true;
+    return false;
   }
 
   function getSunDirectionWorld(earthGroup) {

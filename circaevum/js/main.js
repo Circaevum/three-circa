@@ -67,6 +67,13 @@ let viewMode = 0; // 0 = angled, 1 = top-down (looking into future), 2 = bottom-
 let showTimeMarkerLines = true;
 let showTimeMarkerText = true;
 let showFullYearTimeMarkers = false; // When true, show time markers for the full selected year
+/**
+ * Demo: collapse time-marker bands + Context Arc onto a thin stack near Earth orbit radius.
+ * Classic onion markers are the product default. Singular is opt-in via URL / toolbar.
+ * URL `?singularBand=1|0` overrides; else sessionStorage (v2 key — classic default for fresh sessions).
+ */
+let singularBandMode = false;
+const SINGULAR_BAND_STORAGE_KEY = 'circaevum.singularBand.v2';
 /** When true (intro tour “clean orbit”), skip helical worldlines, ghost Earth orbit, and Lagrange extras. */
 let tourMinimalOrbitMode = false;
 /** Intro tour only: cap visible staged time-marker tiers (1–5) on year zoom; null = normal visibility rules. */
@@ -154,6 +161,11 @@ function clearTourNarrativeSceneFlags() {
 }
 /** Pedagogical Moon mesh + dashed guide + lunar worldline + Artemis II overlay (scene icon / M). */
 let showMoonLayer = true;
+/**
+ * Earth helical worldline ribbon (annual manifold). Temporarily off so Context Arc / sky canvas
+ * at Earth orbit stay readable; other planets keep their worldlines.
+ */
+let showEarthHelicalWorldline = false;
 
 /** Moon layer is off at coarse zooms 1–4 (century → quarter); still on at 0, 5–9 when `showMoonLayer` is true. */
 function isMoonLayerEffectiveAtZoom(zl) {
@@ -213,6 +225,9 @@ const CONTEXT_ARC_SKY_RADIAL_SEGMENTS = 24;
 /** Annual-helix day-frame LTE: selected-day sky strip (diurnal hues like day canvas). */
 const DAY_FRAME_LTE_SKY_RENDER_ORDER = -12;
 const DAY_FRAME_LTE_SKY_OPACITY = 0.64;
+const DAY_FRAME_LTE_SKY_STORAGE_KEY = 'circaevum.dayFrameLteSky';
+/** When false, day-frame LTE sky mesh is disposed so it cannot occlude STE / timeseries mapping. */
+let showDayFrameLteSky = true;
 let dayFrameLteSkyMesh = null;
 let dayFrameLteSkyGeomKey = null;
 let dayFrameLteSkyColorKey = null;
@@ -2118,16 +2133,41 @@ function getListHorizonSeasonSpikeThetasRad(calendarYear) {
 }
 
 /**
+ * Normalize context-arc annulus radii. Classic onion: if band too thin, expand inward
+ * (legacy 0.38·ro). Singular Earth-orbit stack: keep thin band — never smash ri sunward.
+ */
+function normalizeListHorizonAnnulusRadii(rInner, rOuter) {
+    const ro = Math.max(0, rOuter);
+    let ri = Math.max(0, rInner);
+    if (ro < 1e-4) return { ri: 0, ro: 0, ok: false };
+    const singular =
+        typeof window !== 'undefined' &&
+        typeof window.getSingularBandMode === 'function' &&
+        !!window.getSingularBandMode();
+    if (ri >= ro - ro * 0.04) {
+        if (singular) {
+            // Preserve mid-radius; enforce a tiny visible gap only.
+            const mid = (ri + ro) * 0.5;
+            const half = Math.max(ro * 0.008, (ro - ri) * 0.5, mid * 0.006);
+            ri = Math.max(0, mid - half);
+            return { ri, ro: mid + half, ok: true };
+        }
+        ri = Math.max(0, ro * 0.38);
+    }
+    return { ri, ro, ok: true };
+}
+
+/**
  * Annulus mesh for season spikes (list-context band only — no fan to the Sun).
  * @param {object} [arc] - from {@link getListContextDiscArcRad}; omit for full circle.
  * @param {object} [helixCtx] - from {@link getListHorizonHelixBuildContext}; helical band when set.
  */
 function buildListHorizonContextAnnulusGeometry(THREE, rInner, rOuter, y, nSeg, arc, helixCtx) {
     const TWO_PI = Math.PI * 2;
-    const ro = Math.max(0, rOuter);
-    let ri = Math.max(0, rInner);
-    if (ro < 1e-4 || !THREE) return null;
-    if (ri >= ro - ro * 0.04) ri = Math.max(0, ro * 0.38);
+    const norm = normalizeListHorizonAnnulusRadii(rInner, rOuter);
+    if (!norm.ok || !THREE) return null;
+    const ri = norm.ri;
+    const ro = norm.ro;
 
     const fullCircle = !arc || arc.fullCircle;
     const t0 = fullCircle ? 0 : arc.theta0;
@@ -2182,9 +2222,10 @@ function buildListHorizonContextAnnulusGeometry(THREE, rInner, rOuter, y, nSeg, 
  */
 function buildListHorizonSeasonSpikeOverlayMesh(THREE, rInner, rOuter, yCenter, nSeg, edgeColorHex, thetasRad4, renderOrderBase, arc, helixCtx) {
     if (!THREE || !thetasRad4 || thetasRad4.length !== 4) return null;
-    const ro = Math.max(0, rOuter);
-    let ri = Math.max(0, rInner);
-    if (ri >= ro - ro * 0.04) ri = Math.max(0, ro * 0.38);
+    const norm = normalizeListHorizonAnnulusRadii(rInner, rOuter);
+    if (!norm.ok) return null;
+    const ri = norm.ri;
+    const ro = norm.ro;
     const geom = buildListHorizonContextAnnulusGeometry(THREE, ri, ro, yCenter, nSeg, arc, helixCtx);
     if (!geom) return null;
 
@@ -2323,8 +2364,9 @@ function getSolarAltitudeSeriesForCalendarDate(lat, lon, date) {
 
 function contextArcDiskHourFromRadialT(radialT) {
     const t = Math.max(0, Math.min(1, radialT));
-    // Sample inside the band so edge walls do not clip the first/last hour colors.
-    // Inner ~= 00:30, outer ~= 23:30 (still full-day sweep, but not on hidden edges).
+    // Singular day frame: radialT 0 = midnight (inner, sunward / pedagogical L1),
+    // 1 = end of day (outer, anti-sunward / pedagogical L2).
+    // Span = circadian noon↔midnight hand diameter. Sample inside band for edge colors.
     return 0.5 + t * 23;
 }
 
@@ -3247,6 +3289,15 @@ function getDayFrameLteSkyWorldlineRef() {
 function resolveDayFrameLteSkyRadii() {
     const earth = PLANET_DATA && PLANET_DATA.find((p) => p.name === 'Earth');
     const W = earth && typeof earth.distance === 'number' ? earth.distance : 50;
+    if (
+        typeof TimeMarkers !== 'undefined' &&
+        typeof TimeMarkers.getEarthOrbitL1L2DayFrameRadii === 'function' &&
+        typeof getSingularBandMode === 'function' &&
+        getSingularBandMode()
+    ) {
+        const day = TimeMarkers.getEarthOrbitL1L2DayFrameRadii(W);
+        return { inner: day.inner, outer: day.outer };
+    }
     if (typeof EventRenderer !== 'undefined' && typeof EventRenderer.getDayMarkerFrameRadii === 'function') {
         return EventRenderer.getDayMarkerFrameRadii(W);
     }
@@ -3326,6 +3377,7 @@ function buildDayFrameLteSkyMesh(T, ri, ro, dayStartY, dayEndY, refWorldline) {
     geom.computeVertexNormals();
     geom.userData.dayFrameLteSkyRi = inner;
     geom.userData.dayFrameLteSkyRo = outer;
+    geom.userData.dayFrameLteSkyMidY = dayStartY + ySpan * 0.5;
     storeListHorizonLogicalPositions(geom);
     const mat = createListHorizonSkyDiskMaterial(T);
     mat.opacity = DAY_FRAME_LTE_SKY_OPACITY;
@@ -3375,7 +3427,7 @@ function updateDayFrameLteSkyFlatten(focusY, amount) {
 /** Selected-day sky backdrop on annual helix day-marker frame (zoom 7/8). */
 function updateDayFrameLteSkyBackdrop(zoomLevel) {
     const T = getThreeNamespace();
-    if (!T || !sceneContentGroup || !isDayFrameLteSkyZoom(zoomLevel)) {
+    if (!T || !sceneContentGroup || !showDayFrameLteSky || !isDayFrameLteSkyZoom(zoomLevel)) {
         disposeDayFrameLteSky();
         return;
     }
@@ -3467,10 +3519,10 @@ function createListHorizonSkyDiskMaterial(THREE) {
  */
 function buildListHorizonSkyFlatAnnulusMesh(THREE, rInner, rOuter, yCenter, nSeg, colorHex, renderOrder, arc) {
     const TWO_PI = Math.PI * 2;
-    const ro = Math.max(0, rOuter);
-    let ri = Math.max(0, rInner);
-    if (ro < 1e-4 || !THREE || !THREE.RingGeometry) return null;
-    if (ri >= ro - ro * 0.04) ri = Math.max(0, ro * 0.38);
+    const norm = normalizeListHorizonAnnulusRadii(rInner, rOuter);
+    if (!norm.ok || !THREE || !THREE.RingGeometry) return null;
+    const ri = norm.ri;
+    const ro = norm.ro;
 
     const fullCircle = !arc || arc.fullCircle;
     const t0 = fullCircle ? 0 : arc.theta0;
@@ -3535,10 +3587,10 @@ function buildListHorizonSkyDiskMesh(THREE, rInner, rOuter, y, nSeg, colorHex, o
     void opacity;
     void y;
     const TWO_PI = Math.PI * 2;
-    const ro = Math.max(0, rOuter);
-    let ri = Math.max(0, rInner);
-    if (ro < 1e-4) return null;
-    if (ri >= ro - ro * 0.04) ri = Math.max(0, ro * 0.38);
+    const norm = normalizeListHorizonAnnulusRadii(rInner, rOuter);
+    if (!norm.ok) return null;
+    const ri = norm.ri;
+    const ro = norm.ro;
 
     const fullCircle = !arc || arc.fullCircle;
     const t0 = fullCircle ? 0 : arc.theta0;
@@ -3658,10 +3710,10 @@ function buildListHorizonSkyDiskMesh(THREE, rInner, rOuter, y, nSeg, colorHex, o
  */
 function buildListHorizonSkyBandRadialWallMesh(THREE, rInner, rOuter, y0, y1, nSeg, colorHex, renderOrder, arc, helixCtx) {
     const TWO_PI = Math.PI * 2;
-    const ro = Math.max(0, rOuter);
-    let ri = Math.max(0, rInner);
-    if (ro < 1e-4 || !THREE) return null;
-    if (ri >= ro - ro * 0.04) ri = Math.max(0, ro * 0.38);
+    const norm = normalizeListHorizonAnnulusRadii(rInner, rOuter);
+    if (!norm.ok || !THREE) return null;
+    const ri = norm.ri;
+    const ro = norm.ro;
 
     const fullCircle = !arc || arc.fullCircle;
     const t0 = fullCircle ? 0 : arc.theta0;
@@ -3857,10 +3909,18 @@ function buildListHorizonHoopWallMesh(THREE, radius, y0, y1, nSeg, colorHex, ren
 function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCenter, colorHex, renderOrder, opts) {
     if (!THREE) return null;
     const extendEarth = opts && opts.extendToEarthOrbit === true;
-    const roCap = extendEarth ? 0.998 : 0.94;
+    const singularBand =
+        typeof window !== 'undefined' &&
+        typeof window.getSingularBandMode === 'function' &&
+        !!window.getSingularBandMode();
+    // Singular Context Arc = day spine (W ± circadian hand) — allow outer past W.
+    const roCap = singularBand ? 1.12 : extendEarth ? 0.998 : 0.94;
     let ro = Math.max(earthW * 0.2, Math.min(rHoopOuter, earthW * roCap));
-    let ri = Math.max(earthW * 0.06, Math.min(rHoopInner, ro - earthW * 0.015));
-    if (ri >= ro - earthW * 0.02) ri = Math.max(earthW * 0.06, ro * 0.5);
+    const minGap = singularBand ? earthW * 0.004 : earthW * 0.015;
+    let ri = Math.max(earthW * 0.06, Math.min(rHoopInner, ro - minGap));
+    if (ri >= ro - (singularBand ? earthW * 0.002 : earthW * 0.02)) {
+        ri = Math.max(earthW * 0.06, ro - Math.max(minGap, ro * (singularBand ? 0.02 : 0.5)));
+    }
     const n = Math.max(36, Math.min(96, Math.round(52 + ro * 0.28)));
     const zDisc = typeof currentZoom !== 'undefined' ? currentZoom : 9;
     const arc =
@@ -3908,6 +3968,44 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
     );
     if (wallInner) group.add(wallInner);
     if (wallOuter) group.add(wallOuter);
+
+    // Singular: keep LTE day-spine sky above; also show classic blue Context Arc at
+    // older zoom onion radii (Earth / Event Horizon sit outside the LTE day frame).
+    if (singularBand && typeof TimeMarkers !== 'undefined' &&
+        typeof TimeMarkers.getClassicListContextRingRadiiForZoom === 'function') {
+        const classic = TimeMarkers.getClassicListContextRingRadiiForZoom(zDisc, earthW);
+        let cRo = Math.max(earthW * 0.2, Math.min(classic.rOuter, earthW * 0.92));
+        let cRi = Math.max(earthW * 0.06, Math.min(classic.rInner, cRo - earthW * 0.015));
+        if (cRi >= cRo - earthW * 0.02) cRi = Math.max(earthW * 0.06, cRo * 0.5);
+        // Only add if classic band is clearly sunward of LTE day spine (avoid double walls).
+        if (cRo < ri - earthW * 0.01) {
+            const blueHex = colorHex != null ? colorHex : 0x22d3ee;
+            const classicInner = buildListHorizonHoopWallMesh(
+                THREE, cRi, y0, y1, n, blueHex, (renderOrder != null ? renderOrder : 7) + 2,
+                1.4 * wallOpMul, true, arc, helixCtx
+            );
+            const classicOuter = buildListHorizonHoopWallMesh(
+                THREE, cRo, y0, y1, n, blueHex, (renderOrder != null ? renderOrder : 7) + 2,
+                1.15 * wallOpMul, false, arc, helixCtx
+            );
+            if (classicInner) {
+                classicInner.userData = Object.assign({}, classicInner.userData, {
+                    type: 'ListHorizonClassicContextInner',
+                    classicContextArc: true
+                });
+                group.add(classicInner);
+            }
+            if (classicOuter) {
+                classicOuter.userData = Object.assign({}, classicOuter.userData, {
+                    type: 'ListHorizonClassicContextOuter',
+                    classicContextArc: true
+                });
+                group.add(classicOuter);
+            }
+            group.userData.classicInnerRadius = cRi;
+            group.userData.classicOuterRadius = cRo;
+        }
+    }
 
     return group;
 }
@@ -4105,6 +4203,11 @@ function buildSunEarthRadialWithEndRing(sun, earthCenter, tubeRadius, colorHex, 
     return group;
 }
 
+/**
+ * Great-circle edge for Earth-hand square marker.
+ * Prefer cheap THREE.Line over TubeGeometry — but Lines have no volume, so draw on a
+ * slightly lifted sphere (old tube radius) or the stroke sinks into the globe / z-fights.
+ */
 function buildEarthHandSurfaceArcEdge(p0, p1, sphereCenter, sphereRadius, edgeRadius, colorHex, renderOrder) {
     if (typeof THREE === 'undefined') return null;
     const center = sphereCenter.clone ? sphereCenter.clone() : new THREE.Vector3(sphereCenter.x, sphereCenter.y, sphereCenter.z);
@@ -4112,25 +4215,46 @@ function buildEarthHandSurfaceArcEdge(p0, p1, sphereCenter, sphereRadius, edgeRa
     const b = p1.clone ? p1.clone() : new THREE.Vector3(p1.x, p1.y, p1.z);
     const ua = new THREE.Vector3().subVectors(a, center).normalize();
     const ub = new THREE.Vector3().subVectors(b, center).normalize();
-    const points = [];
+    const lift = Math.max(
+        typeof edgeRadius === 'number' && edgeRadius > 0 ? edgeRadius : 0,
+        sphereRadius * 0.004,
+        0.008
+    );
+    const rDraw = sphereRadius + lift;
+    const flat = [];
     const segments = 10;
     for (let i = 0; i <= segments; i++) {
         const t = i / segments;
         const u = new THREE.Vector3().copy(ua).lerp(ub, t).normalize();
-        points.push(new THREE.Vector3().copy(center).addScaledVector(u, sphereRadius));
+        const p = new THREE.Vector3().copy(center).addScaledVector(u, rDraw);
+        flat.push(p.x, p.y, p.z);
     }
-    const curve = new THREE.CatmullRomCurve3(points);
-    const geom = new THREE.TubeGeometry(curve, 14, edgeRadius, 10, false);
-    const mat = new THREE.MeshBasicMaterial({
-        color: colorHex,
-        transparent: true,
-        opacity: 0.92,
-        depthTest: true,
-        depthWrite: false
-    });
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.renderOrder = renderOrder != null ? renderOrder : 12;
-    return mesh;
+    const ro = renderOrder != null ? renderOrder : 12;
+    if (typeof MeshPrimitives !== 'undefined' && MeshPrimitives.lineFromFlat) {
+        return MeshPrimitives.lineFromFlat(flat, {
+            THREE,
+            color: colorHex,
+            opacity: 0.92,
+            transparent: true,
+            depthWrite: false,
+            depthTest: true,
+            renderOrder: ro
+        });
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3));
+    const line = new THREE.Line(
+        geo,
+        new THREE.LineBasicMaterial({
+            color: colorHex,
+            transparent: true,
+            opacity: 0.92,
+            depthWrite: false,
+            depthTest: true
+        })
+    );
+    line.renderOrder = ro;
+    return line;
 }
 
 function buildEarthHandSquareMarker(corners, sphereCenter, sphereRadius, edgeRadius, colorHex, renderOrder) {
@@ -4881,15 +5005,23 @@ function createPlanets(zoomLevel) {
         if (tourMinimalOrbitMode) {
             // keep orbit rings + planet meshes only
         } else if (typeof Worldlines !== 'undefined' && Worldlines.createWorldline) {
-            const wlClip = tourHelicalClip;
-            const worldline = Worldlines.createWorldline(planetData, config.timeYears, zoomLevel, wlClip);
-            if (worldline) { // Check if worldline was created successfully
-                flatGroup.add(worldline);
-                worldlines.push(worldline);
+            const skipEarthWl =
+                planetData.name === 'Earth' && showEarthHelicalWorldline === false;
+            if (!skipEarthWl) {
+                const wlClip = tourHelicalClip;
+                const worldline = Worldlines.createWorldline(planetData, config.timeYears, zoomLevel, wlClip);
+                if (worldline) { // Check if worldline was created successfully
+                    flatGroup.add(worldline);
+                    worldlines.push(worldline);
+                }
             }
             
             // Connector uses “selected time” color; skip while intro is revealing planet helices (year-2 demo).
-            if (selectedHeightOffset !== 0 && typeof tourWorldlineRevealProgress !== 'number') {
+            if (
+                !skipEarthWl &&
+                selectedHeightOffset !== 0 &&
+                typeof tourWorldlineRevealProgress !== 'number'
+            ) {
                 const connectorWorldline = Worldlines.createConnectorWorldline(
                     planetData,
                     currentDateHeight,
@@ -6410,6 +6542,9 @@ function initControls() {
         } else if (e.key.toLowerCase() === 'g' && !blockMomentModeShortcuts) {
             e.preventDefault();
             if (typeof toggleGeophysicalShells === 'function') toggleGeophysicalShells();
+        } else if (e.key.toLowerCase() === 'k' && !blockMomentModeShortcuts) {
+            e.preventDefault();
+            toggleDayFrameLteSky();
         } else if (e.key.toLowerCase() === 'f' && !blockMomentModeShortcuts) {
             toggleFlattenWithKey();
         }
@@ -6534,10 +6669,23 @@ function initControls() {
     const markersLinesBtn = document.getElementById('markers-lines-toggle');
     const markersTextBtn = document.getElementById('markers-text-toggle');
     const markersYearBtn = document.getElementById('markers-year-toggle');
+    const markersSingularBandBtn = document.getElementById('markers-singular-band-toggle');
     if (markersLinesBtn) markersLinesBtn.classList.toggle('active', showTimeMarkerLines);
     if (markersLinesBtn) markersLinesBtn.addEventListener('click', toggleTimeMarkerLines);
     if (markersTextBtn) markersTextBtn.addEventListener('click', toggleTimeMarkerText);
     if (markersYearBtn) markersYearBtn.addEventListener('click', toggleTimeMarkerYearMode);
+    if (markersSingularBandBtn) {
+        initSingularBandModeFromUrlAndStorage();
+        markersSingularBandBtn.addEventListener('click', toggleSingularBandMode);
+    } else {
+        initSingularBandModeFromUrlAndStorage();
+    }
+
+    const dayFrameLteSkyBtn = document.getElementById('day-frame-lte-sky-toggle');
+    initDayFrameLteSkyFromUrlAndStorage();
+    if (dayFrameLteSkyBtn) {
+        dayFrameLteSkyBtn.addEventListener('click', toggleDayFrameLteSky);
+    }
 
     const eventsTimelineScopeBtn = document.getElementById('events-timeline-scope-toggle');
     if (eventsTimelineScopeBtn) {
@@ -6748,6 +6896,14 @@ function toggleMoonLayer() {
 
 if (typeof window !== 'undefined') {
     window.toggleMoonLayer = toggleMoonLayer;
+    window.getShowEarthHelicalWorldline = function () {
+        return showEarthHelicalWorldline !== false;
+    };
+    window.setShowEarthHelicalWorldline = function (on) {
+        showEarthHelicalWorldline = !!on;
+        if (typeof createPlanets === 'function') createPlanets(currentZoom);
+        return showEarthHelicalWorldline;
+    };
 }
 
 // createMoonWorldline moved to worldlines.js module
@@ -6772,6 +6928,173 @@ function toggleTimeMarkerYearMode() {
     if (button) button.classList.toggle('active', showFullYearTimeMarkers);
     // Recreate markers with the new mode applied
     createTimeMarkers(currentZoom);
+}
+
+function readSingularBandModeFromStorage() {
+    try {
+        if (typeof sessionStorage === 'undefined') return null;
+        const v = sessionStorage.getItem(SINGULAR_BAND_STORAGE_KEY);
+        if (v === '1' || v === 'true') return true;
+        if (v === '0' || v === 'false') return false;
+    } catch (e) { /* private mode */ }
+    return null;
+}
+
+function writeSingularBandModeToStorage(on) {
+    try {
+        if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem(SINGULAR_BAND_STORAGE_KEY, on ? '1' : '0');
+        }
+    } catch (e) { /* ignore */ }
+}
+
+/** URL `?singularBand=1|0` wins; else sessionStorage v2; else classic onion (false). */
+function initSingularBandModeFromUrlAndStorage() {
+    let fromUrl = null;
+    try {
+        if (typeof window !== 'undefined' && window.location) {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('singularBand')) {
+                const raw = String(params.get('singularBand') || '').toLowerCase();
+                fromUrl = raw === '1' || raw === 'true' || raw === 'on' || raw === 'yes';
+                if (raw === '0' || raw === 'false' || raw === 'off' || raw === 'no') fromUrl = false;
+            }
+        }
+    } catch (e) { /* keep */ }
+    if (fromUrl != null) {
+        singularBandMode = fromUrl;
+        writeSingularBandModeToStorage(singularBandMode);
+    } else {
+        const stored = readSingularBandModeFromStorage();
+        // Classic onion = default. Only restore singular when user opted in on v2 key.
+        singularBandMode = stored === true;
+    }
+    syncSingularBandToggleButton();
+}
+
+function syncSingularBandToggleButton() {
+    const button = document.getElementById('markers-singular-band-toggle');
+    if (button) button.classList.toggle('active', !!singularBandMode);
+}
+
+function getSingularBandMode() {
+    return !!singularBandMode;
+}
+
+function setSingularBandMode(on) {
+    const next = !!on;
+    if (next === singularBandMode) {
+        syncSingularBandToggleButton();
+        return singularBandMode;
+    }
+    singularBandMode = next;
+    writeSingularBandModeToStorage(singularBandMode);
+    syncSingularBandToggleButton();
+    // createPlanets rebuilds markers + Context Arc (radii from getSingularBandMode).
+    if (typeof createPlanets === 'function') {
+        createPlanets(currentZoom);
+    } else {
+        createTimeMarkers(currentZoom);
+        if (typeof updateListHorizonEarthRing === 'function') {
+            updateListHorizonEarthRing(currentZoom);
+        }
+    }
+    return singularBandMode;
+}
+
+function toggleSingularBandMode() {
+    return setSingularBandMode(!singularBandMode);
+}
+
+function readDayFrameLteSkyFromStorage() {
+    try {
+        if (typeof sessionStorage === 'undefined') return null;
+        const v = sessionStorage.getItem(DAY_FRAME_LTE_SKY_STORAGE_KEY);
+        if (v === '1' || v === 'true') return true;
+        if (v === '0' || v === 'false') return false;
+    } catch (e) { /* keep */ }
+    return null;
+}
+
+function writeDayFrameLteSkyToStorage(on) {
+    try {
+        if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem(DAY_FRAME_LTE_SKY_STORAGE_KEY, on ? '1' : '0');
+        }
+    } catch (e) { /* keep */ }
+}
+
+/** URL `?dayFrameLteSky=1|0` wins; else sessionStorage; else true (on). */
+function initDayFrameLteSkyFromUrlAndStorage() {
+    let fromUrl = null;
+    try {
+        if (typeof URLSearchParams !== 'undefined' && typeof location !== 'undefined') {
+            const params = new URLSearchParams(location.search);
+            if (params.has('dayFrameLteSky')) {
+                const raw = String(params.get('dayFrameLteSky') || '').toLowerCase();
+                fromUrl = raw === '1' || raw === 'true' || raw === 'on' || raw === 'yes';
+                if (raw === '0' || raw === 'false' || raw === 'off' || raw === 'no') fromUrl = false;
+            }
+        }
+    } catch (e) { /* keep */ }
+    if (fromUrl != null) {
+        showDayFrameLteSky = fromUrl;
+        writeDayFrameLteSkyToStorage(showDayFrameLteSky);
+    } else {
+        const stored = readDayFrameLteSkyFromStorage();
+        if (stored != null) showDayFrameLteSky = stored;
+    }
+    syncDayFrameLteSkyToggleButton();
+}
+
+function syncDayFrameLteSkyToggleButton() {
+    const button = document.getElementById('day-frame-lte-sky-toggle');
+    if (!button) return;
+    button.classList.toggle('active', !!showDayFrameLteSky);
+    button.title = showDayFrameLteSky
+        ? 'Earth LTE sky canvas on day frame (K) — click to hide'
+        : 'Earth LTE sky canvas: hidden (K) — click to show';
+    button.setAttribute(
+        'aria-label',
+        showDayFrameLteSky
+            ? 'Hide Earth day-frame LTE sky canvas (K)'
+            : 'Show Earth day-frame LTE sky canvas (K)'
+    );
+}
+
+function getShowDayFrameLteSky() {
+    return !!showDayFrameLteSky;
+}
+
+function setShowDayFrameLteSky(on) {
+    const next = !!on;
+    if (next === showDayFrameLteSky) {
+        syncDayFrameLteSkyToggleButton();
+        return showDayFrameLteSky;
+    }
+    showDayFrameLteSky = next;
+    writeDayFrameLteSkyToStorage(showDayFrameLteSky);
+    syncDayFrameLteSkyToggleButton();
+    if (typeof updateDayFrameLteSkyBackdrop === 'function') {
+        updateDayFrameLteSkyBackdrop(currentZoom);
+    }
+    return showDayFrameLteSky;
+}
+
+function toggleDayFrameLteSky() {
+    return setShowDayFrameLteSky(!showDayFrameLteSky);
+}
+
+if (typeof window !== 'undefined') {
+    window.getShowDayFrameLteSky = getShowDayFrameLteSky;
+    window.setShowDayFrameLteSky = setShowDayFrameLteSky;
+    window.toggleDayFrameLteSky = toggleDayFrameLteSky;
+}
+
+if (typeof window !== 'undefined') {
+    window.getSingularBandMode = getSingularBandMode;
+    window.setSingularBandMode = setSingularBandMode;
+    window.toggleSingularBandMode = toggleSingularBandMode;
 }
 
 function getFlattenedY(logicalY) {
@@ -8322,6 +8645,9 @@ if (typeof window !== 'undefined') {
                 );
             }
         }
+        if ('dayFrameLteSky' in partial) {
+            setShowDayFrameLteSky(!!partial.dayFrameLteSky);
+        }
         if (partial.cameraRotation && typeof window.cameraRotation === 'object') {
             const c = partial.cameraRotation;
             if (typeof c.x === 'number') {
@@ -8399,6 +8725,7 @@ if (typeof window !== 'undefined') {
             tourWorldlineOpacityMul,
             tourContextArcVisible: tourContextArcVisible !== false,
             showMoonLayer: !!showMoonLayer,
+            showDayFrameLteSky: !!showDayFrameLteSky,
             cameraRotation:
                 typeof window.cameraRotation === 'object' && window.cameraRotation
                     ? { x: window.cameraRotation.x, y: window.cameraRotation.y }
@@ -8429,6 +8756,7 @@ if (typeof window !== 'undefined') {
                 typeof snap.tourWorldlineOpacityMul === 'number' ? snap.tourWorldlineOpacityMul : 1,
             tourContextArcVisible: snap.tourContextArcVisible !== false,
             moonLayer: snap.showMoonLayer !== false,
+            dayFrameLteSky: snap.showDayFrameLteSky !== false,
             cameraRotation: snap.cameraRotation || undefined
         });
     };
@@ -9190,6 +9518,7 @@ document.addEventListener('DOMContentLoaded', () => {
             contentCamera.up.copy(camera.up);
         }
         initControls();
+        initSingularBandModeFromUrlAndStorage();
         const variedZoom = pickInitialZoomLevel();
         if (typeof variedZoom === 'number') {
             currentZoom = variedZoom;

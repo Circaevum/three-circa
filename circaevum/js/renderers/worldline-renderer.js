@@ -81,11 +81,15 @@ const Worldlines = (function() {
 
     /**
      * Thick stroke as a quad strip along a 3D centerline (THREE.Line linewidth is ignored in WebGL).
+     * Prefers shared RibbonGeometry when loaded; cheaper than TubeGeometry for worldline strokes.
      * @param {Float32Array|number[]} centerFlat - [x,y,z,...]
      * @param {number} halfWidth - half thickness in scene units
      * @returns {THREE.BufferGeometry|null}
      */
     function createRibbonStripGeometry(centerFlat, halfWidth) {
+        if (typeof global !== 'undefined' && global.RibbonGeometry && global.RibbonGeometry.fromCenterline) {
+            return global.RibbonGeometry.fromCenterline(centerFlat, halfWidth);
+        }
         const THREE = typeof global !== 'undefined' && global.THREE ? global.THREE : typeof window !== 'undefined' ? window.THREE : null;
         if (!THREE || !centerFlat || halfWidth <= 0) return null;
         const n = centerFlat.length / 3;
