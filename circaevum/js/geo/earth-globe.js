@@ -470,35 +470,83 @@ const EarthGlobe = (function () {
         if (!observer) observer = timezoneFallbackObserver(selectedDate);
     }
 
-    /** Tubular latitude ring (LineBasicMaterial.linewidth is ignored in WebGL). */
+    /**
+     * Latitude ring as flat ribbon strip (WebGL ignores Line linewidth).
+     * Cheaper than TubeGeometry; lift by former tube radius so stroke stays above globe.
+     * halfWidth ≈ tube radius × 1.2 for a slightly fatter read than the old tube.
+     */
     function buildLatCircle(THREE, radius, latDeg, segments, color, opacity, tubeRadius) {
-        const lat = latDeg * DEG;
-        const y = radius * Math.sin(lat);
-        const r = radius * Math.cos(lat);
-        const points = [];
-        for (let i = 0; i < segments; i++) {
-            const t = (i / segments) * Math.PI * 2;
-            points.push(new THREE.Vector3(r * Math.cos(t), y, r * Math.sin(t)));
-        }
-        const curve = new THREE.CatmullRomCurve3(points, true, 'centripetal');
         const tr =
             typeof tubeRadius === 'number' && tubeRadius > 0
                 ? tubeRadius
                 : Math.max(0.012, radius * 0.02);
-        const geom = new THREE.TubeGeometry(curve, Math.max(segments, 64), tr, 8, true);
+        const rDraw = radius + Math.max(tr, radius * 0.004, 0.008);
+        const halfWidth = tr * 1.25;
+        const lat = latDeg * DEG;
+        const y = rDraw * Math.sin(lat);
+        const r = rDraw * Math.cos(lat);
+        const n = Math.max(8, segments | 0);
+        // Close the loop (duplicate first sample) for a continuous ribbon.
+        const flat = new Float32Array((n + 1) * 3);
+        for (let i = 0; i <= n; i++) {
+            const t = (i / n) * Math.PI * 2;
+            const ix = i * 3;
+            flat[ix] = r * Math.cos(t);
+            flat[ix + 1] = y;
+            flat[ix + 2] = r * Math.sin(t);
+        }
+
+        let geo = null;
+        if (typeof RibbonGeometry !== 'undefined' && RibbonGeometry.fromCenterline) {
+            geo = RibbonGeometry.fromCenterline(flat, halfWidth, { THREE, ribbonEdgeAttr: false });
+        }
+        if (!geo) {
+            // Fallback: two concentric LineLoops (inner/outer) ≈ thick stroke
+            const group = new THREE.Group();
+            const makeLoop = (rr) => {
+                const f = new Float32Array(n * 3);
+                for (let i = 0; i < n; i++) {
+                    const t = (i / n) * Math.PI * 2;
+                    f[i * 3] = rr * Math.cos(t);
+                    f[i * 3 + 1] = y;
+                    f[i * 3 + 2] = rr * Math.sin(t);
+                }
+                const g = new THREE.BufferGeometry();
+                g.setAttribute('position', new THREE.BufferAttribute(f, 3));
+                return new THREE.LineLoop(
+                    g,
+                    new THREE.LineBasicMaterial({
+                        color,
+                        transparent: true,
+                        opacity,
+                        depthWrite: false
+                    })
+                );
+            };
+            const inner = makeLoop(Math.max(1e-4, r - halfWidth));
+            const outer = makeLoop(r + halfWidth);
+            inner.renderOrder = 11;
+            outer.renderOrder = 11;
+            group.add(inner, outer);
+            group.renderOrder = 11;
+            return group;
+        }
+
         const mat = new THREE.MeshBasicMaterial({
             color,
             transparent: true,
             opacity,
+            side: THREE.DoubleSide,
             depthWrite: false
         });
-        const mesh = new THREE.Mesh(geom, mat);
+        const mesh = new THREE.Mesh(geo, mat);
         mesh.renderOrder = 11;
         return mesh;
     }
 
     /**
-     * Thin great-circle segment on the oriented globe (meridian at lon or parallel at lat).
+     * Thin great-circle on oriented globe (meridian / parallel).
+     * Line + radial lift (replaces TubeGeometry volume).
      */
     function buildObserverGeodesicLine(
         THREE,
@@ -511,32 +559,46 @@ const EarthGlobe = (function () {
         renderOrder
     ) {
         if (!THREE || !earthGroup || typeof sampler !== 'function') return null;
-        const rSurf = radius * 1.004;
-        const steps = 96;
-        const points = [];
-        for (let i = 0; i <= steps; i++) {
-            const ll = sampler(i / steps);
-            if (!ll || isNaN(ll.lat) || isNaN(ll.lon)) continue;
-            const w = bodyLatLonToWorld(earthGroup, ll.lat, ll.lon, rSurf);
-            if (w) points.push(w);
-        }
-        if (points.length < 2) return null;
-        const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal');
         const tr =
             typeof tubeRadius === 'number' && tubeRadius > 0
                 ? tubeRadius
                 : Math.max(0.006, radius * 0.007);
-        const geom = new THREE.TubeGeometry(curve, Math.max(steps * 2, 64), tr, 6, false);
-        const mat = new THREE.MeshBasicMaterial({
-            color: colorHex,
-            transparent: true,
-            opacity: typeof opacity === 'number' ? opacity : 0.5,
-            depthWrite: false
-        });
-        const mesh = new THREE.Mesh(geom, mat);
-        mesh.renderOrder = renderOrder != null ? renderOrder : 12;
-        mesh.userData = { type: 'EarthObserverCross' };
-        return mesh;
+        const rSurf = radius + Math.max(tr, radius * 0.004, 0.008);
+        const steps = 96;
+        const flat = [];
+        for (let i = 0; i <= steps; i++) {
+            const ll = sampler(i / steps);
+            if (!ll || isNaN(ll.lat) || isNaN(ll.lon)) continue;
+            const w = bodyLatLonToWorld(earthGroup, ll.lat, ll.lon, rSurf);
+            if (w) flat.push(w.x, w.y, w.z);
+        }
+        if (flat.length < 6) return null;
+        let line = null;
+        if (typeof MeshPrimitives !== 'undefined' && MeshPrimitives.lineFromFlat) {
+            line = MeshPrimitives.lineFromFlat(flat, {
+                THREE,
+                color: colorHex,
+                opacity: typeof opacity === 'number' ? opacity : 0.5,
+                transparent: true,
+                depthWrite: false,
+                renderOrder: renderOrder != null ? renderOrder : 12
+            });
+        } else {
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3));
+            line = new THREE.Line(
+                geo,
+                new THREE.LineBasicMaterial({
+                    color: colorHex,
+                    transparent: true,
+                    opacity: typeof opacity === 'number' ? opacity : 0.5,
+                    depthWrite: false
+                })
+            );
+            line.renderOrder = renderOrder != null ? renderOrder : 12;
+        }
+        if (line) line.userData = { type: 'EarthObserverCross' };
+        return line;
     }
 
     const OBSERVER_GREEN = 0x4dff6a;

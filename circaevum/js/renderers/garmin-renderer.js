@@ -6,9 +6,10 @@
  *              summary: [...], dense: { collection, key, id } }
  *
  *   - metric 'hr': a polyline per day where RADIUS from Earth encodes bpm (low hugs the
- *     surface, high reaches toward the hour ticks), solid red smooth tube.
+ *     surface, high reaches toward the hour ticks), flat ribbon strip (no TubeGeometry).
  *     summary = [{ tOff, v }]  (tOff = ms from dtstart, v = bpm)
- *   - metric 'sleepStage': arcs at ATC band radii (deep = recovery band 1, REM = band 6).
+ *   - metric 'sleepStage': arcs at ATC band radii (deep = recovery band 1, REM = band 6)
+ *     as flat ribbon strokes (extra disk-normal aft replaces former tube volume).
  *     summary = [{ tOff, dur, stage }]  (tOff/dur in ms from dtstart)
  *
  * These events flow through the normal event pipeline (they are layer-toggleable calendar
@@ -40,19 +41,31 @@
   // Small fore/aft lift along the local day-disk normal (not world Y) so lines stay near the selected-time plane.
   const HR_FORE_OFFSET = 0.038; // × hand, in front of the sky canvas
   const SLEEP_AFT_OFFSET = 0.032; // × hand, behind the sky canvas
+  /** Former tube radius — used as width base + extra aft lift for sleep ribbons. */
   const SLEEP_TUBE_RADIUS = 0.008; // × hand
-  const SLEEP_CONNECTOR_TUBE_RADIUS = 0.006; // × hand — radial links at stage changes
+  const SLEEP_CONNECTOR_TUBE_RADIUS = 0.006; // × hand — was tube; now lift hint for connectors
   /** Solid Garmin HR red — no zone gradient (resting BPM was reading as purple). */
   const HR_RGB = [0.92, 0.18, 0.22];
   const HR_HEX = 0xeb2e38;
-  /** Bump when HR stroke material changes so cached geometry rebuilds. */
-  const HR_STROKE_REV = 'red-smooth-v4';
-  const HR_TUBE_RADIUS = 0.007; // × hand — smooth red tube, thinner than sleep
+  /** Bump when HR stroke path changes so cached geometry rebuilds. */
+  const HR_STROKE_REV = 'hr-ribbon-v1';
+  /** Bump when sleep stroke path changes (tube→line). */
+  const SLEEP_STROKE_REV = 'sleep-ribbon-v3';
+  /** Former tube radius — ribbon half-width base + extra fore lift. */
+  const HR_TUBE_RADIUS = 0.007; // × hand
   const HR_AVERAGE_TUBE_RADIUS = 0.009; // × hand
   const HR_LINE_OPACITY = 0.92;
   const HR_AVERAGE_LINE_OPACITY = 0.98;
   const HR_AVERAGE_RGB = [1, 0.96, 0.78];
   const SLEEP_LINE_OPACITY = 0.94;
+  /** Extra disk-normal aft so sleep strokes stay clear of sky / disk. */
+  const SLEEP_LINE_EXTRA_AFT = SLEEP_TUBE_RADIUS;
+  /** Ribbon half-width = hand × SLEEP_TUBE_RADIUS × this. */
+  const SLEEP_RIBBON_WIDTH_MUL = 2.4;
+  /** Extra disk-normal fore so HR ribbons stay clear of sky (replaces lost tube volume). */
+  const HR_LINE_EXTRA_FORE = HR_TUBE_RADIUS;
+  /** Ribbon half-width = hand × HR_*_TUBE_RADIUS × this (match sleep fatness). */
+  const HR_RIBBON_WIDTH_MUL = 2.4;
 
   const USER_EVENTS_LAYER = 'user-events';
 
@@ -72,7 +85,8 @@
   }
 
   // Sleep: concentric rings by ATC band (deep = recovery near Earth, not workout band).
-  // HR: continuous radius from BPM (low → inner disk, high → hour ticks) — not stepped bands.
+  // Drawn as ribbon strips (no TubeGeometry); extra aft lift replaces lost tube volume.
+  // HR: continuous radius from BPM — same ribbon path, fore of sky canvas.
   function sleepStageRadius(stage) {
     const AB = global.AtcBand;
     if (AB && typeof AB.sleepStageToBand === 'function' && typeof AB.bandToRadius === 'function') {
@@ -88,7 +102,7 @@
     return hand() * (HR_R_MIN + (HR_R_MAX - HR_R_MIN) * t);
   }
 
-  /** Insert substeps between sparse summary points so CatmullRom + radius glide smoothly. */
+  /** Insert substeps between sparse summary points so the ribbon path glides smoothly. */
   function densifyHrSummary(summary) {
     const pts = (summary || [])
       .map((s) => ({ tOff: Number(s.tOff || 0), v: Number(s.v) }))
@@ -193,9 +207,86 @@
     return line;
   }
 
-  /** HR / average overlay — uniform-color tube (CatmullRom smooth, no BPM gradient). */
-  function makeUniformTube(THREE, points, hex, radius, opacity) {
-    return makeTube(THREE, points, null, radius, opacity, hex != null ? hex : HR_HEX);
+  /**
+   * Sleep strokes: flat ribbon strip (WebGL ignores Line linewidth). No TubeGeometry/Frenet.
+   * halfWidth ≈ former tube radius × SLEEP_RIBBON_WIDTH_MUL; callers already apply disk-normal aft lift.
+   */
+  function makeSleepStroke(THREE, points, colors, opacity, uniformHex) {
+    return makeBiometricRibbon(
+      THREE,
+      points,
+      colors,
+      opacity != null ? opacity : SLEEP_LINE_OPACITY,
+      uniformHex,
+      hand() * SLEEP_TUBE_RADIUS * SLEEP_RIBBON_WIDTH_MUL
+    );
+  }
+
+  /**
+   * HR / average: flat ribbon (no CatmullRom TubeGeometry). Uniform color.
+   */
+  function makeHrStroke(THREE, points, hex, halfWidth, opacity) {
+    return makeBiometricRibbon(
+      THREE,
+      points,
+      null,
+      opacity != null ? opacity : HR_LINE_OPACITY,
+      hex != null ? hex : HR_HEX,
+      halfWidth
+    );
+  }
+
+  function makeBiometricRibbon(THREE, points, colors, opacity, uniformHex, halfWidth) {
+    if (!points || points.length < 2 || !(halfWidth > 0)) return null;
+    let hex = uniformHex != null ? uniformHex : 0xffffff;
+    if (uniformHex == null && colors && colors.length) {
+      const c0 = colors[0];
+      const c1 = colors[colors.length - 1] || c0;
+      const mid = [
+        (c0[0] + c1[0]) * 0.5,
+        (c0[1] + c1[1]) * 0.5,
+        (c0[2] + c1[2]) * 0.5
+      ];
+      hex =
+        ((Math.round(mid[0] * 255) << 16) |
+          (Math.round(mid[1] * 255) << 8) |
+          Math.round(mid[2] * 255)) >>>
+        0;
+    }
+
+    if (typeof RibbonGeometry !== 'undefined' && RibbonGeometry.fromCenterline) {
+      const flat = new Float32Array(points.length * 3);
+      for (let i = 0; i < points.length; i++) {
+        flat[i * 3] = points[i].x;
+        flat[i * 3 + 1] = points[i].y;
+        flat[i * 3 + 2] = points[i].z;
+      }
+      const geo = RibbonGeometry.fromCenterline(flat, halfWidth, { THREE, ribbonEdgeAttr: false });
+      if (geo) {
+        const mat = new THREE.MeshBasicMaterial({
+          color: hex >>> 0,
+          transparent: true,
+          opacity: opacity != null ? opacity : 0.95,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          depthTest: false
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.renderOrder = TS_RENDER_ORDER;
+        mesh.raycast = function () {};
+        return mesh;
+      }
+    }
+
+    const positions = [];
+    const cols = [];
+    const fallback = hexToRgbUnit(hex);
+    for (let i = 0; i < points.length; i++) {
+      positions.push(points[i].x, points[i].y, points[i].z);
+      const c = colors && colors[i] ? colors[i] : fallback;
+      cols.push(c[0], c[1], c[2]);
+    }
+    return makeLine(THREE, positions, cols, opacity);
   }
 
   /** Unit normal of the day disk at `date`/`r`, scaled by `offsetMul` (× hand). */
@@ -220,64 +311,6 @@
     const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
     if (len < 1e-10) return { x: 0, y: mag, z: 0 };
     return { x: (nx / len) * mag, y: (ny / len) * mag, z: (nz / len) * mag };
-  }
-
-  /**
-   * Thick stroke with real world-space radius (TubeGeometry). `points` are THREE.Vector3; `colors`
-   * is a parallel array of [r,g,b] (per point) for a graded tube, or null for a uniform color.
-   * Falls back to a thin line if TubeGeometry is unavailable.
-   */
-  function makeTube(THREE, points, colors, radius, opacity, uniformHex) {
-    if (!points || points.length < 2) return null;
-    if (typeof THREE.CatmullRomCurve3 !== 'function' || typeof THREE.TubeGeometry !== 'function') {
-      const positions = [];
-      const cols = [];
-      for (let i = 0; i < points.length; i++) {
-        positions.push(points[i].x, points[i].y, points[i].z);
-        const c = colors ? colors[i] : hexToRgbUnit(uniformHex || 0xffffff);
-        cols.push(c[0], c[1], c[2]);
-      }
-      return makeLine(THREE, positions, cols, opacity);
-    }
-    const nPts = points.length;
-    const curve = new THREE.CatmullRomCurve3(points);
-    const tubularSegments = Math.max(6, Math.min(48, (nPts - 1) * 3));
-    const radialSegments = 6;
-    const geo = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false);
-    const useVertexColors = !!(colors && colors.length === nPts);
-    if (useVertexColors) {
-      const vCount = (tubularSegments + 1) * (radialSegments + 1);
-      const colAttr = new Float32Array(vCount * 3);
-      for (let i = 0; i <= tubularSegments; i++) {
-        const t = i / tubularSegments;
-        const pi = Math.min(nPts - 1, Math.round(t * (nPts - 1)));
-        const c = colors[pi];
-        for (let j = 0; j <= radialSegments; j++) {
-          const vi = (i * (radialSegments + 1) + j) * 3;
-          colAttr[vi] = c[0];
-          colAttr[vi + 1] = c[1];
-          colAttr[vi + 2] = c[2];
-        }
-      }
-      geo.setAttribute('color', new THREE.Float32BufferAttribute(colAttr, 3));
-    }
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      vertexColors: useVertexColors,
-      transparent: true,
-      opacity: opacity != null ? opacity : 0.95,
-      depthWrite: false,
-      depthTest: false
-    });
-    if (useVertexColors) {
-      /* color attr set above */
-    } else if (uniformHex != null) {
-      mat.color.setHex(uniformHex >>> 0);
-    }
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.renderOrder = TS_RENDER_ORDER;
-    mesh.raycast = function () {};
-    return mesh;
   }
 
   function eventStartMs(ev) {
@@ -472,7 +505,7 @@
       const e = events[i] && events[i].ev ? events[i].ev : events[i];
       evKey += '|' + (e && e.uid != null ? e.uid : i);
     }
-    return HR_STROKE_REV + ':' + blendQ + ':' + dayKey + ':' + spanDays + ':' + (zl != null ? zl : 'x') + ':' + (shiftActive() ? 1 : 0) + ':' + evKey;
+    return HR_STROKE_REV + ':' + SLEEP_STROKE_REV + ':' + blendQ + ':' + dayKey + ':' + spanDays + ':' + (zl != null ? zl : 'x') + ':' + (shiftActive() ? 1 : 0) + ':' + evKey;
   }
 
   function resetRefreshCache() {
@@ -543,7 +576,9 @@
       if (!isAverage && isDegenerateFlatHr(summary, startMs, endMs)) return;
       const opacity = isAverage ? HR_AVERAGE_LINE_OPACITY : HR_LINE_OPACITY;
       const strokeHex = isAverage ? 0xfff2cc : HR_HEX;
-      const tubeRadius = hand() * (isAverage ? HR_AVERAGE_TUBE_RADIUS : HR_TUBE_RADIUS);
+      const baseR = isAverage ? HR_AVERAGE_TUBE_RADIUS : HR_TUBE_RADIUS;
+      const halfWidth = hand() * baseR * HR_RIBBON_WIDTH_MUL;
+      const hrFore = HR_FORE_OFFSET + HR_LINE_EXTRA_FORE;
       const dense = densifyHrSummary(summary);
       const points = [];
 
@@ -551,16 +586,16 @@
         const bpm = Number(s.v);
         if (!(bpm > 0)) continue;
         const ms = startMs + Number(s.tOff || 0);
-        const p = point(ms, hrRadius(bpm), HR_FORE_OFFSET);
+        const p = point(ms, hrRadius(bpm), hrFore);
         if (!p) continue;
         points.push(new THREE.Vector3(p.x, p.y, p.z));
       }
 
       if (points.length < 2) return;
 
-      const tube = makeUniformTube(THREE, points, strokeHex, tubeRadius, opacity);
-      if (tube) tube.userData.hrStrokeRev = HR_STROKE_REV;
-      addTimeseriesMesh(group, tube, event, layerId, { timeseriesMetric: 'hr' });
+      const stroke = makeHrStroke(THREE, points, strokeHex, halfWidth, opacity);
+      if (stroke) stroke.userData.hrStrokeRev = HR_STROKE_REV;
+      addTimeseriesMesh(group, stroke, event, layerId, { timeseriesMetric: 'hr' });
       return;
     }
 
@@ -568,6 +603,8 @@
       const segs = [];
       const plotAnchorMs = sleepPlotAnchorMs(event, startMs);
       const plotMs = (ms) => mapSleepPlotMs(ms, startMs, plotAnchorMs);
+      // Extra aft replaces lost tube volume so thin Lines stay clear of sky disk.
+      const sleepAft = -(SLEEP_AFT_OFFSET + SLEEP_LINE_EXTRA_AFT);
       for (const seg of summary) {
         const stage = String(seg.stage || 'unknown').toLowerCase();
         const segStart = startMs + Number(seg.tOff || 0);
@@ -587,12 +624,12 @@
           const points = [];
           for (let i = 0; i <= steps; i++) {
             const ms = piece.startMs + ((piece.endMs - piece.startMs) * i) / steps;
-            const p = point(ms, r, -SLEEP_AFT_OFFSET);
+            const p = point(ms, r, sleepAft);
             if (!p) continue;
             points.push(new THREE.Vector3(p.x, p.y, p.z));
           }
-          const tube = makeTube(THREE, points, null, hand() * SLEEP_TUBE_RADIUS, SLEEP_LINE_OPACITY, hex);
-          addTimeseriesMesh(group, tube, event, layerId, {
+          const stroke = makeSleepStroke(THREE, points, null, SLEEP_LINE_OPACITY, hex);
+          addTimeseriesMesh(group, stroke, event, layerId, {
             timeseriesMetric: 'sleepStage',
             sleepStage: seg.stage
           });
@@ -603,16 +640,15 @@
           const tMs = plotMs(next.startMs);
           const rNext = sleepStageRadius(next.stage);
           if (Math.abs(rNext - r) > 1e-4) {
-            const p0 = point(plotMs(seg.endMs), r, -SLEEP_AFT_OFFSET);
-            const p1 = point(tMs, rNext, -SLEEP_AFT_OFFSET);
+            const p0 = point(plotMs(seg.endMs), r, sleepAft);
+            const p1 = point(tMs, rNext, sleepAft);
             if (p0 && p1) {
               const c0 = hexToRgbUnit(hex);
               const c1 = hexToRgbUnit(sleepStageHex(next.stage));
-              const connector = makeTube(
+              const connector = makeSleepStroke(
                 THREE,
                 [new THREE.Vector3(p0.x, p0.y, p0.z), new THREE.Vector3(p1.x, p1.y, p1.z)],
                 [c0, c1],
-                hand() * SLEEP_CONNECTOR_TUBE_RADIUS,
                 SLEEP_LINE_OPACITY
               );
               addTimeseriesMesh(group, connector, event, layerId, {

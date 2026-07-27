@@ -46,6 +46,11 @@ let currentZoom = 5;
 // callers that invoke createPlanets() can skip an immediately-following
 // refreshAllEventLayers() (a full event rebuild) instead of doing it twice.
 let eventsRefreshedDuringCreatePlanets = false;
+/**
+ * Cache key for calendar event layer geometry. createPlanets skips refreshAllEventLayers
+ * when this matches (planet/marker teardown does not remove GL event meshes).
+ */
+let lastEventLayersRebuildKey = null;
 let isDragging = false;
 let previousMousePosition = { x: 0, y: 0 };
 let cameraRotation = { x: Math.PI / 6, y: 0 };
@@ -276,9 +281,13 @@ if (typeof window !== 'undefined') {
         const v = Number(value);
         offSelectedTimeLineDimStrength = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
         if (typeof updateOffSelectedLineDimSliderUi === 'function') updateOffSelectedLineDimSliderUi();
-        const gl = window.circaevumGL;
-        if (gl && typeof gl.refreshAllEventLayers === 'function') {
-            try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
+        if (typeof refreshEventLayersIfNeeded === 'function') {
+            refreshEventLayersIfNeeded(true);
+        } else {
+            const gl = window.circaevumGL;
+            if (gl && typeof gl.refreshAllEventLayers === 'function') {
+                try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
+            }
         }
     };
     window.getCurrentZoomLevel = function () { return currentZoom; };
@@ -293,9 +302,13 @@ if (typeof window !== 'undefined') {
         if (mode === 'lines' || mode === 'polygon3d') globalEventPlotType = mode;
         else globalEventPlotType = 'auto';
         if (typeof updateEventPlotTypeButton === 'function') updateEventPlotTypeButton();
-        const gl = window.circaevumGL;
-        if (gl && typeof gl.refreshAllEventLayers === 'function') {
-            try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
+        if (typeof refreshEventLayersIfNeeded === 'function') {
+            refreshEventLayersIfNeeded(true);
+        } else {
+            const gl = window.circaevumGL;
+            if (gl && typeof gl.refreshAllEventLayers === 'function') {
+                try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
+            }
         }
         if (typeof window.refreshEventsList === 'function') {
             const ep = document.getElementById('event-list-panel');
@@ -354,7 +367,9 @@ if (typeof window !== 'undefined') {
         if (typeof syncCircadianShortEventScopeButtons === 'function') {
             syncCircadianShortEventScopeButtons();
         }
-        if (typeof window.circaevumGL !== 'undefined' && window.circaevumGL &&
+        if (typeof refreshEventLayersIfNeeded === 'function') {
+            refreshEventLayersIfNeeded(true);
+        } else if (typeof window.circaevumGL !== 'undefined' && window.circaevumGL &&
             typeof window.circaevumGL.refreshAllEventLayers === 'function') {
             try {
                 window.circaevumGL.refreshAllEventLayers();
@@ -409,9 +424,13 @@ if (typeof window !== 'undefined') {
         });
     };
     function refreshShiftPreviewScene() {
-        const gl = window.circaevumGL;
-        if (gl && typeof gl.refreshAllEventLayers === 'function') {
-            try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
+        if (typeof refreshEventLayersIfNeeded === 'function') {
+            refreshEventLayersIfNeeded(true);
+        } else {
+            const gl = window.circaevumGL;
+            if (gl && typeof gl.refreshAllEventLayers === 'function') {
+                try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
+            }
         }
         if (typeof TimeseriesRenderer !== 'undefined' && typeof TimeseriesRenderer.resetRefreshCache === 'function') {
             TimeseriesRenderer.resetRefreshCache();
@@ -5182,7 +5201,9 @@ function createPlanets(zoomLevel) {
 
     if (typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshAllEventLayers === 'function') {
         try {
-            window.circaevumGL.refreshAllEventLayers();
+            // Event meshes live on GL groups (not torn down with planets). Skip rebuild when
+            // zoom/day/style key unchanged — biggest thrash cut on time-scrub full createPlanets.
+            refreshEventLayersIfNeeded(false);
             eventsRefreshedDuringCreatePlanets = true;
         } catch (err) { /* GL may be disposing */ }
     }
@@ -6762,7 +6783,9 @@ function initControls() {
     const circScopeYear = document.getElementById('circadian-events-scope-year');
     function refreshEventsAfterCircadianScopeChange() {
         syncCircadianShortEventScopeButtons();
-        if (typeof window !== 'undefined' && window.circaevumGL &&
+        if (typeof refreshEventLayersIfNeeded === 'function') {
+            refreshEventLayersIfNeeded(true);
+        } else if (typeof window !== 'undefined' && window.circaevumGL &&
             typeof window.circaevumGL.refreshAllEventLayers === 'function') {
             try {
                 window.circaevumGL.refreshAllEventLayers();
@@ -6798,9 +6821,13 @@ function initControls() {
             if (!isNaN(v)) {
                 steWindowMonths = Math.max(1, Math.min(12, v));
                 updateSteMonthRangeHint();
-                const gl = window.circaevumGL;
-                if (gl && typeof gl.refreshAllEventLayers === 'function') {
-                    try { gl.refreshAllEventLayers(); } catch (err) {}
+                if (typeof refreshEventLayersIfNeeded === 'function') {
+                    refreshEventLayersIfNeeded(true);
+                } else {
+                    const gl = window.circaevumGL;
+                    if (gl && typeof gl.refreshAllEventLayers === 'function') {
+                        try { gl.refreshAllEventLayers(); } catch (err) {}
+                    }
                 }
             }
         });
@@ -7222,10 +7249,14 @@ function rebuildSceneAndEventsForFlattenChange() {
     if (typeof createPlanets === 'function') {
         createPlanets(currentZoom);
     }
-    if (!eventsRefreshedDuringCreatePlanets && typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshAllEventLayers === 'function') {
-        try {
-            window.circaevumGL.refreshAllEventLayers();
-        } catch (err) { /* GL may be disposing */ }
+    if (!eventsRefreshedDuringCreatePlanets) {
+        if (typeof refreshEventLayersIfNeeded === 'function') {
+            refreshEventLayersIfNeeded(true);
+        } else if (typeof window !== 'undefined' && window.circaevumGL && typeof window.circaevumGL.refreshAllEventLayers === 'function') {
+            try {
+                window.circaevumGL.refreshAllEventLayers();
+            } catch (err) { /* GL may be disposing */ }
+        }
     }
     if (
         typeof EventRenderer !== 'undefined' &&
@@ -7377,12 +7408,16 @@ function toggleEventPlotType() {
 function toggleLongEventContextFadeMode() {
     longEventContextFadeMode = longEventContextFadeMode === 'alpha' ? 'desaturate' : 'alpha';
     updateLongEventContextFadeButton();
-    const gl = typeof window !== 'undefined' ? window.circaevumGL : null;
-    if (gl && typeof gl.refreshAllEventLayers === 'function') {
-        try {
-            gl.refreshAllEventLayers();
-        } catch (err) {
-            console.warn('Could not refresh event layers after long-term context fade toggle:', err);
+    if (typeof refreshEventLayersIfNeeded === 'function') {
+        refreshEventLayersIfNeeded(true);
+    } else {
+        const gl = typeof window !== 'undefined' ? window.circaevumGL : null;
+        if (gl && typeof gl.refreshAllEventLayers === 'function') {
+            try {
+                gl.refreshAllEventLayers();
+            } catch (err) {
+                console.warn('Could not refresh event layers after long-term context fade toggle:', err);
+            }
         }
     }
     if (typeof window !== 'undefined' && typeof window.refreshEventsList === 'function') {
@@ -8442,6 +8477,89 @@ function selectedCalendarDayKey(d) {
     return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
 }
 
+/**
+ * Geometry-need key for calendar event layers (not Garmin — that has its own refresh key).
+ * Include anything that changes ribbon/outline topology or day-frame placement.
+ */
+function buildEventLayersRebuildKey(zoomLevel) {
+    const zl = zoomLevel != null ? zoomLevel : currentZoom;
+    const sel = typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : new Date();
+    const dayKey = selectedCalendarDayKey(sel) || 'x';
+    let needGhost = 0;
+    try {
+        if (typeof computeSceneDateHeights === 'function') {
+            const h = computeSceneDateHeights(zl);
+            if (h && Math.abs(h.selectedHeightOffset) > 1e-6 && !tourMinimalOrbitMode) needGhost = 1;
+        }
+    } catch (e) { /* heights optional during boot */ }
+    const shift =
+        typeof circadianShortEventsShiftPreview !== 'undefined' &&
+        circadianShortEventsShiftPreview &&
+        !modifierMetaHeld
+            ? 1
+            : 0;
+    return [
+        zl,
+        dayKey,
+        needGhost,
+        showAllTimelineEvents ? 1 : 0,
+        circadianShortEventScope || 'year',
+        globalEventPlotType || 'auto',
+        longEventContextFadeMode || 'alpha',
+        Math.round((typeof offSelectedTimeLineDimStrength === 'number' ? offSelectedTimeLineDimStrength : 1) * 100),
+        shift,
+        circadianState || 'off',
+        tourMinimalOrbitMode ? 1 : 0,
+        typeof steWindowMonths === 'number' ? steWindowMonths : 2
+    ].join('|');
+}
+
+function noteEventLayersRebuilt(zoomLevel) {
+    lastEventLayersRebuildKey = buildEventLayersRebuildKey(zoomLevel);
+}
+if (typeof window !== 'undefined') {
+    window.noteEventLayersRebuilt = noteEventLayersRebuilt;
+    window.invalidateEventLayersRebuildKey = invalidateEventLayersRebuildKey;
+    window.refreshEventLayersIfNeeded = refreshEventLayersIfNeeded;
+}
+
+function invalidateEventLayersRebuildKey() {
+    lastEventLayersRebuildKey = null;
+}
+
+/**
+ * @param {boolean} [force]
+ * @returns {boolean} true if refresh ran
+ */
+function refreshEventLayersIfNeeded(force) {
+    const gl = typeof window !== 'undefined' ? window.circaevumGL : null;
+    if (!gl || typeof gl.refreshAllEventLayers !== 'function') return false;
+    const key = buildEventLayersRebuildKey(currentZoom);
+    if (!force && key === lastEventLayersRebuildKey) return false;
+    try {
+        gl.refreshAllEventLayers();
+        lastEventLayersRebuildKey = key;
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * Same-calendar-day time scrub: move planets/focus/short STEs without tearing down the scene
+ * or rebuilding every event ribbon. Day change → false (caller should full createPlanets).
+ */
+function tryLightSelectedTimeSceneUpdate(prevDate) {
+    if (tourMinimalOrbitMode) return false;
+    if (typeof PLANET_DATA === 'undefined' || !PLANET_DATA.length) return false;
+    if (planetMeshes.length !== PLANET_DATA.length) return false;
+    if (orbitLines.length !== PLANET_DATA.length) return false;
+    const nextDate = typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : null;
+    if (selectedCalendarDayKey(prevDate) !== selectedCalendarDayKey(nextDate)) return false;
+    if (typeof applyLightTimeScrubUpdate !== 'function') return false;
+    return !!applyLightTimeScrubUpdate(currentZoom);
+}
+
 /** Drop STE/event focus when SELECTED TIME moves to another calendar day. */
 function clearEventFocusIfSelectedDayChanged(prevDate, nextDate) {
     const a = selectedCalendarDayKey(prevDate);
@@ -8534,6 +8652,14 @@ function setSelectedDateTime(date) {
                 createPlanets(currentZoom);
             }
         }
+        if (typeof updateTimeDisplays === 'function') {
+            updateTimeDisplays();
+        }
+        return;
+    }
+
+    // Normal UI scrub: same-day light path (planets + short STEs) — no full event ribbon rebuild.
+    if (tryLightSelectedTimeSceneUpdate(prevSelected)) {
         if (typeof updateTimeDisplays === 'function') {
             updateTimeDisplays();
         }
@@ -8793,14 +8919,13 @@ function smoothNavigateToTime(targetDate, durationMs, snapToLivePresent) {
     const startDate = getSelectedDateTime();
     clearEventFocusIfSelectedDayChanged(startDate, endDate);
 
-    // Same calendar day: snap instantly (smooth lerp rebuilds the scene every frame and feels laggy).
+    // Same calendar day: snap via setSelectedDateTime (light scrub) — do not force a second createPlanets.
     if (selectedCalendarDayKey(startDate) === selectedCalendarDayKey(endDate)) {
         if (snapToLivePresent) {
             returnToPresent();
         } else {
             setSelectedDateTime(endDate);
         }
-        createPlanets(currentZoom);
         if (currentZoom === 0) {
             syncZoom0CameraToSelectedHourHand('delta');
         }
@@ -8896,7 +9021,9 @@ function nudgeSelectedWallTime(deltaMs) {
             currentHourInDay
         });
     }
-    createPlanets(currentZoom);
+    if (!tryLightSelectedTimeSceneUpdate(prevSelected)) {
+        createPlanets(currentZoom);
+    }
     if (currentZoom === 0) {
         syncZoom0CameraToSelectedHourHand('delta');
     }

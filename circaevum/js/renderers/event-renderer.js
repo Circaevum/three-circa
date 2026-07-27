@@ -878,9 +878,12 @@
     return eventTouchesSelectedCalendarDay(start, evEnd);
   }
 
-  /** Skip orphan disk dots when ribbon build fails at day-sky STE zooms (0 / 8 / 9). */
+  /**
+   * Disk/sphere STE beads on the circadian helix (red→blue time gradient).
+   * Useless at month/week/day-sky — ribbons/lines already mark the span. Skip all helix zooms.
+   */
   function shouldRenderDailySkySteDiskFallbackMarker(start, end) {
-    if (isEarthDailySkyEventZoom(getZoomLevelForEvents())) return false;
+    if (isCircadianHelixZoom(getZoomLevelForEvents())) return false;
     return isSteVisibleOnDailySkyClock(start, end);
   }
 
@@ -3047,7 +3050,9 @@
     if (typeof global.RibbonGeometry !== 'undefined' && global.RibbonGeometry.fromInnerOuter) {
       return global.RibbonGeometry.fromInnerOuter(innerFlat, outerFlat, {
         THREE: global.THREE,
-        ribbonEdgeAttr: true
+        ribbonEdgeAttr: true,
+        // MeshBasic / fill shader ignore normals — skip Frenet-ish CPU on every rebuild.
+        computeNormals: false
       });
     }
     // Fallback if util script missing (standalone embeds)
@@ -3076,7 +3081,6 @@
       ribbonEdge[i * 2 + 1] = 1;
     }
     geo.setAttribute('ribbonEdge', new global.THREE.BufferAttribute(ribbonEdge, 1));
-    geo.computeVertexNormals();
     return geo;
   }
 
@@ -3164,7 +3168,9 @@
   }
 
   function addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder, tubeRadius) {
-    if (isEarthDailySkyEventZoom(getZoomLevelForEvents())) return;
+    // Cap cylinders/lines read as useless little circles in the STE/LTE tube (worse at
+    // month/week camera distance; already suppressed on day-sky 0/8/9). Skip all zooms.
+    return;
     const n = innerFlat.length / 3;
     if (n < 1) return;
     const THREE = global.THREE;
@@ -5537,6 +5543,10 @@
     if (getZoomLevelForEvents() === 8 && isLongTermSpanForDailySky(start, spanEnd)) return null;
     if (shouldHideCircadianShortEventForDayScope(start, spanEnd)) return null;
     if (!isSteVisibleOnDailySkyClock(start, spanEnd)) return null;
+    // Instant / point events on the STE helix → same useless red→blue beads as disk fallback.
+    if (isCircadianHelixZoom(getZoomLevelForEvents()) && shouldUseCircadianNearEarthShortPlacement()) {
+      return null;
+    }
 
     const height = typeof calculateDateHeight === 'function'
       ? calculateDateHeight(start.getFullYear(), start.getMonth(), start.getDate(), start.getHours())

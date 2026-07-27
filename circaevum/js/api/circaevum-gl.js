@@ -1131,6 +1131,10 @@ class CircaevumGL {
     for (const layerId of this.layers.keys()) {
       this._renderLayer(layerId);
     }
+    // Keep main.js rebuild-key cache honest after forced / ingest refreshes.
+    if (typeof window !== 'undefined' && typeof window.noteEventLayersRebuilt === 'function') {
+      try { window.noteEventLayersRebuilt(); } catch (e) { /* optional */ }
+    }
   }
 
   /**
