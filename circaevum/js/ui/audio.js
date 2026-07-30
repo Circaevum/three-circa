@@ -17,6 +17,7 @@ function toggleSound() {
     const button = document.getElementById('sound-toggle');
     if (button) {
         button.classList.toggle('active', !isMuted);
+        button.setAttribute('aria-pressed', isMuted ? 'false' : 'true');
         button.setAttribute('aria-label', isMuted ? 'Unmute sound (Shift+M)' : 'Mute sound (Shift+M)');
         button.title = isMuted ? 'Unmute (Shift+M)' : 'Mute (Shift+M)';
     }

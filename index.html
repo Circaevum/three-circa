@@ -39,7 +39,7 @@
         <div class="nav-right">
             <button type="button" id="nav-keys-btn" class="nav-menu-btn nav-keys-btn" title="All keyboard shortcuts (?)" aria-label="All keyboard shortcuts" aria-expanded="false" aria-controls="keyboard-controls-panel">Keys</button>
             <div class="nav-dropdown-wrap">
-                <button type="button" id="nav-account-btn" class="nav-icon-btn" title="Menu" aria-label="Open menu" aria-expanded="false" aria-haspopup="true">☰</button>
+                <button type="button" id="nav-account-btn" class="nav-icon-btn" title="Menu" aria-label="Open menu" aria-expanded="false" aria-haspopup="true" aria-controls="nav-dropdown">☰</button>
                 <div id="nav-dropdown" class="nav-dropdown" role="menu" aria-hidden="true">
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="login">Log in</button>
                     <button type="button" class="nav-dropdown-item" role="menuitem" data-action="event-list">Event List</button>
@@ -52,15 +52,15 @@
 
     <!-- Main area: full-width canvas -->
     <div id="main-after-nav">
-        <div id="canvas-container"></div>
+        <div id="canvas-container" role="application" aria-label="Circaevum 3D time visualization"></div>
     </div>
 
-    <button type="button" id="calendar-layers-pull-tab" class="calendar-layers-pull-tab" aria-label="Open Calendar Layers" title="Calendar Layers">Layers</button>
+    <button type="button" id="calendar-layers-pull-tab" class="calendar-layers-pull-tab" aria-label="Open Calendar Layers" title="Calendar Layers" aria-controls="calendars-left-panel" aria-expanded="false">Layers</button>
 
     <!-- Left panel: account shortcuts + calendar layer management -->
-    <aside id="calendars-left-panel" class="calendars-left-panel left-panel" aria-hidden="true">
+    <aside id="calendars-left-panel" class="calendars-left-panel left-panel" role="complementary" aria-labelledby="calendars-left-heading" aria-hidden="true">
         <div class="left-panel-header">
-            <strong>Calendar Layers</strong>
+            <strong id="calendars-left-heading">Calendar Layers</strong>
             <button type="button" id="calendars-left-close" class="account-panel-close-btn" aria-label="Close Calendar Layers">×</button>
         </div>
         <div class="left-panel-body">
@@ -79,10 +79,10 @@
     </aside>
 
     <!-- Event List: nearby events relative to selected time -->
-    <aside id="event-list-panel" class="event-list-panel" aria-hidden="true">
+    <aside id="event-list-panel" class="event-list-panel" role="complementary" aria-labelledby="event-list-heading" aria-hidden="true">
         <div class="event-list-panel-header">
-            <strong>Events</strong>
-            <button type="button" id="event-list-close" class="event-list-close-btn" aria-label="Close">×</button>
+            <strong id="event-list-heading">Events</strong>
+            <button type="button" id="event-list-close" class="event-list-close-btn" aria-label="Close Event List">×</button>
         </div>
         <p class="event-list-panel-context" id="events-panel-context"></p>
         <div class="event-list-horizon-ring-row" id="event-list-horizon-ring-row">
@@ -114,10 +114,10 @@
         </div>
     </aside>
     <!-- Keyboard Controls: right-side overlay panel (pops open on the right) -->
-    <aside id="keyboard-controls-panel" class="keyboard-controls-panel" aria-hidden="true">
+    <aside id="keyboard-controls-panel" class="keyboard-controls-panel" role="dialog" aria-modal="false" aria-labelledby="keyboard-controls-heading" aria-hidden="true">
         <div class="keyboard-controls-panel-header">
-            <strong>Keyboard Controls</strong>
-            <button type="button" id="keyboard-controls-close" class="keyboard-controls-close-btn" aria-label="Close">×</button>
+            <strong id="keyboard-controls-heading">Keyboard Controls</strong>
+            <button type="button" id="keyboard-controls-close" class="keyboard-controls-close-btn" aria-label="Close keyboard controls">×</button>
         </div>
         <div class="keyboard-controls-panel-body">
             <div class="keyboard-controls-grid" role="list">
@@ -167,7 +167,7 @@
         </div>
     </div>
 
-    <button type="button" id="event-list-pull-tab" class="event-list-pull-tab" aria-label="Open Event List" title="Events">
+    <button type="button" id="event-list-pull-tab" class="event-list-pull-tab" aria-label="Open Event List" title="Events" aria-controls="event-list-panel" aria-expanded="false">
       <span class="event-list-pull-tab-inner">
         <span class="event-list-pull-tab-chevron" aria-hidden="true">◀</span>
         <span class="event-list-pull-tab-label">Events</span>
@@ -177,26 +177,26 @@
     <div id="hud">
         <!-- Kepler-style floating icon overlay on the scene (bottom-right) -->
         <div class="scene-icon-overlay" role="group" aria-label="Scene controls">
-            <button type="button" class="scene-icon-btn scene-icon-toggle" id="scene-icon-toggle" title="Collapse scene controls" aria-label="Toggle scene controls">
+            <button type="button" class="scene-icon-btn scene-icon-toggle" id="scene-icon-toggle" title="Collapse scene controls" aria-label="Toggle scene controls" aria-controls="scene-icon-grid" aria-expanded="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M5 12h14"/><path d="M12 5l7 7-7 7"/>
                 </svg>
             </button>
-            <div class="scene-icon-grid" role="group" aria-label="Scene tool buttons">
-            <button type="button" class="scene-icon-btn active" id="markers-lines-toggle" title="Time marker lines" aria-label="Toggle time marker lines">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 18h20"/><path d="M4 18v3"/><path d="M8 18v2"/><path d="M12 18v3"/><path d="M16 18v2"/><path d="M20 18v3"/></svg>
+            <div id="scene-icon-grid" class="scene-icon-grid" role="group" aria-label="Scene tool buttons">
+            <button type="button" class="scene-icon-btn active" id="markers-lines-toggle" title="Time marker lines" aria-label="Toggle time marker lines" aria-pressed="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 18h20"/><path d="M4 18v3"/><path d="M8 18v2"/><path d="M12 18v3"/><path d="M16 18v2"/><path d="M20 18v3"/></svg>
             </button>
-            <button type="button" class="scene-icon-btn active" id="markers-text-toggle" title="Time marker text (T)" aria-label="Toggle time marker text (T)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><text x="12" y="16" font-size="12" font-weight="700" fill="currentColor" text-anchor="middle" font-family="system-ui,sans-serif">Tt</text></svg>
+            <button type="button" class="scene-icon-btn active" id="markers-text-toggle" title="Time marker text (T)" aria-label="Toggle time marker text (T)" aria-pressed="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><text x="12" y="16" font-size="12" font-weight="700" fill="currentColor" text-anchor="middle" font-family="system-ui,sans-serif">Tt</text></svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="markers-year-toggle" title="Show Year, Month, Week & Day markers for full year" aria-label="Toggle full-year time markers (Year, Month, Week, Day)">
+            <button type="button" class="scene-icon-btn" id="markers-year-toggle" title="Show Year, Month, Week & Day markers for full year" aria-label="Toggle full-year time markers (Year, Month, Week, Day)" aria-pressed="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="12" cy="12" r="9"/>
                     <path d="M12 3v2M12 19v2M3 12h2M19 12h2"/>
                     <path d="M6.34 6.34l1.41 1.41M16.24 16.24l1.41 1.41M17.66 6.34l-1.41 1.41M6.34 17.66l1.41-1.41"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="markers-singular-band-toggle" title="Singular Earth-radius time bands (demo): thin stack near Earth orbit" aria-label="Toggle singular Earth-radius time marker bands demo">
+            <button type="button" class="scene-icon-btn" id="markers-singular-band-toggle" title="Singular Earth-radius time bands (demo): thin stack near Earth orbit" aria-label="Toggle singular Earth-radius time marker bands demo" aria-pressed="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="12" cy="12" r="9"/>
                     <circle cx="12" cy="12" r="7.2" opacity="0.55"/>
@@ -204,14 +204,14 @@
                     <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" opacity="0.9"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn active" id="day-frame-lte-sky-toggle" title="Earth LTE sky canvas on day frame (K)" aria-label="Toggle Earth day-frame LTE sky canvas">
+            <button type="button" class="scene-icon-btn active" id="day-frame-lte-sky-toggle" title="Earth LTE sky canvas on day frame (K)" aria-label="Toggle Earth day-frame LTE sky canvas" aria-pressed="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M4 18c2.5-7 5-11 8-14 3 3 5.5 7 8 14"/>
                     <path d="M6 16h12" opacity="0.4"/>
                     <path d="M8 10c1.2 2.2 2.4 3.6 4 5 1.6-1.4 2.8-2.8 4-5" opacity="0.75"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn active" id="events-timeline-scope-toggle" title="Events: selected year only (click for all time)" aria-label="Toggle events between selected year and all time">
+            <button type="button" class="scene-icon-btn active" id="events-timeline-scope-toggle" title="Events: selected year only (click for all time)" aria-label="Toggle events between selected year and all time" aria-pressed="true">
                 <!-- Icon swaps in JS: year vs all-time -->
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="4" y="5" width="16" height="15" rx="2"/>
@@ -221,20 +221,20 @@
                     <path d="M10 18h4"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn active" id="events-color-fade-toggle" title="Long-term event context: transparency fade" aria-label="Toggle long-term event context rendering mode">
+            <button type="button" class="scene-icon-btn active" id="events-color-fade-toggle" title="Long-term event context: transparency fade" aria-label="Toggle long-term event context rendering mode" aria-pressed="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M12 3c3.8 4.6 6 7.2 6 10a6 6 0 1 1-12 0c0-2.8 2.2-5.4 6-10z"/>
                     <path d="M9.25 15.2c1.2 1 3.1 1.1 4.4.15"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="events-plot-lines-toggle" title="Events: filled polygon ribbons. Click for simple lines (faster)." aria-label="Toggle event ribbons between filled polygons and simple lines">
+            <button type="button" class="scene-icon-btn" id="events-plot-lines-toggle" title="Events: filled polygon ribbons. Click for simple lines (faster)." aria-label="Toggle event ribbons between filled polygons and simple lines" aria-pressed="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M4 18c3-6 5-9 8-12 3 3 5 6 8 12"/>
                     <path d="M6 16h12" opacity="0.45"/>
                     <path d="M7 8h10v8H7z" opacity="0.35" fill="currentColor" stroke="none"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="geophysical-shells-toggle" title="Geophysical shells: hidden (G)" aria-label="Show atmosphere, ionosphere, Van Allen belts, and magnetosphere shells (G)">
+            <button type="button" class="scene-icon-btn" id="geophysical-shells-toggle" title="Geophysical shells: hidden (G)" aria-label="Show atmosphere, ionosphere, Van Allen belts, and magnetosphere shells (G)" aria-pressed="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" opacity="0.92"/>
                     <ellipse cx="12" cy="12" rx="5.2" ry="3.6" opacity="0.85"/>
@@ -242,7 +242,7 @@
                     <ellipse cx="12" cy="12" rx="10.2" ry="7.2" opacity="0.38"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn active" id="moon-layer-toggle" title="Moon, lunar path &amp; Artemis II (M)" aria-label="Toggle Moon mesh, lunar worldline, and Artemis II trajectory (M)">
+            <button type="button" class="scene-icon-btn active" id="moon-layer-toggle" title="Moon, lunar path &amp; Artemis II (M)" aria-label="Toggle Moon mesh, lunar worldline, and Artemis II trajectory (M)" aria-pressed="true">
                 <!-- Cratered disk: distinct from light/dark theme crescent moon -->
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="12" cy="12" r="8.35"/>
@@ -253,16 +253,16 @@
                     <circle class="lunar-crater" cx="8.25" cy="14.05" r="0.52"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Theme: dark (L)" aria-label="Cycle appearance: dark, light, sky (L)">
+            <button type="button" class="scene-icon-btn" id="light-mode-toggle" title="Theme: dark (L)" aria-label="Cycle appearance: dark, light, sky (L)" aria-pressed="false">
                 <span class="icon-moon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
                 <span class="icon-sun" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span>
                 <span class="icon-sky" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18h12a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.66-1.3A3.5 3.5 0 0 0 6 18z"/></svg></span>
             </button>
-            <button type="button" class="scene-icon-btn" id="sound-toggle" title="Mute / Sound (Shift+M)" aria-label="Toggle sound (Shift+M)">
+            <button type="button" class="scene-icon-btn" id="sound-toggle" title="Mute / Sound (Shift+M)" aria-label="Toggle sound (Shift+M)" aria-pressed="false">
                 <span class="icon-speaker" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></span>
                 <span class="icon-muted" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></span>
             </button>
-            <button type="button" class="scene-icon-btn" id="focus-toggle" title="Camera focus: SUN (C)" aria-label="Toggle camera focus between Sun and Earth (C)">
+            <button type="button" class="scene-icon-btn" id="focus-toggle" title="Camera focus: SUN (C)" aria-label="Toggle camera focus between Sun and Earth (C)" aria-pressed="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <!-- XYZ origin: +Y up (green), +X right (red), +Z toward viewer as diagonal (blue) -->
                     <path d="M12 17V6" stroke="#22c55e" stroke-width="2"/>
@@ -274,10 +274,10 @@
                     <text x="4.5" y="10.5" font-size="5.5" font-weight="700" fill="#3b82f6" text-anchor="middle" font-family="system-ui, sans-serif">Z</text>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="flatten-toggle" style="display: none;" title="Flatten view (F)" aria-label="Flatten time axis – show circles">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="12" rx="10" ry="3"/><path d="M2 12h20"/></svg>
+            <button type="button" class="scene-icon-btn" id="flatten-toggle" style="display: none;" title="Flatten view (F)" aria-label="Flatten time axis – show circles" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="3"/><path d="M2 12h20"/></svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="webxr-toggle" title="XR mode (X)" aria-label="Enter WebXR / VR (X)" style="display: none;">
+            <button type="button" class="scene-icon-btn" id="webxr-toggle" title="XR mode (X)" aria-label="Enter WebXR / VR (X)" style="display: none;" aria-pressed="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 12h2M19 12h2M3 10v4M19 10v4M6 8v8M18 8v8M6 8a4 4 0 0 1 6 0M12 8a4 4 0 0 1 6 0M6 16a4 4 0 0 0 6 0M12 16a4 4 0 0 0 6 0"/></svg>
             </button>
             </div>
@@ -329,7 +329,7 @@
         >Powered by Circaevum</a>
     </div>
     
-    <div class="info-panel" id="orbital-data-panel" aria-labelledby="orbital-data-heading">
+    <div class="info-panel" id="orbital-data-panel" role="region" aria-labelledby="orbital-data-heading">
         <div class="info-panel-head">
             <h3 id="orbital-data-heading">ORBITAL DATA</h3>
             <div class="info-panel-head-actions">
@@ -341,15 +341,15 @@
         <div class="info-panel-body" id="orbital-data-body">
         <div class="info-row">
             <span class="info-label">Current Time:</span>
-            <span class="info-value" id="current-time">--</span>
+            <span class="info-value" id="current-time" aria-live="polite">--</span>
         </div>
         <div class="info-row">
             <span class="info-label">Selected Time:</span>
-            <span class="info-value" id="selected-time">--</span>
+            <span class="info-value" id="selected-time" aria-live="polite">--</span>
         </div>
         <div class="info-row">
             <span class="info-label">Zoom Level:</span>
-            <span class="info-value" id="current-zoom">DECADE</span>
+            <span class="info-value" id="current-zoom" aria-live="polite">DECADE</span>
         </div>
         <div class="info-row">
             <span class="info-label">Time Span:</span>
@@ -380,8 +380,8 @@
     </div>
     <!-- /xr-ui-layer -->
 
-    <div class="loading" id="loading">
-        <div class="loading-spinner"></div>
+    <div class="loading" id="loading" role="status" aria-live="polite" aria-busy="true">
+        <div class="loading-spinner" aria-hidden="true"></div>
         <div class="loading-text">INITIALIZING SOLAR SYSTEM...</div>
     </div>
 
@@ -513,46 +513,46 @@
 
     <!-- Zoom level bar: after landing page in DOM so it paints on top in Zoom 0 -->
     <div class="controls" id="zoom-controls">
-        <div class="zoom-slider">
-            <div class="zoom-option" data-zoom="1">
-                <div class="zoom-number">1</div>
-                <div class="zoom-desc">Century</div>
+        <div class="zoom-slider" role="radiogroup" aria-label="Zoom level">
+            <div class="zoom-option" data-zoom="1" role="radio" tabindex="-1" aria-checked="false" aria-label="Zoom 1 Century">
+                <div class="zoom-number" aria-hidden="true">1</div>
+                <div class="zoom-desc" aria-hidden="true">Century</div>
             </div>
-            <div class="zoom-option active" data-zoom="2">
-                <div class="zoom-number">2</div>
-                <div class="zoom-desc">Decade</div>
+            <div class="zoom-option active" data-zoom="2" role="radio" tabindex="0" aria-checked="true" aria-label="Zoom 2 Decade">
+                <div class="zoom-number" aria-hidden="true">2</div>
+                <div class="zoom-desc" aria-hidden="true">Decade</div>
             </div>
-            <div class="zoom-option" data-zoom="3">
-                <div class="zoom-number">3</div>
-                <div class="zoom-desc">Year</div>
+            <div class="zoom-option" data-zoom="3" role="radio" tabindex="-1" aria-checked="false" aria-label="Zoom 3 Year">
+                <div class="zoom-number" aria-hidden="true">3</div>
+                <div class="zoom-desc" aria-hidden="true">Year</div>
             </div>
-            <div class="zoom-option" data-zoom="4">
-                <div class="zoom-number">4</div>
-                <div class="zoom-desc">Quarter</div>
+            <div class="zoom-option" data-zoom="4" role="radio" tabindex="-1" aria-checked="false" aria-label="Zoom 4 Quarter">
+                <div class="zoom-number" aria-hidden="true">4</div>
+                <div class="zoom-desc" aria-hidden="true">Quarter</div>
             </div>
-            <div class="zoom-option" data-zoom="5">
-                <div class="zoom-number">5</div>
-                <div class="zoom-desc">Month</div>
+            <div class="zoom-option" data-zoom="5" role="radio" tabindex="-1" aria-checked="false" aria-label="Zoom 5 Month">
+                <div class="zoom-number" aria-hidden="true">5</div>
+                <div class="zoom-desc" aria-hidden="true">Month</div>
             </div>
-            <div class="zoom-option" data-zoom="6">
-                <div class="zoom-number">6</div>
-                <div class="zoom-desc">Lunar</div>
+            <div class="zoom-option" data-zoom="6" role="radio" tabindex="-1" aria-checked="false" aria-label="Zoom 6 Lunar Cycle">
+                <div class="zoom-number" aria-hidden="true">6</div>
+                <div class="zoom-desc" aria-hidden="true">Lunar</div>
             </div>
-            <div class="zoom-option" data-zoom="7">
-                <div class="zoom-number">7</div>
-                <div class="zoom-desc">Week</div>
+            <div class="zoom-option" data-zoom="7" role="radio" tabindex="-1" aria-checked="false" aria-label="Zoom 7 Week">
+                <div class="zoom-number" aria-hidden="true">7</div>
+                <div class="zoom-desc" aria-hidden="true">Week</div>
             </div>
-            <div class="zoom-option" data-zoom="8">
-                <div class="zoom-number">8</div>
-                <div class="zoom-desc">Day</div>
+            <div class="zoom-option" data-zoom="8" role="radio" tabindex="-1" aria-checked="false" aria-label="Zoom 8 Day">
+                <div class="zoom-number" aria-hidden="true">8</div>
+                <div class="zoom-desc" aria-hidden="true">Day</div>
             </div>
-            <div class="zoom-option" data-zoom="9">
-                <div class="zoom-number">9</div>
-                <div class="zoom-desc">Clock</div>
+            <div class="zoom-option" data-zoom="9" role="radio" tabindex="-1" aria-checked="false" aria-label="Zoom 9 Clock">
+                <div class="zoom-number" aria-hidden="true">9</div>
+                <div class="zoom-desc" aria-hidden="true">Clock</div>
             </div>
-            <div class="zoom-option" data-zoom="0">
-                <div class="zoom-number">0</div>
-                <div class="zoom-desc">Hour</div>
+            <div class="zoom-option" data-zoom="0" role="radio" tabindex="-1" aria-checked="false" aria-label="Zoom 0 Hour">
+                <div class="zoom-number" aria-hidden="true">0</div>
+                <div class="zoom-desc" aria-hidden="true">Hour</div>
             </div>
         </div>
     </div>
@@ -564,13 +564,13 @@
         </div>
         <div class="mobile-zoom-controls" id="mobile-zoom-controls" role="group" aria-label="Zoom level">
             <button type="button" class="mobile-zoom-btn" id="zoom-out-btn" aria-label="Zoom out">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
                     <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
             </button>
-            <div class="mobile-zoom-label" id="mobile-zoom-label">DECADE</div>
+            <div class="mobile-zoom-label" id="mobile-zoom-label" aria-live="polite">DECADE</div>
             <button type="button" class="mobile-zoom-btn" id="zoom-in-btn" aria-label="Zoom in">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
@@ -608,7 +608,7 @@
     <script src="circaevum/js/astro/state-to-scene.js"></script>
     <script src="circaevum/js/astro/trajectory-sampler.js"></script>
     <script src="circaevum/js/astro/ephemeris-engine.js"></script>
-    <script src="circaevum/js/geo/geophysical-shells.js"></script>
+    <script src="circaevum/js/geo/geophysical-shells.js?v=aria-pass-v1"></script>
     <script src="circaevum/js/geo/ionosphere-shell.js"></script>
     <script src="circaevum/js/geo/magnetosphere-shell.js"></script>
     <script src="circaevum/js/geo/earth-globe.js"></script>
@@ -649,7 +649,7 @@
     <script src="circaevum/js/adapters/xr/xr-ui.js"></script>
     
     <!-- Main Application Script -->
-    <script src="circaevum/js/main.js?v=lunar-fortnight-v1"></script>
+    <script src="circaevum/js/main.js?v=aria-pass-v1"></script>
     
     <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
     <script src="circaevum/js/api/circaevum-gl.js?v=2"></script>
@@ -659,7 +659,7 @@
     <script src="circaevum/js/ui/common.js"></script>
     <script src="circaevum/js/ui/events-list.js?v=3"></script>
     <script src="circaevum/js/ui/event-detail-sheet.js"></script>
-    <script src="circaevum/js/ui/panels.js"></script>
+    <script src="circaevum/js/ui/panels.js?v=aria-pass-v1"></script>
     <!-- Share state: get/apply for "Open full app" (Option B – same-tab navigate with state in URL) -->
     <script src="circaevum/js/ui/share-state.js"></script>
     <!-- Intro tour config (layers + timing defaults) -->
@@ -673,7 +673,7 @@
     <script src="circaevum/js/ui/webmcp-tools.js"></script>
     
     <!-- Audio Script -->
-    <script src="circaevum/js/ui/audio.js"></script>
+    <script src="circaevum/js/ui/audio.js?v=aria-pass-v1"></script>
 
 </body>
 </html>

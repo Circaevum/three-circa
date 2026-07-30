@@ -41,6 +41,7 @@
     if (!btn) return;
     const on = areGeophysicalShellsEnabled();
     btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     btn.title = on
       ? 'Geophysical shells: atmosphere, ionosphere, magnetosphere (G)'
       : 'Geophysical shells: hidden (G)';

@@ -7751,6 +7751,12 @@ function initControls() {
                 setZoomLevel(zoom);
             }
         });
+        option.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            const zoom = parseInt(option.dataset.zoom);
+            if (!isNaN(zoom)) setZoomLevel(zoom);
+        });
     });
     
     // Time marker lines and text toggles
@@ -7758,7 +7764,10 @@ function initControls() {
     const markersTextBtn = document.getElementById('markers-text-toggle');
     const markersYearBtn = document.getElementById('markers-year-toggle');
     const markersSingularBandBtn = document.getElementById('markers-singular-band-toggle');
-    if (markersLinesBtn) markersLinesBtn.classList.toggle('active', showTimeMarkerLines);
+    if (markersLinesBtn) {
+        markersLinesBtn.classList.toggle('active', showTimeMarkerLines);
+        setButtonPressed(markersLinesBtn, showTimeMarkerLines);
+    }
     if (markersLinesBtn) markersLinesBtn.addEventListener('click', toggleTimeMarkerLines);
     if (markersTextBtn) markersTextBtn.addEventListener('click', toggleTimeMarkerText);
     if (markersYearBtn) markersYearBtn.addEventListener('click', toggleTimeMarkerYearMode);
@@ -7967,7 +7976,10 @@ function smoothReturnToPresent() {
 
 function syncMoonLayerButton() {
     const btn = document.getElementById('moon-layer-toggle');
-    if (btn) btn.classList.toggle('active', isMoonLayerEffectiveAtZoom(currentZoom));
+    if (!btn) return;
+    const on = isMoonLayerEffectiveAtZoom(currentZoom);
+    btn.classList.toggle('active', on);
+    setButtonPressed(btn, on);
 }
 
 function toggleMoonLayer() {
@@ -8002,24 +8014,46 @@ if (typeof window !== 'undefined') {
 
 // createMoonWorldline moved to worldlines.js module
 
+function setButtonPressed(btn, pressed) {
+    if (!btn) return;
+    btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+}
+
+function hideLoadingScreen() {
+    const loadingElement = document.getElementById('loading');
+    if (!loadingElement) return;
+    loadingElement.style.display = 'none';
+    loadingElement.setAttribute('aria-busy', 'false');
+    loadingElement.setAttribute('aria-hidden', 'true');
+}
+
 function toggleTimeMarkerLines() {
     showTimeMarkerLines = !showTimeMarkerLines;
     const button = document.getElementById('markers-lines-toggle');
-    if (button) button.classList.toggle('active', showTimeMarkerLines);
+    if (button) {
+        button.classList.toggle('active', showTimeMarkerLines);
+        setButtonPressed(button, showTimeMarkerLines);
+    }
     applyTimeMarkerVisibility();
 }
 
 function toggleTimeMarkerText() {
     showTimeMarkerText = !showTimeMarkerText;
     const button = document.getElementById('markers-text-toggle');
-    if (button) button.classList.toggle('active', showTimeMarkerText);
+    if (button) {
+        button.classList.toggle('active', showTimeMarkerText);
+        setButtonPressed(button, showTimeMarkerText);
+    }
     applyTimeMarkerVisibility();
 }
 
 function toggleTimeMarkerYearMode() {
     showFullYearTimeMarkers = !showFullYearTimeMarkers;
     const button = document.getElementById('markers-year-toggle');
-    if (button) button.classList.toggle('active', showFullYearTimeMarkers);
+    if (button) {
+        button.classList.toggle('active', showFullYearTimeMarkers);
+        setButtonPressed(button, showFullYearTimeMarkers);
+    }
     // Recreate markers with the new mode applied
     createTimeMarkers(currentZoom);
 }
@@ -8069,7 +8103,9 @@ function initSingularBandModeFromUrlAndStorage() {
 
 function syncSingularBandToggleButton() {
     const button = document.getElementById('markers-singular-band-toggle');
-    if (button) button.classList.toggle('active', !!singularBandMode);
+    if (!button) return;
+    button.classList.toggle('active', !!singularBandMode);
+    setButtonPressed(button, !!singularBandMode);
 }
 
 function getSingularBandMode() {
@@ -8146,6 +8182,7 @@ function syncDayFrameLteSkyToggleButton() {
     const button = document.getElementById('day-frame-lte-sky-toggle');
     if (!button) return;
     button.classList.toggle('active', !!showDayFrameLteSky);
+    setButtonPressed(button, !!showDayFrameLteSky);
     button.title = showDayFrameLteSky
         ? 'Earth LTE sky canvas on day frame (K) — click to hide'
         : 'Earth LTE sky canvas: hidden (K) — click to show';
@@ -8354,6 +8391,7 @@ function syncFlattenToggleButtonState() {
     if (!btn) return;
     const isOn = flattenMode !== 'off';
     btn.classList.toggle('active', isOn);
+    setButtonPressed(btn, isOn);
     if (flattenMode === 'markers') {
         btn.title = 'Flatten mode: time markers only (full) (F)';
         btn.setAttribute('aria-label', 'Flatten mode: time markers only, fully flattened');
@@ -8412,6 +8450,7 @@ function updateEventsTimelineScopeButton() {
     if (!btn) return;
     const yearOnly = !showAllTimelineEvents;
     btn.classList.toggle('active', yearOnly);
+    setButtonPressed(btn, yearOnly);
     if (showAllTimelineEvents) {
         btn.title = 'Events: all time (click for selected year only)';
         btn.setAttribute('aria-label', 'Showing all events. Switch to selected year only.');
@@ -8441,6 +8480,7 @@ function updateLongEventContextFadeButton() {
     if (!btn) return;
     const alphaMode = longEventContextFadeMode === 'alpha';
     btn.classList.toggle('active', alphaMode);
+    setButtonPressed(btn, alphaMode);
     if (alphaMode) {
         btn.title = 'Long-term event context: fade transparency, keep hue (click for desaturate)';
         btn.setAttribute('aria-label', 'Long-term context uses transparency fade while keeping hue. Click to switch to desaturate.');
@@ -8456,7 +8496,9 @@ function updateEventPlotTypeButton() {
     const mode = globalEventPlotType === 'lines' || globalEventPlotType === 'polygon3d'
         ? globalEventPlotType
         : 'auto';
-    btn.classList.toggle('active', mode === 'lines' || mode === 'polygon3d');
+    const forced = mode === 'lines' || mode === 'polygon3d';
+    btn.classList.toggle('active', forced);
+    setButtonPressed(btn, forced);
     if (mode === 'lines') {
         btn.title = 'Events: all simple lines. Click for auto (polygons on selected day only).';
         btn.setAttribute('aria-label', 'All events drawn as simple lines. Click for auto mode.');
@@ -8538,6 +8580,7 @@ function toggleFocusTarget() {
     const btn = document.getElementById('focus-toggle');
     if (btn) {
         btn.classList.toggle('active', next === 'earth');
+        setButtonPressed(btn, next === 'earth');
         btn.title = `Camera focus: ${next.toUpperCase()} (C)`;
         let aria;
         if (currentZoom === 6) {
@@ -8558,6 +8601,7 @@ function refreshThemeToggleButton() {
     const button = document.getElementById('light-mode-toggle');
     if (!button) return;
     button.classList.toggle('active', appearanceTheme !== 'dark');
+    setButtonPressed(button, appearanceTheme !== 'dark');
     const titles = {
         dark: 'Theme: dark (L)',
         light: 'Theme: light (L)',
@@ -8693,19 +8737,18 @@ function toggleWebXR() {
         const orbitalPanel = document.querySelector('.info-panel');
         if (orbitalPanel) orbitalPanel.style.display = '';
         button.classList.remove('active');
+        setButtonPressed(button, false);
         button.title = 'WebXR';
         button.setAttribute('aria-label', 'Enter WebXR / VR');
     } else {
         // Enter WebXR
         // Hide loading screen immediately when entering VR
-        const loadingElement = document.getElementById('loading');
-        if (loadingElement) {
-            loadingElement.style.display = 'none';
-        }
+        hideLoadingScreen();
         
         const overlayRoot = document.getElementById('xr-ui-layer') || undefined;
         const tryEnterXR = (mode) => xrAdapter.enterXR(mode, { domOverlayRoot: overlayRoot }).then((session) => {
             button.classList.add('active');
+            setButtonPressed(button, true);
             button.title = 'Exit VR';
             button.setAttribute('aria-label', 'Exit VR');
             
@@ -9551,10 +9594,10 @@ function setZoomLevel(level, overrideDate) {
     document.getElementById('worldline-height').textContent = (config.timeYears * 100).toFixed(1) + ' AU';
     
     document.querySelectorAll('.zoom-option').forEach(opt => {
-        opt.classList.remove('active');
-        if (parseInt(opt.dataset.zoom) === level) {
-            opt.classList.add('active');
-        }
+        const selected = parseInt(opt.dataset.zoom) === level;
+        opt.classList.toggle('active', selected);
+        opt.setAttribute('aria-checked', selected ? 'true' : 'false');
+        opt.setAttribute('tabindex', selected ? '0' : '-1');
     });
     
     // Update mobile zoom label
@@ -9840,17 +9883,26 @@ if (typeof window !== 'undefined') {
         if ('showFullYearTimeMarkers' in partial) {
             showFullYearTimeMarkers = !!partial.showFullYearTimeMarkers;
             const btn = document.getElementById('markers-year-toggle');
-            if (btn) btn.classList.toggle('active', showFullYearTimeMarkers);
+            if (btn) {
+                btn.classList.toggle('active', showFullYearTimeMarkers);
+                setButtonPressed(btn, showFullYearTimeMarkers);
+            }
         }
         if ('showTimeMarkerLines' in partial) {
             showTimeMarkerLines = !!partial.showTimeMarkerLines;
             const btn = document.getElementById('markers-lines-toggle');
-            if (btn) btn.classList.toggle('active', showTimeMarkerLines);
+            if (btn) {
+                btn.classList.toggle('active', showTimeMarkerLines);
+                setButtonPressed(btn, showTimeMarkerLines);
+            }
         }
         if ('showTimeMarkerText' in partial) {
             showTimeMarkerText = !!partial.showTimeMarkerText;
             const btn = document.getElementById('markers-text-toggle');
-            if (btn) btn.classList.toggle('active', showTimeMarkerText);
+            if (btn) {
+                btn.classList.toggle('active', showTimeMarkerText);
+                setButtonPressed(btn, showTimeMarkerText);
+            }
         }
         if ('tourMinimalOrbitMode' in partial) {
             tourMinimalOrbitMode = !!partial.tourMinimalOrbitMode;
@@ -10760,6 +10812,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (loadingText) {
             loadingText.textContent = 'Failed to load 3D library. Check your connection.';
         }
+        if (loadingElement) {
+            loadingElement.setAttribute('aria-busy', 'false');
+        }
         console.error('Three.js failed to load from CDN');
         return;
     }
@@ -10768,6 +10823,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!webGLSupported()) {
         if (loadingText) {
             loadingText.textContent = 'WebGL not supported. Please use a modern browser.';
+        }
+        if (loadingElement) {
+            loadingElement.setAttribute('aria-busy', 'false');
         }
         console.error('WebGL is not supported on this device/browser');
         return;
@@ -10810,9 +10868,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderer.setAnimationLoop(animate);
         
         setTimeout(() => {
-            if (loadingElement) {
-                loadingElement.style.display = 'none';
-            }
+            hideLoadingScreen();
         }, 1500);
         
     } catch (error) {

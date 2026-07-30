@@ -36,6 +36,17 @@
       };
     }
 
+    function syncPullTabExpanded(tabId, open) {
+      var tab = document.getElementById(tabId);
+      if (!tab) return;
+      tab.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (tabId === 'calendar-layers-pull-tab') {
+        tab.setAttribute('aria-label', open ? 'Close Calendar Layers' : 'Open Calendar Layers');
+      } else if (tabId === 'event-list-pull-tab') {
+        tab.setAttribute('aria-label', open ? 'Close Event List' : 'Open Event List');
+      }
+    }
+
     function openCalendarsLeftPanel() {
       if (window.self !== window.top && window.parent && typeof window.parent.postMessage === 'function') {
         try { window.parent.postMessage({ type: 'CIRCAEVUM_OPEN_ACCOUNT' }, '*'); } catch (err) {}
@@ -45,6 +56,7 @@
       leftPanel.classList.add('open');
       leftPanel.setAttribute('aria-hidden', 'false');
       document.body.classList.add('calendars-left-panel-open');
+      syncPullTabExpanded('calendar-layers-pull-tab', true);
       if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
     }
 
@@ -54,6 +66,7 @@
       leftPanel.classList.remove('open');
       leftPanel.setAttribute('aria-hidden', 'true');
       document.body.classList.remove('calendars-left-panel-open');
+      syncPullTabExpanded('calendar-layers-pull-tab', false);
     }
 
     function openEventListPanel() {
@@ -61,6 +74,7 @@
       panel.classList.add('open');
       panel.setAttribute('aria-hidden', 'false');
       document.body.classList.add('event-list-panel-open');
+      syncPullTabExpanded('event-list-pull-tab', true);
       if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
       var searchInput = document.getElementById('event-list-search');
       if (searchInput) {
@@ -73,6 +87,7 @@
       panel.classList.remove('open');
       panel.setAttribute('aria-hidden', 'true');
       document.body.classList.remove('event-list-panel-open');
+      syncPullTabExpanded('event-list-pull-tab', false);
     }
 
     function openKeyboardControlsPanel() {
