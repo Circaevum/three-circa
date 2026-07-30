@@ -1068,6 +1068,9 @@
     const sel = selFn();
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
 
+    // Parent-unit density window (week→month, day→week, …) — hard cull first.
+    if (shouldHideOutsideParentUnitWindow(start, evEnd)) return true;
+
     if (shouldHideLongTermOnDailySkySte(start, evEnd)) return true;
 
     // Day zoom: long-term spans visible across the full calendar month.
@@ -1080,15 +1083,14 @@
     if (zl === 0) return !eventTouchesSelectedMonthRangeWindow(start, evEnd);
 
     if (isCircadianShortEventScopeYear()) {
-      // Week zoom (7): year-wide STEs; day/clock zooms: month-range window.
+      // Week zoom (7): parent month already applied; day/clock: month-range inside parent day/week.
       if (zl === 7) return false;
       if (zl === 8) return !eventTouchesSelectedMonthRangeWindow(start, evEnd);
     }
 
     if (zl === 9) return !eventTouchesSelectedMonthRangeWindow(start, evEnd);
 
-    // Month / lunar / week: do not cull here. Daily STEs gated by Context Arc in
-    // shouldDraw*SteGeometry; multi-day + out-of-window dailies stay on large LTE manifold.
+    // Month / lunar / week: parent window already culled; keep STE draw gates for Context Arc.
     if (zl === 5 || zl === 6 || zl === 7) return false;
 
     const circ = normalizedCircadianState();
@@ -1683,6 +1685,71 @@
     const hourStart = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), sel.getHours(), 0, 0, 0);
     const hourEnd = new Date(hourStart.getTime() + 3600000);
     return evEnd > hourStart && start < hourEnd;
+  }
+
+  /**
+   * Event display window (Context Sphere ± grain; Shift → parent nest).
+   * Source: main.js getEventDisplayTimeBoundsMs / getExplodedContextTimeBoundsMs.
+   * @returns {{ t0: number, t1: number, unit?: string }|null}
+   */
+  function getSelectedParentUnitBounds() {
+    if (typeof global.getEventDisplayTimeBoundsMs === 'function') {
+      try {
+        const b = global.getEventDisplayTimeBoundsMs(getZoomLevelForEvents());
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
+      } catch (e) { /* fall through */ }
+    }
+    if (typeof global.getExplodedContextTimeBoundsMs === 'function') {
+      try {
+        const b = global.getExplodedContextTimeBoundsMs(getZoomLevelForEvents());
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
+      } catch (e) { /* fall through */ }
+    }
+    if (typeof global.getContextSphereTimeBoundsMs === 'function') {
+      try {
+        const b = global.getContextSphereTimeBoundsMs(getZoomLevelForEvents());
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
+      } catch (e) { /* fall through */ }
+    }
+    if (typeof global.getParentUnitTimeBoundsMs === 'function') {
+      try {
+        const b = global.getParentUnitTimeBoundsMs(getZoomLevelForEvents());
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
+      } catch (e) { /* optional */ }
+    }
+    return null;
+  }
+
+  /**
+   * Clamp event span to Context Sphere time window. Returns null if no overlap.
+   * `clipped` true when event extends past the horizon (geometry should end at shell).
+   */
+  function clampEventSpanToContextSphere(start, end) {
+    if (!start || isNaN(start.getTime())) return null;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    const b = getSelectedParentUnitBounds();
+    if (!b) return { start, end: evEnd, clipped: false };
+    const s = Math.max(start.getTime(), b.t0);
+    const e = Math.min(evEnd.getTime(), b.t1);
+    if (!(e > s)) return null;
+    const clipped = s > start.getTime() || e < evEnd.getTime();
+    return { start: new Date(s), end: new Date(e), clipped };
+  }
+
+  /** Event intersects the parent-unit density window (or no bounds available → allow). */
+  function eventTouchesSelectedParentWindow(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    const b = getSelectedParentUnitBounds();
+    if (!b) return true;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    return evEnd.getTime() > b.t0 && start.getTime() < b.t1;
+  }
+
+  /** Hard-cull outside parent-unit window (density budget / intentional mist veil). */
+  function shouldHideOutsideParentUnitWindow(start, end) {
+    if (!start || isNaN(start.getTime())) return true;
+    // Shift peek may reveal STEs near the focus; still keep them inside parent window.
+    return !eventTouchesSelectedParentWindow(start, end);
   }
 
   function getSelectedDateTimeFn() {
@@ -3168,9 +3235,10 @@
   }
 
   function addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder, tubeRadius) {
-    // Cap cylinders/lines read as useless little circles in the STE/LTE tube (worse at
-    // month/week camera distance; already suppressed on day-sky 0/8/9). Skip all zooms.
-    return;
+    // Cap cylinders/lines usually read as useless beads — skip unless Context Sphere
+    // clipped this ribbon at the event horizon (show that the event continues beyond).
+    const forceHorizonCaps = !!(group && group.userData && group.userData.contextSphereClipped);
+    if (!forceHorizonCaps) return;
     const n = innerFlat.length / 3;
     if (n < 1) return;
     const THREE = global.THREE;
@@ -3181,7 +3249,7 @@
         const p1 = new THREE.Vector3(outerFlat[ix], outerFlat[ix + 1], outerFlat[ix + 2]);
         const c = cylinderBetweenPoints(p0, p1, tubeRadius * 0.92, colorHex, opacity, renderOrder);
         if (c) {
-          c.userData = { type: 'EventRibbonBandEnd', capIndex: si };
+          c.userData = { type: 'EventRibbonBandEnd', capIndex: si, contextSphereHorizon: true };
           group.add(c);
         }
       }
@@ -5167,9 +5235,26 @@
       areEventNameLabelsVisibleAtCurrentZoom(spanStart, spanEndEff);
     const TEXT_OUTSIDE_LIST = 0.36;
 
+    // Context Sphere horizon: hard cliff outside; near-edge fade so cut-off events read as truncated.
+    const parent = getSelectedParentUnitBounds();
+    let contextEdgeFade = 1;
+    if (parent) {
+      const s = spanStart.getTime();
+      const e = spanEndEff.getTime();
+      if (e <= parent.t0 || s >= parent.t1) return textOk ? TEXT_OUTSIDE_LIST : 0.12;
+      const mid = (s + e) * 0.5;
+      const half = Math.max(1, (parent.t1 - parent.t0) * 0.5);
+      const center = (parent.t0 + parent.t1) * 0.5;
+      const edgeDist = Math.abs(mid - center) / half; // 0 center → 1 at shell
+      if (edgeDist > 0.72) {
+        const t = Math.min(1, (edgeDist - 0.72) / 0.28);
+        contextEdgeFade = 1 - t * 0.45;
+      }
+    }
+
     let sep = 0;
     if (zl === 0) {
-      if (isCircadianShortEventsShiftPreview()) return 1;
+      if (isCircadianShortEventsShiftPreview()) return contextEdgeFade;
       const hb = getSelectedHourLocalBounds(ref);
       sep = getPeripheralSeparationMsYearMode(spanStart, spanEndEff, hb.start, hb.end);
     } else if (zl === 3 || zl === 4) {
@@ -5193,7 +5278,8 @@
     }
 
     if (sep <= 0) {
-      return textOk ? 1 : TEXT_OUTSIDE_LIST;
+      const base = textOk ? 1 : TEXT_OUTSIDE_LIST;
+      return base * contextEdgeFade;
     }
 
     let fadeMs;
@@ -5212,7 +5298,7 @@
     }
     const u = temporalFadeSmoothstep(0, fadeMs, sep);
     const vp = floor + (1 - floor) * (1 - u);
-    return vp;
+    return vp * contextEdgeFade;
   }
 
   /**
@@ -5716,13 +5802,25 @@
    */
   function createEventWorldline(event, layerConfig, radius) {
     const earthDist = getEarthDistance();
-    const start = getEventStart(event);
-    const end = getEventEnd(event);
+    let start = getEventStart(event);
+    let end = getEventEnd(event);
     if (!start || isNaN(start.getTime())) return null;
     if (!end || end <= start) {
       const evEnd = end && end > start ? end : start;
+      if (shouldHideOutsideParentUnitWindow(start, evEnd)) return null;
       if (shouldHideLongTermOnDailySkySte(start, evEnd)) return null;
       return createEventMarker(event, layerConfig, radius);
+    }
+    if (shouldHideOutsideParentUnitWindow(start, end)) return null;
+
+    // Event horizon: trim geometry to Context Sphere window so long events cut at the shell.
+    let contextSphereClipped = false;
+    const clamped = clampEventSpanToContextSphere(start, end);
+    if (!clamped) return null;
+    if (clamped.clipped) {
+      start = clamped.start;
+      end = clamped.end;
+      contextSphereClipped = true;
     }
     _eventOutlineLineMode = eventOutlineShouldUseLine(start, end);
 
@@ -5770,7 +5868,8 @@
         vevent: event,
         layerId: layerConfig.id,
         type: 'EventObject',
-        eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
+        eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null,
+        contextSphereClipped: !!contextSphereClipped
       };
       markWorldSpaceIfNeeded(userData, start, end);
 
@@ -6134,7 +6233,8 @@
       vevent: event,
       layerId: layerConfig.id,
       type: 'EventObject',
-      eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null
+      eventUid: (typeof VEvent !== 'undefined' && event instanceof VEvent ? event.uid : event.uid || event.id) || null,
+      contextSphereClipped: !!contextSphereClipped
     };
     markWorldSpaceIfNeeded(userData, start, end);
     storeTimelineHelixRef(userData, helixRef);
@@ -6314,9 +6414,18 @@
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const start = line.start instanceof Date ? line.start : new Date(line.start);
-      const end = line.end instanceof Date ? line.end : new Date(line.end);
+      let start = line.start instanceof Date ? line.start : new Date(line.start);
+      let end = line.end instanceof Date ? line.end : new Date(line.end);
       if (!start || isNaN(start.getTime()) || !end || isNaN(end.getTime()) || end <= start) continue;
+      if (shouldHideOutsideParentUnitWindow(start, end)) continue;
+      let contextSphereClipped = false;
+      const clampedLine = clampEventSpanToContextSphere(start, end);
+      if (!clampedLine) continue;
+      if (clampedLine.clipped) {
+        start = clampedLine.start;
+        end = clampedLine.end;
+        contextSphereClipped = true;
+      }
       // Same far/density LOD as createEventWorldline — line-objects path used to force tubes always.
       _eventOutlineLineMode = eventOutlineShouldUseLine(start, end);
 
@@ -6476,7 +6585,8 @@
               start,
               end,
               label: line.label || null,
-              index: i
+              index: i,
+              contextSphereClipped: !!contextSphereClipped
             };
             markWorldSpaceIfNeeded(lineUserData, start, end);
             const lineRoot = new global.THREE.Group();
@@ -6875,7 +6985,8 @@
         label: line.label || null,
         index: i,
         useWorldSpaceGroup: true,
-        immuneToFlatten: true
+        immuneToFlatten: true,
+        contextSphereClipped: !!contextSphereClipped
       };
       storeTimelineHelixRef(lineUserData, helixRef);
 
@@ -7487,61 +7598,36 @@
   }
 
   /**
-   * Is this event on-screen (within the visible window) at the current daily-sky
-   * zoom? Reuses {@link shouldDrawDailySkySteGeometry} — the same predicate that
-   * gates whether the event's geometry is drawn — so the budget pre-filter and the
-   * downstream window filter agree on "what's visible."
-   *
-   * At non daily-sky zooms (everything except Moment 0 / Day 8 / Clock 9) there is
-   * no on-screen window, so every event is in scope and nothing is pre-filtered.
-   *
-   * @param {Object} event
-   * @param {number} zl current zoom level
-   * @returns {boolean}
+   * Is this event inside the parent-unit density window (and any daily-sky sub-window)?
+   * Used for window-before-budget at every zoom — outside parent = not meshed (mist veil instead).
    */
   function isEventOnScreenForDensityBudget(event, zl) {
-    if (!isEarthDailySkyEventZoom(zl)) return true;
     const start = getEventStart(event);
     const end = getEventEnd(event);
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    if (!eventTouchesSelectedParentWindow(start, evEnd)) return false;
+
+    if (!isEarthDailySkyEventZoom(zl)) return true;
     // Budget window is SHIFT-agnostic: SHIFT changes what's visible, not what competes for slots.
-    // Using shouldDrawDailySkySteGeometry here would let SHIFT's "return true" re-admit the full
-    // timeline, flooding the narrow budget (40) with far-away LTEs and culling in-window STEs again.
     if (isLongTermSpanForDailySky(start, evEnd)) {
       if (zl === 8) return eventTouchesSelectedMonthWindow(start, evEnd);
       if (zl === 9) return eventTouchesSelectedCalendarDay(start, evEnd);
       return false; // zl === 0: LTEs excluded from moment budget
     }
-    // STEs at all daily-sky zooms: use the slider-controlled month-range window.
+    // STEs at daily-sky: month-range slider still applies inside parent day/week.
     return eventTouchesSelectedMonthRangeWindow(start, evEnd);
   }
 
   /**
    * Apply the per-zoom density budget to a layer's standard (non-timeseries) events.
-   * Pure selection step extracted from createEventObjects so it can be unit-tested:
-   * priority-sort by scoreEventPriority and keep the top `budget` events.
-   *
-   * Fix (window-before-budget): at the daily-sky narrow zooms (Moment 0, Day 8,
-   * Clock 9) the budget is applied to the ON-SCREEN window only — off-window events
-   * are dropped from the candidate pool first. Previously the budget ran over the
-   * *entire* layer, so long multi-day events anywhere in time outscored in-window
-   * short events (STEs) and consumed every budget slot, culling STEs before the
-   * downstream window filters ever ran (STEs vanished at Clock/Moment). Budgeting
-   * the on-screen set means the cap now limits what is actually visible.
-   *
-   * @param {Array} standardEvents events already filtered to exclude timeseries arcs
-   * @param {number} zl current zoom level (for the budget lookup)
-   * @returns {{ rendered: Array, overflowCount: number }}
+   * Window-before-budget: parent-unit window first (all zooms), then daily-sky sub-filters.
    */
   function selectEventsForDensityBudget(standardEvents, zl) {
     const budget = getEventDensityBudget(zl);
     const list = standardEvents || [];
-    // Window-before-budget: cull off-screen events at daily-sky zooms so the budget
-    // caps the visible set rather than deleting in-window STEs.
-    const inScope = isEarthDailySkyEventZoom(zl)
-      ? list.filter((e) => isEventOnScreenForDensityBudget(e, zl))
-      : list;
+    // Window-before-budget at every zoom: parent-unit window (+ daily-sky sub-filters).
+    const inScope = list.filter((e) => isEventOnScreenForDensityBudget(e, zl));
     if (inScope.length <= budget) {
       return { rendered: inScope, overflowCount: 0 };
     }
@@ -7722,6 +7808,8 @@
     isEventOnScreenForDensityBudget,
     getEventDensityBudget,
     scoreEventPriority,
+    eventTouchesSelectedParentWindow,
+    getSelectedParentUnitBounds,
     isCircadianHelixZoom,
     isEarthDailySkyEventZoom,
     DENSITY_BUDGET,
