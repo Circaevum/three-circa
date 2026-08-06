@@ -274,6 +274,21 @@
                     <text x="4.5" y="10.5" font-size="5.5" font-weight="700" fill="#3b82f6" text-anchor="middle" font-family="system-ui, sans-serif">Z</text>
                 </svg>
             </button>
+            <button type="button" class="scene-icon-btn active" id="event-horizon-mode-toggle" title="Event Horizon: nest (Interstellar)" aria-label="Cycle Event Horizon mode" aria-pressed="true" data-eh-mode="nest">
+                <svg class="eh-mode-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <!-- Far-side accretion band lensed over the top (Interstellar signature) -->
+                    <path class="eh-icon-lensed" d="M5.2 10.2C6.4 7.1 9 5.4 12 5.4s5.6 1.7 6.8 4.8" stroke-width="1.35" stroke-linecap="round"/>
+                    <!-- Accretion disk (tilted) -->
+                    <ellipse class="eh-icon-disk" cx="12" cy="13.2" rx="9.2" ry="2.85" stroke-width="1.55"/>
+                    <ellipse class="eh-icon-disk-inner" cx="12" cy="13.2" rx="6.4" ry="1.85" stroke-width="1.05" opacity="0.55"/>
+                    <!-- Photon ring -->
+                    <circle class="eh-icon-photon" cx="12" cy="12" r="4.55" stroke-width="1.15"/>
+                    <!-- Event horizon silhouette -->
+                    <circle class="eh-icon-hole" cx="12" cy="12" r="3.35"/>
+                    <!-- Near-side disk glare under hole -->
+                    <path class="eh-icon-glare" d="M4.6 13.5c2.1 1.35 4.6 2.05 7.4 2.05s5.3-.7 7.4-2.05" stroke-width="1.2" stroke-linecap="round" opacity="0.75"/>
+                </svg>
+            </button>
             <button type="button" class="scene-icon-btn" id="flatten-toggle" style="display: none;" title="Flatten view (F)" aria-label="Flatten time axis – show circles" aria-pressed="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="3"/><path d="M2 12h20"/></svg>
             </button>
@@ -284,6 +299,17 @@
         </div>
 
         <div class="scene-sliders-stack" id="scene-sliders-stack" style="display: none;">
+            <div class="scene-slider-wrap scene-slider-wrap--horizon" id="event-horizon-slider-wrap" style="display: none;" aria-label="Event Horizon size and warp band">
+                <div class="scene-slider-heading">Event Horizon</div>
+                <div class="scene-slider-caption"><span>Sphere</span><span>Warp past rim</span></div>
+                <div class="eh-dual-range" id="eh-dual-range">
+                    <div class="eh-dual-range-track" aria-hidden="true"></div>
+                    <div class="eh-dual-range-fill" id="eh-dual-fill" aria-hidden="true"></div>
+                    <input type="range" class="eh-dual-thumb eh-dual-thumb--sphere" id="eh-sphere-slider" min="1" max="30" step="1" value="7" aria-label="Event Horizon sphere size in days" title="Sphere half-span (± days from selected)">
+                    <input type="range" class="eh-dual-thumb eh-dual-thumb--warp" id="eh-warp-outer-slider" min="1" max="30" step="1" value="9" aria-label="Warp band outer edge in days" title="Warp fade outer edge (≥ sphere; never inside Event Horizon)">
+                </div>
+                <div class="eh-horizon-hint" id="eh-horizon-hint" aria-live="polite">Sphere ±7d · warp +2d past rim</div>
+            </div>
             <div class="scene-slider-wrap scene-slider-wrap--helix" id="circadian-helix-slider-wrap" style="display: none;" aria-label="Daily helix stretch">
                 <div class="scene-slider-heading">Daily helix</div>
                 <div class="scene-slider-caption"><span>Tight</span><span>Spread along the day</span></div>
@@ -582,7 +608,7 @@
     <script src="circaevum/js/three.min.js"></script>
     
     <!-- Circaevum Modules (load in dependency order) -->
-    <script src="circaevum/js/config.js?v=lunar-fortnight-v1"></script>
+    <script src="circaevum/js/config.js?v=cam-classic-v1"></script>
     <script src="circaevum/js/datetime.js"></script>
     
     <!-- Astro scaffold (feature-flagged ephemeris pipeline) -->
@@ -617,7 +643,8 @@
     <script src="circaevum/js/utils/geometry-helpers.js"></script>
     <script src="circaevum/js/utils/ribbon-geometry.js"></script>
     <script src="circaevum/js/utils/mesh-primitives.js"></script>
-    <script src="circaevum/js/utils/context-sphere-clip.js?v=content-pad-v1"></script>
+    <script src="circaevum/js/utils/context-sphere-clip.js?v=eh-reverse-v1"></script>
+    <script src="circaevum/js/utils/context-sphere-warp.js?v=eh-mode-toggle-v1"></script>
     
     <!-- Core (scene initialization) -->
     <script src="circaevum/js/core/scene-core.js"></script>
@@ -625,12 +652,12 @@
     
     <!-- Renderers (worldlines, timemarkers, planets, events) -->
     <script src="circaevum/js/renderers/worldline-renderer.js"></script>
-    <script src="circaevum/js/renderers/timemarker-renderer.js"></script>
+    <script src="circaevum/js/renderers/timemarker-renderer.js?v=eh-mode-toggle-v1"></script>
     <script src="circaevum/js/renderers/planet-renderer.js"></script>
     <!-- Optional mission overlays (use core MoonMechanics for geometry) -->
     <script src="circaevum/js/missions/artemis-ii-mission.js"></script>
-    <script src="circaevum/js/renderers/event-renderer.js?v=8-shift-parent-events"></script>
-    <script src="circaevum/js/renderers/circadian-renderer.js"></script>
+    <script src="circaevum/js/renderers/event-renderer.js?v=eh-mode-toggle-v1"></script>
+    <script src="circaevum/js/renderers/circadian-renderer.js?v=interstellar-v1"></script>
     <script src="circaevum/js/atc/atc-band.js"></script>
     <script src="circaevum/js/renderers/garmin-renderer.js?v=hr-ribbon-v1"></script>
     
@@ -649,7 +676,7 @@
     <script src="circaevum/js/adapters/xr/xr-ui.js"></script>
     
     <!-- Main Application Script -->
-    <script src="circaevum/js/main.js?v=aria-pass-v1"></script>
+    <script src="circaevum/js/main.js?v=eh-off-arc-v1"></script>
     
     <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
     <script src="circaevum/js/api/circaevum-gl.js?v=2"></script>

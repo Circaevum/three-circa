@@ -83,10 +83,10 @@
     2: 40,    // DECADE — 10 years
     3: 300,   // YEAR — raised; calendar + timeseries years can run deep
     4: 300,   // QUARTER
-    5: 500,   // MONTH — helix zoom, circadian STEs visible here
-    6: 150,   // LUNAR CYCLE — 28 days
-    7: 500,   // WEEK — helix zoom, year-wide STEs in scope
-    8: 500,   // DAY — daily sky; ±1-month STE window can hold 60-200 STEs at typical cadence
+    5: 800,   // MONTH — day-frame LTE dailies across ±month
+    6: 400,   // LUNAR CYCLE
+    7: 800,   // WEEK — day-frame LTE across parent month / zoom window
+    8: 700,   // DAY — month-range dailies + selected week
     9: 120,   // CLOCK — polar day disk
   };
 
@@ -118,7 +118,10 @@
     // so they get a stronger boost to beat multi-day LTEs in priority scoring.
     const steBoostMag = (zl === 8 || zl === 9 || zl === 0) ? 5.0 : 1.5;
     const steBoost = (durationDays < 1 && isCircadianHelixZoom(zl)) ? steBoostMag : 0;
-    return durationScore + recencyScore + steBoost;
+    // Day-frame LTE dailies outside selected week still need budget priority (cheap low-poly).
+    const dayFrameLteBoost =
+      durationDays < 2 && shouldRenderDayFrameSubDayOnAnnualHelix() ? 2.2 : 0;
+    return durationScore + recencyScore + steBoost + dayFrameLteBoost;
   }
 
   /**
@@ -1688,8 +1691,8 @@
   }
 
   /**
-   * Event display window (Context Sphere ± grain; Shift → parent nest).
-   * Source: main.js getEventDisplayTimeBoundsMs / getExplodedContextTimeBoundsMs.
+   * Event Horizon time window (Zoom-7 week, all zooms). STE nest inside this shell.
+   * Shift may widen via getEventDisplayTimeBoundsMs → parent nest.
    * @returns {{ t0: number, t1: number, unit?: string }|null}
    */
   function getSelectedParentUnitBounds() {
@@ -1711,22 +1714,47 @@
         if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
       } catch (e) { /* fall through */ }
     }
+    return null;
+  }
+
+  /**
+   * Wider LTE density window — zoom-relative context (± grain), outside Event Horizon.
+   * @returns {{ t0: number, t1: number, unit?: string }|null}
+   */
+  function getLteDensityTimeBounds() {
+    if (typeof global.getZoomRelativeContextTimeBoundsMs === 'function') {
+      try {
+        const b = global.getZoomRelativeContextTimeBoundsMs(getZoomLevelForEvents());
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
+      } catch (e) { /* optional */ }
+    }
     if (typeof global.getParentUnitTimeBoundsMs === 'function') {
       try {
         const b = global.getParentUnitTimeBoundsMs(getZoomLevelForEvents());
         if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
       } catch (e) { /* optional */ }
     }
-    return null;
+    return getSelectedParentUnitBounds();
   }
 
   /**
-   * Clamp event span to Context Sphere time window. Returns null if no overlap.
-   * `clipped` true when event extends past the horizon (geometry should end at shell).
+   * Clamp STE nest to Event Horizon week. Day-frame LTE dailies *outside* the
+   * selected week keep full span on the annual day time frame (no week chop).
    */
   function clampEventSpanToContextSphere(start, end) {
     if (!start || isNaN(start.getTime())) return null;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    if (!isSteStyleDailySpan(start, evEnd)) {
+      return { start, end: evEnd, clipped: false };
+    }
+    // Far day-frame LTE (beyond selected week): do not trim to Event Horizon.
+    if (
+      shouldRenderDayFrameSubDayOnAnnualHelix() &&
+      getSelectedWeekLteWarpAmount(start) < 0.001 &&
+      getSelectedWeekLteWarpAmount(evEnd) < 0.001
+    ) {
+      return { start, end: evEnd, clipped: false };
+    }
     const b = getSelectedParentUnitBounds();
     if (!b) return { start, end: evEnd, clipped: false };
     const s = Math.max(start.getTime(), b.t0);
@@ -1736,19 +1764,28 @@
     return { start: new Date(s), end: new Date(e), clipped };
   }
 
-  /** Event intersects the parent-unit density window (or no bounds available → allow). */
+  /**
+   * STE circadian nest → Event Horizon week (Shift may widen).
+   * Day-frame LTE dailies → zoom-relative window (visible beyond week without Shift).
+   */
   function eventTouchesSelectedParentWindow(start, end) {
     if (!start || isNaN(start.getTime())) return false;
-    const b = getSelectedParentUnitBounds();
-    if (!b) return true;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    let b;
+    if (isSteStyleDailySpan(start, evEnd) && shouldRenderDayFrameSubDayOnAnnualHelix()) {
+      b = getLteDensityTimeBounds();
+    } else if (isSteStyleDailySpan(start, evEnd)) {
+      b = getSelectedParentUnitBounds();
+    } else {
+      b = getLteDensityTimeBounds();
+    }
+    if (!b) return true;
     return evEnd.getTime() > b.t0 && start.getTime() < b.t1;
   }
 
-  /** Hard-cull outside parent-unit window (density budget / intentional mist veil). */
+  /** Hard-cull: STE outside week horizon; LTE outside zoom parent nest. */
   function shouldHideOutsideParentUnitWindow(start, end) {
     if (!start || isNaN(start.getTime())) return true;
-    // Shift peek may reveal STEs near the focus; still keep them inside parent window.
     return !eventTouchesSelectedParentWindow(start, end);
   }
 
@@ -2126,15 +2163,141 @@
   }
 
   /**
-   * Nesting resolver warp through Event Horizon — currently off for LTE day-frame mapping.
-   * Earth / Event Horizon sit *outside* the LTE day time frame; day ribbons stay on the
-   * day-pitch floor without warping into the Earth nest.
+   * LTE Interstellar disc strength from SELECTED DATE (calendar days).
+   * Soft ramp through whole band (not binary inside EH) so ribbons bend gradually
+   * like densified time markers — full near selected, easing toward rim, fade past EH.
+   * @returns {number} 0..1 warp strength
    */
-  function lerpDayFrameTowardCircadian(dayPos, when, refHeight, earthDist) {
-    void when;
-    void refHeight;
-    void earthDist;
-    return dayPos;
+  function getSelectedWeekLteWarpAmount(when) {
+    if (typeof global.isEventHorizonWarpEnabled === 'function') {
+      try {
+        if (!global.isEventHorizonWarpEnabled()) return 0;
+      } catch (e) { /* keep on */ }
+    } else if (typeof global.getEventHorizonMode === 'function') {
+      try {
+        if (global.getEventHorizonMode() !== 'nest') return 0;
+      } catch (e) { /* keep on */ }
+    }
+    if (!when || isNaN(when.getTime())) return 0;
+    const selFn = getSelectedDateTimeFn();
+    if (!selFn) return 0;
+    const sel = selFn();
+    if (!sel || isNaN(sel.getTime())) return 0;
+    const dayMs = 86400000;
+    const selMid = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
+    const whenMid = new Date(when.getFullYear(), when.getMonth(), when.getDate(), 0, 0, 0, 0);
+    const absDays = Math.abs(whenMid.getTime() - selMid.getTime()) / dayMs;
+    let ehHalf = 7;
+    let warpOuter = 9;
+    if (typeof global.getEventHorizonHalfDays === 'function') {
+      try {
+        ehHalf = Math.max(1, global.getEventHorizonHalfDays());
+      } catch (e) { /* keep default */ }
+    }
+    if (typeof global.getEventHorizonWarpOuterHalfDays === 'function') {
+      try {
+        warpOuter = Math.max(ehHalf, global.getEventHorizonWarpOuterHalfDays());
+      } catch (e) {
+        warpOuter = ehHalf + 2;
+      }
+    } else {
+      warpOuter = ehHalf + 2;
+    }
+    if (absDays >= warpOuter) return 0;
+
+    // Continuous falloff 0→warpOuter (smoothstep). At EH rim (~ehHalf) still strong
+    // but not clamped to 1 — avoids straight↔full-curve snap when crossing rim.
+    const t = 1 - absDays / Math.max(warpOuter, 1e-6);
+    const u = Math.max(0, Math.min(1, t));
+    const s = u * u * (3 - 2 * u);
+    // Keep interior punchy: remap so selected≈1, rim (ehHalf/warpOuter)≈0.55, outer→0.
+    const rimT = 1 - ehHalf / Math.max(warpOuter, 1e-6);
+    if (rimT <= 0.001) return s;
+    // Bias: pull values above rimT upward toward 1 for a longer soft mid-band.
+    if (u >= rimT) {
+      const v = (u - rimT) / Math.max(1 - rimT, 1e-6);
+      const vs = v * v * (3 - 2 * v);
+      return 0.55 + 0.45 * vs;
+    }
+    const v = u / Math.max(rimT, 1e-6);
+    const vs = v * v * (3 - 2 * v);
+    return 0.55 * vs;
+  }
+
+  /** Segment count for day-frame ribbons — densify under warp so disc arcs stay chord-free. */
+  function getDayFrameRibbonSegmentCount(durationH, start, end) {
+    const hrs = typeof durationH === 'number' && !isNaN(durationH) ? Math.max(durationH, 0.25) : 1;
+    const mid = start && end
+      ? new Date((start.getTime() + (end > start ? end.getTime() : start.getTime() + 3600000)) / 2)
+      : start;
+    const near = getSelectedWeekLteWarpAmount(mid);
+    if (near > 0.05) {
+      // Circadian hand sweeps 2π/day; ~1 sample per 5° of warped arc.
+      const arcSamples = Math.ceil((hrs / 24) * (360 / 5));
+      const boost = near > 0.45 ? 3.2 : 2.2;
+      return Math.max(12, Math.min(96, Math.max(arcSamples, Math.ceil(hrs * boost))));
+    }
+    return Math.max(3, Math.min(8, Math.ceil(hrs * 0.9)));
+  }
+
+  /**
+   * Nesting resolver warp through Event Horizon (Interstellar).
+   * Outside: STE → pole-taper spindle; LTE only if within ±1 week of selected date → ring.
+   * LTE farther from selected / camera inside → classic day-frame helix.
+   * @param {object} [warpOpts] forwarded to warpLtePointToRing (e.g. angleDeltaHint)
+   */
+  function lerpDayFrameTowardCircadian(dayPos, when, refHeight, earthDist, warpOpts) {
+    if (!dayPos) return dayPos;
+    const W = typeof global.ContextSphereWarp !== 'undefined' ? global.ContextSphereWarp : null;
+    if (!W) return dayPos;
+    const state =
+      typeof global.getContextSphereState === 'function' ? global.getContextSphereState() : null;
+    const inside = W.getCameraInsideCached();
+    const blend = getContextArcToCircadianBlend(when, earthDist);
+    if (blend > 0.55) {
+      const q = W.warpStePoint(dayPos, state, inside);
+      if (q) q._arcCircadianBlend = blend;
+      return q || dayPos;
+    }
+    // LTE day frame: warp only near selected week. Rest = standard LTE day time frame.
+    const amt = inside ? 0 : getSelectedWeekLteWarpAmount(when);
+    if (!(amt > 0.001) || !state || !(state.radius > 0)) {
+      return { x: dayPos.x, y: dayPos.y, z: dayPos.z, _arcCircadianBlend: blend };
+    }
+    let radialT = 0.5;
+    try {
+      const Worb = typeof earthDist === 'number' && !isNaN(earthDist) ? earthDist : getEarthDistance();
+      const day = getDayMarkerFrameRadii(Worb);
+      if (day && day.outer > day.inner) {
+        const rH = Math.hypot(dayPos.x, dayPos.z);
+        radialT = Math.max(0, Math.min(1, (rH - day.inner) / (day.outer - day.inner)));
+      }
+    } catch (e) { /* keep mid band */ }
+    const warped = W.warpLtePointToRing(
+      dayPos,
+      state,
+      Object.assign(
+        {
+          cameraInside: false,
+          radialT,
+          diskWidth: state.radius * 0.28,
+          amount: amt,
+          when
+        },
+        warpOpts && typeof warpOpts === 'object' ? warpOpts : null
+      )
+    );
+    if (!warped) {
+      return { x: dayPos.x, y: dayPos.y, z: dayPos.z, _arcCircadianBlend: blend };
+    }
+    return {
+      x: warped.x,
+      y: warped.y,
+      z: warped.z,
+      _arcCircadianBlend: blend,
+      _warpAngle: warped._warpAngle,
+      _warpDelta: warped._warpDelta
+    };
   }
 
   /**
@@ -2920,7 +3083,7 @@
     if (!start || !end || !(end > start)) return null;
 
     const overlapLane = (layerConfig && layerConfig._overlapLane) || 0;
-    const segments = Math.max(8, Math.min(32, Math.ceil(durationH * 3)));
+    const segments = getDayFrameRibbonSegmentCount(durationH, start, end);
     const refWorldline = getWorldlineOrbitReferenceHeight();
     const ribbonPair = buildDayFrameHelixPair(
       start,
@@ -2938,9 +3101,12 @@
     const plotType = 'polygon3d';
     const offDayMul = getAnnualDayFrameOffDayOpacityMul(start, end);
     const dailyMul = getDailyCircadianEventOpacityMul(start, end);
+    const nearSel = getSelectedWeekLteWarpAmount(start);
+    const farDayFrame = nearSel < 0.2;
     const opacity = Math.min(1,
       ((lineStyle && lineStyle.opacity != null ? lineStyle.opacity : layerConfig.opacity) ?? 0.78) *
-        getDurationOpacityScale(durationDays) * dailyMul * offDayMul);
+        getDurationOpacityScale(durationDays) * dailyMul * offDayMul *
+        (farDayFrame ? 0.72 : 1));
     const roBoost = getDurationRibbonRenderOrderBoost(durationDays);
     const roFill = -4 + roBoost;
     const roLine = -2 + roBoost;
@@ -2949,6 +3115,7 @@
     if (ribbonPair.extendsOutsideFrame) {
       fillOpacity = Math.min(0.98, fillOpacity * 1.12);
     }
+    if (farDayFrame) fillOpacity = Math.min(fillOpacity, 0.38);
     const layerHex = parseColor(layerConfig.color || '#00b4d8');
     const fillColorFromStyle =
       (lineStyle && lineStyle.fillColor) ||
@@ -3031,6 +3198,7 @@
 
     if (
       !skipLabels &&
+      !farDayFrame &&
       labelEvent &&
       (areEventTextLabelsVisibleAtCurrentZoom(start, end) ||
         areEventNameLabelsVisibleAtCurrentZoom(start, end))
@@ -3325,7 +3493,10 @@
     const bandHalf = getAnnualDayFrameRibbonBandHalf(earthDist, frameSpan, durationHours);
     const startMs = start.getTime();
     const spanMs = Math.max(end.getTime() - startMs, 1);
-    const n = Math.max(10, Math.min(40, Math.ceil((spanMs / 3600000) * 6)));
+    const segHint =
+      typeof segments === 'number' && !isNaN(segments) ? Math.max(2, Math.floor(segments)) : 10;
+    // Prefer caller densify (warp-aware); still floor by duration so long spans stay smooth.
+    const n = Math.max(segHint, Math.min(96, Math.ceil((spanMs / 3600000) * 6)));
     const innerFlat = [];
     const outerFlat = [];
     const viewerTz = getUserTimeZoneId();
@@ -3352,6 +3523,11 @@
           ep.day !== startViewerParts.day
         );
       })();
+
+    let prevAngleDelta = null;
+    let prevWarpAngle = null;
+    const sphereState =
+      typeof global.getContextSphereState === 'function' ? global.getContextSphereState() : null;
 
     for (let i = 0; i <= n; i++) {
       const u = i / n;
@@ -3394,21 +3570,72 @@
         y: (po.y - pi.y) * 0.5,
         z: (po.z - pi.z) * 0.5
       };
-      const warpedMid = lerpDayFrameTowardCircadian(mid, when, currentHeight, earthDist) || mid;
+      const warpedMid =
+        lerpDayFrameTowardCircadian(mid, when, currentHeight, earthDist, {
+          angleDeltaHint: prevAngleDelta
+        }) || mid;
+      if (typeof warpedMid._warpDelta === 'number') {
+        prevAngleDelta = warpedMid._warpDelta;
+      }
+      // Unwrap warped angle along the ribbon so mesh edges never chord across the disc.
+      if (sphereState && sphereState.radius > 0) {
+        let ang = Math.atan2(warpedMid.z - sphereState.z, warpedMid.x - sphereState.x);
+        const rad = Math.hypot(warpedMid.x - sphereState.x, warpedMid.z - sphereState.z);
+        if (prevWarpAngle != null && rad > 1e-8) {
+          while (ang - prevWarpAngle > Math.PI) ang -= Math.PI * 2;
+          while (ang - prevWarpAngle < -Math.PI) ang += Math.PI * 2;
+          warpedMid.x = sphereState.x + Math.cos(ang) * rad;
+          warpedMid.z = sphereState.z + Math.sin(ang) * rad;
+        }
+        if (rad > 1e-8) prevWarpAngle = ang;
+      }
       const blendW =
         typeof warpedMid._arcCircadianBlend === 'number' ? warpedMid._arcCircadianBlend : 0;
       // Collapse day-pitch width as we enter STE nest; keep full width on LTE side.
       const widthKeep = blendW < 0.12 ? 1 : Math.max(0.08, 1 - blendW * 0.92);
+      let halfX = half.x * widthKeep;
+      let halfY = half.y * widthKeep;
+      let halfZ = half.z * widthKeep;
+      // As LTE→disc warp rises, ribbon width follows circadian radius (around Earth),
+      // not the heliocentric Sun–Earth spoke (that pinned edges on the anti-sun side).
+      const warpAmt = getSelectedWeekLteWarpAmount(when);
+      if (warpAmt > 0.001) {
+        const halfLen = Math.hypot(halfX, halfY, halfZ);
+        if (halfLen > 1e-8) {
+          const frac =
+            (when.getHours() +
+              when.getMinutes() / 60 +
+              when.getSeconds() / 3600 +
+              when.getMilliseconds() / 3600000) /
+            24;
+          const dayAngle = frac * Math.PI * 2;
+          const ex = sphereState && typeof sphereState.x === 'number' ? sphereState.x : mid.x;
+          const ez = sphereState && typeof sphereState.z === 'number' ? sphereState.z : mid.z;
+          const hand = Math.atan2(ez, ex) - dayAngle;
+          // Continuity: keep hand near previous warp angle so width doesn't flip ±π.
+          let handUse = hand;
+          if (prevWarpAngle != null) {
+            while (handUse - prevWarpAngle > Math.PI) handUse -= Math.PI * 2;
+            while (handUse - prevWarpAngle < -Math.PI) handUse += Math.PI * 2;
+          }
+          const discHalfX = Math.cos(handUse) * halfLen;
+          const discHalfZ = Math.sin(handUse) * halfLen;
+          const wa = Math.max(0, Math.min(1, warpAmt));
+          halfX = halfX * (1 - wa) + discHalfX * wa;
+          halfY = halfY * (1 - wa);
+          halfZ = halfZ * (1 - wa) + discHalfZ * wa;
+        }
+      }
       pi = {
-        x: warpedMid.x - half.x * widthKeep,
-        y: warpedMid.y - half.y * widthKeep,
-        z: warpedMid.z - half.z * widthKeep,
+        x: warpedMid.x - halfX,
+        y: warpedMid.y - halfY,
+        z: warpedMid.z - halfZ,
         _arcCircadianBlend: blendW
       };
       po = {
-        x: warpedMid.x + half.x * widthKeep,
-        y: warpedMid.y + half.y * widthKeep,
-        z: warpedMid.z + half.z * widthKeep
+        x: warpedMid.x + halfX,
+        y: warpedMid.y + halfY,
+        z: warpedMid.z + halfZ
       };
 
       innerFlat.push(pi.x, pi.y, pi.z);
@@ -7598,8 +7825,9 @@
   }
 
   /**
-   * Is this event inside the parent-unit density window (and any daily-sky sub-window)?
-   * Used for window-before-budget at every zoom — outside parent = not meshed (mist veil instead).
+   * Is this event inside its density window?
+   * STE → Event Horizon week; LTE → zoom parent nest (outside horizon).
+   * Used for window-before-budget at every zoom.
    */
   function isEventOnScreenForDensityBudget(event, zl) {
     const start = getEventStart(event);
@@ -7615,7 +7843,7 @@
       if (zl === 9) return eventTouchesSelectedCalendarDay(start, evEnd);
       return false; // zl === 0: LTEs excluded from moment budget
     }
-    // STEs at daily-sky: month-range slider still applies inside parent day/week.
+    // STEs at daily-sky: month-range slider still applies inside Event Horizon week.
     return eventTouchesSelectedMonthRangeWindow(start, evEnd);
   }
 

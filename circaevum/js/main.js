@@ -62,12 +62,11 @@ let targetCameraDistance = 800;
 let currentCameraDistance = 800;
 let cameraTransitionSpeed = 0.15; // Camera transition speed for zoom level changes
 /**
- * Base distance after framing the Context Sphere (Event Horizon).
- * Wheel clamp uses this so dolly stays relative to the fit, not stale ZOOM_LEVELS.distance.
+ * Optional override after Event Horizon fit-cam (normally unused — classic ZOOM_LEVELS.distance).
  */
 let zoomFramedCameraDistance = null;
-/** Prefer Earth + Event Horizon framing (skip Zoom-0 hour-hand camera chase). */
-let preferEarthEventHorizonCamera = true;
+/** When true: Earth look-at + fit sphere in FOV. Default off — classic focusTarget ladder. */
+let preferEarthEventHorizonCamera = false;
 /** Default perspective FOV. Zoom 0 narrows toward MIN_MOMENT_FOV for telephoto inspection once the dolly is pinned at the globe. */
 const BASE_CAMERA_FOV = 75;
 const MIN_MOMENT_FOV = 14;
@@ -341,6 +340,67 @@ let flattenIntensity = 1;
 let circadianHelixStretchSlider = 0.5;
 /** Months from start of selected month to include STEs at zoom 8/9/0 (1 = current month only, 2 = current + next, …). */
 let steWindowMonths = 2;
+/** Event Horizon sphere half-span in calendar days (±N from selected). Default week. */
+let eventHorizonHalfDays = 7;
+/**
+ * Outer half-span where LTE→disc warp fades to 0. Must be ≥ eventHorizonHalfDays
+ * (warp never starts inside EH; length beyond = warpOuter − sphere).
+ */
+let eventHorizonWarpOuterHalfDays = 9;
+/**
+ * Event Horizon / Black Hole visual mode:
+ *   nest   — Interstellar: STE inside / LTE outside + disc warp (current)
+ *   inside — veil: markers/events/skies inside sphere; worldlines + orbits stay full
+ *   off    — classic: no shell, no clip, no warp
+ */
+let eventHorizonMode = 'nest';
+const EVENT_HORIZON_MODES = ['nest', 'inside', 'off'];
+/** Prior focusTargetOverride while Mode 2 forces Earth (undefined = none saved). */
+let eventHorizonSavedFocusTarget = undefined;
+const EH_HALF_DAYS_MIN = 1;
+const EH_HALF_DAYS_MAX = 30;
+try {
+    if (typeof sessionStorage !== 'undefined') {
+        const ehStored = parseInt(sessionStorage.getItem('circaevum.ehHalfDays'), 10);
+        const woStored = parseInt(sessionStorage.getItem('circaevum.ehWarpOuterHalfDays'), 10);
+        const modeStored = sessionStorage.getItem('circaevum.ehMode');
+        if (!isNaN(ehStored)) {
+            eventHorizonHalfDays = Math.max(EH_HALF_DAYS_MIN, Math.min(EH_HALF_DAYS_MAX, ehStored));
+        }
+        if (!isNaN(woStored)) {
+            eventHorizonWarpOuterHalfDays = Math.max(
+                eventHorizonHalfDays,
+                Math.min(EH_HALF_DAYS_MAX, woStored)
+            );
+        } else {
+            eventHorizonWarpOuterHalfDays = Math.min(
+                EH_HALF_DAYS_MAX,
+                Math.max(eventHorizonHalfDays, eventHorizonHalfDays + 2)
+            );
+        }
+        if (modeStored && EVENT_HORIZON_MODES.indexOf(modeStored) >= 0) {
+            eventHorizonMode = modeStored;
+        }
+    }
+} catch (e) { /* private mode */ }
+if (typeof window !== 'undefined') {
+    window.getEventHorizonHalfDays = function () {
+        return eventHorizonHalfDays;
+    };
+    window.getEventHorizonWarpOuterHalfDays = function () {
+        return Math.max(eventHorizonHalfDays, eventHorizonWarpOuterHalfDays);
+    };
+    window.getEventHorizonWarpBeyondDays = function () {
+        return Math.max(0, eventHorizonWarpOuterHalfDays - eventHorizonHalfDays);
+    };
+    window.getEventHorizonMode = function () {
+        return eventHorizonMode;
+    };
+    /** Interstellar disc / STE spindle warp active only in nest mode. */
+    window.isEventHorizonWarpEnabled = function () {
+        return eventHorizonMode === 'nest';
+    };
+}
 let focusTargetOverride = null; // 'sun' | 'earth' | 'mid' | 'moon' | null – null = use ZOOM_LEVELS default
 /** When true (long-term event click), use day-number/day-name radial band for mid focus geometry (same as week view mid). */
 let focusMidFromLongTermEventClick = false;
@@ -1749,6 +1809,8 @@ function getListContextDiscTimeBoundsMs(zoomLevel, refDate) {
 
 /**
  * Time bounds for the 3D context arc — matches visible zoom span (week/month/day), not the wider event-list filter.
+ * nest / inside — ± zoom-grain about selected time (+ pad) for Interstellar LTE chrome.
+ * off (Mode 3) — calendar context window (Sun–Sat week, calendar month, …), not a selected-time buffer.
  */
 function getListContextDiscArcTimeBoundsMs(zoomLevel, refDate) {
     const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
@@ -1758,16 +1820,23 @@ function getListContextDiscArcTimeBoundsMs(zoomLevel, refDate) {
             : typeof getSelectedDateTime === 'function'
               ? getSelectedDateTime()
               : new Date();
-    // Prefer Context Sphere event-horizon window so Sky Canvas arc fills the same span.
-    // Pad past sphere by a few finer zoom grains so clip (not geometry end) makes the rim.
-    if (typeof getContextSphereTimeBoundsMs === 'function' && z !== 1) {
+    const ehMode = typeof eventHorizonMode === 'string' ? eventHorizonMode : 'nest';
+    // nest / inside: zoom-relative ± buffer about selected instant (pad for clip rim).
+    // Mode 3 (off): skip — use calendar-box fallthrough below.
+    if (
+        ehMode !== 'off' &&
+        typeof getZoomRelativeContextTimeBoundsMs === 'function' &&
+        z !== 1
+    ) {
         try {
-            const cs = getContextSphereTimeBoundsMs(z, ref);
+            const cs = getZoomRelativeContextTimeBoundsMs(z, ref);
             if (cs && cs.t1 > cs.t0) {
                 const pad =
-                    typeof getContextSphereContentPad === 'function'
-                        ? getContextSphereContentPad(z)
-                        : { padMs: 0 };
+                    typeof getZoomRelativeContextContentPad === 'function'
+                        ? getZoomRelativeContextContentPad(z)
+                        : typeof getContextSphereContentPad === 'function'
+                          ? getContextSphereContentPad(z)
+                          : { padMs: 0 };
                 const p = pad && pad.padMs > 0 ? pad.padMs : 0;
                 return { t0: cs.t0 - p, t1: cs.t1 + p, ref: cs.ref || ref };
             }
@@ -1811,14 +1880,13 @@ function getListContextDiscArcTimeBoundsMs(zoomLevel, refDate) {
 }
 
 /**
- * Context Sphere time window: ± one zoom-grain from selected instant (fixed size).
- * Month (5) → ±1 month; lunar (6) → ±fortnight (+2d each side for full synodic);
- * week (7) → ±1 week; day (8) → ±1 day; …
- * Shift does NOT enlarge the sphere — see {@link getEventDisplayTimeBoundsMs}.
+ * Zoom-relative LTE / list context window (± one grain of current zoom).
+ * Event Horizon shell stays week-sized ({@link getContextSphereTimeBoundsMs});
+ * LTE chrome + density expand to this window (outside the sphere).
  *
  * @returns {{ t0: number, t1: number, ref: Date, unit: string, halfCount: number, extended: boolean }}
  */
-function getContextSphereTimeBoundsMs(zoomLevel, refDate) {
+function getZoomRelativeContextTimeBoundsMs(zoomLevel, refDate) {
     const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
     const ref =
         refDate instanceof Date && !isNaN(refDate.getTime())
@@ -1883,30 +1951,61 @@ function getContextSphereTimeBoundsMs(zoomLevel, refDate) {
 }
 
 /**
- * Extra span for clipped contextual geometry (sky / list arc / markers) past the
- * Event Horizon so the sphere discard — not a short ribbon end — forms the rim.
- * Pad = a few finer grains of the current zoom (hours under day, days under week, …).
+ * Event Horizon time window for the drawn shell.
+ * nest — adjustable ±eventHorizonHalfDays (slider)
+ * inside — traditional Zoom-7 week (±7d); slider does not size the shell
+ *
+ * @returns {{ t0: number, t1: number, ref: Date, unit: string, halfCount: number, extended: boolean, ehHalfDays: number }}
+ */
+function getContextSphereTimeBoundsMs(zoomLevel, refDate) {
+    void zoomLevel;
+    const ref =
+        refDate instanceof Date && !isNaN(refDate.getTime())
+            ? refDate
+            : typeof getSelectedDateTime === 'function'
+              ? getSelectedDateTime()
+              : new Date();
+    // Mode 2 (inside veil): classic week shell — not the nest dual-knob.
+    const halfDays =
+        typeof eventHorizonMode === 'string' && eventHorizonMode === 'inside'
+            ? 7
+            : Math.max(
+                  EH_HALF_DAYS_MIN,
+                  Math.min(
+                      EH_HALF_DAYS_MAX,
+                      typeof eventHorizonHalfDays === 'number' && !isNaN(eventHorizonHalfDays)
+                          ? eventHorizonHalfDays
+                          : 7
+                  )
+              );
+    const t0d = new Date(ref.getTime());
+    t0d.setDate(t0d.getDate() - halfDays);
+    const t1d = new Date(ref.getTime());
+    t1d.setDate(t1d.getDate() + halfDays);
+    return {
+        t0: t0d.getTime(),
+        t1: t1d.getTime(),
+        ref,
+        unit: 'week',
+        halfCount: halfDays / 7,
+        extended: false,
+        ehHalfDays: halfDays
+    };
+}
+
+/**
+ * Content pad for Event Horizon (week shell) — STE overshoot past rim.
  *
  * @returns {{ padMs: number, padWorld: number, units: number }}
  */
 function getContextSphereContentPad(zoomLevel) {
-    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+    void zoomLevel;
     const dayMs =
         typeof EVENT_LIST_MS_PER_DAY === 'number' && EVENT_LIST_MS_PER_DAY > 0
             ? EVENT_LIST_MS_PER_DAY
             : 86400000;
-    const hourMs = dayMs / 24;
     const units = 2.5;
-    let padMs;
-    if (z === 0 || z === 9) padMs = units * hourMs;
-    else if (z === 8) padMs = units * hourMs;
-    else if (z === 6) padMs = units * dayMs; // few days past lunar ±fortnight rim
-    else if (z === 7) padMs = units * dayMs;
-    else if (z === 5) padMs = units * dayMs;
-    else if (z === 4) padMs = 7 * dayMs;
-    else if (z === 3) padMs = 14 * dayMs;
-    else if (z === 2) padMs = 30 * dayMs;
-    else padMs = 90 * dayMs;
+    const padMs = units * dayMs;
 
     let padWorld = 0;
     const R =
@@ -1932,11 +2031,85 @@ function getContextSphereContentPad(zoomLevel) {
 }
 
 /**
- * Events visible in the scene: Context Sphere window by default.
- * Hold Shift → next window level (parent nest: day→week, week→month, month→quarter, …).
- * Sphere size stays fixed; only cull / clamp expand.
+ * Content pad for LTE / list chrome past the zoom-relative context window.
+ *
+ * @returns {{ padMs: number, padWorld: number, units: number }}
+ */
+function getZoomRelativeContextContentPad(zoomLevel) {
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+    const dayMs =
+        typeof EVENT_LIST_MS_PER_DAY === 'number' && EVENT_LIST_MS_PER_DAY > 0
+            ? EVENT_LIST_MS_PER_DAY
+            : 86400000;
+    const hourMs = dayMs / 24;
+    const units = 2.5;
+    let padMs;
+    if (z === 0 || z === 9) padMs = units * hourMs;
+    else if (z === 8) padMs = units * hourMs;
+    else if (z === 6) padMs = units * dayMs;
+    else if (z === 7) padMs = units * dayMs;
+    else if (z === 5) padMs = units * dayMs;
+    else if (z === 4) padMs = 7 * dayMs;
+    else if (z === 3) padMs = 14 * dayMs;
+    else if (z === 2) padMs = 30 * dayMs;
+    else padMs = 90 * dayMs;
+
+    let padWorld = 0;
+    if (typeof calculateDateHeight === 'function') {
+        try {
+            const b = getZoomRelativeContextTimeBoundsMs(z);
+            if (b && b.t1 > b.t0) {
+                const d0 = new Date(b.t1);
+                const d1 = new Date(b.t1 + padMs);
+                const frac = (d) =>
+                    d.getHours() +
+                    d.getMinutes() / 60 +
+                    d.getSeconds() / 3600 +
+                    d.getMilliseconds() / 3600000;
+                const yA = calculateDateHeight(d0.getFullYear(), d0.getMonth(), d0.getDate(), frac(d0));
+                const yB = calculateDateHeight(d1.getFullYear(), d1.getMonth(), d1.getDate(), frac(d1));
+                if (typeof yA === 'number' && typeof yB === 'number' && isFinite(yA) && isFinite(yB)) {
+                    padWorld = Math.abs(yB - yA) * 0.55;
+                }
+            }
+        } catch (e) { /* optional */ }
+    }
+    const R =
+        contextSphereState && typeof contextSphereState.radius === 'number'
+            ? contextSphereState.radius
+            : 0;
+    if (R > 0) padWorld = Math.max(padWorld, R * 0.04);
+    return { padMs, padWorld, units };
+}
+
+/**
+ * Events visible in the scene.
+ * nest — Context Sphere (slider) window; Shift → parent nest.
+ * inside — zoom-relative context (arc / grain), not week-slider shell.
  */
 function getEventDisplayTimeBoundsMs(zoomLevel, refDate) {
+    if (typeof eventHorizonMode === 'string' && eventHorizonMode === 'inside') {
+        if (typeof getZoomRelativeContextTimeBoundsMs === 'function') {
+            try {
+                const cs = getZoomRelativeContextTimeBoundsMs(zoomLevel, refDate);
+                if (cs && cs.t1 > cs.t0) {
+                    const pad =
+                        typeof getZoomRelativeContextContentPad === 'function'
+                            ? getZoomRelativeContextContentPad(zoomLevel)
+                            : { padMs: 0 };
+                    const p = pad && pad.padMs > 0 ? pad.padMs : 0;
+                    return {
+                        t0: cs.t0 - p,
+                        t1: cs.t1 + p,
+                        ref: cs.ref,
+                        unit: cs.unit,
+                        halfCount: cs.halfCount,
+                        extended: false
+                    };
+                }
+            } catch (e) { /* fall through */ }
+        }
+    }
     const shift =
         typeof window !== 'undefined' &&
         typeof window.getCircadianShortEventsShiftPreview === 'function' &&
@@ -2039,7 +2212,9 @@ if (typeof window !== 'undefined') {
     window.getParentUnitTimeBoundsMs = getParentUnitTimeBoundsMs;
     window.getCurrentUnitTimeBoundsMs = getCurrentUnitTimeBoundsMs;
     window.getContextSphereTimeBoundsMs = getContextSphereTimeBoundsMs;
+    window.getZoomRelativeContextTimeBoundsMs = getZoomRelativeContextTimeBoundsMs;
     window.getContextSphereContentPad = getContextSphereContentPad;
+    window.getZoomRelativeContextContentPad = getZoomRelativeContextContentPad;
     window.getEventDisplayTimeBoundsMs = getEventDisplayTimeBoundsMs;
     window.getExplodedContextTimeBoundsMs = getExplodedContextTimeBoundsMs;
     window.getContextSphereState = function () {
@@ -2209,6 +2384,11 @@ function syncContextSphereLteSlopeRing() {
         } else if (ring.geometry) {
             ring.geometry.setAttribute('position', new THREE.BufferAttribute(pts, 3));
         }
+        if (ring.material) {
+            ring.material.color.setHex(0xffffff);
+            ring.material.opacity = isLightMode ? 0.9 : 0.95;
+            ring.material.needsUpdate = true;
+        }
     }
 }
 
@@ -2295,51 +2475,75 @@ function ensureContextSphereState(zoomLevel) {
     }
     const earthOrbitR = Math.hypot(center.x, center.z) || 50;
     radius = Math.max(radius, earthOrbitR * 0.04, 2.5);
-
-    // Day / Clock / Moment: Event Horizon must reach pedagogical L1–L2 (day-frame hand)
-    // so STE day events + Lagrange markers stay in frame — not a tiny ±1-day helix ball.
-    if (z === 0 || z === 8 || z === 9) {
-        let l1l2Half = 0;
-        if (
-            typeof EventRenderer !== 'undefined' &&
-            typeof EventRenderer.getEventHorizonRadius === 'function'
-        ) {
-            l1l2Half = EventRenderer.getEventHorizonRadius(earthOrbitR);
-        } else if (
-            typeof TimeMarkers !== 'undefined' &&
-            typeof TimeMarkers.getEarthOrbitL1L2DayFrameRadii === 'function'
-        ) {
-            const day = TimeMarkers.getEarthOrbitL1L2DayFrameRadii(earthOrbitR);
-            if (day && day.halfSpan > 0) l1l2Half = day.halfSpan;
-        } else if (
-            typeof CircadianRenderer !== 'undefined' &&
-            typeof CircadianRenderer.getHandLength === 'function'
-        ) {
-            l1l2Half = CircadianRenderer.getHandLength();
-        } else {
-            l1l2Half = earthOrbitR * 0.1;
-        }
-        if (l1l2Half > 0) {
-            radius = Math.max(radius, l1l2Half * 1.1);
-        }
-    }
+    // Shell radius from Event Horizon time chord (slider in nest; fixed week in inside).
 
     const y0 = heightAtMs(bounds.t0);
     const y1 = heightAtMs(bounds.t1);
+    const ehHalf =
+        typeof bounds.ehHalfDays === 'number' && bounds.ehHalfDays > 0
+            ? bounds.ehHalfDays
+            : eventHorizonMode === 'inside'
+              ? 7
+              : eventHorizonHalfDays;
+    const warpOuter = Math.max(ehHalf, eventHorizonWarpOuterHalfDays);
+    const warpBeyond = Math.max(0, warpOuter - ehHalf);
+
+    // Mode 2 veil: clip volume follows zoom-relative context (arc/grain), not week shell.
+    // Drawn Event Horizon shell stays traditional week size above.
+    let clipRadius = radius;
+    let clipY0 = y0 != null ? y0 : center.y;
+    let clipY1 = y1 != null ? y1 : center.y;
+    if (eventHorizonMode === 'inside' && typeof getZoomRelativeContextTimeBoundsMs === 'function') {
+        try {
+            const cb = getZoomRelativeContextTimeBoundsMs(z);
+            if (cb && cb.t1 > cb.t0) {
+                const pad =
+                    typeof getZoomRelativeContextContentPad === 'function'
+                        ? getZoomRelativeContextContentPad(z)
+                        : { padMs: 0 };
+                const pMs = pad && pad.padMs > 0 ? pad.padMs : 0;
+                const ct0 = cb.t0 - pMs;
+                const ct1 = cb.t1 + pMs;
+                let cR = 0;
+                const cSpan = ct1 - ct0;
+                for (let i = 0; i <= samples; i++) {
+                    const p = earthPointAtMs(ct0 + (i / samples) * cSpan);
+                    if (!p) continue;
+                    const dx = p.x - center.x;
+                    const dy = p.y - center.y;
+                    const dz = p.z - center.z;
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (dist > cR) cR = dist;
+                }
+                clipRadius = Math.max(cR, radius, earthOrbitR * 0.04, 2.5);
+                const cy0 = heightAtMs(ct0);
+                const cy1 = heightAtMs(ct1);
+                if (cy0 != null) clipY0 = cy0;
+                if (cy1 != null) clipY1 = cy1;
+            }
+        } catch (e) { /* keep shell radius as clip */ }
+    }
 
     contextSphereState = {
         x: center.x,
         y: center.y,
         z: center.z,
         radius,
+        clipRadius,
         t0: bounds.t0,
         t1: bounds.t1,
         unit: bounds.unit,
         halfCount: bounds.halfCount,
         extended: !!bounds.extended,
         zoom: z,
+        radiusSourceZoom: 7,
+        ehHalfDays: ehHalf,
+        warpOuterHalfDays: warpOuter,
+        warpBeyondDays: warpBeyond,
         y0: y0 != null ? y0 : center.y,
         y1: y1 != null ? y1 : center.y,
+        clipY0,
+        clipY1,
         heightAtMs,
         earthPointAtMs
     };
@@ -2371,23 +2575,89 @@ function refreshSkyCanvasForContextSphere(zoomLevel) {
 }
 
 /**
- * Patch time-marker + sky materials to discard fragments outside Context Sphere.
- * Gives rounded clip edges where ribbons / canvas hit the Event Horizon shell.
- * Time markers also get a one-shot radial stretch past the clip radius.
+ * Patch materials for Event Horizon clip by mode:
+ *   nest   — STE keep inside; LTE keep outside (Interstellar reverse)
+ *   inside — everything keep inside (veil)
+ *   off    — clip disabled
  */
 function refreshContextSphereVisualClip() {
     if (typeof ContextSphereClip === 'undefined' || !ContextSphereClip.refresh) return;
-    const roots = [];
-    // Sky / list meshes rebuild oversized via content pad — do not vertex-stretch them.
-    if (typeof earthDaylightSkyMesh !== 'undefined' && earthDaylightSkyMesh) roots.push(earthDaylightSkyMesh);
-    if (typeof dayFrameLteSkyMesh !== 'undefined' && dayFrameLteSkyMesh) roots.push(dayFrameLteSkyMesh);
-    if (typeof listHorizonEarthRingMesh !== 'undefined' && listHorizonEarthRingMesh) {
-        roots.push(listHorizonEarthRingMesh);
+    if (eventHorizonMode === 'off' || !contextSphereState) {
+        if (ContextSphereClip.setEnabled) ContextSphereClip.setEnabled(false);
+        return;
     }
-    const markerRoots = [];
-    if (typeof timeMarkersGroup !== 'undefined' && timeMarkersGroup) markerRoots.push(timeMarkersGroup);
-    const objects =
-        typeof timeMarkers !== 'undefined' && Array.isArray(timeMarkers) ? timeMarkers.slice() : [];
+
+    const steRoots = [];
+    const lteRoots = [];
+    const lteObjects = [];
+
+    if (eventHorizonMode === 'inside') {
+        // Veil: markers / skies / events stay inside. Worldlines + orbital paths
+        // live on flattenableGroup — leave unpatched so they read through the rim.
+        if (typeof earthDaylightSkyMesh !== 'undefined' && earthDaylightSkyMesh) {
+            steRoots.push(earthDaylightSkyMesh);
+        }
+        if (typeof dayFrameLteSkyMesh !== 'undefined' && dayFrameLteSkyMesh) {
+            steRoots.push(dayFrameLteSkyMesh);
+        }
+        if (typeof listHorizonEarthRingMesh !== 'undefined' && listHorizonEarthRingMesh) {
+            steRoots.push(listHorizonEarthRingMesh);
+        }
+        if (typeof timeMarkersGroup !== 'undefined' && timeMarkersGroup) {
+            steRoots.push(timeMarkersGroup);
+        }
+        if (typeof timeMarkers !== 'undefined' && Array.isArray(timeMarkers)) {
+            for (let i = 0; i < timeMarkers.length; i++) {
+                if (timeMarkers[i]) steRoots.push(timeMarkers[i]);
+            }
+        }
+        const gl = typeof window !== 'undefined' ? window.circaevumGL : null;
+        if (gl && gl.eventLayerGroups && typeof gl.eventLayerGroups === 'object') {
+            Object.keys(gl.eventLayerGroups).forEach((k) => {
+                const g = gl.eventLayerGroups[k];
+                if (g) steRoots.push(g);
+            });
+        }
+        ContextSphereClip.refresh({
+            THREE: typeof THREE !== 'undefined' ? THREE : null,
+            // Veil clip = zoom-relative context volume; drawn shell stays week-sized.
+            state: {
+                x: contextSphereState.x,
+                y: contextSphereState.y,
+                z: contextSphereState.z,
+                radius:
+                    typeof contextSphereState.clipRadius === 'number' &&
+                    contextSphereState.clipRadius > 0
+                        ? contextSphereState.clipRadius
+                        : contextSphereState.radius
+            },
+            steRoots,
+            lteRoots: [],
+            lteObjects: [],
+            padWorld: 0,
+            stretchSte: false
+        });
+        return;
+    }
+
+    // nest — reverse Event Horizon
+    if (typeof earthDaylightSkyMesh !== 'undefined' && earthDaylightSkyMesh) {
+        steRoots.push(earthDaylightSkyMesh);
+    }
+    if (typeof dayFrameLteSkyMesh !== 'undefined' && dayFrameLteSkyMesh) {
+        lteRoots.push(dayFrameLteSkyMesh);
+    }
+    if (typeof listHorizonEarthRingMesh !== 'undefined' && listHorizonEarthRingMesh) {
+        lteRoots.push(listHorizonEarthRingMesh);
+    }
+    if (typeof timeMarkersGroup !== 'undefined' && timeMarkersGroup) {
+        lteRoots.push(timeMarkersGroup);
+    }
+    if (typeof timeMarkers !== 'undefined' && Array.isArray(timeMarkers)) {
+        for (let i = 0; i < timeMarkers.length; i++) {
+            if (timeMarkers[i]) lteObjects.push(timeMarkers[i]);
+        }
+    }
     const pad =
         typeof getContextSphereContentPad === 'function'
             ? getContextSphereContentPad(
@@ -2399,24 +2669,41 @@ function refreshContextSphereVisualClip() {
     ContextSphereClip.refresh({
         THREE: typeof THREE !== 'undefined' ? THREE : null,
         state: contextSphereState,
-        roots,
-        objects: objects.concat(markerRoots),
+        steRoots,
+        lteRoots,
+        lteObjects,
         padWorld: pad && pad.padWorld > 0 ? pad.padWorld : 0,
-        stretchRoots: false
+        stretchSte: true
     });
 }
 
 /**
- * Context Sphere — event horizon centered on Earth at selected time.
- * Radius = max Earth-worldline distance over ± zoom-grain (sphere size fixed; Shift only expands events).
- * Low-poly soft shell + horizontal latitude rings at month/week bounds;
- * Selected (cyan), Current (red), window edges (yellow).
+ * Context Sphere / Event Horizon — Earth-centered; radius locked to Zoom-7 week chord
+ * at every zoom. STE nest inside; LTE / time-frame chrome outside (invert clip).
+ * Shift expands STE display nest only — sphere size unchanged.
  * White ring: Event Horizon ∩ LTE canvas plane (tilts with helix; flattens toward horizontal).
- * Sky Canvas expands to fill this sphere (see {@link refreshSkyCanvasForContextSphere}).
  */
 function updateParentUnitTemporalVeil(zoomLevel) {
     disposeParentUnitTemporalVeil();
     if (typeof THREE === 'undefined' || !sceneContentGroup) return;
+
+    // Classic: no shell, no clip, no warp.
+    if (eventHorizonMode === 'off') {
+        contextSphereState = null;
+        if (typeof ContextSphereClip !== 'undefined' && ContextSphereClip.setEnabled) {
+            ContextSphereClip.setEnabled(false);
+        }
+        if (
+            typeof TimeMarkers !== 'undefined' &&
+            typeof TimeMarkers.applyLteDayFrameEventHorizonWarp === 'function'
+        ) {
+            try {
+                TimeMarkers.applyLteDayFrameEventHorizonWarp();
+            } catch (e) { /* optional */ }
+        }
+        return;
+    }
+
     const state = ensureContextSphereState(zoomLevel);
     if (!state) {
         if (typeof ContextSphereClip !== 'undefined' && ContextSphereClip.setEnabled) {
@@ -2454,14 +2741,23 @@ function updateParentUnitTemporalVeil(zoomLevel) {
     group.position.set(center.x, center.y, center.z);
 
     const shellColor = isLightMode ? 0x3d6a8c : 0x7eb6d9;
-    // Low poly — soft volume only (no dense wire cage).
+    const insideVeil = typeof eventHorizonMode === 'string' && eventHorizonMode === 'inside';
+    const clipR =
+        insideVeil &&
+        typeof state.clipRadius === 'number' &&
+        state.clipRadius > radius + 0.05
+            ? state.clipRadius
+            : null;
+
+    // Event Horizon shell (week / nest size) — soft volume; not the Mode-2 clip rim.
+    const shellOpacity = isLightMode ? 0.05 : 0.07;
     const shellGeo = new THREE.SphereGeometry(radius, 16, 12);
     const shell = new THREE.Mesh(
         shellGeo,
         new THREE.MeshBasicMaterial({
             color: shellColor,
             transparent: true,
-            opacity: isLightMode ? 0.05 : 0.07,
+            opacity: shellOpacity,
             side: THREE.DoubleSide,
             depthWrite: false,
             depthTest: true
@@ -2478,13 +2774,14 @@ function updateParentUnitTemporalVeil(zoomLevel) {
     const colEdge = isLightMode ? 0xb8860b : 0xffd23c;
     const colMonth = isLightMode ? 0x475569 : 0xb8c9dc;
     const colWeek = isLightMode ? 0x64748b : 0x8aa0b8;
+    const colClip = isLightMode ? 0x0e7490 : 0x7dd3fc;
 
-    /** Horizontal latitude ring on sphere at local Y (scene height − center.y). */
-    function addLatRing(yLocal, color, opacity, renderOrder, segs) {
-        if (!(radius > 0) || !isFinite(yLocal)) return;
-        if (Math.abs(yLocal) >= radius * 0.995) return;
-        const rRing = Math.sqrt(Math.max(0, radius * radius - yLocal * yLocal));
-        if (rRing < radius * 0.015) return;
+    /** Horizontal latitude ring on a sphere of radius `rAt` at local Y. */
+    function addLatRingOn(rAt, yLocal, color, opacity, renderOrder, segs) {
+        if (!(rAt > 0) || !isFinite(yLocal)) return;
+        if (Math.abs(yLocal) >= rAt * 0.995) return;
+        const rRing = Math.sqrt(Math.max(0, rAt * rAt - yLocal * yLocal));
+        if (rRing < rAt * 0.015) return;
         const n = segs != null ? segs : RING_SEGS;
         const pts = [];
         for (let i = 0; i <= n; i++) {
@@ -2506,6 +2803,78 @@ function updateParentUnitTemporalVeil(zoomLevel) {
         line.renderOrder = renderOrder != null ? renderOrder : 17;
         line.raycast = function () {};
         group.add(line);
+    }
+
+    function addLatRing(yLocal, color, opacity, renderOrder, segs) {
+        addLatRingOn(radius, yLocal, color, opacity, renderOrder, segs);
+    }
+
+    /** Great-circle on radius `rAt` (equator / meridians). */
+    function addGreatCircleOn(rAt, axis, color, opacity, renderOrder) {
+        if (!(rAt > 0)) return;
+        const n = 64;
+        const pts = [];
+        const R = rAt * 1.001;
+        for (let i = 0; i <= n; i++) {
+            const a = (i / n) * Math.PI * 2;
+            const c = Math.cos(a);
+            const s = Math.sin(a);
+            if (axis === 'y') pts.push(c * R, 0, s * R);
+            else if (axis === 'x') pts.push(0, c * R, s * R);
+            else pts.push(c * R, s * R, 0);
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+        const line = new THREE.Line(
+            geo,
+            new THREE.LineBasicMaterial({
+                color,
+                transparent: true,
+                opacity,
+                depthWrite: false,
+                depthTest: true
+            })
+        );
+        line.renderOrder = renderOrder != null ? renderOrder : 19;
+        line.raycast = function () {};
+        line.userData = { type: 'ContextClipOutline', axis };
+        group.add(line);
+    }
+
+    /**
+     * Mode 2: quiet rim of the *clip* sphere (zoom-context veil) —
+     * soft fill + a few outline circles. No wire cage.
+     */
+    if (clipR != null) {
+        const clipShell = new THREE.Mesh(
+            new THREE.SphereGeometry(clipR, 32, 24),
+            new THREE.MeshBasicMaterial({
+                color: colClip,
+                transparent: true,
+                opacity: isLightMode ? 0.045 : 0.06,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                depthTest: true
+            })
+        );
+        clipShell.renderOrder = 15;
+        clipShell.raycast = function () {};
+        clipShell.userData = { type: 'ContextClipShell' };
+        group.add(clipShell);
+
+        // One equator + context time-edge latitude rings.
+        addGreatCircleOn(clipR, 'y', colClip, isLightMode ? 0.42 : 0.55, 20);
+
+        const clipY0s =
+            typeof state.clipY0 === 'number' && isFinite(state.clipY0) ? state.clipY0 - center.y : null;
+        const clipY1s =
+            typeof state.clipY1 === 'number' && isFinite(state.clipY1) ? state.clipY1 - center.y : null;
+        if (clipY0s != null) {
+            addLatRingOn(clipR, clipY0s, colClip, isLightMode ? 0.5 : 0.62, 21, 72);
+        }
+        if (clipY1s != null) {
+            addLatRingOn(clipR, clipY1s, colClip, isLightMode ? 0.5 : 0.62, 21, 72);
+        }
     }
 
     function yLocalAtMs(ms) {
@@ -2617,6 +2986,15 @@ function updateParentUnitTemporalVeil(zoomLevel) {
      */
     syncContextSphereLteSlopeRing();
 
+    if (typeof ContextSphereWarp !== 'undefined' && ContextSphereWarp.syncCameraInsideFlag) {
+        try {
+            ContextSphereWarp.syncCameraInsideFlag(
+                typeof camera !== 'undefined' ? camera : null,
+                state
+            );
+        } catch (e) { /* optional */ }
+    }
+
     // Sky Canvas fills this event horizon (disc radius = sphere R; day-frame span = window).
     refreshSkyCanvasForContextSphere(z);
 
@@ -2659,6 +3037,8 @@ if (typeof window !== 'undefined') {
     window.debugContextSphere = window.debugParentUnitVeil;
     window.applyCameraDistanceToFitContextSphere = applyCameraDistanceToFitContextSphere;
     window.refreshContextSphereVisualClip = refreshContextSphereVisualClip;
+    window.getContextSphereLteCanvasPlaneBasis = getContextSphereLteCanvasPlaneBasis;
+    window.refreshDayFrameLteSkyInterstellarWarp = refreshDayFrameLteSkyInterstellarWarp;
     window.setPreferEarthEventHorizonCamera = function (on) {
         preferEarthEventHorizonCamera = !!on;
         return preferEarthEventHorizonCamera;
@@ -2829,6 +3209,105 @@ function listHorizonHelixPointAtTheta(theta, r, arc, bounds, refCurrentHeight, r
 function storeListHorizonLogicalPositions(geom) {
     if (!geom || !geom.attributes || !geom.attributes.position) return;
     geom.userData.listHorizonLogical = new Float32Array(geom.attributes.position.array);
+}
+
+/**
+ * Warp LTE day-frame sky near selected-week Event Horizon band (smooth fade).
+ * Outside that band → classic helix. Inside camera → logical helix.
+ */
+function applyDayFrameLteSkyInterstellarWarp(geom) {
+    if (!geom || !geom.attributes || !geom.attributes.position) return;
+    const logical = geom.userData.listHorizonLogical;
+    if (!logical || !logical.length) return;
+    const pos = geom.attributes.position.array;
+    const W = typeof ContextSphereWarp !== 'undefined' ? ContextSphereWarp : null;
+    const state = typeof getContextSphereState === 'function' ? getContextSphereState() : contextSphereState;
+    if (!W || !W.warpLtePointToRing || !state || !(state.radius > 0) || W.getCameraInsideCached()) {
+        pos.set(logical);
+        geom.attributes.position.needsUpdate = true;
+        if (geom.computeVertexNormals) geom.computeVertexNormals();
+        return;
+    }
+    const ri = typeof geom.userData.dayFrameLteSkyRi === 'number' ? geom.userData.dayFrameLteSkyRi : 0;
+    const ro =
+        typeof geom.userData.dayFrameLteSkyRo === 'number'
+            ? geom.userData.dayFrameLteSkyRo
+            : ri + 1;
+    const span = Math.max(ro - ri, 1e-6);
+    const diskWidth = state.radius * 0.32;
+    let basis = null;
+    if (typeof getContextSphereLteCanvasPlaneBasis === 'function') {
+        try {
+            basis = getContextSphereLteCanvasPlaneBasis(
+                state,
+                typeof getActiveTimelineFlattenAmount === 'function'
+                    ? getActiveTimelineFlattenAmount()
+                    : 0
+            );
+        } catch (e) { /* optional */ }
+    }
+    for (let i = 0; i < logical.length; i += 3) {
+        const x = logical[i];
+        const y = logical[i + 1];
+        const z = logical[i + 2];
+        const amt =
+            typeof W.getSceneYSelectedWeekWarpAmount === 'function'
+                ? W.getSceneYSelectedWeekWarpAmount(y, state)
+                : 0;
+        if (amt <= 0.001) {
+            pos[i] = x;
+            pos[i + 1] = y;
+            pos[i + 2] = z;
+            continue;
+        }
+        const rH = Math.hypot(x, z);
+        const radialT = Math.max(0, Math.min(1, (rH - ri) / span));
+        const q = W.warpLtePointToRing(
+            { x, y, z },
+            state,
+            { cameraInside: false, radialT, diskWidth, basis, amount: amt }
+        );
+        pos[i] = q.x;
+        pos[i + 1] = q.y;
+        pos[i + 2] = q.z;
+    }
+    geom.attributes.position.needsUpdate = true;
+    if (geom.computeVertexNormals) geom.computeVertexNormals();
+    if (geom.computeBoundingSphere) geom.computeBoundingSphere();
+}
+
+/** Re-apply Interstellar LTE sky warp on all day-frame LTE sky meshes. */
+function refreshDayFrameLteSkyInterstellarWarp() {
+    if (!dayFrameLteSkyMesh) return;
+    dayFrameLteSkyMesh.traverse(function (child) {
+        if (child && child.geometry && child.geometry.userData && child.geometry.userData.listHorizonLogical) {
+            applyDayFrameLteSkyInterstellarWarp(child.geometry);
+        }
+    });
+}
+
+/**
+ * Camera crossed Event Horizon — refresh STE spindle + near-week LTE frame/events.
+ */
+function onInterstellarHorizonCameraCross() {
+    try {
+        refreshDayFrameLteSkyInterstellarWarp();
+    } catch (e) { /* optional */ }
+    try {
+        if (
+            typeof TimeMarkers !== 'undefined' &&
+            typeof TimeMarkers.applyLteDayFrameEventHorizonWarp === 'function'
+        ) {
+            TimeMarkers.applyLteDayFrameEventHorizonWarp();
+        }
+    } catch (eMarkers) { /* optional */ }
+    try {
+        if (typeof refreshContextSphereVisualClip === 'function') refreshContextSphereVisualClip();
+    } catch (e2) { /* optional */ }
+    try {
+        const gl = typeof window !== 'undefined' ? window.circaevumGL : null;
+        if (gl && typeof gl.refreshAllEventLayers === 'function') gl.refreshAllEventLayers();
+    } catch (e3) { /* optional */ }
 }
 
 function flattenListHorizonPositionArray(logical, focusY, amount) {
@@ -3419,9 +3898,21 @@ function applySkyAnnulusVertexColors(geom, ri, ro, isLight, edgeColorHex, zoomLe
     }
 }
 
-/** STE sky canvas (Earth daylight disc): Day / Clock / Moment only — not Week (7) or coarser. */
+/**
+ * STE inside Sky Canvas (Earth daylight disc).
+ * Always on when Event Horizon exists — visible from outside through the shell too.
+ */
 function isEarthDaylightSkyZoom(zoomLevel) {
-    return zoomLevel === 0 || zoomLevel === 8 || zoomLevel === 9;
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : currentZoom;
+    if (z === 1) return false; // no Context Sphere at Century
+    if (typeof tourMinimalOrbitMode !== 'undefined' && tourMinimalOrbitMode) return false;
+    return true;
+}
+
+/** Circadian day/clock/moment zooms for timeseries arcs / ATC guides (not all STE-sky zooms). */
+function isEarthDailyCircadianSkyZoom(zoomLevel) {
+    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : currentZoom;
+    return z === 0 || z === 8 || z === 9;
 }
 
 window.getFocusTargetOverride = function () {
@@ -3453,12 +3944,12 @@ window.refreshMagnetosphereShells = function () {
 
 /** Sky zooms show all timeseries; month/week show sleep on the selected day only. */
 function isTimeseriesArcZoom(zoomLevel) {
-    return isEarthDaylightSkyZoom(zoomLevel) || zoomLevel === 5 || zoomLevel === 7;
+    return isEarthDailyCircadianSkyZoom(zoomLevel) || zoomLevel === 5 || zoomLevel === 7;
 }
 
 function shouldAttachTimeseriesArcGroup(zoomLevel) {
     if (!isTimeseriesArcZoom(zoomLevel)) return false;
-    if (isEarthDaylightSkyZoom(zoomLevel)) return true;
+    if (isEarthDailyCircadianSkyZoom(zoomLevel)) return true;
     return typeof circadianState !== 'undefined' && circadianState !== 'off';
 }
 
@@ -3488,7 +3979,7 @@ function ensureTimeseriesArcGroup() {
 function ensureAtcGuideGroup() {
     if (typeof AtcBand === 'undefined' || typeof AtcBand.createGuideGroup !== 'function') return;
     if (typeof sceneContentGroup === 'undefined' || !sceneContentGroup) return;
-    if (!isEarthDaylightSkyZoom(currentZoom)) return;
+    if (!isEarthDailyCircadianSkyZoom(currentZoom)) return;
     if (typeof circadianState !== 'undefined' && circadianState === 'off') return;
     for (let i = circadianWorldlines.length - 1; i >= 0; i--) {
         const ln = circadianWorldlines[i];
@@ -4134,7 +4625,7 @@ function resolveEarthDaylightSkyRadii(earthGroup, zoomLevel) {
     return { ri, ro, rSurf };
 }
 
-/** Full circadian disk backdrop (globe → hour-hand rim), zoom 0/8/9. */
+/** Full circadian disk backdrop (globe → Event Horizon rim). Always when EH exists. */
 function updateEarthDaylightSky(earthGroup, zoomLevel) {
     const T = getThreeNamespace();
     if (!T || !earthGroup || !isEarthDaylightSkyZoom(zoomLevel)) {
@@ -4171,6 +4662,20 @@ function updateEarthDaylightSky(earthGroup, zoomLevel) {
         sceneContentGroup.add(earthDaylightSkyMesh);
         syncEarthDaylightSkyTransform(earthGroup);
     }
+    if (earthDaylightSkyMesh) {
+        earthDaylightSkyMesh.visible = true;
+        earthDaylightSkyMesh.traverse(function (child) {
+            if (child && child.isMesh) {
+                child.visible = true;
+                applySkyDiskOpacityForShift(child);
+            }
+        });
+    }
+    if (typeof refreshContextSphereVisualClip === 'function') {
+        try {
+            refreshContextSphereVisualClip();
+        } catch (e) { /* clip optional */ }
+    }
 }
 
 function isDayFrameLteSkyZoom(zoomLevel) {
@@ -4181,8 +4686,45 @@ function isDayFrameLteSkyZoom(zoomLevel) {
 }
 
 function getSelectedCalendarDayHelixBounds() {
-    // Context Sphere window → sky strip spans event-horizon height + content pad
-    // so helix overshoots poles and sphere clip forms the rim.
+    // LTE sky / helix strip: zoom-relative context window (+ pad), not fixed week Event Horizon.
+    // Invert clip keeps only the part outside the week sphere.
+    const z =
+        typeof currentZoom === 'number' && !isNaN(currentZoom) ? currentZoom : 8;
+    if (typeof getZoomRelativeContextTimeBoundsMs === 'function' && typeof calculateDateHeight === 'function') {
+        try {
+            const b = getZoomRelativeContextTimeBoundsMs(z);
+            if (b && b.t1 > b.t0) {
+                const pad =
+                    typeof getZoomRelativeContextContentPad === 'function'
+                        ? getZoomRelativeContextContentPad(z)
+                        : { padMs: 0 };
+                const p = pad && pad.padMs > 0 ? pad.padMs : 0;
+                const frac = (d) =>
+                    d.getHours() +
+                    d.getMinutes() / 60 +
+                    d.getSeconds() / 3600 +
+                    d.getMilliseconds() / 3600000;
+                const dA = new Date(b.t0 - p);
+                const dB = new Date(b.t1 + p);
+                const yA = calculateDateHeight(dA.getFullYear(), dA.getMonth(), dA.getDate(), frac(dA));
+                const yB = calculateDateHeight(dB.getFullYear(), dB.getMonth(), dB.getDate(), frac(dB));
+                if (
+                    typeof yA === 'number' &&
+                    typeof yB === 'number' &&
+                    isFinite(yA) &&
+                    isFinite(yB) &&
+                    yB !== yA
+                ) {
+                    return {
+                        dayStartY: Math.min(yA, yB),
+                        dayEndY: Math.max(yA, yB),
+                        dayKey: `lte:${b.t0}:${b.t1}:pad${p}:z${z}`
+                    };
+                }
+            }
+        } catch (e) { /* fall through */ }
+    }
+    // Fallback: week Event Horizon heights if zoom-relative unavailable.
     if (
         contextSphereState &&
         typeof contextSphereState.t0 === 'number' &&
@@ -4274,13 +4816,17 @@ function resolveDayFrameLteSkyRadii() {
         inner = W * 5 / 8;
         outer = W * 3 / 4;
     }
-    // Stretch outer toward / past Context Sphere so clip — not frame end — cuts rim.
+    // LTE lives outside Event Horizon: keep day-frame outer past sphere rim (+ pad).
     if (contextSphereState && contextSphereState.radius > 0) {
         const pad = getContextSphereContentPad(
             typeof contextSphereState.zoom === 'number' ? contextSphereState.zoom : currentZoom
         );
-        const target = contextSphereState.radius + (pad && pad.padWorld > 0 ? pad.padWorld : 0);
+        const target = contextSphereState.radius + (pad && pad.padWorld > 0 ? pad.padWorld : contextSphereState.radius * 0.06);
         if (outer < target) outer = target;
+        // Prefer frame outer that still clears the sphere when L1–L2 already past rim.
+        if (outer <= contextSphereState.radius) {
+            outer = target;
+        }
     }
     return { inner, outer };
 }
@@ -4356,6 +4902,7 @@ function buildDayFrameLteSkyMesh(T, ri, ro, dayStartY, dayEndY, refWorldline) {
     geom.userData.dayFrameLteSkyRo = outer;
     geom.userData.dayFrameLteSkyMidY = dayStartY + ySpan * 0.5;
     storeListHorizonLogicalPositions(geom);
+    applyDayFrameLteSkyInterstellarWarp(geom);
     const mat = createListHorizonSkyDiskMaterial(T);
     mat.opacity = DAY_FRAME_LTE_SKY_OPACITY;
     const mesh = new T.Mesh(geom, mat);
@@ -4396,9 +4943,21 @@ function updateDayFrameLteSkyFlatten(focusY, amount) {
     dayFrameLteSkyMesh.position.y = 0;
     const geom = dayFrameLteSkyMesh.geometry;
     if (!geom || !geom.attributes || !geom.attributes.position || !geom.userData.listHorizonLogical) return;
+    // Flatten logical helix, then apply selected-week Interstellar warp (smooth).
     const flat = flattenListHorizonPositionArray(geom.userData.listHorizonLogical, focusY, amount);
     geom.attributes.position.array.set(flat);
-    geom.attributes.position.needsUpdate = true;
+    // Temporarily store flattened as source for warp amount by Y — warp from flat copy
+    const flatCopy = new Float32Array(flat);
+    geom.userData.listHorizonLogicalFlatScratch = flatCopy;
+    const W = typeof ContextSphereWarp !== 'undefined' ? ContextSphereWarp : null;
+    if (W && !W.getCameraInsideCached()) {
+        const saved = geom.userData.listHorizonLogical;
+        geom.userData.listHorizonLogical = flatCopy;
+        applyDayFrameLteSkyInterstellarWarp(geom);
+        geom.userData.listHorizonLogical = saved;
+    } else {
+        geom.attributes.position.needsUpdate = true;
+    }
 }
 
 /** Selected-day sky backdrop on annual helix day-marker frame (zoom 7/8). */
@@ -5608,6 +6167,9 @@ function applyLightTimeScrubUpdate(zoomLevel) {
     try {
         updateParentUnitTemporalVeil(zoomLevel);
     } catch (e) { /* veil optional */ }
+    try {
+        syncEventHorizonCameraAfterSphere(zoomLevel);
+    } catch (e) { /* optional */ }
 
     return true;
 }
@@ -6207,6 +6769,9 @@ function createPlanets(zoomLevel) {
     try {
         updateParentUnitTemporalVeil(zoomLevel);
     } catch (err) { /* veil optional */ }
+    try {
+        syncEventHorizonCameraAfterSphere(zoomLevel);
+    } catch (err) { /* optional */ }
     if (typeof window !== 'undefined' && window.circaevumGL) {
         try {
             if (isMoonWorldlineVisibleAtZoom(zoomLevel) && typeof window.circaevumGL.refreshMoonWorldline === 'function') {
@@ -6900,10 +7465,11 @@ function initTimeMarkers() {
 }
 
 /**
- * Temp try-out: hide time-marker lines/labels that do not intersect the Context Sphere.
- * Toggle: `window.setClipTimeMarkersToContextSphere(false)`.
+ * Optional: hide time markers that do not intersect Event Horizon ball.
+ * Default off — LTE chrome lives *outside* the sphere (invert fragment clip).
+ * Toggle: `window.setClipTimeMarkersToContextSphere(true)`.
  */
-let clipTimeMarkersToContextSphere = true;
+let clipTimeMarkersToContextSphere = false;
 
 function createTimeMarkers(zoomLevel) {
     // Initialize TimeMarkers if not already done
@@ -6965,6 +7531,19 @@ function createTimeMarkers(zoomLevel) {
         }
         TimeMarkers.createTimeMarkers(zoomLevel, Object.keys(options).length ? options : undefined);
         applyTimeMarkerVisibility();
+        if (typeof ContextSphereWarp !== 'undefined' && ContextSphereWarp.syncCameraInsideFlag) {
+            try {
+                ContextSphereWarp.syncCameraInsideFlag(camera, contextSphereState);
+            } catch (e) { /* optional */ }
+        }
+        if (
+            typeof TimeMarkers !== 'undefined' &&
+            typeof TimeMarkers.applyLteDayFrameEventHorizonWarp === 'function'
+        ) {
+            try {
+                TimeMarkers.applyLteDayFrameEventHorizonWarp();
+            } catch (e2) { /* optional */ }
+        }
         if (typeof refreshContextSphereVisualClip === 'function') refreshContextSphereVisualClip();
         return;
     }
@@ -7910,6 +8489,17 @@ function initControls() {
         updateSteMonthRangeHint();
     }
 
+    bindEventHorizonDualSliders();
+    syncEventHorizonDualSliders();
+    syncEventHorizonModeToggleUi();
+    if (eventHorizonMode === 'nest' || eventHorizonMode === 'inside') {
+        applyEventHorizonModeCameraFocus();
+    }
+    const ehModeBtn = document.getElementById('event-horizon-mode-toggle');
+    if (ehModeBtn) {
+        ehModeBtn.addEventListener('click', cycleEventHorizonMode);
+    }
+
     // WebXR toggle (using adapter system) – show whenever adapter loads so user can try (e.g. on headset over HTTP)
     const webxrToggle = document.getElementById('webxr-toggle');
     if (webxrToggle) {
@@ -8289,6 +8879,300 @@ function updateSteMonthRangeHint() {
     hint.textContent = steWindowMonths === 1 ? '1 month' : steWindowMonths + ' months';
 }
 
+function clampEventHorizonHalfDays(n) {
+    return Math.max(EH_HALF_DAYS_MIN, Math.min(EH_HALF_DAYS_MAX, Math.round(n)));
+}
+
+function persistEventHorizonKnobs() {
+    try {
+        if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('circaevum.ehHalfDays', String(eventHorizonHalfDays));
+            sessionStorage.setItem(
+                'circaevum.ehWarpOuterHalfDays',
+                String(eventHorizonWarpOuterHalfDays)
+            );
+        }
+    } catch (e) { /* private mode */ }
+}
+
+function updateEventHorizonHint() {
+    const hint = document.getElementById('eh-horizon-hint');
+    if (!hint) return;
+    if (eventHorizonMode === 'off') {
+        hint.textContent = 'Event Horizon off';
+        return;
+    }
+    const beyond = Math.max(0, eventHorizonWarpOuterHalfDays - eventHorizonHalfDays);
+    if (eventHorizonMode === 'inside') {
+        hint.textContent = 'Shell ±7d (classic) · veil = zoom context';
+        return;
+    }
+    hint.textContent =
+        'Sphere ±' +
+        eventHorizonHalfDays +
+        'd · warp +' +
+        beyond +
+        'd past rim';
+}
+
+function syncEventHorizonDualFill() {
+    const fill = document.getElementById('eh-dual-fill');
+    const range = document.getElementById('eh-dual-range');
+    if (!fill || !range) return;
+    const min = EH_HALF_DAYS_MIN;
+    const max = EH_HALF_DAYS_MAX;
+    const span = max - min;
+    if (eventHorizonMode === 'inside') {
+        // Mode 2: fill from 0 → sphere only (warp band inactive).
+        const a = ((eventHorizonHalfDays - min) / span) * 100;
+        fill.style.left = '0%';
+        fill.style.width = Math.max(0, a) + '%';
+        return;
+    }
+    const a = ((eventHorizonHalfDays - min) / span) * 100;
+    const b = ((eventHorizonWarpOuterHalfDays - min) / span) * 100;
+    fill.style.left = Math.min(a, b) + '%';
+    fill.style.width = Math.abs(b - a) + '%';
+}
+
+function syncEventHorizonDualSliders() {
+    const sphereEl = document.getElementById('eh-sphere-slider');
+    const warpEl = document.getElementById('eh-warp-outer-slider');
+    if (sphereEl) sphereEl.value = String(eventHorizonHalfDays);
+    if (warpEl) warpEl.value = String(eventHorizonWarpOuterHalfDays);
+    syncEventHorizonDualFill();
+    updateEventHorizonHint();
+}
+
+/**
+ * Dual knobs: inner = EH sphere half-days; outer = warp fade end (≥ sphere).
+ * Live-rebuild sphere (+ LTE warp band in nest mode).
+ */
+function applyEventHorizonKnobsFromUi(which) {
+    const sphereEl = document.getElementById('eh-sphere-slider');
+    const warpEl = document.getElementById('eh-warp-outer-slider');
+    if (!sphereEl) return;
+    let sphere = clampEventHorizonHalfDays(parseInt(sphereEl.value, 10));
+    let outer = warpEl
+        ? clampEventHorizonHalfDays(parseInt(warpEl.value, 10))
+        : Math.max(sphere, eventHorizonWarpOuterHalfDays);
+
+    if (eventHorizonMode === 'inside') {
+        // Inside veil: only sphere size matters — keep outer ≥ sphere for when user returns to nest.
+        eventHorizonHalfDays = sphere;
+        if (outer < sphere) outer = sphere;
+        eventHorizonWarpOuterHalfDays = outer;
+        sphereEl.value = String(sphere);
+        if (warpEl) warpEl.value = String(outer);
+    } else {
+        if (which === 'sphere') {
+            if (sphere > outer) outer = sphere;
+        } else if (outer < sphere) {
+            sphere = outer;
+        }
+        eventHorizonHalfDays = sphere;
+        eventHorizonWarpOuterHalfDays = outer;
+        sphereEl.value = String(sphere);
+        if (warpEl) warpEl.value = String(outer);
+    }
+
+    persistEventHorizonKnobs();
+    syncEventHorizonDualFill();
+    updateEventHorizonHint();
+    refreshSceneForEventHorizonKnobs();
+}
+
+function refreshSceneForEventHorizonKnobs() {
+    if (typeof createPlanets === 'function') {
+        createPlanets(currentZoom);
+    } else if (typeof updateParentUnitTemporalVeil === 'function') {
+        updateParentUnitTemporalVeil(currentZoom);
+        if (typeof refreshSkyCanvasForContextSphere === 'function') {
+            refreshSkyCanvasForContextSphere(currentZoom);
+        }
+    }
+    // createPlanets refreshes events with force=false; always force here so LTE day
+    // ribbons rebuild with new EH / warp-band knobs (markers already rebuilt above).
+    if (typeof refreshEventLayersIfNeeded === 'function') {
+        refreshEventLayersIfNeeded(true);
+    } else if (
+        typeof window !== 'undefined' &&
+        window.circaevumGL &&
+        typeof window.circaevumGL.refreshAllEventLayers === 'function'
+    ) {
+        try {
+            window.circaevumGL.refreshAllEventLayers();
+        } catch (err) { /* GL may be disposing */ }
+    }
+    if (
+        typeof TimeMarkers !== 'undefined' &&
+        TimeMarkers.applyLteDayFrameEventHorizonWarp
+    ) {
+        try {
+            TimeMarkers.applyLteDayFrameEventHorizonWarp();
+        } catch (e) { /* optional */ }
+    } else if (
+        typeof TimeMarkerRenderer !== 'undefined' &&
+        TimeMarkerRenderer.applyLteDayFrameEventHorizonWarp
+    ) {
+        try {
+            TimeMarkerRenderer.applyLteDayFrameEventHorizonWarp();
+        } catch (e) { /* optional */ }
+    }
+    // Inside veil: clip radius must match new sphere after materials rebuild.
+    if (typeof refreshContextSphereVisualClip === 'function') {
+        try {
+            refreshContextSphereVisualClip();
+        } catch (e) { /* optional */ }
+    }
+}
+
+function bindEventHorizonDualSliders() {
+    const sphereEl = document.getElementById('eh-sphere-slider');
+    const warpEl = document.getElementById('eh-warp-outer-slider');
+    if (!sphereEl || !warpEl) return;
+    sphereEl.addEventListener('input', () => applyEventHorizonKnobsFromUi('sphere'));
+    warpEl.addEventListener('input', () => applyEventHorizonKnobsFromUi('warp'));
+}
+
+function updateEventHorizonSliderVisibility() {
+    const wrap = document.getElementById('event-horizon-slider-wrap');
+    if (!wrap) return;
+    // Dual knobs only for nest (Interstellar). Inside = classic week shell + zoom veil.
+    const show =
+        eventHorizonMode === 'nest' && currentZoom !== 1 && !tourMinimalOrbitMode;
+    wrap.style.display = show ? '' : 'none';
+    if (show) syncEventHorizonDualSliders();
+    const range = document.getElementById('eh-dual-range');
+    const warpEl = document.getElementById('eh-warp-outer-slider');
+    const sphereEl = document.getElementById('eh-sphere-slider');
+    if (range) range.classList.remove('eh-dual-range--sphere-only');
+    if (warpEl) {
+        warpEl.disabled = false;
+        warpEl.style.pointerEvents = '';
+        warpEl.style.opacity = '';
+        warpEl.setAttribute('aria-hidden', 'false');
+    }
+    if (sphereEl) {
+        sphereEl.disabled = false;
+        sphereEl.style.pointerEvents = '';
+        sphereEl.style.zIndex = '';
+    }
+    const caption = wrap && wrap.querySelector('.scene-slider-caption');
+    if (caption) {
+        caption.innerHTML = '<span>Sphere</span><span>Warp past rim</span>';
+    }
+}
+
+function syncEventHorizonModeToggleUi() {
+    const btn = document.getElementById('event-horizon-mode-toggle');
+    if (!btn) return;
+    const titles = {
+        nest: 'Event Horizon: nest (Interstellar — STE in / LTE out + warp)',
+        inside: 'Event Horizon: inside veil (classic week shell · zoom context arc)',
+        off: 'Event Horizon: off (classic, no shell)'
+    };
+    const title = titles[eventHorizonMode] || titles.nest;
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+    btn.setAttribute('data-eh-mode', eventHorizonMode);
+    btn.classList.toggle('active', eventHorizonMode !== 'off');
+    btn.setAttribute('aria-pressed', eventHorizonMode !== 'off' ? 'true' : 'false');
+}
+
+function persistEventHorizonMode() {
+    try {
+        if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('circaevum.ehMode', eventHorizonMode);
+        }
+    } catch (e) { /* private mode */ }
+}
+
+/**
+ * Nest + Mode 2: look-at Earth / Event Horizon center.
+ * Mode 2 also frames full context sphere in FOV (after veil rebuild).
+ * Off: restore prior focus + classic zoom distance.
+ */
+function applyEventHorizonModeCameraFocus() {
+    const config =
+        typeof ZOOM_LEVELS !== 'undefined' && ZOOM_LEVELS[currentZoom]
+            ? ZOOM_LEVELS[currentZoom]
+            : null;
+    if (eventHorizonMode === 'nest' || eventHorizonMode === 'inside') {
+        if (eventHorizonSavedFocusTarget === undefined) {
+            eventHorizonSavedFocusTarget = focusTargetOverride;
+        }
+        focusTargetOverride = 'earth';
+        preferEarthEventHorizonCamera = true;
+    } else {
+        preferEarthEventHorizonCamera = false;
+        zoomFramedCameraDistance = null;
+        if (eventHorizonSavedFocusTarget !== undefined) {
+            focusTargetOverride = eventHorizonSavedFocusTarget;
+            eventHorizonSavedFocusTarget = undefined;
+        }
+        if (config && typeof config.distance === 'number' && config.distance > 0) {
+            targetCameraDistance = config.distance;
+        }
+    }
+    const effective =
+        focusTargetOverride || (config && config.focusTarget) || 'sun';
+    const focusLabel = document.getElementById('focus-target');
+    if (focusLabel) focusLabel.textContent = String(effective).toUpperCase();
+    const btn = document.getElementById('focus-toggle');
+    if (btn) {
+        btn.classList.toggle('active', effective === 'earth');
+        if (typeof setButtonPressed === 'function') setButtonPressed(btn, effective === 'earth');
+        btn.title = 'Camera focus: ' + String(effective).toUpperCase() + ' (C)';
+    }
+}
+
+/**
+ * After Context Sphere state is fresh: snap look-at to EH center;
+ * Mode 2 dolly so full veil sphere fits in FOV.
+ */
+function syncEventHorizonCameraAfterSphere(zoomLevel) {
+    if (eventHorizonMode === 'off') {
+        preferEarthEventHorizonCamera = false;
+        return;
+    }
+    preferEarthEventHorizonCamera = true;
+    if (
+        contextSphereState &&
+        typeof contextSphereState.x === 'number' &&
+        typeof contextSphereState.y === 'number' &&
+        typeof contextSphereState.z === 'number' &&
+        targetFocusPoint
+    ) {
+        targetFocusPoint.set(contextSphereState.x, contextSphereState.y, contextSphereState.z);
+    }
+    if (eventHorizonMode === 'inside') {
+        applyCameraDistanceToFitContextSphere(zoomLevel);
+    } else if (zoomFramedCameraDistance != null) {
+        // Left Mode 2 framed dolly — return nest to classic zoom distance.
+        zoomFramedCameraDistance = null;
+        const config =
+            typeof ZOOM_LEVELS !== 'undefined' && ZOOM_LEVELS[zoomLevel]
+                ? ZOOM_LEVELS[zoomLevel]
+                : null;
+        if (config && typeof config.distance === 'number' && config.distance > 0) {
+            targetCameraDistance = config.distance;
+        }
+    }
+}
+
+/** Cycle nest → inside → off → nest. */
+function cycleEventHorizonMode() {
+    const idx = EVENT_HORIZON_MODES.indexOf(eventHorizonMode);
+    eventHorizonMode = EVENT_HORIZON_MODES[(idx + 1) % EVENT_HORIZON_MODES.length];
+    persistEventHorizonMode();
+    syncEventHorizonModeToggleUi();
+    updateEventHorizonSliderVisibility();
+    if (typeof updateFlattenIconVisibility === 'function') updateFlattenIconVisibility();
+    applyEventHorizonModeCameraFocus();
+    refreshSceneForEventHorizonKnobs();
+}
+
 function updateCircadianHelixSliderVisibility() {
     const helixWrap = document.getElementById('circadian-helix-slider-wrap');
     if (!helixWrap) return;
@@ -8315,13 +9199,15 @@ function updateFlattenIconVisibility() {
     if (sliderWrap) sliderWrap.style.display = shouldShow ? '' : 'none';
     if (shouldShow) syncFlattenHeightSlider();
     updateCircadianHelixSliderVisibility();
+    updateEventHorizonSliderVisibility();
     if (stack) {
         const showHelix =
             typeof isCircadianHelixZoom === 'function' &&
             isCircadianHelixZoom(currentZoom) &&
             typeof circadianState !== 'undefined' &&
             circadianState !== 'off';
-        stack.style.display = shouldShow || showHelix ? 'flex' : 'none';
+        const showEh = eventHorizonMode === 'nest' && currentZoom !== 1 && !tourMinimalOrbitMode;
+        stack.style.display = shouldShow || showHelix || showEh ? 'flex' : 'none';
     }
 }
 
@@ -9309,6 +10195,7 @@ function cameraDistanceToFitRadius(radius, fovDeg, padding) {
 
 /**
  * Frame camera so the whole Context Sphere (Event Horizon) fits in view.
+ * Mode 2 uses clipRadius when larger than the week shell (visible veil rim).
  * Call after createPlanets / ensureContextSphereState on zoom change.
  */
 function applyCameraDistanceToFitContextSphere(zoomLevel) {
@@ -9324,11 +10211,24 @@ function applyCameraDistanceToFitContextSphere(zoomLevel) {
     }
 
     if (contextSphereState && contextSphereState.radius > 0) {
+        const shellR = contextSphereState.radius;
+        const clipR =
+            typeof contextSphereState.clipRadius === 'number' &&
+            contextSphereState.clipRadius > 0
+                ? contextSphereState.clipRadius
+                : shellR;
+        // Mode 2: fit the veil volume; nest callers (if any) fit the drawn shell.
+        const fitR =
+            typeof eventHorizonMode === 'string' && eventHorizonMode === 'inside'
+                ? Math.max(shellR, clipR)
+                : shellR;
         const fov =
             typeof camera !== 'undefined' && camera && typeof camera.fov === 'number'
                 ? camera.fov
                 : BASE_CAMERA_FOV;
-        const fitted = cameraDistanceToFitRadius(contextSphereState.radius, fov, 1.22);
+        const pad =
+            typeof eventHorizonMode === 'string' && eventHorizonMode === 'inside' ? 1.32 : 1.22;
+        const fitted = cameraDistanceToFitRadius(fitR, fov, pad);
         if (fitted != null && isFinite(fitted)) {
             dist = fitted;
         }
@@ -9338,7 +10238,7 @@ function applyCameraDistanceToFitContextSphere(zoomLevel) {
                 : null;
         if (earthMesh) {
             const r = resolveEarthGlobeSurfaceRadius(earthMesh);
-            dist = Math.max(dist, r * 2.8 + contextSphereState.radius * 0.05);
+            dist = Math.max(dist, r * 2.8 + fitR * 0.05);
         }
     }
 
@@ -9575,7 +10475,7 @@ function setZoomLevel(level, overrideDate) {
         controls.style.bottom = '30px';
     }
     
-    // Set target camera distance for smooth transition (reframed to Event Horizon after planets).
+    // Set target camera distance for smooth transition (classic ZOOM_LEVELS.distance).
     targetCameraDistance = config.distance;
     zoomFramedCameraDistance = null;
 
@@ -9588,9 +10488,7 @@ function setZoomLevel(level, overrideDate) {
     const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
     document.getElementById('current-zoom').textContent = config.name;
     document.getElementById('time-span').textContent = config.span;
-    document.getElementById('focus-target').textContent = (
-        preferEarthEventHorizonCamera ? 'earth' : effectiveFocusTarget
-    ).toUpperCase();
+    document.getElementById('focus-target').textContent = effectiveFocusTarget.toUpperCase();
     document.getElementById('worldline-height').textContent = (config.timeYears * 100).toFixed(1) + ' AU';
     
     document.querySelectorAll('.zoom-option').forEach(opt => {
@@ -9632,8 +10530,6 @@ function setZoomLevel(level, overrideDate) {
     
     createStarField(); // Update star visibility based on zoom level
     createPlanets(currentZoom);
-    // Frame whole Context Sphere in view (Earth look-at set in createPlanets).
-    applyCameraDistanceToFitContextSphere(level);
     updateTimeDisplays(); // Update time displays after zoom change
     updateFlattenIconVisibility();
 
@@ -9697,7 +10593,10 @@ function buildEventLayersRebuildKey(zoomLevel) {
         shift,
         circadianState || 'off',
         tourMinimalOrbitMode ? 1 : 0,
-        typeof steWindowMonths === 'number' ? steWindowMonths : 2
+        typeof steWindowMonths === 'number' ? steWindowMonths : 2,
+        typeof eventHorizonHalfDays === 'number' ? eventHorizonHalfDays : 7,
+        typeof eventHorizonWarpOuterHalfDays === 'number' ? eventHorizonWarpOuterHalfDays : 9,
+        typeof eventHorizonMode === 'string' ? eventHorizonMode : 'nest'
     ].join('|');
 }
 
@@ -10463,6 +11362,15 @@ function animate(time, frame) {
                 syncContextSphereLteSlopeRing();
             } catch (e) { /* optional */ }
         }
+    }
+
+    // Interstellar: camera crossed Event Horizon → STE spindle / LTE accretion swap.
+    if (typeof ContextSphereWarp !== 'undefined' && ContextSphereWarp.syncCameraInsideFlag) {
+        try {
+            if (ContextSphereWarp.syncCameraInsideFlag(camera, contextSphereState)) {
+                onInterstellarHorizonCameraCross();
+            }
+        } catch (eHorizon) { /* optional */ }
     }
 
     // Smooth context-ring radius/height transitions across zoom and selected-time changes.

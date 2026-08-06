@@ -670,11 +670,16 @@
     const dayAngle = frac * Math.PI * 2;
     const sunToEarthAngle = Math.atan2(earthZ, earthX);
     const handAngle = sunToEarthAngle - dayAngle;
-    return {
+    let p = {
       x: earthX + r * Math.cos(handAngle),
       y: yPos,
       z: earthZ + r * Math.sin(handAngle)
     };
+    // Outside Event Horizon: spindle taper toward sphere poles. Inside: full wormhole stack.
+    if (typeof global.ContextSphereWarp !== 'undefined' && global.ContextSphereWarp.warpStePoint) {
+      p = global.ContextSphereWarp.warpStePoint(p) || p;
+    }
+    return p;
   }
 
   /** Sub-day events + connectors: stack at selected time (blend kept for legacy callers only). */

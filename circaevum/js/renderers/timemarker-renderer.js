@@ -594,6 +594,149 @@ const TimeMarkers = (function() {
         return unitStartMs <= bounds.t1 && bounds.t0 <= unitEndMs;
     }
 
+    /**
+     * LTE day-frame markers ↔ Event Horizon Interstellar warp (accretion ring outside).
+     * Stores logical verts so camera in/out can restore helix spokes.
+     */
+    function applyLteDayFrameWarpToGeometry(geom) {
+        if (!geom || !geom.attributes || !geom.attributes.position) return;
+        const logical = geom.userData && geom.userData.lteDayFrameLogical;
+        if (!logical || !logical.length) return;
+        const pos = geom.attributes.position.array;
+        const W = typeof window !== 'undefined' ? window.ContextSphereWarp : null;
+        const stateFn =
+            typeof window !== 'undefined' && typeof window.getContextSphereState === 'function'
+                ? window.getContextSphereState
+                : null;
+        const state = stateFn ? stateFn() : null;
+        const inside = W && W.getCameraInsideCached && W.getCameraInsideCached();
+        if (!W || !W.warpLtePointToRing || inside || !state || !(state.radius > 0)) {
+            pos.set(logical);
+            geom.attributes.position.needsUpdate = true;
+            return;
+        }
+        const ri = typeof geom.userData.dayFrameRi === 'number' ? geom.userData.dayFrameRi : 0;
+        const ro =
+            typeof geom.userData.dayFrameRo === 'number' ? geom.userData.dayFrameRo : ri + 1;
+        const span = Math.max(ro - ri, 1e-6);
+        const diskWidth = state.radius * 0.28;
+        let basis = null;
+        if (typeof window.getContextSphereLteCanvasPlaneBasis === 'function') {
+            try {
+                basis = window.getContextSphereLteCanvasPlaneBasis(state, 0);
+            } catch (e) { /* optional */ }
+        }
+        for (let i = 0; i < logical.length; i += 3) {
+            const x = logical[i];
+            const y = logical[i + 1];
+            const z = logical[i + 2];
+            const amt =
+                W.getSceneYSelectedWeekWarpAmount
+                    ? W.getSceneYSelectedWeekWarpAmount(y, state)
+                    : 0;
+            if (amt <= 0.001) {
+                pos[i] = x;
+                pos[i + 1] = y;
+                pos[i + 2] = z;
+                continue;
+            }
+            const rH = Math.hypot(x, z);
+            const radialT = Math.max(0, Math.min(1, (rH - ri) / span));
+            const q = W.warpLtePointToRing(
+                { x, y, z },
+                state,
+                { cameraInside: false, radialT, diskWidth, basis, amount: amt }
+            );
+            pos[i] = q.x;
+            pos[i + 1] = q.y;
+            pos[i + 2] = q.z;
+        }
+        geom.attributes.position.needsUpdate = true;
+        if (geom.computeBoundingSphere) geom.computeBoundingSphere();
+    }
+
+    function applyLteDayFrameWarpToSprite(sprite) {
+        if (!sprite || !sprite.userData || !sprite.userData.lteDayFrameLogicalPos) return;
+        const logical = sprite.userData.lteDayFrameLogicalPos;
+        const W = typeof window !== 'undefined' ? window.ContextSphereWarp : null;
+        const stateFn =
+            typeof window !== 'undefined' && typeof window.getContextSphereState === 'function'
+                ? window.getContextSphereState
+                : null;
+        const state = stateFn ? stateFn() : null;
+        const inside = W && W.getCameraInsideCached && W.getCameraInsideCached();
+        if (!W || !W.warpLtePointToRing || inside || !state || !(state.radius > 0)) {
+            sprite.position.set(logical.x, logical.y, logical.z);
+            return;
+        }
+        const amt = W.getSceneYSelectedWeekWarpAmount
+            ? W.getSceneYSelectedWeekWarpAmount(logical.y, state)
+            : 0;
+        if (amt <= 0.001) {
+            sprite.position.set(logical.x, logical.y, logical.z);
+            return;
+        }
+        const ri = typeof sprite.userData.dayFrameRi === 'number' ? sprite.userData.dayFrameRi : 0;
+        const ro =
+            typeof sprite.userData.dayFrameRo === 'number' ? sprite.userData.dayFrameRo : ri + 1;
+        const span = Math.max(ro - ri, 1e-6);
+        const rH = Math.hypot(logical.x, logical.z);
+        const radialT = Math.max(0, Math.min(1, (rH - ri) / span));
+        let basis = null;
+        if (typeof window.getContextSphereLteCanvasPlaneBasis === 'function') {
+            try {
+                basis = window.getContextSphereLteCanvasPlaneBasis(state, 0);
+            } catch (e) { /* optional */ }
+        }
+        const q = W.warpLtePointToRing(logical, state, {
+            cameraInside: false,
+            radialT,
+            diskWidth: state.radius * 0.28,
+            basis,
+            amount: amt
+        });
+        sprite.position.set(q.x, q.y, q.z);
+    }
+
+    function tagLteDayFrameMarker(obj, ri, ro) {
+        if (!obj) return;
+        if (!obj.userData) obj.userData = {};
+        obj.userData.lteDayFrameMarker = true;
+        obj.userData.dayFrameRi = ri;
+        obj.userData.dayFrameRo = ro;
+        if (obj.isSprite || obj.type === 'Sprite') {
+            obj.userData.lteDayFrameLogicalPos = {
+                x: obj.position.x,
+                y: obj.position.y,
+                z: obj.position.z
+            };
+            applyLteDayFrameWarpToSprite(obj);
+            return;
+        }
+        const geom = obj.geometry;
+        if (geom && geom.attributes && geom.attributes.position) {
+            if (!geom.userData) geom.userData = {};
+            geom.userData.lteDayFrameLogical = new Float32Array(geom.attributes.position.array);
+            geom.userData.dayFrameRi = ri;
+            geom.userData.dayFrameRo = ro;
+            applyLteDayFrameWarpToGeometry(geom);
+        }
+    }
+
+    /** Re-apply Event Horizon warp to all tagged LTE day-frame time markers. */
+    function applyLteDayFrameEventHorizonWarp() {
+        if (!timeMarkers || !timeMarkers.length) return;
+        for (let i = 0; i < timeMarkers.length; i++) {
+            const m = timeMarkers[i];
+            if (!m || !m.userData || !m.userData.lteDayFrameMarker) continue;
+            if (m.isSprite || m.type === 'Sprite') {
+                applyLteDayFrameWarpToSprite(m);
+            } else if (m.geometry) {
+                applyLteDayFrameWarpToGeometry(m.geometry);
+            }
+        }
+    }
+
     function getUnitTimeRangeMs(unitType, unitInfo, unitIndex, unitYear, getUnitDate) {
         const start = getUnitDate(unitInfo, unitIndex, unitYear);
         if (!start || isNaN(start.getTime())) return null;
@@ -748,12 +891,30 @@ const TimeMarkers = (function() {
             }
             
             // Create line using SceneGeometry
-            const points = SceneGeometry ?
+            let points = SceneGeometry ?
                 SceneGeometry.createEarthStraightLine(height, startRadius, endRadius, timeState.currentDateHeight) :
                 [
                     Math.cos(angle) * startRadius, height, Math.sin(angle) * startRadius,
                     Math.cos(angle) * endRadius, height, Math.sin(angle) * endRadius
                 ];
+            // Day spokes densify along day-pitch so EH warp can unwrap midnight→evening
+            // around Earth (2-point lines both map near midnight → pile on anti-sun side).
+            if (unitType === 'day') {
+                const nSeg = 24;
+                const dense = [];
+                const ang =
+                    typeof angle === 'number' && isFinite(angle)
+                        ? angle
+                        : typeof getAngle === 'function'
+                          ? getAngle(height, timeState.currentDateHeight)
+                          : 0;
+                for (let si = 0; si <= nSeg; si++) {
+                    const t = si / nSeg;
+                    const r = startRadius + (endRadius - startRadius) * t;
+                    dense.push(Math.cos(ang) * r, height, Math.sin(ang) * r);
+                }
+                points = dense;
+            }
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
             
@@ -778,6 +939,9 @@ const TimeMarkers = (function() {
             if (tourMarkerStaged && zoomLevel === 3 && tourProgressiveMarkerMs == null) {
                 if (unitType === 'quarter') line.userData.circaevumTourRevealTier = 4;
                 else if (unitType === 'month') line.userData.circaevumTourRevealTier = 5;
+            }
+            if (unitType === 'day') {
+                tagLteDayFrameMarker(line, startRadius, endRadius);
             }
             scene.add(line);
             timeMarkers.push(line);
@@ -832,6 +996,13 @@ const TimeMarkers = (function() {
                                   : undefined
                             : undefined;
                     createTextLabel(labelText, labelHeight, calcLabelRadius, textZoom, labelAngle, labelColor, false, 0.85, labelTier);
+                    if (unitType === 'day' && timeMarkers.length) {
+                        tagLteDayFrameMarker(
+                            timeMarkers[timeMarkers.length - 1],
+                            innerRadius || 0,
+                            outerRadius
+                        );
+                    }
                 }
             }
         });
@@ -1375,6 +1546,7 @@ const TimeMarkers = (function() {
                 });
                 const curveLine = new THREE.Line(curveGeometry, curveMaterial);
                 curveLine.renderOrder = 4;
+                tagLteDayFrameMarker(curveLine, outerRadius * 0.98, outerRadius);
                 scene.add(curveLine);
                 timeMarkers.push(curveLine);
             });
@@ -1450,6 +1622,13 @@ const TimeMarkers = (function() {
                                                      dayCenterDate.getDate(), dayCenterDate.getHours());
                 const dayAngle = getAngle(dayHeight, timeState.currentDateHeight);
                 createTextLabel(dayOfWeekText, dayHeight, dayOfWeekLabelRadius, 7, dayAngle, dayOfWeekColor, false, 0.85);
+                if (timeMarkers.length) {
+                    tagLteDayFrameMarker(
+                        timeMarkers[timeMarkers.length - 1],
+                        innerRadius,
+                        outerRadius
+                    );
+                }
             });
         }
     }
@@ -2155,6 +2334,7 @@ const TimeMarkers = (function() {
         getCanonicalRadialZones,
         getSingularRadialZones,
         getEarthOrbitL1L2DayFrameRadii,
-        getSystemRadii
+        getSystemRadii,
+        applyLteDayFrameEventHorizonWarp
     };
 })();

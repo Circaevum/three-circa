@@ -1,7 +1,9 @@
 /**
- * Context Sphere visual clip — discard fragments outside the Event Horizon.
- * Patches MeshBasic / LineBasic / Sprite materials via onBeforeCompile so
- * time-frame ribbons and sky canvas cut on a rounded sphere edge.
+ * Context Sphere visual clip — Event Horizon fragment discard.
+ *
+ * Modes (per material via userData.contextSphereClipInvert):
+ *   false (STE): discard outside sphere — short-term lives inside
+ *   true  (LTE): discard inside sphere — long-term / time-frame lives outside
  */
 (function (global) {
   const uniforms = {
@@ -30,19 +32,39 @@
     }
   }
 
-  function patchMaterial(material) {
+  function patchMaterial(material, invert) {
     if (!material || material.isShaderMaterial) return;
-    if (material.userData && material.userData.contextSphereClipPatched) return;
     if (!material.userData) material.userData = {};
-    material.userData.contextSphereClipPatched = true;
+    const wantInvert = !!invert;
+    material.userData.contextSphereClipInvert = wantInvert;
+
+    // Re-patch if mode changed (old compile lacked invert uniform).
+    if (
+      material.userData.contextSphereClipPatched &&
+      material.userData.contextSphereClipInvertUniform
+    ) {
+      material.userData.contextSphereClipInvertUniform.value = wantInvert ? 1 : 0;
+      return;
+    }
+    if (material.userData.contextSphereClipPatched) {
+      material.userData.contextSphereClipPatched = false;
+      material.onBeforeCompile = material.userData.contextSphereClipPrevOnBeforeCompile || null;
+    }
 
     const prev = material.onBeforeCompile;
+    material.userData.contextSphereClipPrevOnBeforeCompile = prev;
+    material.userData.contextSphereClipPatched = true;
+
+    const invertUniform = { value: wantInvert ? 1 : 0 };
+    material.userData.contextSphereClipInvertUniform = invertUniform;
+
     material.onBeforeCompile = function (shader) {
       if (typeof prev === 'function') prev.call(this, shader);
 
       shader.uniforms.uClipSphereCenter = uniforms.uClipSphereCenter;
       shader.uniforms.uClipSphereRadius = uniforms.uClipSphereRadius;
       shader.uniforms.uClipSphereEnabled = uniforms.uClipSphereEnabled;
+      shader.uniforms.uClipSphereInvert = invertUniform;
 
       if (shader.vertexShader.indexOf('vCtxSphereWorldPos') < 0) {
         shader.vertexShader = 'varying vec3 vCtxSphereWorldPos;\n' + shader.vertexShader;
@@ -55,7 +77,6 @@
             ].join('\n')
           );
         } else {
-          // Sprite / odd paths: world origin of the object.
           shader.vertexShader = shader.vertexShader.replace(
             /void\s+main\s*\(\s*\)\s*\{/,
             'void main() {\nvCtxSphereWorldPos = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;'
@@ -63,17 +84,23 @@
         }
       }
 
-      if (shader.fragmentShader.indexOf('uClipSphereEnabled') < 0) {
+      if (shader.fragmentShader.indexOf('uClipSphereInvert') < 0) {
         shader.fragmentShader =
           'varying vec3 vCtxSphereWorldPos;\n' +
           'uniform vec3 uClipSphereCenter;\n' +
           'uniform float uClipSphereRadius;\n' +
           'uniform float uClipSphereEnabled;\n' +
+          'uniform float uClipSphereInvert;\n' +
           shader.fragmentShader;
 
         const discardBlock = [
           'if (uClipSphereEnabled > 0.5 && uClipSphereRadius > 0.0) {',
-          '  if (distance(vCtxSphereWorldPos, uClipSphereCenter) > uClipSphereRadius) discard;',
+          '  float _ctxOutside = distance(vCtxSphereWorldPos, uClipSphereCenter) > uClipSphereRadius ? 1.0 : 0.0;',
+          '  if (uClipSphereInvert > 0.5) {',
+          '    if (_ctxOutside < 0.5) discard;',
+          '  } else {',
+          '    if (_ctxOutside > 0.5) discard;',
+          '  }',
           '}'
         ].join('\n');
 
@@ -95,10 +122,9 @@
     material.needsUpdate = true;
   }
 
-  function patchObject(root) {
+  function patchObject(root, invert) {
     if (!root) return;
     root.traverse(function (obj) {
-      // Never clip the Context Sphere shell itself.
       if (obj.userData && obj.userData.type === 'ContextSphere') return;
       let skip = false;
       let p = obj.parent;
@@ -112,16 +138,20 @@
       if (skip) return;
 
       if (obj.material) {
-        if (Array.isArray(obj.material)) obj.material.forEach(patchMaterial);
-        else patchMaterial(obj.material);
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach(function (m) {
+            patchMaterial(m, invert);
+          });
+        } else {
+          patchMaterial(obj.material, invert);
+        }
       }
     });
   }
 
   /**
-   * Push local geometry outward from sphere center by padWorld so content
-   * overshoots the clip radius; discard still forms the rounded rim.
-   * Idempotent per geometry + pad key (restores from saved originals).
+   * Push local geometry outward from sphere center by padWorld (STE overshoot).
+   * Idempotent per geometry + pad key.
    */
   function stretchObjectPastClip(root, state, padWorld, THREE) {
     if (!root || !state || !(padWorld > 0) || !THREE) return;
@@ -177,7 +207,13 @@
   }
 
   /**
-   * Patch time-frame + sky canvas roots and sync uniforms from contextSphereState.
+   * @param {object} opts
+   * @param {object[]} [opts.steRoots] - keep inside Event Horizon
+   * @param {object[]} [opts.lteRoots] - keep outside Event Horizon
+   * @param {object[]} [opts.steObjects]
+   * @param {object[]} [opts.lteObjects]
+   * @param {object[]} [opts.roots] - legacy: treated as STE (keep inside)
+   * @param {object[]} [opts.objects] - legacy: treated as LTE if stretch, else STE
    */
   function refresh(opts) {
     const THREE = (opts && opts.THREE) || global.THREE;
@@ -187,19 +223,35 @@
     const padWorld = opts && typeof opts.padWorld === 'number' ? opts.padWorld : 0;
     const state = opts && opts.state;
 
-    const roots = (opts && opts.roots) || [];
-    for (let i = 0; i < roots.length; i++) {
-      if (!roots[i]) continue;
-      if (padWorld > 0 && opts && opts.stretchRoots) {
-        stretchObjectPastClip(roots[i], state, padWorld, THREE);
+    const steRoots = (opts && opts.steRoots) || (opts && opts.roots) || [];
+    const lteRoots = (opts && opts.lteRoots) || [];
+    const steObjects = (opts && opts.steObjects) || [];
+    const lteObjects = (opts && opts.lteObjects) || (opts && opts.objects) || [];
+
+    for (let i = 0; i < steRoots.length; i++) {
+      if (!steRoots[i]) continue;
+      if (padWorld > 0 && opts && opts.stretchSte) {
+        stretchObjectPastClip(steRoots[i], state, padWorld, THREE);
       }
-      patchObject(roots[i]);
+      patchObject(steRoots[i], false);
     }
-    const list = (opts && opts.objects) || [];
-    for (let j = 0; j < list.length; j++) {
-      if (!list[j]) continue;
-      if (padWorld > 0) stretchObjectPastClip(list[j], state, padWorld, THREE);
-      patchObject(list[j]);
+    for (let j = 0; j < steObjects.length; j++) {
+      if (!steObjects[j]) continue;
+      if (padWorld > 0 && opts && opts.stretchSte) {
+        stretchObjectPastClip(steObjects[j], state, padWorld, THREE);
+      }
+      patchObject(steObjects[j], false);
+    }
+    for (let k = 0; k < lteRoots.length; k++) {
+      if (lteRoots[k]) patchObject(lteRoots[k], true);
+    }
+    for (let m = 0; m < lteObjects.length; m++) {
+      if (!lteObjects[m]) continue;
+      // Legacy path: objects list was markers — LTE outside, optional stretch outward.
+      if (padWorld > 0 && !(opts && opts.lteRoots)) {
+        stretchObjectPastClip(lteObjects[m], state, padWorld, THREE);
+      }
+      patchObject(lteObjects[m], true);
     }
   }
 

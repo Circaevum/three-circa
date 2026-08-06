@@ -2731,6 +2731,238 @@ body.light-mode .circaevum-attribution {
     border-color: rgba(110, 231, 183, 0.4);
 }
 
+.scene-slider-wrap--horizon {
+    border-color: rgba(167, 139, 250, 0.45);
+    width: 196px;
+}
+
+.scene-slider-wrap--horizon .scene-slider-heading {
+    color: rgba(221, 214, 254, 0.95);
+}
+
+/* Event Horizon mode toggle: Gargantua / Interstellar black hole */
+#event-horizon-mode-toggle .eh-mode-icon {
+    width: 1.15em;
+    height: 1.15em;
+    overflow: visible;
+}
+#event-horizon-mode-toggle .eh-icon-hole {
+    fill: #05070c;
+    stroke: none;
+}
+#event-horizon-mode-toggle .eh-icon-photon {
+    fill: none;
+    stroke: #ffe8a3;
+}
+#event-horizon-mode-toggle .eh-icon-disk,
+#event-horizon-mode-toggle .eh-icon-disk-inner,
+#event-horizon-mode-toggle .eh-icon-lensed,
+#event-horizon-mode-toggle .eh-icon-glare {
+    fill: none;
+    stroke: #f0a35a;
+}
+#event-horizon-mode-toggle .eh-icon-lensed {
+    stroke: #ffd27a;
+}
+#event-horizon-mode-toggle .eh-icon-photon {
+    filter: drop-shadow(0 0 0.6px rgba(255, 232, 163, 0.85));
+}
+
+#event-horizon-mode-toggle[data-eh-mode="nest"] {
+    color: #f0a35a;
+}
+#event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-disk,
+#event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-disk-inner,
+#event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-glare {
+    stroke: #f0a35a;
+}
+#event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-lensed,
+#event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-photon {
+    stroke: #ffe29a;
+}
+
+#event-horizon-mode-toggle[data-eh-mode="inside"] {
+    color: #67e8f9;
+}
+#event-horizon-mode-toggle[data-eh-mode="inside"] .eh-icon-disk,
+#event-horizon-mode-toggle[data-eh-mode="inside"] .eh-icon-disk-inner,
+#event-horizon-mode-toggle[data-eh-mode="inside"] .eh-icon-glare,
+#event-horizon-mode-toggle[data-eh-mode="inside"] .eh-icon-lensed,
+#event-horizon-mode-toggle[data-eh-mode="inside"] .eh-icon-photon {
+    stroke: #67e8f9;
+}
+#event-horizon-mode-toggle[data-eh-mode="inside"] .eh-icon-hole {
+    fill: #082028;
+}
+
+#event-horizon-mode-toggle[data-eh-mode="off"] {
+    color: rgba(148, 163, 184, 0.75);
+}
+#event-horizon-mode-toggle[data-eh-mode="off"] .eh-icon-disk,
+#event-horizon-mode-toggle[data-eh-mode="off"] .eh-icon-disk-inner,
+#event-horizon-mode-toggle[data-eh-mode="off"] .eh-icon-glare,
+#event-horizon-mode-toggle[data-eh-mode="off"] .eh-icon-lensed,
+#event-horizon-mode-toggle[data-eh-mode="off"] .eh-icon-photon {
+    stroke: rgba(148, 163, 184, 0.7);
+}
+#event-horizon-mode-toggle[data-eh-mode="off"] .eh-icon-hole {
+    fill: rgba(30, 41, 59, 0.95);
+}
+#event-horizon-mode-toggle[data-eh-mode="off"].active {
+    color: rgba(148, 163, 184, 0.75);
+}
+
+body.light-mode #event-horizon-mode-toggle .eh-icon-hole {
+    fill: #0f172a;
+}
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-disk,
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-disk-inner,
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-glare {
+    stroke: #d97706;
+}
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-lensed,
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-photon {
+    stroke: #f59e0b;
+}
+
+.eh-dual-range {
+    position: relative;
+    height: 28px;
+    margin: 2px 0 4px;
+    --eh-min: 1;
+    --eh-max: 30;
+}
+
+.eh-dual-range-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 6px;
+    margin-top: -3px;
+    border-radius: 3px;
+    background: rgba(148, 163, 184, 0.28);
+    pointer-events: none;
+}
+
+.eh-dual-range-fill {
+    position: absolute;
+    top: 50%;
+    height: 6px;
+    margin-top: -3px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, rgba(167, 139, 250, 0.85), rgba(94, 234, 212, 0.75));
+    pointer-events: none;
+}
+
+.eh-dual-range input[type="range"] {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    top: 50%;
+    margin: 0;
+    transform: translateY(-50%);
+    height: 28px;
+    background: transparent;
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.eh-dual-range input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px;
+    background: transparent;
+    border: none;
+}
+
+.eh-dual-range input[type="range"]::-moz-range-track {
+    height: 6px;
+    background: transparent;
+    border: none;
+}
+
+.eh-dual-range input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(15, 23, 42, 0.9);
+    pointer-events: auto;
+    cursor: grab;
+    margin-top: -5px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.eh-dual-range input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(15, 23, 42, 0.9);
+    pointer-events: auto;
+    cursor: grab;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.eh-dual-thumb--sphere {
+    z-index: 3;
+    accent-color: #a78bfa;
+}
+
+.eh-dual-thumb--sphere::-webkit-slider-thumb {
+    background: #a78bfa;
+}
+
+.eh-dual-thumb--sphere::-moz-range-thumb {
+    background: #a78bfa;
+}
+
+.eh-dual-thumb--warp {
+    z-index: 4;
+    accent-color: #5eead4;
+}
+
+.eh-dual-thumb--warp::-webkit-slider-thumb {
+    background: #5eead4;
+}
+
+.eh-dual-thumb--warp::-moz-range-thumb {
+    background: #5eead4;
+}
+
+/* Inside veil: only sphere thumb interactive; warp thumb hidden from hit-testing. */
+.eh-dual-range--sphere-only .eh-dual-thumb--warp {
+    visibility: hidden;
+    pointer-events: none;
+}
+.eh-dual-range--sphere-only .eh-dual-thumb--sphere {
+    z-index: 5;
+}
+
+.eh-horizon-hint {
+    font-size: 9px;
+    color: rgba(196, 181, 253, 0.9);
+    line-height: 1.25;
+    margin-top: 2px;
+}
+
+body.light-mode .scene-slider-wrap--horizon {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(124, 58, 237, 0.35);
+}
+
+body.light-mode .scene-slider-wrap--horizon .scene-slider-heading {
+    color: rgba(76, 29, 149, 0.92);
+}
+
+body.light-mode .eh-dual-range-track {
+    background: rgba(100, 116, 139, 0.22);
+}
+
+body.light-mode .eh-horizon-hint {
+    color: rgba(91, 33, 182, 0.82);
+}
+
 .scene-slider-heading {
     font-size: 11px;
     font-weight: 700;

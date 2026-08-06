@@ -80,15 +80,15 @@ const EPHEMERIS_CONFIG = {
 // ZOOM LEVEL CONFIGURATIONS
 // ============================================
 const ZOOM_LEVELS = {
-    // focusTarget: earth for all — Event Horizon camera frames Context Sphere around Earth.
+    // Classic focus ladder (not Event Horizon fit-cam). Sphere stays week-sized separately.
     0: { name: 'MOMENT', span: 'Hour', distance: 4.25, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025, isPolar: true },
-    1: { name: 'CENTURY', span: '100 years', distance: 10000, height: 5000, timeYears: 100, focusTarget: 'earth', centerYear: 2050 },
-    2: { name: 'DECADE', span: '10 years', distance: 800, height: 1600, timeYears: 10, focusTarget: 'earth', centerYear: 2025 },
-    3: { name: 'YEAR', span: '1 year', distance: 140, height: 500, timeYears: 1, focusTarget: 'earth', centerYear: 2025 },
-    4: { name: 'QUARTER', span: '3 months', distance: 70, height: 400, timeYears: 0.25, focusTarget: 'earth', centerYear: 2025 },
-    5: { name: 'MONTH', span: '1 month', distance: 25, height: 300, timeYears: 0.0833, focusTarget: 'earth', centerYear: 2025 },
-    6: { name: 'LUNAR CYCLE', span: '±16 days', distance: 19, height: 240, timeYears: 32 / 365.25, focusTarget: 'earth', centerYear: 2025 },
-    7: { name: 'WEEK', span: 'Full moons', distance: 13, height: 200, timeYears: 29.530588861 / 365.25, focusTarget: 'earth', centerYear: 2025 },
+    1: { name: 'CENTURY', span: '100 years', distance: 10000, height: 5000, timeYears: 100, focusTarget: 'sun', centerYear: 2050 },
+    2: { name: 'DECADE', span: '10 years', distance: 800, height: 1600, timeYears: 10, focusTarget: 'sun', centerYear: 2025 },
+    3: { name: 'YEAR', span: '1 year', distance: 140, height: 500, timeYears: 1, focusTarget: 'sun', centerYear: 2025 },
+    4: { name: 'QUARTER', span: '3 months', distance: 70, height: 400, timeYears: 0.25, focusTarget: 'mid', centerYear: 2025 },
+    5: { name: 'MONTH', span: '1 month', distance: 25, height: 300, timeYears: 0.0833, focusTarget: 'mid', centerYear: 2025 },
+    6: { name: 'LUNAR CYCLE', span: '±16 days', distance: 19, height: 240, timeYears: 32 / 365.25, focusTarget: 'moon', centerYear: 2025 },
+    7: { name: 'WEEK', span: 'Full moons', distance: 13, height: 200, timeYears: 29.530588861 / 365.25, focusTarget: 'mid', centerYear: 2025 },
     8: { name: 'DAY', span: '24 hours', distance: 12, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025 },
     9: { name: 'CLOCK', span: '24 hours', distance: 8, height: 160, timeYears: 0.00274, focusTarget: 'earth', centerYear: 2025, isPolar: true }
 };
