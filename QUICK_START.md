@@ -34,7 +34,9 @@ ZOOM LEVELS          NAVIGATION           SPECIAL
 1. **Start at Zoom 3 (Year)** to see how Earth's orbit creates a helix through time
 2. **Press A/D slowly** to watch Earth spiral through its orbit
 3. **Zoom to level 7 (Week)** to see individual days
-4. **Press Space** after navigating to smoothly animate back to the present
+4. **Mid focus** (Earth ↔ mid cycle): Zoom 4 mid = **month** band; Zoom 5 mid = **week** band; Zoom 7 mid = **day** band
+5. **Event Horizon** toggle cycles `nest` → `inside` → `off` (default off)
+6. **Press Space** after navigating to smoothly animate back to the present
 
 ## Quick Reference
 

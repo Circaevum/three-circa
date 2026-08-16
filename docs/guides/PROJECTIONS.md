@@ -62,17 +62,19 @@ Where:
 
 Each zoom level shows a different **time span** and uses different **height calculations**:
 
-| Level | Name | Time Span | Height Range | Focus |
-|-------|------|-----------|--------------|-------|
+| Level | Name | Time Span | Height Range | Default / mid focus |
+|-------|------|-----------|--------------|---------------------|
 | 1 | Century | 100 years | 10,000 units | Sun |
 | 2 | Decade | 10 years | 1,000 units | Sun |
 | 3 | Year | 1 year | 100 units | Sun |
-| 4 | Quarter | 3 months | 25 units | Earth |
-| 5 | Month | 1 month | ~8.3 units | Earth |
-| 6 | Lunar | ~29 days | ~7.7 units | Earth |
-| 7 | Week | 7 days | ~1.9 units | Earth |
-| 8 | Day | 24 hours | ~0.27 units | Earth |
-| 9 | Clock | 8 hours | ~0.27 units | Earth |
+| 4 | Quarter | 3 months | 25 units | Earth ↔ mid on **month** band |
+| 5 | Month | 1 month | ~8.3 units | Earth ↔ mid on **week** band |
+| 6 | Lunar | ~29 days | ~7.7 units | Earth ↔ mid on **month** band |
+| 7 | Week | 7 days | ~1.9 units | Earth ↔ mid on **day** band |
+| 8 | Day | 24 hours | ~0.27 units | Earth ↔ day-label mid |
+| 9 | Clock | 8 hours | ~0.27 units | Earth ↔ day-label mid |
+
+Mid focus = radial annulus of the named time markers along Sun→Earth (`getFocusMidRadialFrac`).
 
 ### Calculating Visible Range
 

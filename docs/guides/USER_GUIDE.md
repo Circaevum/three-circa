@@ -83,42 +83,42 @@ Circaevum is a 3D visualization of time, where calendars and events are projecte
 
 - Shows one quarter (3 months)
 - Time markers every month
-- Focus: Earth
+- Focus cycle: Earth ↔ **mid on month marker band**
 
 ### Level 5: Month (1 month)
 **Best for**: Monthly planning, weekly patterns
 
 - Shows one calendar month
 - Time markers every week
-- Focus: Earth
+- Focus cycle: Earth ↔ **mid on week marker band**
 
 ### Level 6: Lunar Cycle (~29 days)
 **Best for**: Understanding lunar rhythms, monthly cycles
 
 - Shows one lunar cycle
-- Time markers every 7 days
-- Focus: Earth
+- Time markers every 7 days (selected weeks highlighted like month grid)
+- Focus cycle: Earth ↔ **mid on month marker band**
 
 ### Level 7: Week (7 days)
 **Best for**: Weekly planning, daily patterns
 
 - Shows one week
 - Time markers every day
-- Focus: Earth
+- Focus cycle: Earth ↔ **mid on day marker band** (no Sun)
 
 ### Level 8: Day (24 hours)
 **Best for**: Daily scheduling, hourly planning
 
 - Shows one full day
 - Time markers every 6 hours
-- Focus: Earth
+- Focus cycle: Earth ↔ mid (day number ↔ day-name)
 
 ### Level 9: Clock (8 hours)
 **Best for**: Detailed hourly view, precise timing
 
 - Shows 8-hour window
 - Polar view (looking down at Earth)
-- Focus: Earth
+- Focus cycle: Earth ↔ mid (day number ↔ day-name)
 
 ---
 

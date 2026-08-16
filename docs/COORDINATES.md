@@ -72,14 +72,38 @@ For a visual model parsing rendered frames: **camera distance is your temporal-s
 
 #### Event Horizon
 
-The **Event Horizon** is the Nesting resolver boundary between LTE and STE mappings: a sphere centered on the Earth-marker whose radius is the pedagogical L1↔L2 half-span (circadian noon↔midnight = hour-hand length).
+The **Event Horizon** is the Nesting resolver boundary between LTE and STE mappings: a sphere centered on the Earth-marker. Shell radius follows mode (pedagogical L1↔L2 half-span / hour-hand length in **nest**; classic week chord in **inside**).
 
-- **Outside / on the shell:** LTE day floor, LTE sky canvas, annual day-pitch ribbons.
-- **Inside:** STE Earth-centric circadian nest.
-- **LTE sky void:** sky canvas verts inside the Event Horizon go dark (black-hole look) so Earth + STE nest read through the hole.
-- **Warp:** day-event geometry morphing LTE→STE warps the ribbon *midpoint* about Earth through the Event Horizon (approach shell, then dive inward); day-pitch edge vectors stay aligned so floors do not shear. Blend is sharp in calendar time (STE on selected day; LTE by ~±1.25 days) — not a week-long mush.
+Three UI modes (cycle `#event-horizon-mode-toggle`; default **`off`**; session may restore `sessionStorage` key `circaevum.ehMode`):
 
-Implementation: `event-renderer.js` (`getEventHorizonRadius`, `lerpDayFrameTowardCircadian`); sky void in `main.js` (`applyDayFrameLteSkyVertexColors`, `applyContextArcSkyVertexColors`).
+| Mode | Behavior |
+|------|----------|
+| **`nest`** | Interstellar: STE inside / LTE outside + disc warp; dual knobs size the shell; auto Earth mid-focus |
+| **`inside`** | Veil: week shell; clip volume = zoom-relative context (no warp); worldlines/orbits stay unclipped; auto Earth focus |
+| **`off`** | Classic: no shell / clip / warp. Context Arc uses the **calendar window**, not ±selected-time buffer |
+
+In **nest** / **inside**:
+
+- **Outside / on the shell:** LTE day floor, LTE sky canvas, annual day-pitch ribbons (nest).
+- **Inside:** STE Earth-centric circadian nest (nest) or clipped markers/events/skies (inside veil).
+- **LTE sky void (nest):** sky canvas verts inside the Event Horizon go dark so Earth + STE nest read through the hole.
+- **Warp (nest only):** day-event geometry morphing LTE→STE warps the ribbon *midpoint* about Earth through the Event Horizon; day-pitch edge vectors stay aligned. Blend is sharp in calendar time (STE on selected day; LTE by ~±1.25 days).
+
+Implementation: `main.js` (`eventHorizonMode`, clip/warp gates); `event-renderer.js` (`getEventHorizonRadius`, `lerpDayFrameTowardCircadian`); sky void helpers in `main.js`.
+
+#### Camera “mid” focus (radial)
+
+Along the Sun→Earth ray, **mid** focus sits in the active zoom’s time-marker band (`getFocusMidRadialFrac` in `main.js`), not at Earth or Sun:
+
+| Web zoom | Mid focus band |
+|----------|----------------|
+| 4 Quarter | **Month** markers |
+| 5 Month | **Week** markers |
+| 6 Lunar | **Month** markers |
+| 7 Week | **Day** markers |
+| 8–9 / 0 | Day number ↔ day-name mid |
+
+Week/day zooms cycle Earth ↔ mid only (no Sun). Long-term event click forces day-label mid until cleared.
 
 ### 4. Invariants (for visual processing)
 
