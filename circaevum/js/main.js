@@ -936,7 +936,9 @@ function radialFracFromMarkerBand(inner, outer, W) {
 
 /**
  * Radial position along Sun→Earth for camera "mid" focus.
- * Zoom 5 (Month): center of month time-marker band.
+ * Zoom 4 (Quarter): center of month time-marker band.
+ * Zoom 5 (Month): center of week time-marker band.
+ * Zoom 6 (Lunar): center of month time-marker band.
  * Zoom 7 (Week): center of day time-marker band.
  * Day/clock / long-term event nav: day number↔day-name mid (classic 21/32–23/32).
  * Uses live TimeMarkers radii so singular-band + classic onion both land correctly.
@@ -945,6 +947,7 @@ function getFocusMidRadialFrac(zoomLevel) {
     const W = getEarthOrbitDistanceForFocus();
     // Classic onion fallbacks (match RADII_CONFIG in timemarker-renderer).
     const classicMonthMidFrac = (1 / 4 + 1 / 2) / 2; // month inner–outer
+    const classicWeekMidFrac = (1 / 2 + 5 / 8) / 2; // week inner–outer
     const classicDayAnnulusMidFrac = (5 / 8 + 3 / 4) / 2; // day inner–outer
     const classicDayLabelMidFrac = (21 / 32 + 23 / 32) / 2; // day number ↔ day name
 
@@ -974,8 +977,24 @@ function getFocusMidRadialFrac(zoomLevel) {
 
     if (focusMidFromLongTermEventClick) return dayLabelMidFrac();
 
-    // Month + Lunar: camera mid in the month marker annulus.
-    if (zoomLevel === 5 || zoomLevel === 6) {
+    // Quarter: camera mid in the month marker annulus.
+    if (zoomLevel === 4) {
+        if (zones && zones.month) {
+            return radialFracFromMarkerBand(zones.month.inner, zones.month.outer, W);
+        }
+        return classicMonthMidFrac;
+    }
+
+    // Month view: center on week time markers (not the month band).
+    if (zoomLevel === 5) {
+        if (zones && zones.week) {
+            return radialFracFromMarkerBand(zones.week.inner, zones.week.outer, W);
+        }
+        return classicWeekMidFrac;
+    }
+
+    // Lunar: camera mid in the month marker annulus.
+    if (zoomLevel === 6) {
         if (zones && zones.month) {
             return radialFracFromMarkerBand(zones.month.inner, zones.month.outer, W);
         }
