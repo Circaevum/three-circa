@@ -19,10 +19,15 @@
   const EVENT_RADIUS_OUTER_FRACTION = 58 / 64; // outer bound toward Earth
   const EVENT_LINE_RADIUS_FRACTION = 55 / 64;
   const EVENT_LINE_LABEL_RADIUS_OFFSET = 2; // Labels this much farther out than the arc
-  /** Match TimeMarkers RADII_CONFIG.day: day numbers at 21/32, day names at 23/32 — dots sit between. */
-  const DAY_NUMBER_RADIUS_FRAC = 21 / 32;
-  const DAY_NAME_RADIUS_FRAC = 23 / 32;
-  const DAY_EVENT_DOT_RADIUS_FRAC = (DAY_NUMBER_RADIUS_FRAC + DAY_NAME_RADIUS_FRAC) / 2;
+  /** Match TimeMarkers day band: spheres near inner, numbers mid, names near outer. */
+  const DAY_INNER_FRAC = 5 / 8;
+  const DAY_OUTER_FRAC = 3 / 4;
+  const DAY_SPHERE_T = 0.12;
+  const DAY_NUMBER_T = 0.42;
+  const DAY_NAME_T = 0.88;
+  const DAY_NUMBER_RADIUS_FRAC = DAY_INNER_FRAC + (DAY_OUTER_FRAC - DAY_INNER_FRAC) * DAY_NUMBER_T;
+  const DAY_NAME_RADIUS_FRAC = DAY_INNER_FRAC + (DAY_OUTER_FRAC - DAY_INNER_FRAC) * DAY_NAME_T;
+  const DAY_EVENT_DOT_RADIUS_FRAC = DAY_INNER_FRAC + (DAY_OUTER_FRAC - DAY_INNER_FRAC) * DAY_SPHERE_T;
   /**
    * LineBasicMaterial.linewidth is ignored in WebGL on most platforms; ribbon outlines use mesh tubes instead.
    * Radius = earthDist * FRAC * (outline emphasis); ~0.005 reads clearly at Earth orbit scale (~50).
@@ -1865,7 +1870,8 @@
     if (shouldUseDayFrameSubDayHelixPlacement()) {
       r = getRadiusInDayMarkerFrame(midDate, earthDist, indexOffset);
     } else if (shouldUseDayBandDotPlacement()) {
-      r = earthDist * DAY_EVENT_DOT_RADIUS_FRAC;
+      const band = getDayNumberNameBand(earthDist);
+      r = typeof band.sphere === 'number' ? band.sphere : earthDist * DAY_EVENT_DOT_RADIUS_FRAC;
     } else {
       r = getRadiusForTimeOfDay(midDate, earthDist, indexOffset);
     }
@@ -1952,14 +1958,22 @@
     return inner + (outer - inner) * factor;
   }
 
-  /** Same radii as TimeMarkers `day.label` / `day.dayName` — ribbon outer edges nest in this annulus. */
+  /** Same radii as TimeMarkers `day.label` / `day.dayName` / `day.sphere`. */
   function getDayNumberNameBand(earthDist) {
     const W = earthDist;
     if (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getCanonicalRadialZones === 'function') {
       const z = TimeMarkers.getCanonicalRadialZones(W);
-      return { label: z.day.label, dayName: z.day.dayName };
+      return {
+        label: z.day.label,
+        dayName: z.day.dayName,
+        sphere: typeof z.day.sphere === 'number' ? z.day.sphere : W * DAY_EVENT_DOT_RADIUS_FRAC
+      };
     }
-    return { label: W * DAY_NUMBER_RADIUS_FRAC, dayName: W * DAY_NAME_RADIUS_FRAC };
+    return {
+      label: W * DAY_NUMBER_RADIUS_FRAC,
+      dayName: W * DAY_NAME_RADIUS_FRAC,
+      sphere: W * DAY_EVENT_DOT_RADIUS_FRAC
+    };
   }
 
   /**
@@ -5895,8 +5909,9 @@
           event
         );
       } else {
+        const band = getDayNumberNameBand(earthDist);
         const r = shouldUseDayBandDotPlacement()
-          ? earthDist * DAY_EVENT_DOT_RADIUS_FRAC
+          ? (typeof band.sphere === 'number' ? band.sphere : earthDist * DAY_EVENT_DOT_RADIUS_FRAC)
           : (radius != null ? radius : getRadiusForTimeOfDay(start, earthDist, layerConfig._overlapLane || 0));
         const angle = getOrbitAngleForShortEventPlacement(height, currentHeight);
         pos = typeof SceneGeometry !== 'undefined' && SceneGeometry.getPosition3D

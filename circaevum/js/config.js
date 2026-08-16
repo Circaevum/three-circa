@@ -150,10 +150,10 @@ const SCENE_CONFIG = {
             /** Hover line (selected-time color). */
             connectorOpacity: 0.55,
             /**
-             * Sun→Earth distance from Sun as a fraction of that day’s ephemeris Earth distance (XZ).
-             * ~0.76 keeps dots clearly sunward of the Earth mesh; ~0.99 matches true L1 and risks overlap.
+             * Fallback Sun→Earth fraction when TimeMarkers day.sphere is unavailable.
+             * Classic day frame: just outside inner (5/8 + 0.12×span) ≈ 0.64W.
              */
-            radialFractionFromSun: 0.76,
+            radialFractionFromSun: 0.64,
             /** Stay at least this many Earth-sphere radii sunward of Earth’s center (along Sun–Earth). */
             clearanceEarthRadii: 2.85,
             /** World-space distance falloff for “mouse near dot” pick scale (smaller = tighter hotspot). */

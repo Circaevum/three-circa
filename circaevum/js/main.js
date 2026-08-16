@@ -353,7 +353,7 @@ let eventHorizonWarpOuterHalfDays = 9;
  *   inside — veil: markers/events/skies inside sphere; worldlines + orbits stay full
  *   off    — classic: no shell, no clip, no warp
  */
-let eventHorizonMode = 'nest';
+let eventHorizonMode = 'off';
 const EVENT_HORIZON_MODES = ['nest', 'inside', 'off'];
 /** Prior focusTargetOverride while Mode 2 forces Earth (undefined = none saved). */
 let eventHorizonSavedFocusTarget = undefined;
@@ -906,13 +906,94 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Radial position along Sun→Earth for camera "mid" focus: halfway between TimeMarkers day.number and day.dayName (21/32 and 23/32 W).
- * Long-term event navigation always uses this band; week/day/clock zooms use it for normal mid focus too.
+ * Earth orbital radius W used to convert marker-band radii → Sun→Earth focus frac.
+ */
+function getEarthOrbitDistanceForFocus() {
+    const mesh =
+        typeof planetMeshes !== 'undefined' && planetMeshes
+            ? planetMeshes.find((p) => p && p.userData && p.userData.name === 'Earth')
+            : null;
+    if (mesh && typeof mesh.userData.distance === 'number' && mesh.userData.distance > 0) {
+        return mesh.userData.distance;
+    }
+    const earth =
+        typeof PLANET_DATA !== 'undefined' && PLANET_DATA
+            ? PLANET_DATA.find((p) => p && p.name === 'Earth')
+            : null;
+    return earth && typeof earth.distance === 'number' && earth.distance > 0 ? earth.distance : 50;
+}
+
+/** Midpoint of an annulus as a fraction of Earth orbit distance W. */
+function radialFracFromMarkerBand(inner, outer, W) {
+    if (!(W > 0)) return 0.5;
+    if (typeof inner === 'number' && typeof outer === 'number' && isFinite(inner) && isFinite(outer)) {
+        return ((inner + outer) * 0.5) / W;
+    }
+    if (typeof outer === 'number' && isFinite(outer)) return outer / W;
+    if (typeof inner === 'number' && isFinite(inner)) return inner / W;
+    return 0.5;
+}
+
+/**
+ * Radial position along Sun→Earth for camera "mid" focus.
+ * Zoom 5 (Month): center of month time-marker band.
+ * Zoom 7 (Week): center of day time-marker band.
+ * Day/clock / long-term event nav: day number↔day-name mid (classic 21/32–23/32).
+ * Uses live TimeMarkers radii so singular-band + classic onion both land correctly.
  */
 function getFocusMidRadialFrac(zoomLevel) {
-    const dayBandMidFrac = (21 / 32 + 23 / 32) / 2;
-    if (focusMidFromLongTermEventClick) return dayBandMidFrac;
-    if (zoomLevel === 7 || zoomLevel === 8 || zoomLevel === 9) return dayBandMidFrac;
+    const W = getEarthOrbitDistanceForFocus();
+    // Classic onion fallbacks (match RADII_CONFIG in timemarker-renderer).
+    const classicMonthMidFrac = (1 / 4 + 1 / 2) / 2; // month inner–outer
+    const classicDayAnnulusMidFrac = (5 / 8 + 3 / 4) / 2; // day inner–outer
+    const classicDayLabelMidFrac = (21 / 32 + 23 / 32) / 2; // day number ↔ day name
+
+    let zones = null;
+    if (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getCanonicalRadialZones === 'function') {
+        try {
+            zones = TimeMarkers.getCanonicalRadialZones(W);
+        } catch (e) {
+            zones = null;
+        }
+    }
+
+    function dayLabelMidFrac() {
+        if (
+            zones &&
+            zones.day &&
+            typeof zones.day.label === 'number' &&
+            typeof zones.day.dayName === 'number'
+        ) {
+            return ((zones.day.label + zones.day.dayName) * 0.5) / W;
+        }
+        if (zones && zones.day) {
+            return radialFracFromMarkerBand(zones.day.inner, zones.day.outer, W);
+        }
+        return classicDayLabelMidFrac;
+    }
+
+    if (focusMidFromLongTermEventClick) return dayLabelMidFrac();
+
+    // Month + Lunar: camera mid in the month marker annulus.
+    if (zoomLevel === 5 || zoomLevel === 6) {
+        if (zones && zones.month) {
+            return radialFracFromMarkerBand(zones.month.inner, zones.month.outer, W);
+        }
+        return classicMonthMidFrac;
+    }
+
+    // Week zoom: center on day time markers (not the week band).
+    if (zoomLevel === 7) {
+        if (zones && zones.day) {
+            return radialFracFromMarkerBand(zones.day.inner, zones.day.outer, W);
+        }
+        return classicDayAnnulusMidFrac;
+    }
+
+    if (zoomLevel === 8 || zoomLevel === 9 || zoomLevel === 0) {
+        return dayLabelMidFrac();
+    }
+
     return 0.5;
 }
 
@@ -7260,10 +7341,32 @@ function addLagrangeL1DayArcMarkers(earthPlanet, selectedDateHeight, zoomLevel, 
         const earthDist = Math.hypot(xz.x, xz.z) || 1e-6;
         const ux = xz.x / earthDist;
         const uz = xz.z / earthDist;
-        const frac = arcCfg.radialFractionFromSun != null ? arcCfg.radialFractionFromSun : 0.76;
-        const clearance = (arcCfg.clearanceEarthRadii != null ? arcCfg.clearanceEarthRadii : 2.85) * earthRadius;
-        const sunwardCap = Math.max(earthDist * 0.1, earthDist - clearance);
-        const radial = Math.min(frac * earthDist, sunwardCap);
+        // Prefer live day-frame sphere ring (just outside inner curve); else config fallback.
+        let radial = null;
+        if (
+            typeof TimeMarkers !== 'undefined' &&
+            typeof TimeMarkers.getCanonicalRadialZones === 'function'
+        ) {
+            try {
+                const zones = TimeMarkers.getCanonicalRadialZones(earthDist);
+                if (zones && zones.day && typeof zones.day.sphere === 'number' && zones.day.sphere > 0) {
+                    radial = zones.day.sphere;
+                } else if (
+                    zones &&
+                    zones.day &&
+                    typeof zones.day.inner === 'number' &&
+                    typeof zones.day.outer === 'number'
+                ) {
+                    radial = zones.day.inner + (zones.day.outer - zones.day.inner) * 0.12;
+                }
+            } catch (e) { /* fall through */ }
+        }
+        if (!(radial > 0)) {
+            const frac = arcCfg.radialFractionFromSun != null ? arcCfg.radialFractionFromSun : 0.64;
+            const clearance = (arcCfg.clearanceEarthRadii != null ? arcCfg.clearanceEarthRadii : 2.85) * earthRadius;
+            const sunwardCap = Math.max(earthDist * 0.1, earthDist - clearance);
+            radial = Math.min(frac * earthDist, sunwardCap);
+        }
         const px = ux * radial;
         const pz = uz * radial;
         const py = hNoon;

@@ -253,7 +253,8 @@ const TimeMarkers = (function() {
                    timeState.selectedMonth !== now.getMonth() || 
                    timeState.selectedYear !== now.getFullYear();
         } else if (unitType === 'week') {
-            if (zoomLevel === 5) {
+            // Month (5) + Lunar (6): same calendar week grid (selectedWeekOffset = months).
+            if (zoomLevel === 5 || zoomLevel === 6) {
                 const actualMonth = now.getMonth();
                 const actualYear = now.getFullYear();
                 const monthDifferent = (timeState.selectedMonth !== actualMonth) || (timeState.selectedYear !== actualYear);
@@ -349,8 +350,27 @@ const TimeMarkers = (function() {
         day: {
             outer: (dist) => dist * 3 / 4,
             inner: (dist) => dist * 5 / 8,
-            label: (dist) => dist * 21 / 32,  // Day numbers - between inner and middle
-            dayName: (dist) => dist * 23 / 32  // Day names - between middle and outer
+            /**
+             * Within [inner, outer] day frame:
+             * sphere — clickable day dots, just outside inner curve
+             * label — day numbers between spheres and names
+             * dayName — far side, near outer curve
+             */
+            sphere: (dist) => {
+                const i = dist * 5 / 8;
+                const o = dist * 3 / 4;
+                return i + (o - i) * 0.12;
+            },
+            label: (dist) => {
+                const i = dist * 5 / 8;
+                const o = dist * 3 / 4;
+                return i + (o - i) * 0.42;
+            },
+            dayName: (dist) => {
+                const i = dist * 5 / 8;
+                const o = dist * 3 / 4;
+                return i + (o - i) * 0.88;
+            }
         },
         hour: {
             spiral: (dist) => dist * 0.1 * 0.9  // 0.9x size for daily spiral and hours
@@ -402,11 +422,14 @@ const TimeMarkers = (function() {
         const half = getCircadianNoonMidnightHalfSpan(W);
         const inner = W - half;
         const outer = W + half;
+        const span = Math.max(outer - inner, W * 0.004);
         return {
             inner,
             outer,
-            label: inner + (outer - inner) * 0.4,
-            dayName: inner + (outer - inner) * 0.7,
+            // Match classic day-band layout: spheres near inner, numbers mid, names near outer.
+            sphere: inner + span * 0.12,
+            label: inner + span * 0.42,
+            dayName: inner + span * 0.88,
             halfSpan: half,
             gamma: getEarthLagrangeGammaForRadii(),
             W
@@ -450,6 +473,7 @@ const TimeMarkers = (function() {
             day: {
                 outer: dayOuter,
                 inner: dayInner,
+                sphere: day.sphere,
                 label: day.label,
                 dayName: day.dayName
             },
@@ -1249,7 +1273,8 @@ const TimeMarkers = (function() {
             actualCurrentWeekSunday.setHours(0, 0, 0, 0);
             
             let selectedWeekSunday;
-            if (zoomLevel === 5) {
+            // Month (5) + Lunar (6): week row inside selected calendar month.
+            if (zoomLevel === 5 || zoomLevel === 6) {
                 const selectedMonthStart = new Date(state.selectedYear, state.selectedMonth, 1);
                 const firstSundayOffset = -selectedMonthStart.getDay();
                 const firstSunday = new Date(state.selectedYear, state.selectedMonth, 1 + firstSundayOffset);
@@ -2210,6 +2235,7 @@ const TimeMarkers = (function() {
             day: {
                 outer: RADII_CONFIG.day.outer(W),
                 inner: RADII_CONFIG.day.inner(W),
+                sphere: RADII_CONFIG.day.sphere(W),
                 label: RADII_CONFIG.day.label(W),
                 dayName: RADII_CONFIG.day.dayName(W)
             },
