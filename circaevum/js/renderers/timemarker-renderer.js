@@ -351,20 +351,20 @@ const TimeMarkers = (function() {
             outer: (dist) => dist * 3 / 4,
             inner: (dist) => dist * 5 / 8,
             /**
-             * Within [inner, outer] day frame:
-             * sphere — clickable day dots, just outside inner curve
-             * label — day numbers between spheres and names
+             * Within [inner, outer] day frame (sunward → outward):
+             * label — day numbers, just sunward of the clickable dots (no overlap)
+             * sphere — clickable day dots, tight to the inside edge of the day band
              * dayName — far side, near outer curve
              */
             sphere: (dist) => {
                 const i = dist * 5 / 8;
                 const o = dist * 3 / 4;
-                return i + (o - i) * 0.12;
+                return i + (o - i) * 0.05;
             },
             label: (dist) => {
                 const i = dist * 5 / 8;
                 const o = dist * 3 / 4;
-                return i + (o - i) * 0.42;
+                return i + (o - i) * 0.02;
             },
             dayName: (dist) => {
                 const i = dist * 5 / 8;
@@ -426,9 +426,9 @@ const TimeMarkers = (function() {
         return {
             inner,
             outer,
-            // Match classic day-band layout: spheres near inner, numbers mid, names near outer.
-            sphere: inner + span * 0.12,
-            label: inner + span * 0.42,
+            // Numbers just inside dots; spheres tight to inner edge; names near outer.
+            sphere: inner + span * 0.05,
+            label: inner + span * 0.02,
             dayName: inner + span * 0.88,
             halfSpan: half,
             gamma: getEarthLagrangeGammaForRadii(),

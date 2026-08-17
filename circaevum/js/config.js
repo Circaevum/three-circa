@@ -145,15 +145,15 @@ const SCENE_CONFIG = {
             enabled: true,
             /** Calendar-day scan radius (±) around selected day before filtering by sector. */
             daySearchRadius: 95,
-            /** Dot radius as a fraction of the L1 Lagrange marker sphere radius. */
-            dotRadiusMul: 0.48,
+            /** Dot mesh radius as a fraction of the L1 Lagrange marker sphere radius. */
+            dotRadiusMul: 0.32,
             /** Hover line (selected-time color). */
             connectorOpacity: 0.55,
             /**
              * Fallback Sun→Earth fraction when TimeMarkers day.sphere is unavailable.
-             * Classic day frame: just outside inner (5/8 + 0.12×span) ≈ 0.64W.
+             * Classic day frame: tight inside edge (5/8 + 0.05×span) ≈ 0.631W — outside day numbers at inner.
              */
-            radialFractionFromSun: 0.64,
+            radialFractionFromSun: 0.631,
             /** Stay at least this many Earth-sphere radii sunward of Earth’s center (along Sun–Earth). */
             clearanceEarthRadii: 2.85,
             /** World-space distance falloff for “mouse near dot” pick scale (smaller = tighter hotspot). */

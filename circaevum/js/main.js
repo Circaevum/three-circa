@@ -7376,7 +7376,7 @@ function addLagrangeL1DayArcMarkers(earthPlanet, selectedDateHeight, zoomLevel, 
                     typeof zones.day.inner === 'number' &&
                     typeof zones.day.outer === 'number'
                 ) {
-                    radial = zones.day.inner + (zones.day.outer - zones.day.inner) * 0.12;
+                    radial = zones.day.inner + (zones.day.outer - zones.day.inner) * 0.05;
                 }
             } catch (e) { /* fall through */ }
         }

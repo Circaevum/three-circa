@@ -19,11 +19,11 @@
   const EVENT_RADIUS_OUTER_FRACTION = 58 / 64; // outer bound toward Earth
   const EVENT_LINE_RADIUS_FRACTION = 55 / 64;
   const EVENT_LINE_LABEL_RADIUS_OFFSET = 2; // Labels this much farther out than the arc
-  /** Match TimeMarkers day band: spheres near inner, numbers mid, names near outer. */
+  /** Match TimeMarkers day band: numbers just inside dots; spheres tight inside edge; names near outer. */
   const DAY_INNER_FRAC = 5 / 8;
   const DAY_OUTER_FRAC = 3 / 4;
-  const DAY_SPHERE_T = 0.12;
-  const DAY_NUMBER_T = 0.42;
+  const DAY_SPHERE_T = 0.05;
+  const DAY_NUMBER_T = 0.02;
   const DAY_NAME_T = 0.88;
   const DAY_NUMBER_RADIUS_FRAC = DAY_INNER_FRAC + (DAY_OUTER_FRAC - DAY_INNER_FRAC) * DAY_NUMBER_T;
   const DAY_NAME_RADIUS_FRAC = DAY_INNER_FRAC + (DAY_OUTER_FRAC - DAY_INNER_FRAC) * DAY_NAME_T;
