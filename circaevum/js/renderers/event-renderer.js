@@ -89,7 +89,7 @@
     3: 300,   // YEAR — raised; calendar + timeseries years can run deep
     4: 300,   // QUARTER
     5: 800,   // MONTH — day-frame LTE dailies across ±month
-    6: 400,   // LUNAR CYCLE
+    6: 800,   // LUNAR — same month of day-frame dailies as zoom 5
     7: 800,   // WEEK — day-frame LTE across parent month / zoom window
     8: 700,   // DAY — month-range dailies + selected week
     9: 120,   // CLOCK — polar day disk
@@ -294,6 +294,24 @@
   }
 
   /**
+   * Month-grain window from Zoom 5 (±1 month about selected). Off-day sub-day
+   * events stay visible at closer zooms on the annual day-frame — no Shift.
+   */
+  function eventTouchesZoom5DailyWindow(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    if (typeof global.getZoomRelativeContextTimeBoundsMs === 'function') {
+      try {
+        const b = global.getZoomRelativeContextTimeBoundsMs(5);
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) {
+          return evEnd.getTime() > b.t0 && start.getTime() < b.t1;
+        }
+      } catch (e) { /* fall through */ }
+    }
+    return eventTouchesSelectedMonthWindow(start, evEnd);
+  }
+
+  /**
    * Plot style per event. Auto: polygons on selected day for short events, lines on other days;
    * long-term (≥24h) always polygons. Global HUD can force all lines or all polygons.
    * @param {Date|null} start
@@ -491,12 +509,20 @@
     const ref = root.userData.dayFrameHelixRef;
     if (!ref.logicalInnerFlat || !ref.logicalOuterFlat) return;
     const amt = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
-    const innerFlat = amt > 1e-6
+    let innerFlat = amt > 1e-6
       ? flattenTimelineFlatArray(ref.logicalInnerFlat, focusY, amt)
-      : ref.logicalInnerFlat;
-    const outerFlat = amt > 1e-6
+      : ref.logicalInnerFlat.slice();
+    let outerFlat = amt > 1e-6
       ? flattenTimelineFlatArray(ref.logicalOuterFlat, focusY, amt)
-      : ref.logicalOuterFlat;
+      : ref.logicalOuterFlat.slice();
+    applyDayFrameEhWarpToFlats(
+      innerFlat,
+      outerFlat,
+      ref.startMs,
+      ref.endMs,
+      ref.earthDist,
+      ref.refWorldline
+    );
     root.position.y = 0;
     let fillMesh = null;
     root.traverse((child) => {
@@ -1080,6 +1106,11 @@
     if (shouldHideOutsideParentUnitWindow(start, evEnd)) return true;
 
     if (shouldHideLongTermOnDailySkySte(start, evEnd)) return true;
+
+    // Off-day sub-day still draw on the annual day-frame (Zoom 5 month). Do not kill them here.
+    if (isSteStyleDailySpan(start, evEnd) && shouldRenderDayFrameSubDayOnAnnualHelix()) {
+      return false;
+    }
 
     // Day zoom: long-term spans visible across the full calendar month.
     if (zl === 8 && isLongTermSpanForDailySky(start, evEnd)) {
@@ -1743,8 +1774,8 @@
   }
 
   /**
-   * Clamp STE nest to Event Horizon week. Day-frame LTE dailies *outside* the
-   * selected week keep full span on the annual day time frame (no week chop).
+   * Clamp STE nest to Event Horizon week. Day-frame LTE dailies keep full span
+   * on the annual day time frame (same Zoom-5 month, no week chop, no Shift).
    */
   function clampEventSpanToContextSphere(start, end) {
     if (!start || isNaN(start.getTime())) return null;
@@ -1752,12 +1783,7 @@
     if (!isSteStyleDailySpan(start, evEnd)) {
       return { start, end: evEnd, clipped: false };
     }
-    // Far day-frame LTE (beyond selected week): do not trim to Event Horizon.
-    if (
-      shouldRenderDayFrameSubDayOnAnnualHelix() &&
-      getSelectedWeekLteWarpAmount(start) < 0.001 &&
-      getSelectedWeekLteWarpAmount(evEnd) < 0.001
-    ) {
+    if (shouldRenderDayFrameSubDayOnAnnualHelix()) {
       return { start, end: evEnd, clipped: false };
     }
     const b = getSelectedParentUnitBounds();
@@ -1771,19 +1797,17 @@
 
   /**
    * STE circadian nest → Event Horizon week (Shift may widen).
-   * Day-frame LTE dailies → zoom-relative window (visible beyond week without Shift).
+   * Day-frame LTE dailies → Zoom-5 month (visible at closer zooms without Shift).
    */
   function eventTouchesSelectedParentWindow(start, end) {
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    let b;
     if (isSteStyleDailySpan(start, evEnd) && shouldRenderDayFrameSubDayOnAnnualHelix()) {
-      b = getLteDensityTimeBounds();
-    } else if (isSteStyleDailySpan(start, evEnd)) {
-      b = getSelectedParentUnitBounds();
-    } else {
-      b = getLteDensityTimeBounds();
+      return eventTouchesZoom5DailyWindow(start, evEnd);
     }
+    const b = isSteStyleDailySpan(start, evEnd)
+      ? getSelectedParentUnitBounds()
+      : getLteDensityTimeBounds();
     if (!b) return true;
     return evEnd.getTime() > b.t0 && start.getTime() < b.t1;
   }
@@ -2198,9 +2222,9 @@
     const sel = selFn();
     if (!sel || isNaN(sel.getTime())) return 0;
     const dayMs = 86400000;
-    const selMid = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
-    const whenMid = new Date(when.getFullYear(), when.getMonth(), when.getDate(), 0, 0, 0, 0);
-    const absDays = Math.abs(whenMid.getTime() - selMid.getTime()) / dayMs;
+    const selMid = sel.getTime();
+    const whenMid = when.getTime();
+    const absDays = Math.abs(whenMid - selMid) / dayMs;
     let ehHalf = 7;
     let warpOuter = 9;
     if (typeof global.getEventHorizonHalfDays === 'function') {
@@ -2218,24 +2242,11 @@
       warpOuter = ehHalf + 2;
     }
     if (absDays >= warpOuter) return 0;
-
-    // Continuous falloff 0→warpOuter (smoothstep). At EH rim (~ehHalf) still strong
-    // but not clamped to 1 — avoids straight↔full-curve snap when crossing rim.
-    const t = 1 - absDays / Math.max(warpOuter, 1e-6);
+    // Full circadian circle at and inside Event Horizon; bow only in the outer fade.
+    if (absDays <= ehHalf) return 1;
+    const t = 1 - (absDays - ehHalf) / Math.max(warpOuter - ehHalf, 1e-6);
     const u = Math.max(0, Math.min(1, t));
-    const s = u * u * (3 - 2 * u);
-    // Keep interior punchy: remap so selected≈1, rim (ehHalf/warpOuter)≈0.55, outer→0.
-    const rimT = 1 - ehHalf / Math.max(warpOuter, 1e-6);
-    if (rimT <= 0.001) return s;
-    // Bias: pull values above rimT upward toward 1 for a longer soft mid-band.
-    if (u >= rimT) {
-      const v = (u - rimT) / Math.max(1 - rimT, 1e-6);
-      const vs = v * v * (3 - 2 * v);
-      return 0.55 + 0.45 * vs;
-    }
-    const v = u / Math.max(rimT, 1e-6);
-    const vs = v * v * (3 - 2 * v);
-    return 0.55 * vs;
+    return u * u * (3 - 2 * u);
   }
 
   /** Segment count for day-frame ribbons — densify under warp so disc arcs stay chord-free. */
@@ -2246,19 +2257,16 @@
       : start;
     const near = getSelectedWeekLteWarpAmount(mid);
     if (near > 0.05) {
-      // Circadian hand sweeps 2π/day; ~1 sample per 5° of warped arc.
-      const arcSamples = Math.ceil((hrs / 24) * (360 / 5));
-      const boost = near > 0.45 ? 3.2 : 2.2;
-      return Math.max(12, Math.min(96, Math.max(arcSamples, Math.ceil(hrs * boost))));
+      const arc = Math.ceil((hrs / 24) * 128);
+      return Math.max(16, Math.min(128, Math.max(arc, Math.ceil(hrs * 4))));
     }
     return Math.max(3, Math.min(8, Math.ceil(hrs * 0.9)));
   }
 
   /**
-   * Nesting resolver warp through Event Horizon (Interstellar).
-   * Outside: STE → pole-taper spindle; LTE only if within ±1 week of selected date → ring.
-   * LTE farther from selected / camera inside → classic day-frame helix.
-   * @param {object} [warpOpts] forwarded to warpLtePointToRing (e.g. angleDeltaHint)
+   * Nesting resolver warp through Event Horizon.
+   * Outside: STE → pole-taper spindle; LTE day-frame → full circadian circle
+   * (midnight anti-sun, noon sunward). Camera inside → classic day-frame helix.
    */
   function lerpDayFrameTowardCircadian(dayPos, when, refHeight, earthDist, warpOpts) {
     if (!dayPos) return dayPos;
@@ -2467,7 +2475,7 @@
    */
   function shouldRenderDayFrameSubDayOnAnnualHelix(zl) {
     const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : getZoomLevelForEvents();
-    if (z === 5 || z === 6 || z === 7 || z === 8) return true;
+    if (z === 5 || z === 6 || z === 7 || z === 8 || z === 9 || z === 0) return true;
     return shouldUseDayFrameSubDayHelixPlacement();
   }
 
@@ -2475,7 +2483,7 @@
   function prepareDayFrameRibbonUserData(userDataBase) {
     const ud = userDataBase ? { ...userDataBase } : {};
     const zl = getZoomLevelForEvents();
-    if (zl === 5 || zl === 6 || zl === 7 || zl === 8) {
+    if (zl === 5 || zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) {
       delete ud.circadianWorldSpaceLayer;
       ud.useWorldSpaceGroup = true;
       ud.immuneToFlatten = true;
@@ -2527,26 +2535,30 @@
     return isSteStyleDailySpan(start, end);
   }
 
-  /** Annual helix day-frame: daily STEs in Selected Time Frame (not limited to selected calendar day). */
+  /** Annual helix day-frame: Zoom-5 month of dailies, including closer zooms (no Shift). */
   function shouldDrawAnnualDayFrameSteGeometry(start, end) {
     if (!shouldRenderDayFrameSubDayOnAnnualHelix()) return false;
     if (!isAnnualDayFrameSteSpan(start, end)) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (shouldHideLongTermOnDailySkySte(start, evEnd)) return false;
     const zl = getZoomLevelForEvents();
-    if (zl === 5 || zl === 6 || zl === 7 || zl === 8) {
-      return eventTouchesSelectedContextArcWindow(start, evEnd);
+    if (zl === 5 || zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) {
+      return eventTouchesZoom5DailyWindow(start, evEnd);
     }
     return true;
   }
 
-  /** Circadian disk-stack STEs — keep selected-day / scope rules. */
+  /** Circadian disk-stack STEs — selected day at close zooms; Zoom 5 keeps the month on the nest. */
   function shouldDrawCircadianSteGeometry(start, end) {
     if (!shouldDrawDailySkySteGeometry(start, end)) return false;
     if (shouldHideCircadianShortEventForDayScope(start, end)) return false;
     const zl = getZoomLevelForEvents();
-    // Month/week: only dailies inside Selected Time Frame use STE; rest → LTE manifold.
-    if ((zl === 5 || zl === 6 || zl === 7) && isSteStyleDailySpan(start, end)) {
+    if ((zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) && isSteStyleDailySpan(start, end)) {
+      if (isCircadianShortEventsShiftPreview()) return true;
+      return eventTouchesSelectedCalendarDay(start, end);
+    }
+    // Month: dailies inside Selected Time Frame use STE; rest → LTE manifold.
+    if (zl === 5 && isSteStyleDailySpan(start, end)) {
       return eventTouchesSelectedContextArcWindow(start, end);
     }
     return true;
@@ -2569,7 +2581,7 @@
     // Nesting resolver LTE day events: full opacity across month/week/day zooms.
     if (!start) return 1;
     const zl = getZoomLevelForEvents();
-    if (zl === 5 || zl === 6 || zl === 7 || zl === 8) return 1;
+    if (zl === 5 || zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) return 1;
     if (eventTouchesSelectedCalendarDay(start, end)) return 1;
     return 0.88;
   }
@@ -3148,8 +3160,16 @@
     let outlineOp = getRibbonOutlineOpacity(opacity, borderStyle, layerConfig);
     outlineOp = Math.min(1, outlineOp * (ribbonPair.extendsOutsideFrame ? 0.98 : 0.92));
 
-    const innerFlat = ribbonPair.innerFlat;
-    const outerFlat = ribbonPair.outerFlat;
+    const innerFlat = ribbonPair.innerFlat.slice();
+    const outerFlat = ribbonPair.outerFlat.slice();
+    applyDayFrameEhWarpToFlats(
+      innerFlat,
+      outerFlat,
+      start.getTime(),
+      end.getTime(),
+      earthDist,
+      refWorldline
+    );
     const borderHex = outlineColorHex != null ? outlineColorHex : eventHex;
     const borderOp = Math.min(1, Math.max(outlineOp, opacity * 0.88));
     const userData = userDataBase ? { ...userDataBase } : {};
@@ -3187,8 +3207,8 @@
       durationH,
       segments,
       refWorldline,
-      logicalInnerFlat: innerFlat,
-      logicalOuterFlat: outerFlat
+      logicalInnerFlat: ribbonPair.innerFlat,
+      logicalOuterFlat: ribbonPair.outerFlat
     });
     storeDayFrameHelixRef(group.userData, {
       startMs: start.getTime(),
@@ -3198,8 +3218,8 @@
       durationH,
       segments,
       refWorldline,
-      logicalInnerFlat: innerFlat,
-      logicalOuterFlat: outerFlat
+      logicalInnerFlat: ribbonPair.innerFlat,
+      logicalOuterFlat: ribbonPair.outerFlat
     });
 
     const flattenFocusY =
@@ -3493,8 +3513,115 @@
   }
 
   /**
+   * Apply current Event Horizon warp onto an unwarped day-frame ribbon (in place).
+   * Re-run each frame so lines conform as selected day / zoom pose moves.
+   */
+  function applyDayFrameEhWarpToFlats(innerFlat, outerFlat, startMs, endMs, earthDist, currentHeight) {
+    if (!innerFlat || !outerFlat || innerFlat.length < 6 || outerFlat.length < 6) return;
+    const n = Math.floor(innerFlat.length / 3) - 1;
+    if (n < 0) return;
+    const spanMs = Math.max((endMs || 0) - (startMs || 0), 1);
+    let prevAngleDelta = null;
+    let prevWarpAngle = null;
+    const sphereState =
+      typeof global.getContextSphereState === 'function' ? global.getContextSphereState() : null;
+    const W = typeof global.ContextSphereWarp !== 'undefined' ? global.ContextSphereWarp : null;
+    for (let i = 0; i <= n; i++) {
+      const u = n > 0 ? i / n : 0;
+      const when = new Date((startMs || 0) + u * spanMs);
+      const ii = i * 3;
+      let pi = { x: innerFlat[ii], y: innerFlat[ii + 1], z: innerFlat[ii + 2] };
+      let po = { x: outerFlat[ii], y: outerFlat[ii + 1], z: outerFlat[ii + 2] };
+      const mid = {
+        x: (pi.x + po.x) * 0.5,
+        y: (pi.y + po.y) * 0.5,
+        z: (pi.z + po.z) * 0.5
+      };
+      const half = {
+        x: (po.x - pi.x) * 0.5,
+        y: (po.y - pi.y) * 0.5,
+        z: (po.z - pi.z) * 0.5
+      };
+      const warpedMid =
+        lerpDayFrameTowardCircadian(mid, when, currentHeight, earthDist, {
+          angleDeltaHint: prevAngleDelta
+        }) || mid;
+      if (typeof warpedMid._warpDelta === 'number') {
+        prevAngleDelta = warpedMid._warpDelta;
+      }
+      if (sphereState && sphereState.radius > 0) {
+        let ang = Math.atan2(warpedMid.z - sphereState.z, warpedMid.x - sphereState.x);
+        const rad = Math.hypot(warpedMid.x - sphereState.x, warpedMid.z - sphereState.z);
+        if (prevWarpAngle != null && rad > 1e-8) {
+          while (ang - prevWarpAngle > Math.PI) ang -= Math.PI * 2;
+          while (ang - prevWarpAngle < -Math.PI) ang += Math.PI * 2;
+          warpedMid.x = sphereState.x + Math.cos(ang) * rad;
+          warpedMid.z = sphereState.z + Math.sin(ang) * rad;
+        }
+        if (rad > 1e-8) prevWarpAngle = ang;
+      }
+      const blendW =
+        typeof warpedMid._arcCircadianBlend === 'number' ? warpedMid._arcCircadianBlend : 0;
+      const widthKeep = blendW < 0.12 ? 1 : Math.max(0.08, 1 - blendW * 0.92);
+      let halfX = half.x * widthKeep;
+      let halfY = half.y * widthKeep;
+      let halfZ = half.z * widthKeep;
+      const warpAmt = getSelectedWeekLteWarpAmount(when);
+      if (warpAmt > 0.001) {
+        const halfLen = Math.hypot(halfX, halfY, halfZ);
+        if (halfLen > 1e-8) {
+          const frac =
+            (when.getHours() +
+              when.getMinutes() / 60 +
+              when.getSeconds() / 3600 +
+              when.getMilliseconds() / 3600000) /
+            24;
+          const dayAngle = frac * Math.PI * 2;
+          const ex = sphereState && typeof sphereState.x === 'number' ? sphereState.x : mid.x;
+          const ez = sphereState && typeof sphereState.z === 'number' ? sphereState.z : mid.z;
+          const hand = Math.atan2(ez, ex) - dayAngle;
+          let handUse = hand;
+          if (prevWarpAngle != null) {
+            while (handUse - prevWarpAngle > Math.PI) handUse -= Math.PI * 2;
+            while (handUse - prevWarpAngle < -Math.PI) handUse += Math.PI * 2;
+          }
+          const discHalfX = Math.cos(handUse) * halfLen;
+          const discHalfZ = Math.sin(handUse) * halfLen;
+          const wa = Math.max(0, Math.min(1, warpAmt));
+          halfX = halfX * (1 - wa) + discHalfX * wa;
+          halfY = halfY * (1 - wa);
+          halfZ = halfZ * (1 - wa) + discHalfZ * wa;
+        }
+      }
+      pi = {
+        x: warpedMid.x - halfX,
+        y: warpedMid.y - halfY,
+        z: warpedMid.z - halfZ
+      };
+      po = {
+        x: warpedMid.x + halfX,
+        y: warpedMid.y + halfY,
+        z: warpedMid.z + halfZ
+      };
+      if (warpAmt > 0.001 && W && typeof W.clampOutsideHorizon === 'function' && sphereState) {
+        const ci = W.clampOutsideHorizon(pi, sphereState);
+        const co = W.clampOutsideHorizon(po, sphereState);
+        pi = ci;
+        po = co;
+      }
+      innerFlat[ii] = pi.x;
+      innerFlat[ii + 1] = pi.y;
+      innerFlat[ii + 2] = pi.z;
+      outerFlat[ii] = po.x;
+      outerFlat[ii + 1] = po.y;
+      outerFlat[ii + 2] = po.z;
+    }
+  }
+
+  /**
    * Helix ribbon for sub-day spans on the annual worldline: fixed midnight spoke per calendar day,
    * wall-clock in event TZ → radius; TZ offset stacks in Y above/below the day line.
+   * Returns *unwarped* flats — Event Horizon warp is applied live so lines conform while moving.
    */
   function buildDayFrameHelixPair(start, end, earthDist, currentHeight, segments, indexOffset, event, durationH) {
     if (!start || !end || !(end > start)) return null;
@@ -3538,11 +3665,6 @@
         );
       })();
 
-    let prevAngleDelta = null;
-    let prevWarpAngle = null;
-    const sphereState =
-      typeof global.getContextSphereState === 'function' ? global.getContextSphereState() : null;
-
     for (let i = 0; i <= n; i++) {
       const u = i / n;
       const when = new Date(startMs + u * spanMs);
@@ -3571,86 +3693,6 @@
         pi = dayFramePositionFromAnchor(anchor, edges.rIn);
         po = dayFramePositionFromAnchor(anchor, edges.rOut);
       }
-
-      // Warp ribbon *midpoint* through Event Horizon; rebuild edges along original day-pitch
-      // (or radial band) so Nesting resolve does not shear LTE day floors into diagonals.
-      const mid = {
-        x: (pi.x + po.x) * 0.5,
-        y: (pi.y + po.y) * 0.5,
-        z: (pi.z + po.z) * 0.5
-      };
-      const half = {
-        x: (po.x - pi.x) * 0.5,
-        y: (po.y - pi.y) * 0.5,
-        z: (po.z - pi.z) * 0.5
-      };
-      const warpedMid =
-        lerpDayFrameTowardCircadian(mid, when, currentHeight, earthDist, {
-          angleDeltaHint: prevAngleDelta
-        }) || mid;
-      if (typeof warpedMid._warpDelta === 'number') {
-        prevAngleDelta = warpedMid._warpDelta;
-      }
-      // Unwrap warped angle along the ribbon so mesh edges never chord across the disc.
-      if (sphereState && sphereState.radius > 0) {
-        let ang = Math.atan2(warpedMid.z - sphereState.z, warpedMid.x - sphereState.x);
-        const rad = Math.hypot(warpedMid.x - sphereState.x, warpedMid.z - sphereState.z);
-        if (prevWarpAngle != null && rad > 1e-8) {
-          while (ang - prevWarpAngle > Math.PI) ang -= Math.PI * 2;
-          while (ang - prevWarpAngle < -Math.PI) ang += Math.PI * 2;
-          warpedMid.x = sphereState.x + Math.cos(ang) * rad;
-          warpedMid.z = sphereState.z + Math.sin(ang) * rad;
-        }
-        if (rad > 1e-8) prevWarpAngle = ang;
-      }
-      const blendW =
-        typeof warpedMid._arcCircadianBlend === 'number' ? warpedMid._arcCircadianBlend : 0;
-      // Collapse day-pitch width as we enter STE nest; keep full width on LTE side.
-      const widthKeep = blendW < 0.12 ? 1 : Math.max(0.08, 1 - blendW * 0.92);
-      let halfX = half.x * widthKeep;
-      let halfY = half.y * widthKeep;
-      let halfZ = half.z * widthKeep;
-      // As LTE→disc warp rises, ribbon width follows circadian radius (around Earth),
-      // not the heliocentric Sun–Earth spoke (that pinned edges on the anti-sun side).
-      const warpAmt = getSelectedWeekLteWarpAmount(when);
-      if (warpAmt > 0.001) {
-        const halfLen = Math.hypot(halfX, halfY, halfZ);
-        if (halfLen > 1e-8) {
-          const frac =
-            (when.getHours() +
-              when.getMinutes() / 60 +
-              when.getSeconds() / 3600 +
-              when.getMilliseconds() / 3600000) /
-            24;
-          const dayAngle = frac * Math.PI * 2;
-          const ex = sphereState && typeof sphereState.x === 'number' ? sphereState.x : mid.x;
-          const ez = sphereState && typeof sphereState.z === 'number' ? sphereState.z : mid.z;
-          const hand = Math.atan2(ez, ex) - dayAngle;
-          // Continuity: keep hand near previous warp angle so width doesn't flip ±π.
-          let handUse = hand;
-          if (prevWarpAngle != null) {
-            while (handUse - prevWarpAngle > Math.PI) handUse -= Math.PI * 2;
-            while (handUse - prevWarpAngle < -Math.PI) handUse += Math.PI * 2;
-          }
-          const discHalfX = Math.cos(handUse) * halfLen;
-          const discHalfZ = Math.sin(handUse) * halfLen;
-          const wa = Math.max(0, Math.min(1, warpAmt));
-          halfX = halfX * (1 - wa) + discHalfX * wa;
-          halfY = halfY * (1 - wa);
-          halfZ = halfZ * (1 - wa) + discHalfZ * wa;
-        }
-      }
-      pi = {
-        x: warpedMid.x - halfX,
-        y: warpedMid.y - halfY,
-        z: warpedMid.z - halfZ,
-        _arcCircadianBlend: blendW
-      };
-      po = {
-        x: warpedMid.x + halfX,
-        y: warpedMid.y + halfY,
-        z: warpedMid.z + halfZ
-      };
 
       innerFlat.push(pi.x, pi.y, pi.z);
       outerFlat.push(po.x, po.y, po.z);

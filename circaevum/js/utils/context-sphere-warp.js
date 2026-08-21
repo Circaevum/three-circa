@@ -1,9 +1,11 @@
 /**
- * Interstellar Event Horizon warp — STE spindle (pole taper) + LTE accretion ring.
+ * Interstellar Event Horizon warp — STE spindle (pole taper) + LTE line→circle.
  *
  * Outside sphere: STE vertical stack keeps Y; horizontal radius → 0 at poles.
- * Outside sphere: LTE day-frame / sky flatten into a ring hugging the shell
- *   (black-hole disk vibe).
+ * Outside sphere: LTE day-frame unwraps to a full circadian circle just outside
+ *   the Event Horizon. Paths slerp around the shell (never through it). Radius
+ *   falls toward a clearance floor like a black-hole approach — crawl near the
+ *   horizon, never intersect. Midnight anti-sun, noon sunward.
  * Inside sphere: identity — STE wormhole stack at full radius; no LTE ring warp.
  */
 (function (global) {
@@ -144,45 +146,104 @@
     return u * u * (3 - 2 * u);
   }
 
-  /** Fraction of local day 0..1 from Date (viewer wall clock). */
-  function dayFracFromWhen(when) {
-    if (!when || !(when instanceof Date) || isNaN(when.getTime())) return null;
-    return (
-      (when.getHours() +
-        when.getMinutes() / 60 +
-        when.getSeconds() / 3600 +
-        when.getMilliseconds() / 3600000) /
-      24
-    );
+  /** Stay strictly outside the Event Horizon (black-hole photon-sphere gap). */
+  const HORIZON_CLEARANCE = 1.06;
+
+  function getHorizonClearanceRadius(state) {
+    const s = state || getSphereState();
+    if (!s || !(s.radius > 0)) return 0;
+    return s.radius * HORIZON_CLEARANCE;
   }
 
   /**
-   * Circadian STE hand angle vs Earth–Sun line (same convention as circadian-renderer).
-   * dayFrac 0 = midnight, 0.5 = noon.
+   * Push a point onto/outside the clearance shell. Never returns an interior point.
    */
-  function circadianHandAngleAtEarth(earthX, earthZ, dayFrac) {
-    const frac =
-      typeof dayFrac === 'number' && !isNaN(dayFrac)
-        ? ((dayFrac % 1) + 1) % 1
-        : 0;
-    const dayAngle = frac * Math.PI * 2;
-    const sunToEarthAngle = Math.atan2(earthZ, earthX);
-    return sunToEarthAngle - dayAngle;
+  function clampOutsideHorizon(p, state) {
+    if (!p) return p;
+    const s = state || getSphereState();
+    if (!s || !(s.radius > 0)) return p;
+    const rMin = getHorizonClearanceRadius(s);
+    const dx = p.x - s.x;
+    const dy = p.y - s.y;
+    const dz = p.z - s.z;
+    const r = Math.hypot(dx, dy, dz);
+    if (r >= rMin) return p;
+    if (r < 1e-10) {
+      return { x: s.x + rMin, y: s.y, z: s.z };
+    }
+    const k = rMin / r;
+    return {
+      x: s.x + dx * k,
+      y: s.y + dy * k,
+      z: s.z + dz * k
+    };
+  }
+
+  function slerpUnit(ax, ay, az, bx, by, bz, t) {
+    const tt = Math.max(0, Math.min(1, t));
+    let dot = ax * bx + ay * by + az * bz;
+    if (dot > 1) dot = 1;
+    if (dot < -1) dot = -1;
+    if (tt <= 0) return { x: ax, y: ay, z: az };
+    if (tt >= 1) return { x: bx, y: by, z: bz };
+    if (dot > 0.9995) {
+      let x = ax + (bx - ax) * tt;
+      let y = ay + (by - ay) * tt;
+      let z = az + (bz - az) * tt;
+      const n = Math.hypot(x, y, z) || 1;
+      return { x: x / n, y: y / n, z: z / n };
+    }
+    if (dot < -0.9995) {
+      let px = -az;
+      let py = 0;
+      let pz = ax;
+      let pn = Math.hypot(px, py, pz);
+      if (pn < 1e-8) {
+        px = 1;
+        py = 0;
+        pz = 0;
+        pn = 1;
+      } else {
+        px /= pn;
+        pz /= pn;
+      }
+      const ang = Math.PI * tt;
+      const c = Math.cos(ang);
+      const s = Math.sin(ang);
+      const crx = py * az - pz * ay;
+      const cry = pz * ax - px * az;
+      const crz = px * ay - py * ax;
+      let x = ax * c + crx * s;
+      let y = ay * c + cry * s;
+      let z = az * c + crz * s;
+      const n = Math.hypot(x, y, z) || 1;
+      return { x: x / n, y: y / n, z: z / n };
+    }
+    const omega = Math.acos(dot);
+    const so = Math.sin(omega);
+    const s0 = Math.sin((1 - tt) * omega) / so;
+    const s1 = Math.sin(tt * omega) / so;
+    let x = ax * s0 + bx * s1;
+    let y = ay * s0 + by * s1;
+    let z = az * s0 + bz * s1;
+    const n = Math.hypot(x, y, z) || 1;
+    return { x: x / n, y: y / n, z: z / n };
   }
 
   /**
-   * LTE → accretion disc around Event Horizon (outside view only).
-   * Radius stays outside shell (disc). Amount blends by rotating azimuth from
-   * the original LTE spoke toward the circadian STE hand (gradual curve, not snap).
+   * LTE day-frame → Event Horizon circadian circle (outside view only).
+   * Direction slerps around the shell (no chords through the ball). Radius is
+   * attracted to a clearance floor with (1−amount)² crawl — proximal like a
+   * horizon, never intersecting it.
+   *
+   * dayFrac from opts.when, opts.dayFrac, else radialT (spoke parameter).
    *
    * @param {{x:number,y:number,z:number}} p
    * @param {object} [opts]
-   * @param {number} [opts.radialT] 0..1 band across day-pitch / sky annulus
-   * @param {number} [opts.diskWidth] world units of ring width past shell
+   * @param {number} [opts.radialT] 0..1 along day spoke (fallback dayFrac)
+   * @param {number} [opts.dayFrac] 0..1 wall-clock fraction
+   * @param {Date} [opts.when] wall time → dayFrac
    * @param {number} [opts.amount] 0..1 blend (default 1 when warping)
-   * @param {Date} [opts.when] wall time → circadian hand angle
-   * @param {number} [opts.dayFrac] 0..1 override when Date unavailable
-   * @param {{ux,uy,uz,vx,vy,vz,nx,ny,nz}|null} [opts.basis] LTE plane basis
    */
   function warpLtePointToRing(p, state, opts) {
     if (!p) return p;
@@ -196,62 +257,75 @@
     if (!s || !(s.radius > 0)) return p;
 
     const o = opts || {};
-    const amount =
+    const a0 =
       typeof o.amount === 'number' && !isNaN(o.amount)
         ? Math.max(0, Math.min(1, o.amount))
         : 1;
+    const conform =
+      typeof global.currentEhWarpConform === 'number' && !isNaN(global.currentEhWarpConform)
+        ? Math.max(0, Math.min(1, global.currentEhWarpConform))
+        : 1;
+    const amount = a0 * conform;
     if (amount <= 0.001) return p;
 
-    const R = s.radius;
-    const diskWidth =
-      typeof o.diskWidth === 'number' && o.diskWidth > 0
-        ? o.diskWidth
-        : Math.max(R * 0.22, 2.5);
+    const rMin = getHorizonClearanceRadius(s);
     const radialT =
       typeof o.radialT === 'number' && !isNaN(o.radialT)
         ? Math.max(0, Math.min(1, o.radialT))
-        : 0.45;
+        : 0.5;
 
-    let dayFrac = dayFracFromWhen(o.when);
-    if (dayFrac == null && typeof o.dayFrac === 'number' && !isNaN(o.dayFrac)) {
+    let dayFrac = radialT;
+    if (o.when && o.when instanceof Date && !isNaN(o.when.getTime())) {
+      const d = o.when;
+      dayFrac =
+        (d.getHours() +
+          d.getMinutes() / 60 +
+          d.getSeconds() / 3600 +
+          d.getMilliseconds() / 3600000) /
+        24;
+    } else if (typeof o.dayFrac === 'number' && !isNaN(o.dayFrac)) {
       dayFrac = o.dayFrac;
     }
-    if (dayFrac == null) dayFrac = radialT;
+    dayFrac = ((dayFrac % 1) + 1) % 1;
 
-    const targetR = R * 1.04 + radialT * diskWidth;
-    const hand = circadianHandAngleAtEarth(s.x, s.z, dayFrac);
+    const sunToEarthAngle = Math.atan2(s.z, s.x);
+    const targetAngle = sunToEarthAngle - dayFrac * Math.PI * 2;
+    const u1x = Math.cos(targetAngle);
+    const u1y = 0;
+    const u1z = Math.sin(targetAngle);
 
-    // Start from original offset around Earth (XZ) — same frame as STE hand.
-    const pdx = p.x - s.x;
-    const pdy = p.y - s.y;
-    const pdz = p.z - s.z;
-    const pRad = Math.hypot(pdx, pdz);
-    const origAngle = pRad > 1e-8 ? Math.atan2(pdz, pdx) : hand;
-
-    // Raw delta — do NOT shortest-path wrap. Shortest-path flips when |hand−orig| crosses π,
-    // so adjacent ribbon samples jump to opposite sides → chords across the disc.
-    // cos/sin handle angles outside (−π,π]; continuous dayFrac → continuous arc.
-    let dA = hand - origAngle;
-    if (typeof o.angleDeltaHint === 'number' && isFinite(o.angleDeltaHint)) {
-      // Prefer delta near previous sample's delta (ribbon continuity).
-      while (dA - o.angleDeltaHint > Math.PI) dA -= Math.PI * 2;
-      while (dA - o.angleDeltaHint < -Math.PI) dA += Math.PI * 2;
+    let dx = p.x - s.x;
+    let dy = p.y - s.y;
+    let dz = p.z - s.z;
+    let r0 = Math.hypot(dx, dy, dz);
+    let u0x;
+    let u0y;
+    let u0z;
+    if (r0 < 1e-8) {
+      u0x = u1x;
+      u0y = u1y;
+      u0z = u1z;
+      r0 = rMin;
+    } else {
+      u0x = dx / r0;
+      u0y = dy / r0;
+      u0z = dz / r0;
+      if (r0 < rMin) r0 = rMin;
     }
 
     const a = amount;
-    const angle = origAngle + dA * a;
-    const r0 = pRad > 1e-6 ? pRad : targetR;
-    const r = r0 * (1 - a) + targetR * a;
-    const y = p.y * (1 - a) + (s.y + pdy * (1 - a) * 0.15) * a;
+    const fall = (1 - a) * (1 - a);
+    const r = rMin + (r0 - rMin) * fall;
+    const u = slerpUnit(u0x, u0y, u0z, u1x, u1y, u1z, a);
 
     const out = {
-      x: s.x + Math.cos(angle) * r,
-      y: y,
-      z: s.z + Math.sin(angle) * r,
-      _warpAngle: angle,
-      _warpDelta: dA
+      x: s.x + u.x * r,
+      y: s.y + u.y * r,
+      z: s.z + u.z * r,
+      _warpAngle: targetAngle,
+      _warpDelta: 0
     };
-    return out;
+    return clampOutsideHorizon(out, s);
   }
 
   /** Warp a flat xyz array in place (or into out). kind: 'ste' | 'lte'. */
@@ -289,6 +363,8 @@
     warpStePoint,
     warpLtePointToRing,
     warpPositionArray,
-    getSceneYSelectedWeekWarpAmount
+    getSceneYSelectedWeekWarpAmount,
+    getHorizonClearanceRadius,
+    clampOutsideHorizon
   };
 })(typeof window !== 'undefined' ? window : globalThis);

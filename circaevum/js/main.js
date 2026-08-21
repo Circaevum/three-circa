@@ -330,6 +330,8 @@ if (typeof window !== 'undefined') {
 }
 let flattenMode = 'off'; // 'off' | 'markers' | 'all'
 let currentFlattenAmount = 0; // Lerps for event/worldline flatten in mode 'all'.
+/** Live 0..1 mix for Event Horizon line→circle (lerps like flatten so zoom/day moves show conforming). */
+let currentEhWarpConform = 1;
 let currentTimeMarkerFlattenAmount = 0;
 /** 0 = circadian helix fully wrapped/helical, 1 = fully straightened (lerps like currentFlattenAmount). */
 let currentCircadianStraightenAmount = 0;
@@ -3311,6 +3313,21 @@ function storeListHorizonLogicalPositions(geom) {
     geom.userData.listHorizonLogical = new Float32Array(geom.attributes.position.array);
 }
 
+/** Re-apply Event Horizon warp to day markers / sky / day-frame events (no mesh rebuild). */
+function refreshLiveEventHorizonWarp() {
+    if (typeof eventHorizonMode === 'string' && eventHorizonMode === 'off') return;
+    if (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.applyLteDayFrameEventHorizonWarp === 'function') {
+        try {
+            TimeMarkers.applyLteDayFrameEventHorizonWarp();
+        } catch (e) { /* optional */ }
+    }
+    if (dayFrameLteSkyMesh && dayFrameLteSkyMesh.geometry) {
+        try {
+            applyDayFrameLteSkyInterstellarWarp(dayFrameLteSkyMesh.geometry);
+        } catch (e2) { /* optional */ }
+    }
+}
+
 /**
  * Warp LTE day-frame sky near selected-week Event Horizon band (smooth fade).
  * Outside that band → classic helix. Inside camera → logical helix.
@@ -6238,6 +6255,7 @@ function applyLightTimeScrubUpdate(zoomLevel) {
     try {
         ensureContextSphereState(zoomLevel);
     } catch (e) { /* optional */ }
+    refreshLiveEventHorizonWarp();
     if (isEarthDaylightSkyZoom(zoomLevel) && earthMeshScrub) {
         updateEarthDaylightSky(earthMeshScrub, zoomLevel);
     } else if (!isEarthDaylightSkyZoom(zoomLevel)) {
@@ -11441,8 +11459,17 @@ function animate(time, frame) {
         : (flattenMode === 'all' ? flattenIntensity : 0);
     currentFlattenAmount += (flattenTargetAll - currentFlattenAmount) * 0.08;
     currentTimeMarkerFlattenAmount += (flattenTargetMarkers - currentTimeMarkerFlattenAmount) * 0.08;
+    const ehWant =
+        typeof eventHorizonMode === 'string' &&
+        eventHorizonMode === 'nest' &&
+        typeof currentZoom === 'number' &&
+        currentZoom !== 1
+            ? 1
+            : 0;
+    currentEhWarpConform += (ehWant - currentEhWarpConform) * 0.12;
     if (typeof window !== 'undefined') {
         window.currentFlattenAmount = currentFlattenAmount;
+        window.currentEhWarpConform = currentEhWarpConform;
     }
     if (typeof flattenableGroup !== 'undefined' && flattenableGroup && typeof focusPoint !== 'undefined' && focusPoint) {
         applyFlattenToGroup(flattenableGroup, currentFlattenAmount, true);
@@ -11479,6 +11506,7 @@ function animate(time, frame) {
     if (typeof focusPoint !== 'undefined' && focusPoint) {
         updateListHorizonContextArcFlatten(focusPoint.y, getActiveTimelineFlattenAmount());
         updateDayFrameLteSkyFlatten(focusPoint.y, getActiveTimelineFlattenAmount());
+        refreshLiveEventHorizonWarp();
         if (typeof syncContextSphereLteSlopeRing === 'function') {
             try {
                 syncContextSphereLteSlopeRing();

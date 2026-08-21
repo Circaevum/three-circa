@@ -619,7 +619,7 @@ const TimeMarkers = (function() {
     }
 
     /**
-     * LTE day-frame markers ↔ Event Horizon Interstellar warp (accretion ring outside).
+     * LTE day-frame markers: Event Horizon line→circle warp (same azimuth, Y to equator).
      * Stores logical verts so camera in/out can restore helix spokes.
      */
     function applyLteDayFrameWarpToGeometry(geom) {
@@ -747,7 +747,6 @@ const TimeMarkers = (function() {
         }
     }
 
-    /** Re-apply Event Horizon warp to all tagged LTE day-frame time markers. */
     function applyLteDayFrameEventHorizonWarp() {
         if (!timeMarkers || !timeMarkers.length) return;
         for (let i = 0; i < timeMarkers.length; i++) {
@@ -922,9 +921,9 @@ const TimeMarkers = (function() {
                     Math.cos(angle) * endRadius, height, Math.sin(angle) * endRadius
                 ];
             // Day spokes densify along day-pitch so EH warp can unwrap midnight→evening
-            // around Earth (2-point lines both map near midnight → pile on anti-sun side).
+            // into a full circadian circle (2-point lines stay a diameter / half-bow).
             if (unitType === 'day') {
-                const nSeg = 24;
+                const nSeg = 128;
                 const dense = [];
                 const ang =
                     typeof angle === 'number' && isFinite(angle)
@@ -1546,15 +1545,15 @@ const TimeMarkers = (function() {
                 
                 // Use SceneGeometry for consistent curve generation
                 const curvePoints = SceneGeometry ?
-                    SceneGeometry.createEarthHelicalCurve(rotatedStartHeight, rotatedEndHeight, outerRadius, timeState.currentDateHeight, 64) :
+                    SceneGeometry.createEarthHelicalCurve(rotatedStartHeight, rotatedEndHeight, outerRadius, timeState.currentDateHeight, 128) :
                     (() => {
                         // Fallback if SceneGeometry not available
                         // Add Math.PI to rotate 180 degrees (midnight instead of noon)
                         const angle = getAngle(weekStartHeight, timeState.currentDateHeight) + Math.PI;
                         const orbitsInSpan = (weekHeightActual / 100) / earth.orbitalPeriod;
                         const points = [];
-                        for (let i = 0; i <= 64; i++) {
-                            const t = i / 64;
+                        for (let i = 0; i <= 128; i++) {
+                            const t = i / 128;
                             const a = angle - (t * orbitsInSpan * Math.PI * 2);
                             const h = weekStartHeight + (t * weekHeightActual);
                             points.push(Math.cos(a) * outerRadius, h, Math.sin(a) * outerRadius);
