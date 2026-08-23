@@ -9,10 +9,26 @@
  */
 
 const MoonMechanics = (function () {
+    function resolveOffsetFromEarth(m) {
+        if (typeof m.offsetFromEarth === 'number' && isFinite(m.offsetFromEarth) && m.offsetFromEarth > 0) {
+            return m.offsetFromEarth;
+        }
+        const earth = getEarth();
+        const W = earth && typeof earth.distance === 'number' && isFinite(earth.distance) ? earth.distance : 50;
+        if (
+            typeof TimeMarkers !== 'undefined' &&
+            typeof TimeMarkers.getMoonOrbitRadiusFromEarth === 'function'
+        ) {
+            const auto = TimeMarkers.getMoonOrbitRadiusFromEarth(W);
+            if (typeof auto === 'number' && isFinite(auto) && auto > 0) return auto;
+        }
+        return 10.75;
+    }
+
     function cfg() {
         const m = typeof SCENE_CONFIG !== 'undefined' && SCENE_CONFIG.moonMechanics ? SCENE_CONFIG.moonMechanics : {};
         return {
-            offsetFromEarth: typeof m.offsetFromEarth === 'number' ? m.offsetFromEarth : 10.75,
+            offsetFromEarth: resolveOffsetFromEarth(m),
             sphereRadiusEarthFraction: typeof m.sphereRadiusEarthFraction === 'number' ? m.sphereRadiusEarthFraction : 0.28,
             sphereRadiusMin: typeof m.sphereRadiusMin === 'number' ? m.sphereRadiusMin : 1.02,
             dashOpacity: typeof m.dashOpacity === 'number' ? m.dashOpacity : 0.55,

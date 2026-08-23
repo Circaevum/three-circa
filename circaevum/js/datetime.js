@@ -138,8 +138,26 @@ function calculateActualCurrentDateHeight() {
         nowActual.getFullYear(),
         nowActual.getMonth(),
         nowActual.getDate(),
-        nowActual.getHours()
+        nowActual.getHours() + nowActual.getMinutes() / 60 + nowActual.getSeconds() / 3600
     );
+}
+
+/**
+ * Orbital phase zero: scene height of wall-clock now.
+ * `startAngle` is computed from now, so getAngle(h, ref) must use this height at every zoom.
+ * Selected time is Y + Earth XZ only — never this phase anchor.
+ */
+function getOrbitPhaseReferenceHeight() {
+    if (typeof calculateActualCurrentDateHeight === 'function') {
+        const h = calculateActualCurrentDateHeight();
+        if (h != null && !isNaN(h)) return h;
+    }
+    return typeof calculateCurrentDateHeight === 'function' ? calculateCurrentDateHeight() : 0;
+}
+
+if (typeof window !== 'undefined') {
+    window.getOrbitPhaseReferenceHeight = getOrbitPhaseReferenceHeight;
+    window.calculateActualCurrentDateHeight = calculateActualCurrentDateHeight;
 }
 
 

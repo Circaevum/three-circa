@@ -22,8 +22,9 @@
  *   - EventRenderer from js/renderers/event-renderer.js (for event visualization)
  *
  * Core scene geometry shared with the main app includes Earth–Moon mechanics (global MoonMechanics
- * from core/moon-mechanics.js, configured via SCENE_CONFIG.moonMechanics). Mission-specific paths
- * are optional separate scripts under circaevum/js/missions/.
+ * from core/moon-mechanics.js, configured via SCENE_CONFIG.moonMechanics).
+ * Mission overlays (e.g. Artemis II) live under circaevum/js/missions/ for a future space expansion;
+ * they are not loaded by the current viewer.
  *
  * Core overlay: optional Moon worldline (same geometry as main Worldlines.createMoonWorldline), on by
  * default (`showMoonWorldline`). Depends on worldline-renderer.js + globals used by Worldlines.init.

@@ -602,7 +602,6 @@ const EarthGlobe = (function () {
     }
 
     const OBSERVER_GREEN = 0x4dff6a;
-    const SELECTED_TIME_HAND_CYAN = 0x22d3ee;
     const CURRENT_TIME_HAND_RED = 0xff4d4d;
 
     function addObserverMeridianLatitudeCross(earthGroup, obs, radius, sceneContentGroup) {
@@ -1521,8 +1520,12 @@ const EarthGlobe = (function () {
         }
 
         updateOrientation(earthGroup, selectedDate);
-        // Cyan hand: same orbital hour-dial clock as red (browser-local on `selectedDate`), not observer-lon solar.
-        addMeridianHand(selectedDate, SELECTED_TIME_HAND_CYAN, 13, null);
+        // Selected-time hand: same orbital hour-dial clock as red (browser-local on `selectedDate`).
+        const selectedHandColor =
+            typeof getSelectedTimeColor === 'function'
+                ? getSelectedTimeColor()
+                : 0xffffff;
+        addMeridianHand(selectedDate, selectedHandColor, 13, null);
         if (!tourMinimalOrbitMode && currentDate) {
             const nowDate =
                 currentDate instanceof Date && !isNaN(currentDate.getTime())

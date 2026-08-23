@@ -457,6 +457,11 @@
       refWorldline: ref.refWorldline,
       segments: ref.segments
     };
+    if (ref.kind) userData.timelineHelixRef.kind = ref.kind;
+    if (ref.radius != null && isFinite(ref.radius)) userData.timelineHelixRef.radius = ref.radius;
+    if (ref.logicalHeight != null && isFinite(ref.logicalHeight)) {
+      userData.timelineHelixRef.logicalHeight = ref.logicalHeight;
+    }
   }
 
   function storeDayFrameHelixRef(userData, ref) {
@@ -546,6 +551,10 @@
   function applyFlattenedHelixToRoot(root, focusY, amount) {
     if (!root || !root.userData || !root.userData.timelineHelixRef) return;
     const ref = root.userData.timelineHelixRef;
+    if (ref.kind === 'superYearCylinder') {
+      applyFlattenedSuperYearCylinderToRoot(root, focusY, amount);
+      return;
+    }
     const pair = buildHelixPair(
       ref.startHeight,
       ref.endHeight,
@@ -626,6 +635,46 @@
     }
     updateEventRibbonLabelsForFlatten(root, innerFlat, outerFlat, amount);
     updateEventRibbonBandEndConnectors(root, innerFlat, outerFlat);
+  }
+
+  /**
+   * Super-year life columns: squash Y toward flatten focus the same way helical ribbons do.
+   * Cylinder mesh scales about its midpoint; top/bottom rings and labels follow flattened heights.
+   */
+  function applyFlattenedSuperYearCylinderToRoot(root, focusY, amount) {
+    if (!root || !root.userData || !root.userData.timelineHelixRef) return;
+    const ref = root.userData.timelineHelixRef;
+    const radius = ref.radius != null && isFinite(ref.radius) ? ref.radius : (ref.rOuter + ref.rInner) * 0.5;
+    if (!(radius > 0)) return;
+    const y0 = flattenTimelineLogicalY(ref.startHeight, focusY, amount);
+    const y1 = flattenTimelineLogicalY(ref.endHeight, focusY, amount);
+    const staggerY =
+      root.userData.eventStaggerRoot && typeof root.userData.staggerLogical === 'number'
+        ? getTimelineHelixStaggerOffsetY(root.userData.staggerLogical, amount)
+        : 0;
+    const mid = (y0 + y1) * 0.5 + staggerY;
+    const h = Math.abs(y1 - y0);
+    const logicalH = ref.logicalHeight > 1e-6
+      ? ref.logicalHeight
+      : Math.abs(ref.endHeight - ref.startHeight);
+    const yScale = logicalH > 1e-6 ? h / logicalH : 1;
+    root.position.y = 0;
+    root.traverse((child) => {
+      if (child.isMesh && child.userData && child.userData.superYearCylinder) {
+        child.position.y = mid;
+        child.scale.y = yScale;
+      } else if (child.userData && child.userData.type === 'SuperYearCylinderRing') {
+        const yRing = (child.userData.ring === 'end' ? y1 : y0) + staggerY;
+        const pos = child.geometry && child.geometry.attributes && child.geometry.attributes.position;
+        if (pos && pos.array) {
+          const arr = pos.array;
+          for (let i = 1; i < arr.length; i += 3) arr[i] = yRing;
+          pos.needsUpdate = true;
+        }
+      }
+    });
+    const pair = buildVerticalCylinderLabelFlats(y0 + staggerY, y1 + staggerY, radius, 8);
+    updateEventRibbonLabelsForFlatten(root, pair.innerFlat, pair.outerFlat, amount);
   }
 
   function getEventSpanDatesFromRoot(root) {
@@ -1444,7 +1493,7 @@
 
   /**
    * Each zoom’s “focused” spans are one step **smaller** than the view unit (sub outer / super inner).
-   * Moment (0) / Clock (9): sub-day [0, 1). Century (1): (decade, century]. Decade (2): (year, decade].
+   * Moment (0) / Clock (9): sub-day [0, 1). Century (1): (decade, century]. Decade (2): all super-year (d > 1 y).
    * Year (3): (quarter, year). Quarter (4): (month, quarter]. Month (5) / Lunar (6): (week, month].
    * Week (7): (day, synodic month] — window is prev full moon → next full moon. Day (8): (0, 1d].
    * Keep in sync with `yang/web/index.html` list filter.
@@ -1454,7 +1503,7 @@
     const d = typeof durationDays === 'number' && !isNaN(durationDays) ? durationDays : 0;
     if (z <= 0 || z >= 9) return d >= 0 && d < 1;
     if (z === 1) return d > CONTEXT_DECADE_DAYS && d <= CONTEXT_CENTURY_DAYS;
-    if (z === 2) return d > CONTEXT_YEAR_DAYS && d <= CONTEXT_DECADE_DAYS;
+    if (z === 2) return d > CONTEXT_YEAR_DAYS;
     if (z === 3) return d > CONTEXT_QUARTER_DAYS && d < CONTEXT_YEAR_DAYS;
     if (z === 4) return d > CONTEXT_MONTH_DAYS && d <= CONTEXT_QUARTER_DAYS;
     if (z === 5 || z === 6) return d > 7 && d <= CONTEXT_MONTH_DAYS;
@@ -1815,6 +1864,10 @@
   /** Hard-cull: STE outside week horizon; LTE outside zoom parent nest. */
   function shouldHideOutsideParentUnitWindow(start, end) {
     if (!start || isNaN(start.getTime())) return true;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    if (getZoomLevelForEvents() === 2 && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) {
+      return false;
+    }
     return !eventTouchesSelectedParentWindow(start, end);
   }
 
@@ -1824,63 +1877,42 @@
   }
 
   /**
-   * Reference scene height for orbit angle + circadian hand tips (same as orange helix refresh in main).
-   * Using wall-clock "now" here desynced sub-day events from the selected-day frame.
-   */
-  function getEventOrbitReferenceHeight() {
-    if (typeof calculateDateHeight !== 'function') {
-      return typeof calculateCurrentDateHeight === 'function' ? calculateCurrentDateHeight() : 0;
-    }
-    const fn = getSelectedDateTimeFn();
-    if (fn) {
-      const d = fn();
-      if (d && !isNaN(d.getTime())) {
-        const hourFrac =
-          d.getHours() +
-          d.getMinutes() / 60 +
-          d.getSeconds() / 3600 +
-          d.getMilliseconds() / 3600000;
-        const h = calculateDateHeight(d.getFullYear(), d.getMonth(), d.getDate(), hourFrac);
-        if (h != null && !isNaN(h)) return h;
-      }
-    }
-    return typeof calculateCurrentDateHeight === 'function' ? calculateCurrentDateHeight() : 0;
-  }
-
-  /**
-   * Orbital phase anchor for multi-day ribbons / helices — must match
-   * {@link computeSceneDateHeights} / createPlanets so calendar events sit on the same Earth helix as the scene.
+   * Orbital phase zero = wall-clock now height (`startAngle` epoch).
+   * Selected date is Y + Earth XZ only. Using selected height here parks
+   * local events at now's longitude — opposite the Sun from Selected Earth
+   * after navigating years, then zooming in.
    */
   function getWorldlineOrbitReferenceHeight() {
+    if (typeof global.getOrbitPhaseReferenceHeight === 'function') {
+      try {
+        const h = global.getOrbitPhaseReferenceHeight();
+        if (h != null && !isNaN(h)) return h;
+      } catch (e) { /* fall through */ }
+    }
     const zl = getZoomLevelForEvents();
-    /** Same `currentDateHeight` as createPlanets / planet XZ so long ribbons match the Earth helix at every zoom. */
     if (typeof global.computeSceneDateHeights === 'function') {
       try {
         const pack = global.computeSceneDateHeights(zl);
         if (pack && typeof pack.currentDateHeight === 'number' && !isNaN(pack.currentDateHeight)) {
           return pack.currentDateHeight;
         }
-      } catch (e) {
-        /* fall through */
-      }
+      } catch (e) { /* fall through */ }
     }
     if (typeof SceneGeometry !== 'undefined' && typeof SceneGeometry.getCurrentDateHeight === 'function') {
       try {
         const h = SceneGeometry.getCurrentDateHeight(zl);
         if (h != null && !isNaN(h)) return h;
-      } catch (e) {
-        /* fall through */
-      }
+      } catch (e) { /* fall through */ }
     }
     if (typeof calculateActualCurrentDateHeight === 'function') {
       const h = calculateActualCurrentDateHeight();
       if (h != null && !isNaN(h)) return h;
     }
-    if (typeof calculateCurrentDateHeight === 'function') {
-      const h = calculateCurrentDateHeight();
-      if (h != null && !isNaN(h)) return h;
-    }
-    return getEventOrbitReferenceHeight();
+    return typeof calculateCurrentDateHeight === 'function' ? calculateCurrentDateHeight() : 0;
+  }
+
+  function getEventOrbitReferenceHeight() {
+    return getWorldlineOrbitReferenceHeight();
   }
 
   function isDateOnSelectedCalendarDay(d) {
@@ -1906,15 +1938,53 @@
     return r;
   }
 
+  function isZoom5AndHigher(zl) {
+    const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : getZoomLevelForEvents();
+    return z === 5 || z === 6 || z === 7 || z === 8 || z === 9 || z === 0;
+  }
+
+  function getCircadianWorldPointAtDate(atDate) {
+    if (!atDate || typeof global.CircadianRenderer === 'undefined' || !global.CircadianRenderer.blendedDiskPointAtDate) return null;
+    const currentHeight = getEventOrbitReferenceHeight();
+    const hl = typeof global.CircadianRenderer.getHandLength === 'function'
+      ? global.CircadianRenderer.getHandLength()
+      : 12;
+    return global.CircadianRenderer.blendedDiskPointAtDate(
+      atDate,
+      hl,
+      currentHeight,
+      calculateDateHeight,
+      getCircadianStraightenBlendForEvents()
+    );
+  }
+
+  function getAnnualDayFrameWorldPointAtDate(atDate) {
+    if (!atDate) return null;
+    const earthDist = (typeof PLANET_DATA !== 'undefined' && PLANET_DATA.find(p => p.name === 'Earth'))
+      ? PLANET_DATA.find(p => p.name === 'Earth').distance
+      : 50;
+    const refHeight = getWorldlineOrbitReferenceHeight();
+    const eventTz = getEventTimeZoneId(null);
+    const viewerTz = getUserTimeZoneId();
+    if (typeof computeDayFrameAnchor === 'function') {
+      return computeDayFrameAnchor(atDate, eventTz, viewerTz, earthDist, refHeight, 0, true);
+    }
+    return null;
+  }
+
   /**
-   * Line from sub-day event dot toward circadian hour-hand tip — only Day/Clock zoom, circadian on, selected day.
+   * Translucent ray of light connecting Annual Day event position to Circadian day event position for Zooms 5 and higher.
+   * Appears as a subtle, translucent ray in the event's category color.
    */
   function addCircadianConnectorIfApplicable(parent, ax, ay, az, atDate, colorHex) {
     const zl = getZoomLevelForEvents();
-    if (!isCircadianHelixZoom(zl) || !parent) return;
+    const isZoom5Plus = isZoom5AndHigher(zl);
+    if (!isZoom5Plus && !isCircadianHelixZoom(zl)) return;
+    if (!parent) return;
     const circ = normalizedCircadianState();
     if (circ === 'off') return;
-    if (!isDateOnSelectedCalendarDay(atDate)) return;
+    if (!isZoom5Plus && !isDateOnSelectedCalendarDay(atDate)) return;
+
     if (typeof global.CircadianRenderer === 'undefined' || !global.CircadianRenderer.blendedDiskPointAtDate) return;
     const currentHeight = getEventOrbitReferenceHeight();
     const hl = typeof global.CircadianRenderer.getHandLength === 'function'
@@ -1928,22 +1998,33 @@
       getCircadianStraightenBlendForEvents()
     );
     if (!tip) return;
+
+    const dx = tip.x - ax;
+    const dy = tip.y - ay;
+    const dz = tip.z - az;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist < 0.1) return;
+
     const geo = new global.THREE.BufferGeometry();
     geo.setAttribute('position', new global.THREE.Float32BufferAttribute([
       ax, ay, az,
       tip.x, tip.y, tip.z
     ], 3));
     const connMul = getDailyCircadianEventOpacityMul(atDate, atDate);
+    const rayOpacity = Math.max(0.06, Math.min(0.28, (isZoom5Plus ? 0.20 : 0.45) * connMul));
     const mat = new global.THREE.LineBasicMaterial({
       color: colorHex,
       transparent: true,
-      opacity: Math.min(0.65, 0.5 * connMul)
+      opacity: rayOpacity,
+      depthWrite: false,
+      blending: global.THREE.AdditiveBlending
     });
     const line = new global.THREE.Line(geo, mat);
     line.renderOrder = 3;
     line.userData = { type: 'EventCircadianConnector' };
     line.raycast = function () {};
     parent.add(line);
+    return line;
   }
 
   /**
@@ -2161,6 +2242,21 @@
    */
   function getContextArcToCircadianBlend(when, earthDist) {
     void earthDist;
+    if (typeof global.isEventHorizonWarpEnabled === 'function') {
+      try {
+        if (!global.isEventHorizonWarpEnabled()) return 0;
+      } catch (e) {
+        return 0;
+      }
+    } else if (typeof global.getEventHorizonMode === 'function') {
+      try {
+        if (global.getEventHorizonMode() !== 'nest') return 0;
+      } catch (e) {
+        return 0;
+      }
+    } else {
+      return 0;
+    }
     if (!when || isNaN(when.getTime())) return 0;
     let sel = null;
     if (typeof global.getSelectedDateTime === 'function') {
@@ -2210,11 +2306,17 @@
     if (typeof global.isEventHorizonWarpEnabled === 'function') {
       try {
         if (!global.isEventHorizonWarpEnabled()) return 0;
-      } catch (e) { /* keep on */ }
+      } catch (e) {
+        return 0;
+      }
     } else if (typeof global.getEventHorizonMode === 'function') {
       try {
         if (global.getEventHorizonMode() !== 'nest') return 0;
-      } catch (e) { /* keep on */ }
+      } catch (e) {
+        return 0;
+      }
+    } else {
+      return 0;
     }
     if (!when || isNaN(when.getTime())) return 0;
     const selFn = getSelectedDateTimeFn();
@@ -2272,6 +2374,9 @@
     if (!dayPos) return dayPos;
     const W = typeof global.ContextSphereWarp !== 'undefined' ? global.ContextSphereWarp : null;
     if (!W) return dayPos;
+    if (typeof W.isWarpModeEnabled === 'function' && !W.isWarpModeEnabled()) {
+      return { x: dayPos.x, y: dayPos.y, z: dayPos.z, _arcCircadianBlend: 0 };
+    }
     const state =
       typeof global.getContextSphereState === 'function' ? global.getContextSphereState() : null;
     const inside = W.getCameraInsideCached();
@@ -2519,6 +2624,18 @@
     }
     dual.add(circadianRoot);
     dual.add(annualRoot);
+
+    const zl = getZoomLevelForEvents();
+    if (isZoom5AndHigher(zl) && start) {
+      const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+      const midDate = new Date((start.getTime() + evEnd.getTime()) / 2);
+      const colorHex = (userData && (userData.fillColor || userData.color || userData.colorHex)) || 0x00b4d8;
+      const annPt = getAnnualDayFrameWorldPointAtDate(midDate);
+      if (annPt) {
+        addCircadianConnectorIfApplicable(dual, annPt.x, annPt.y, annPt.z, midDate, colorHex);
+      }
+    }
+
     markShortEventPointerPickability(dual, start, end);
     return dual;
   }
@@ -3512,12 +3629,182 @@
     return { innerFlat, outerFlat };
   }
 
+  /** Spans longer than one tropical year (school, jobs, other life chapters). */
+  function isSuperYearDurationDays(durationDays) {
+    return typeof durationDays === 'number' && !isNaN(durationDays) && durationDays > CONTEXT_YEAR_DAYS;
+  }
+
+  /**
+   * Sleeve just outside Earth helix so the worldline sits inside the column.
+   * Longer / overlapping chapters step slightly outward to avoid z-fight.
+   */
+  function getSuperYearCylinderRadius(earthDist, rank01, overlapLane) {
+    const W = earthDist > 0 ? earthDist : EARTH_RADIUS;
+    const u = rank01 != null && isFinite(rank01) ? Math.max(0, Math.min(1, rank01)) : 0;
+    const lane = typeof overlapLane === 'number' && overlapLane > 0 ? overlapLane : 0;
+    return W * (1.04 + 0.055 * u + 0.028 * lane);
+  }
+
+  /** Thin vertical strip on the +X seam — label sprites / flatten reuse ribbon helpers. */
+  function buildVerticalCylinderLabelFlats(startHeight, endHeight, radius, segments) {
+    const n = Math.max(2, segments || 8);
+    const r = radius > 0 ? radius : EARTH_RADIUS;
+    const band = Math.max(r * 0.01, 0.35);
+    const rIn = r - band;
+    const rOut = r + band;
+    const innerFlat = new Float32Array(n * 3);
+    const outerFlat = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const t = n > 1 ? i / (n - 1) : 0;
+      const y = startHeight + (endHeight - startHeight) * t;
+      const ii = i * 3;
+      innerFlat[ii] = rIn;
+      innerFlat[ii + 1] = y;
+      innerFlat[ii + 2] = 0;
+      outerFlat[ii] = rOut;
+      outerFlat[ii + 1] = y;
+      outerFlat[ii + 2] = 0;
+    }
+    return { innerFlat, outerFlat };
+  }
+
+  function createSuperYearCylinderRing(y, radius, colorHex, opacity, renderOrder, ringKind) {
+    const THREE = global.THREE;
+    const segs = 48;
+    const pts = [];
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      pts.push(Math.cos(a) * radius, y, Math.sin(a) * radius);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    const line = new THREE.Line(
+      geo,
+      new THREE.LineBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: opacity,
+        depthWrite: false
+      })
+    );
+    line.renderOrder = renderOrder;
+    line.userData = { type: 'SuperYearCylinderRing', ring: ringKind };
+    return line;
+  }
+
+  /**
+   * Open Y-axis cylinder from startHeight→endHeight (time = height).
+   * Glass sleeve around Earth helix for Grade School / jobs / other super-year spans.
+   */
+  function createSuperYearCylinderRoot(opts) {
+    if (!opts || !isSuperYearDurationDays(opts.durationDays)) return null;
+    const THREE = global.THREE;
+    if (!THREE || typeof THREE.CylinderGeometry !== 'function') return null;
+    const startHeight = opts.startHeight;
+    const endHeight = opts.endHeight;
+    const h = Math.abs(endHeight - startHeight);
+    if (!(h > 1e-4)) return null;
+    const layerConfig = opts.layerConfig || {};
+    const rank01 = layerConfig._durationRank01 != null
+      ? layerConfig._durationRank01
+      : (opts.rank01 != null ? opts.rank01 : null);
+    const overlapLane = layerConfig._overlapLane != null
+      ? layerConfig._overlapLane
+      : (opts.overlapLane || 0);
+    const radius = getSuperYearCylinderRadius(opts.earthDist, rank01, overlapLane);
+    const fillOp = Math.min(0.38, Math.max(0.08, (opts.fillOpacity != null ? opts.fillOpacity : 0.28) * 0.52));
+    const geom = new THREE.CylinderGeometry(radius, radius, h, 48, 1, true);
+    const mat = new THREE.MeshBasicMaterial({
+      color: opts.fillHex != null ? opts.fillHex : 0x00b4d8,
+      transparent: true,
+      opacity: fillOp,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(0, (startHeight + endHeight) * 0.5, 0);
+    mesh.renderOrder = opts.roFill != null ? opts.roFill : -4;
+    mesh.userData = {
+      longTermFill: true,
+      superYearCylinder: true
+    };
+
+    const band = Math.max(radius * 0.01, 0.35);
+    const rInner = radius - band;
+    const rOuter = radius + band;
+    const userData = opts.userData || {};
+    userData.superYearCylinder = true;
+    storeTimelineHelixRef(userData, {
+      kind: 'superYearCylinder',
+      startHeight,
+      endHeight,
+      rInner,
+      rOuter,
+      radius,
+      logicalHeight: h,
+      refWorldline: opts.refWorldline,
+      segments: 8
+    });
+
+    const group = new THREE.Group();
+    group.userData = userData;
+    group.add(mesh);
+    // Rings match sleeve fill — skip provenance outline (native #9333ea reads as purple rims).
+    const ringHex = opts.fillHex != null ? opts.fillHex : opts.eventHex;
+    if (opts.borderStyle !== 'none' && ringHex != null) {
+      const ringOp = opts.outlineOp != null ? opts.outlineOp : 0.7;
+      const roLine = opts.roLine != null ? opts.roLine : -2;
+      group.add(createSuperYearCylinderRing(
+        startHeight, radius, ringHex, ringOp, roLine, 'start'));
+      group.add(createSuperYearCylinderRing(
+        endHeight, radius, ringHex, ringOp, roLine, 'end'));
+    }
+
+    const { innerFlat, outerFlat } = buildVerticalCylinderLabelFlats(startHeight, endHeight, radius, 8);
+    const wrapped = wrapWorldlineWithLabels(
+      group,
+      userData,
+      opts.labelEvent || opts.event,
+      opts.start,
+      opts.end,
+      startHeight,
+      endHeight,
+      rInner,
+      rOuter,
+      opts.eventHex,
+      opts.refWorldline,
+      0,
+      innerFlat,
+      outerFlat,
+      opts.midTitleAlong01
+    );
+    return attachEventStaggerRoot(wrapped, getEventBandVerticalStagger(opts.durationDays));
+  }
+
   /**
    * Apply current Event Horizon warp onto an unwarped day-frame ribbon (in place).
    * Re-run each frame so lines conform as selected day / zoom pose moves.
    */
   function applyDayFrameEhWarpToFlats(innerFlat, outerFlat, startMs, endMs, earthDist, currentHeight) {
     if (!innerFlat || !outerFlat || innerFlat.length < 6 || outerFlat.length < 6) return;
+    let warpOn = false;
+    if (typeof global.isEventHorizonWarpEnabled === 'function') {
+      try {
+        warpOn = !!global.isEventHorizonWarpEnabled();
+      } catch (e) {
+        warpOn = false;
+      }
+    } else if (typeof global.getEventHorizonMode === 'function') {
+      try {
+        warpOn = global.getEventHorizonMode() === 'nest';
+      } catch (e2) {
+        warpOn = false;
+      }
+    }
+    if (!warpOn) return;
     const n = Math.floor(innerFlat.length / 3) - 1;
     if (n < 0) return;
     const spanMs = Math.max((endMs || 0) - (startMs || 0), 1);
@@ -4200,6 +4487,10 @@
   /** Temporal peripheral fade (8/9+) or Moment hour focus (0). */
   function applyEventDisplayColor(hex, anchorMs, start, end, durationDays) {
     const zl = getZoomLevelForEvents();
+    const days = typeof durationDays === 'number' && !isNaN(durationDays)
+      ? durationDays
+      : durationDaysBetween(start, end);
+    if (zl === 2 && isSuperYearDurationDays(days)) return hex;
     if (zl === 0) {
       if (isCircadianShortEventsShiftPreview()) return hex;
       return applyMomentZoomFocusColor(hex, start, end);
@@ -5416,6 +5707,13 @@
   }
 
   function getTemporalContextFactors(anchorMs, spanStart, spanEnd) {
+    if (
+      spanStart &&
+      getZoomLevelForEvents() === 2 &&
+      isSuperYearDurationDays(durationDaysBetween(spanStart, spanEnd))
+    ) {
+      return { vt: 1, vp: 1, v: 1 };
+    }
     const vt = getTemporalVividness01(anchorMs);
     const vp = spanStart && !isNaN(spanStart.getTime())
       ? getPeripheralVividness01(spanStart, spanEnd)
@@ -5512,8 +5810,9 @@
     const selFn = getSelectedDateTimeFn();
     if (!selFn) return 1;
     if (!spanStart || isNaN(spanStart.getTime())) return 1;
-    const ref = selFn();
     const spanEndEff = spanEnd && spanEnd > spanStart ? spanEnd : new Date(spanStart.getTime() + MS_PER_DAY);
+    if (zl === 2 && isSuperYearDurationDays(durationDaysBetween(spanStart, spanEndEff))) return 1;
+    const ref = selFn();
     const textOk = areEventTextLabelsVisibleAtCurrentZoom(spanStart, spanEndEff) ||
       areEventNameLabelsVisibleAtCurrentZoom(spanStart, spanEndEff);
     const TEXT_OUTSIDE_LIST = 0.36;
@@ -6523,6 +6822,30 @@
     markWorldSpaceIfNeeded(userData, start, end);
     storeTimelineHelixRef(userData, helixRef);
 
+    if (isSuperYearDurationDays(durationDays)) {
+      return createSuperYearCylinderRoot({
+        durationDays,
+        start,
+        end,
+        startHeight,
+        endHeight,
+        earthDist,
+        layerConfig,
+        event,
+        userData,
+        eventHex,
+        fillHex,
+        fillOpacity,
+        outlineColorHex,
+        outlineOp,
+        borderStyle,
+        roFill,
+        roLine,
+        midTitleAlong01,
+        refWorldline
+      });
+    }
+
     function lineFromFlat(flat, hex, op, renderOrder, lineWidth, arcEdge) {
       const lw = lineWidth != null ? lineWidth : 1;
       const geometry = new global.THREE.BufferGeometry();
@@ -7249,6 +7572,52 @@
       const outlineOpEvt = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
       const fillFade = getLongTermContextFillFadeScales(anchorMs, start, end, durationDays);
 
+      if (isSuperYearDurationDays(durationDays)) {
+        const lineUserDataCyl = {
+          layerId: layerConfig.id,
+          type: 'EventLine',
+          start,
+          end,
+          label: line.label || null,
+          index: i,
+          useWorldSpaceGroup: true,
+          immuneToFlatten: true,
+          contextSphereClipped: !!contextSphereClipped
+        };
+        markWorldSpaceIfNeeded(lineUserDataCyl, start, end);
+        const cylRoot = createSuperYearCylinderRoot({
+          durationDays,
+          start,
+          end,
+          startHeight,
+          endHeight,
+          earthDist,
+          layerConfig: outlineLayerCfg,
+          rank01: lineDurationRanks.has(i) ? lineDurationRanks.get(i) : null,
+          event: line,
+          userData: lineUserDataCyl,
+          labelEvent: {
+            summary: (line.label && String(line.label).trim()) || null,
+            title: (line.label && String(line.label).trim()) || null
+          },
+          eventHex: eventColorHex,
+          fillHex,
+          fillOpacity,
+          outlineColorHex: outlineColorHexEvt,
+          outlineOp: outlineOpEvt,
+          borderStyle,
+          roFill,
+          roLine,
+          midTitleAlong01: titleAlongByLineIdx.get(i) ?? 0.5,
+          refWorldline
+        });
+        if (cylRoot) {
+          addToFlattenOrWorld(cylRoot);
+          objects.push(cylRoot);
+          continue;
+        }
+      }
+
       const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, refWorldline, 32);
       const staggerLogical = getEventBandVerticalStagger(durationDays);
       const hasRibbon = innerFlat.length >= 6 && innerFlat.length === outerFlat.length;
@@ -7891,6 +8260,7 @@
     const end = getEventEnd(event);
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    if (zl === 2 && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) return true;
     if (!eventTouchesSelectedParentWindow(start, evEnd)) return false;
 
     if (!isEarthDailySkyEventZoom(zl)) return true;
@@ -7911,15 +8281,27 @@
   function selectEventsForDensityBudget(standardEvents, zl) {
     const budget = getEventDensityBudget(zl);
     const list = standardEvents || [];
-    // Window-before-budget at every zoom: parent-unit window (+ daily-sky sub-filters).
-    const inScope = list.filter((e) => isEventOnScreenForDensityBudget(e, zl));
+    const alwaysShow = [];
+    const rest = [];
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      const start = getEventStart(e);
+      const end = getEventEnd(e);
+      const evEnd = end && end > start ? end : (start ? new Date(start.getTime() + 3600000) : null);
+      if (zl === 2 && start && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) {
+        alwaysShow.push(e);
+      } else {
+        rest.push(e);
+      }
+    }
+    const inScope = rest.filter((e) => isEventOnScreenForDensityBudget(e, zl));
     if (inScope.length <= budget) {
-      return { rendered: inScope, overflowCount: 0 };
+      return { rendered: alwaysShow.concat(inScope), overflowCount: 0 };
     }
     const scored = inScope.map((e, i) => ({ e, i, score: scoreEventPriority(e) }));
     scored.sort((a, b) => b.score - a.score);
     return {
-      rendered: scored.slice(0, budget).map((x) => x.e),
+      rendered: alwaysShow.concat(scored.slice(0, budget).map((x) => x.e)),
       overflowCount: inScope.length - budget
     };
   }

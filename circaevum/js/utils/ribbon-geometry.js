@@ -1,6 +1,6 @@
 /**
  * Shared ribbon strip geometry — inner/outer edge flats → triangulated BufferGeometry.
- * Used by event ribbons, planet worldline strokes, Artemis overlays.
+ * Used by event ribbons, planet worldline strokes.
  *
  * Cost note: a ribbon Mesh (2 verts per sample) is cheaper than TubeGeometry outlines
  * (Frenet frames × radial segments). Prefer ribbon fill + Line edges when possible.

@@ -19,8 +19,15 @@
   let earthDistance = 50;
   let handLength = 12;
 
-  /** Same as TimeMarkers RADII_CONFIG.hour.spiral(earthDistance) – Earth Ring / hour markers radius */
+  /** Hour-hand / Earth-ring radius — same as TimeMarkers hour spiral. */
   function getEarthRingRadius() {
+    if (
+      typeof TimeMarkers !== 'undefined' &&
+      typeof TimeMarkers.getCircadianRadiusFromEarth === 'function'
+    ) {
+      const r = TimeMarkers.getCircadianRadiusFromEarth(earthDistance);
+      if (typeof r === 'number' && isFinite(r) && r > 0) return r;
+    }
     return earthDistance * 0.1 * 0.9;
   }
 

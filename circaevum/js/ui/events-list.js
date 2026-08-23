@@ -349,7 +349,7 @@
     var Y = 365.25;
     if (z <= 0 || z >= 9) return days >= 0 && days < 1;
     if (z === 1) return days > 10 * Y && days <= 100 * Y;
-    if (z === 2) return days > Y && days <= 10 * Y;
+    if (z === 2) return days > Y;
     if (z === 3) return days > 92 && days < Y;
     if (z === 4) return days > 31 && days <= 92;
     if (z === 5 || z === 6) return days > 7 && days <= 31;

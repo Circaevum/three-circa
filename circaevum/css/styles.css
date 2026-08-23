@@ -3616,6 +3616,14 @@ h1 {
     font-weight: 700;
 }
 
+#selected-time {
+    color: #ffffff;
+}
+
+body.light-mode #selected-time {
+    color: #000000;
+}
+
 /* ============================================
    LOADING SCREEN
    ============================================ */

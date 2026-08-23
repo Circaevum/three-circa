@@ -28,6 +28,29 @@ const TimeMarkers = (function() {
 
     const MS_PER_DAY = 86400000;
 
+    function flattenOrbitSpanZoom() {
+        if (typeof window !== 'undefined' && typeof window.getCurrentZoomLevel === 'function') {
+            try {
+                const z = window.getCurrentZoomLevel();
+                if (typeof z === 'number' && !isNaN(z)) return z;
+            } catch (e) { /* keep */ }
+        }
+        return 3;
+    }
+
+    function flattenOrbitSpanMul() {
+        if (typeof window !== 'undefined' && typeof window.isFlattenTimeStraightenActive === 'function') {
+            try {
+                if (window.isFlattenTimeStraightenActive()) {
+                    const z = Math.floor(flattenOrbitSpanZoom());
+                    if (z === 7 || z === 8) return 1;
+                    return 10;
+                }
+            } catch (e) { /* off */ }
+        }
+        return 1;
+    }
+
     function init(dependencies) {
         scene = dependencies.scene;
         timeMarkers = dependencies.timeMarkers;
@@ -81,19 +104,11 @@ const TimeMarkers = (function() {
         const actualMonth = now.getMonth();
         const actualDay = now.getDate();
         
-        let currentDateHeight = calculateCurrentDateHeight();
-        // Decade / Year / Quarter: same "now" height as planets & worldlines (not Jan 1 of navigated year)
-        if (zoomLevel === 2 || zoomLevel === 3 || zoomLevel === 4) {
-            let yearProgress;
-            if (typeof calculateYearProgressForDate === 'function') {
-                yearProgress = calculateYearProgressForDate(actualYear, actualMonth, actualDay, 0);
-            } else {
-                const daysInMonth = getDaysInMonth ? getDaysInMonth(actualYear, actualMonth) : 30;
-                yearProgress = (actualMonth + (actualDay - 1) / daysInMonth) / 12;
-            }
-            const cs = typeof CENTURY_START === 'number' ? CENTURY_START : 2000;
-            currentDateHeight = ((actualYear - cs) * 100) + (yearProgress * 100);
-        }
+        let currentDateHeight = typeof getOrbitPhaseReferenceHeight === 'function'
+            ? getOrbitPhaseReferenceHeight()
+            : (typeof calculateActualCurrentDateHeight === 'function'
+                ? calculateActualCurrentDateHeight()
+                : calculateCurrentDateHeight());
 
         let selectedYear, selectedMonth, selectedQuarter, selectedDateHeight;
         let selectedDayForReturn = 1;
@@ -205,9 +220,9 @@ const TimeMarkers = (function() {
         return earth.startAngle - (orbits * Math.PI * 2);
     }
 
-    /** Selected-time marker lines in light mode: clearly navy vs. old bright #0066CC (pairs with label rgba in main.js). */
+    /** Selected-time marker lines: black in light mode, white in dark (pairs with getSelectedTimeColor). */
     function getSelectedMarkerLineColor() {
-        return isLightMode ? 0x062d52 : 0x00FFFF;
+        return isLightMode ? 0x000000 : 0xffffff;
     }
 
     function getColor(isCurrent, isSelected, hasOffset) {
@@ -373,9 +388,16 @@ const TimeMarkers = (function() {
             }
         },
         hour: {
-            spiral: (dist) => dist * 0.1 * 0.9  // 0.9x size for daily spiral and hours
+            /** Hour dial / circadian rim from Earth (independent of day-marker hoop). */
+            spiral: (dist) => dist * 0.1 * 0.9
         }
     };
+
+    /** Singular day-band half-width (grain thickness), not Earth–day-outer gap. */
+    const DAY_MARKER_ORBIT_HALF_FRAC = 0.1 * 0.9;
+    const CIRCADIAN_RIM_MUL = 1.08;
+    const MOON_PAST_CIRCADIAN_MUL = 1.16;
+    const MOON_OFFSET_FLOOR = 10.75;
 
     function isSingularBandModeActive() {
         return typeof window !== 'undefined' &&
@@ -396,32 +418,81 @@ const TimeMarkers = (function() {
     }
 
     /**
-     * Circadian hour-hand length from Earth (noon tip ↔ midnight tip = 2× this along Sun–Earth).
-     * Same as RADII_CONFIG.hour.spiral / CircadianRenderer hand.
+     * Day-marker L1–L2 half-span from Earth. Independent of circadian / moon radii
+     * so those systems can sit fully outside the day band.
      */
-    function getCircadianNoonMidnightHalfSpan(earthDistance) {
+    function getDayMarkerOrbitHalfSpan(earthDistance) {
         const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        return W * DAY_MARKER_ORBIT_HALF_FRAC;
+    }
+
+    /** @deprecated Day-frame half only — not circadian hand. */
+    function getCircadianNoonMidnightHalfSpan(earthDistance) {
+        return getDayMarkerOrbitHalfSpan(earthDistance);
+    }
+
+    /**
+     * Circadian hand length from Earth (noon↔midnight half along Sun–Earth).
+     * Kept smaller than the Earth–Moon schematic so both sit outside the day hoop.
+     */
+    function getCircadianRadiusFromEarth(earthDistance) {
+        const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        return W * DAY_MARKER_ORBIT_HALF_FRAC;
+    }
+
+    function getMoonSphereMin() {
         if (
-            typeof CircadianRenderer !== 'undefined' &&
-            typeof CircadianRenderer.getHandLength === 'function'
+            typeof SCENE_CONFIG !== 'undefined' &&
+            SCENE_CONFIG.moonMechanics &&
+            typeof SCENE_CONFIG.moonMechanics.sphereRadiusMin === 'number'
         ) {
-            const h = CircadianRenderer.getHandLength();
-            if (typeof h === 'number' && isFinite(h) && h > 0) return h;
+            return SCENE_CONFIG.moonMechanics.sphereRadiusMin;
         }
-        return RADII_CONFIG.hour.spiral(W);
+        return 1.02;
+    }
+
+    /**
+     * Moon orbit radius from Earth: outside circadian rim, never smaller than the old schematic floor.
+     */
+    function getMoonOrbitRadiusFromEarth(earthDistance) {
+        const circ = getCircadianRadiusFromEarth(earthDistance);
+        const stacked = circ * CIRCADIAN_RIM_MUL * MOON_PAST_CIRCADIAN_MUL + getMoonSphereMin();
+        return Math.max(MOON_OFFSET_FLOOR, stacked);
+    }
+
+    /**
+     * Sunward clearance from Earth so circadian rim + moon sphere stay at r > day.outer.
+     */
+    function getEarthMoonSunwardClearance(earthDistance) {
+        const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        const circRim = getCircadianRadiusFromEarth(W) * CIRCADIAN_RIM_MUL;
+        const moonReach = getMoonOrbitRadiusFromEarth(W) + getMoonSphereMin() * 1.15;
+        return Math.max(circRim, moonReach) + W * 0.02;
+    }
+
+    /**
+     * Distance from Earth to the outer edge of the active day time-marker region.
+     */
+    function getDayFrameOuterOffsetFromEarth(earthDistance) {
+        const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
+        if (isSingularBandModeActive()) {
+            const day = getEarthOrbitL1L2DayFrameRadii(W);
+            return Math.abs(W - day.outer);
+        }
+        return Math.abs(RADII_CONFIG.day.outer(W) - W);
     }
 
     /**
      * Day-marker / Context Arc sky frame (singular):
-     * Radial span = circadian noon↔midnight difference (2 × hour-hand length).
-     * Centered on Earth orbit W — pedagogical L1 (midnight, sunward) → L2 (end of day, anti-sunward).
-     * Not CRTBP γ·W (too thin to match the daily disk).
+     * Band sits entirely sunward of Earth. Outer edge < Earth and < moon's sunward reach
+     * so Earth + Moon (and circadian rim) have larger heliocentric radius than day.outer.
+     * Width = 2 × getDayMarkerOrbitHalfSpan. Not CRTBP γ·W.
      */
     function getEarthOrbitL1L2DayFrameRadii(earthDistance) {
         const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
-        const half = getCircadianNoonMidnightHalfSpan(W);
-        const inner = W - half;
-        const outer = W + half;
+        const half = getDayMarkerOrbitHalfSpan(W);
+        const outer = Math.max(W * 0.2, W - getEarthMoonSunwardClearance(W));
+        const inner = Math.max(W * 0.08, outer - 2 * half);
         const span = Math.max(outer - inner, W * 0.004);
         return {
             inner,
@@ -437,9 +508,8 @@ const TimeMarkers = (function() {
     }
 
     /**
-     * Thin residual Δr stack centered on Earth orbit W (demo).
-     * Day band = circadian noon↔midnight radial span (2×hand), midnight at inner / end at outer.
-     * Coarser grains step sunward of day inner.
+     * Thin residual Δr stack sunward of Earth (demo).
+     * Day band ends inside Earth+Moon; coarser grains step sunward of day inner.
      */
     function getSingularRadialZones(earthDistance) {
         const W = typeof earthDistance === 'number' && !isNaN(earthDistance) ? earthDistance : 50;
@@ -628,13 +698,14 @@ const TimeMarkers = (function() {
         if (!logical || !logical.length) return;
         const pos = geom.attributes.position.array;
         const W = typeof window !== 'undefined' ? window.ContextSphereWarp : null;
+        const warpOn = W && typeof W.isWarpModeEnabled === 'function' ? !!W.isWarpModeEnabled() : false;
         const stateFn =
             typeof window !== 'undefined' && typeof window.getContextSphereState === 'function'
                 ? window.getContextSphereState
                 : null;
         const state = stateFn ? stateFn() : null;
         const inside = W && W.getCameraInsideCached && W.getCameraInsideCached();
-        if (!W || !W.warpLtePointToRing || inside || !state || !(state.radius > 0)) {
+        if (!warpOn || !W || !W.warpLtePointToRing || inside || !state || !(state.radius > 0)) {
             pos.set(logical);
             geom.attributes.position.needsUpdate = true;
             return;
@@ -683,13 +754,14 @@ const TimeMarkers = (function() {
         if (!sprite || !sprite.userData || !sprite.userData.lteDayFrameLogicalPos) return;
         const logical = sprite.userData.lteDayFrameLogicalPos;
         const W = typeof window !== 'undefined' ? window.ContextSphereWarp : null;
+        const warpOn = W && typeof W.isWarpModeEnabled === 'function' ? !!W.isWarpModeEnabled() : false;
         const stateFn =
             typeof window !== 'undefined' && typeof window.getContextSphereState === 'function'
                 ? window.getContextSphereState
                 : null;
         const state = stateFn ? stateFn() : null;
         const inside = W && W.getCameraInsideCached && W.getCameraInsideCached();
-        if (!W || !W.warpLtePointToRing || inside || !state || !(state.radius > 0)) {
+        if (!warpOn || !W || !W.warpLtePointToRing || inside || !state || !(state.radius > 0)) {
             sprite.position.set(logical.x, logical.y, logical.z);
             return;
         }
@@ -1660,9 +1732,50 @@ const TimeMarkers = (function() {
     // ============================================
     // LINEAR/VERTICAL MARKERS FOR ZOOM 1 & 2
     // ============================================
+
+    function resolveNavigatedSelectedYear(timeState) {
+        if (typeof currentYear === 'number' && !isNaN(currentYear)) return currentYear;
+        if (typeof window !== 'undefined' && typeof window.getSelectedDateTime === 'function') {
+            const sd = window.getSelectedDateTime();
+            if (sd instanceof Date && !isNaN(sd.getTime())) return sd.getFullYear();
+        }
+        if (timeState && typeof timeState.selectedYear === 'number') return timeState.selectedYear;
+        return new Date().getFullYear();
+    }
+
+    function addLinearYearTick(year, yearHeight, lineLength, lineRadius, labelZoom, selectedYear, clockYear, sizeMul) {
+        const isCurrent = year === clockYear;
+        const isSelected = year === selectedYear && year !== clockYear;
+        const color = isCurrent ? 0xFF0000 : (isSelected ? getSelectedMarkerLineColor() : getMarkerColor());
+        const lineGeometry = new THREE.BufferGeometry();
+        const linePoints = [
+            0, yearHeight - lineLength / 2, 0,
+            0, yearHeight + lineLength / 2, 0
+        ];
+        lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePoints, 3));
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: year === selectedYear ? 0.85 : 0.55,
+            linewidth: 2
+        });
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        line.renderOrder = 4;
+        scene.add(line);
+        timeMarkers.push(line);
+        createTextLabel(
+            year.toString(),
+            yearHeight,
+            lineRadius,
+            labelZoom,
+            0,
+            isCurrent ? 'red' : (isSelected ? 'blue' : false),
+            year === selectedYear,
+            sizeMul != null ? sizeMul : 1
+        );
+    }
     
     function createCenturyMarkers(timeState) {
-        const config = TIME_MARKERS[1];
         const markerConfig = ZOOM_LEVELS[1];
         const lineLength = markerConfig.height; // Full height span
         const lineRadius = -100; // Distance from center (Sun) for vertical lines - negative for left side
@@ -1670,130 +1783,159 @@ const TimeMarkers = (function() {
         // Debug: log what years we're creating
         
         // Create all markers with same size - use only major array
-        config.major.forEach(year => {
-            const yearHeight = getHeightForYear(year, 1);
-            const isCurrent = year === timeState.currentDate.getFullYear();
-            const isSelected = year === timeState.selectedYear;
-            if (year >= 2020 && year <= 2040) {
-            }
-            const color = isCurrent ? 0xFF0000 : (isSelected ? getSelectedMarkerLineColor() : getMarkerColor());
-            
-            // Create vertical line from Sun position - all same size
-            const lineGeometry = new THREE.BufferGeometry();
-            const linePoints = [
-                0, yearHeight - lineLength/2, 0,  // Start point
-                0, yearHeight + lineLength/2, 0   // End point
-            ];
-            lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePoints, 3));
-            
-            const lineMaterial = new THREE.LineBasicMaterial({
-                color: color,
-                transparent: true,
-                opacity: 0.6
-            });
-            const line = new THREE.Line(lineGeometry, lineMaterial);
-            line.renderOrder = 4;
-            scene.add(line);
-            timeMarkers.push(line);
-            
-            // Create text label - all same size
-            createTextLabel(year.toString(), yearHeight, lineRadius, 1, 0, isCurrent ? 'red' : (isSelected ? 'blue' : false), false);
+        const mul = flattenOrbitSpanMul();
+        const yNav = typeof currentYear === 'number' ? currentYear : 2050;
+        const centuryStart = Math.floor(yNav / 100) * 100;
+        const span = 100 * mul;
+        const mid = mul > 1 ? yNav : (centuryStart + 50);
+        const y0 = Math.round(mid - span / 2);
+        const y1 = Math.round(mid + span / 2);
+        const years = [];
+        for (let y = y0; y <= y1; y += 10) years.push(y);
+        const clockYear = timeState.currentDate.getFullYear();
+        const selectedYear = resolveNavigatedSelectedYear(timeState);
+        years.forEach((year) => {
+            addLinearYearTick(
+                year,
+                getHeightForYear(year, 1),
+                lineLength,
+                lineRadius,
+                1,
+                selectedYear,
+                clockYear,
+                1
+            );
         });
+        if (years.indexOf(selectedYear) < 0) {
+            addLinearYearTick(
+                selectedYear,
+                getHeightForYear(selectedYear, 1),
+                lineLength,
+                lineRadius,
+                1,
+                selectedYear,
+                clockYear,
+                1
+            );
+        }
     }
     
     function createDecadeMarkers(timeState) {
-        const config = TIME_MARKERS[2];
         const markerConfig = ZOOM_LEVELS[2];
         const lineLength = markerConfig.height; // Full height span
         const lineRadius = -80; // Distance from center (Sun) for vertical lines - negative for left side
         
-        // Create all markers with same size (2020-2030)
-        config.major.forEach(year => {
-            const yearHeight = getHeightForYear(year, 1);
-            const now = new Date();
-            const isCurrent = year === now.getFullYear();
-            const isSelected = year === timeState.selectedYear;
-            if (year >= 2020 && year <= 2030) {
-            }
-            const color = isCurrent ? 0xFF0000 : (isSelected ? getSelectedMarkerLineColor() : getMarkerColor());
-            
-            // Create vertical line from Sun position - all same size
-            const lineGeometry = new THREE.BufferGeometry();
-            const linePoints = [
-                0, yearHeight - lineLength/2, 0,
-                0, yearHeight + lineLength/2, 0
-            ];
-            lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePoints, 3));
-            
-            const lineMaterial = new THREE.LineBasicMaterial({
-                color: color,
-                transparent: true,
-                opacity: 0.6
-            });
-            const line = new THREE.Line(lineGeometry, lineMaterial);
-            line.renderOrder = 4;
-            scene.add(line);
-            timeMarkers.push(line);
-            
-            // Create text label - all same size
-            createTextLabel(year.toString(), yearHeight, lineRadius, 2, 0, isCurrent ? 'red' : (isSelected ? 'blue' : false), false);
+        const mul = flattenOrbitSpanMul();
+        const yNav = typeof currentYear === 'number' ? currentYear : new Date().getFullYear();
+        const decadeStart = typeof window !== 'undefined' && typeof window.getDecadeStartYear === 'function'
+            ? window.getDecadeStartYear(yNav)
+            : Math.floor(yNav / 10) * 10;
+        const span = 10 * mul;
+        const years = [];
+        let y0;
+        let y1;
+        if (mul <= 1) {
+            y0 = decadeStart;
+            y1 = decadeStart + 10;
+        } else {
+            const mid = yNav;
+            y0 = Math.round(mid - span / 2);
+            y1 = Math.round(mid + span / 2);
+        }
+        if (typeof window !== 'undefined' && typeof window.clampYearSpanToBirth === 'function') {
+            const c = window.clampYearSpanToBirth(y0, y1);
+            y0 = c.y0;
+            y1 = c.y1;
+        }
+        for (let yr = y0; yr <= y1; yr++) years.push(yr);
+        const clockYear = new Date().getFullYear();
+        const selectedYear = resolveNavigatedSelectedYear(timeState);
+        years.forEach((year) => {
+            addLinearYearTick(
+                year,
+                getHeightForYear(year, 1),
+                lineLength,
+                lineRadius,
+                2,
+                selectedYear,
+                clockYear,
+                1
+            );
         });
+        if (years.indexOf(selectedYear) < 0) {
+            addLinearYearTick(
+                selectedYear,
+                getHeightForYear(selectedYear, 1),
+                lineLength,
+                lineRadius,
+                2,
+                selectedYear,
+                clockYear,
+                1
+            );
+        }
     }
     
     function createYearMarker(timeState, zoomLevel, tourMarkerStaged, tourProgressiveMs) {
-        // Create a year marker - size varies by zoom level
         const markerConfig = ZOOM_LEVELS[zoomLevel || 3];
-        const baseLineLength = markerConfig.height; // Full height span
-        // Zoom 1 uses half size
-        const lineLength = (zoomLevel === 1) ? baseLineLength / 2 : baseLineLength;
-        const lineRadius = -100; // Distance from center (Sun) for vertical line - increased from 120
-        
+        const hpy = typeof HEIGHT_PER_YEAR === 'number' && HEIGHT_PER_YEAR > 0 ? HEIGHT_PER_YEAR : 100;
+        const mul = flattenOrbitSpanMul();
+        const baseLineLength = markerConfig.height;
+        const lineLength = mul > 1
+            ? Math.min(baseLineLength, hpy * 0.45)
+            : ((zoomLevel === 1) ? baseLineLength / 2 : baseLineLength);
+        const lineRadius = -100;
+
         const selectedYear = timeState.selectedYear;
         const now = new Date();
-        const currentYear = now.getFullYear();
-        const isCurrent = selectedYear === currentYear;
-        const isSelected = selectedYear !== currentYear;
-        
-        const yearHeight = getHeightForYear(selectedYear, 1);
-        const color = isCurrent ? 0xFF0000 : (isSelected ? getSelectedMarkerLineColor() : getMarkerColor());
-        
-        // Create vertical line from Sun position
-        const lineGeometry = new THREE.BufferGeometry();
-        const linePoints = [
-            0, yearHeight - lineLength/2, 0,
-            0, yearHeight + lineLength/2, 0
-        ];
-        lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePoints, 3));
-        
-        const lineMaterial = new THREE.LineBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.8, // Increased opacity for better visibility
-            linewidth: 2 // Thicker line
-        });
-        const line = new THREE.Line(lineGeometry, lineMaterial);
-        line.renderOrder = 4;
-        if (tourMarkerStaged && zoomLevel >= 3 && tourProgressiveMs == null) {
-            line.userData.circaevumTourRevealTier = 3;
-        }
-        scene.add(line);
-        timeMarkers.push(line);
-        
-        // Zoom 1 uses half text size (sizeMultiplier 1.0 instead of 2.0)
+        const clockYear = now.getFullYear();
+        const spanYears = Math.max(1, Math.round((markerConfig.timeYears || 1) * mul));
+        const startYear = selectedYear - Math.floor((spanYears - 1) / 2);
+
         const textSizeMultiplier = (zoomLevel === 1) ? 1.0 : 2.0;
         const textZoom = zoomLevel || 3;
         const yTier = tourMarkerStaged && zoomLevel >= 3 && tourProgressiveMs == null ? 3 : undefined;
-        createTextLabel(
-            selectedYear.toString(),
-            yearHeight,
-            lineRadius,
-            textZoom,
-            0,
-            isCurrent ? 'red' : (isSelected ? 'blue' : false),
-            true,
-            textSizeMultiplier,
-            yTier
-        );
+
+        for (let i = 0; i < spanYears; i++) {
+            const year = startYear + i;
+            const isCurrent = year === clockYear;
+            const isSelected = year === selectedYear && year !== clockYear;
+            const yearHeight = getHeightForYear(year, 1);
+            const color = isCurrent ? 0xFF0000 : (isSelected ? getSelectedMarkerLineColor() : getMarkerColor());
+
+            const lineGeometry = new THREE.BufferGeometry();
+            const linePoints = [
+                0, yearHeight - lineLength / 2, 0,
+                0, yearHeight + lineLength / 2, 0
+            ];
+            lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePoints, 3));
+
+            const lineMaterial = new THREE.LineBasicMaterial({
+                color: color,
+                transparent: true,
+                opacity: year === selectedYear ? 0.8 : 0.55,
+                linewidth: 2
+            });
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            line.renderOrder = 4;
+            if (tourMarkerStaged && zoomLevel >= 3 && tourProgressiveMs == null) {
+                line.userData.circaevumTourRevealTier = 3;
+            }
+            scene.add(line);
+            timeMarkers.push(line);
+
+            createTextLabel(
+                year.toString(),
+                yearHeight,
+                lineRadius,
+                textZoom,
+                0,
+                isCurrent ? 'red' : (isSelected ? 'blue' : false),
+                year === selectedYear,
+                textSizeMultiplier,
+                yTier
+            );
+        }
     }
 
     // ============================================
@@ -2333,7 +2475,7 @@ const TimeMarkers = (function() {
             rOuter = zones.day.outer;
         }
         const rMax = z >= 8 ? W * 0.998 : W * 0.92;
-        const dayHalf = singular ? getCircadianNoonMidnightHalfSpan(W) : 0;
+        const dayHalf = singular ? getDayMarkerOrbitHalfSpan(W) : 0;
         const rMaxEff = singular ? Math.max(rMax, W + dayHalf * 1.02) : rMax;
         const minGap = singular ? Math.max(dayHalf * 0.5, W * 0.02) : W * 0.02;
         rOuter = Math.max(W * 0.08, Math.min(rOuter, rMaxEff));
@@ -2359,6 +2501,9 @@ const TimeMarkers = (function() {
         getCanonicalRadialZones,
         getSingularRadialZones,
         getEarthOrbitL1L2DayFrameRadii,
+        getDayFrameOuterOffsetFromEarth,
+        getCircadianRadiusFromEarth,
+        getMoonOrbitRadiusFromEarth,
         getSystemRadii,
         applyLteDayFrameEventHorizonWarp
     };

@@ -17,17 +17,17 @@
       try {
         return !!global.isEventHorizonWarpEnabled();
       } catch (e) {
-        return true;
+        return false;
       }
     }
     if (typeof global.getEventHorizonMode === 'function') {
       try {
         return global.getEventHorizonMode() === 'nest';
       } catch (e) {
-        return true;
+        return false;
       }
     }
-    return true;
+    return false;
   }
 
   function getSphereState() {
@@ -365,6 +365,7 @@
     warpPositionArray,
     getSceneYSelectedWeekWarpAmount,
     getHorizonClearanceRadius,
-    clampOutsideHorizon
+    clampOutsideHorizon,
+    isWarpModeEnabled
   };
 })(typeof window !== 'undefined' ? window : globalThis);

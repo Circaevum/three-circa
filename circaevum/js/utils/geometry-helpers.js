@@ -257,29 +257,16 @@ const SceneGeometry = (function() {
      */
     function getCurrentDateHeight(zoomLevel) {
         let height;
-        
-        if (zoomLevel === 1 || zoomLevel === 2 || zoomLevel === 3 || zoomLevel === 4) {
-            // Century/decade/year/quarter: orbital phase anchor is wall-clock now (not navigated currentYear)
-            if (typeof calculateActualCurrentDateHeight === 'function') {
-                height = calculateActualCurrentDateHeight();
-            } else if (typeof calculateCurrentDateHeight === 'function') {
-                height = calculateCurrentDateHeight();
-            } else {
-                console.error('SceneGeometry.getCurrentDateHeight: No date calculation function available for Zoom', zoomLevel);
-                const now = new Date();
-                height = getHeightForYear(now.getFullYear(), 1);
-            }
-        } else if (zoomLevel >= 5 || zoomLevel === 0) {
-            // Landing (0) uses the same “present” height anchor as day/clock zooms so Earth,
-            // orbit, and helical worldlines share one orbital phase (matches createPlanets).
-            if (typeof calculateCurrentDateHeight === 'function') {
-                height = calculateCurrentDateHeight();
-            } else {
-                console.error('SceneGeometry.getCurrentDateHeight: calculateCurrentDateHeight not available');
-                height = getHeightForYear(currentYear, 1);
-            }
+        if (typeof getOrbitPhaseReferenceHeight === 'function') {
+            height = getOrbitPhaseReferenceHeight();
+        } else if (typeof calculateActualCurrentDateHeight === 'function') {
+            height = calculateActualCurrentDateHeight();
+        } else if (typeof calculateCurrentDateHeight === 'function') {
+            height = calculateCurrentDateHeight();
         } else {
-            height = getHeightForYear(currentYear, 1);
+            console.error('SceneGeometry.getCurrentDateHeight: No date calculation function available for Zoom', zoomLevel);
+            const now = new Date();
+            height = getHeightForYear(now.getFullYear(), 1);
         }
         
         // Validate result

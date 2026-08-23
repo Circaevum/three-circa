@@ -1,9 +1,7 @@
 /**
- * Artemis II — mission-only overlay (separate from core Moon mechanics).
- *
- * Uses MoonMechanics for Earth/Moon XZ at each mission time so the trajectory aligns with the
- * lunar worldline ribbon and pedagogical Moon (synodic phase), not sidereal moonXZAtHeight.
- * Depends: MoonMechanics, THREE, PLANET_DATA, calculateDateHeight.
+ * Artemis II — mission overlay for a future space expansion.
+ * Not loaded by the current GL (index.html). Keep this file; do not wire into createPlanets
+ * until that expansion. Aligns with MoonMechanics (synodic), not sidereal moonXZAtHeight.
  */
 
 const ArtemisIIMission = (function () {

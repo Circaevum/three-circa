@@ -13,6 +13,12 @@
       }
       return;
     }
+    if (data.type === 'CIRCAEVUM_SET_BIRTHDAY') {
+      if (typeof window.applyUserBirthdayView === 'function') {
+        window.applyUserBirthdayView(data.date || data.monthDay);
+      }
+      return;
+    }
     if (data.type === 'CIRCAEVUM_SET_FLATTEN') {
       if (typeof window.applyFlattenFromEmbed === 'function') {
         window.applyFlattenFromEmbed(!!data.flatten, typeof data.intensity === 'number' ? data.intensity : undefined);

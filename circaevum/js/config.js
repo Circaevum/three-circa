@@ -177,7 +177,11 @@ const SCENE_CONFIG = {
      * Earth–Moon guide, lunar worldline (zoom 6), and mission overlays that blend Earth–Moon space.
      */
     moonMechanics: {
-        offsetFromEarth: 10.75,
+        /**
+         * Earth–Moon separation in scene units. `null` = auto: outside circadian rim
+         * (TimeMarkers.getMoonOrbitRadiusFromEarth). Set a number to pin a schematic radius.
+         */
+        offsetFromEarth: null,
         sphereRadiusEarthFraction: 0.28,
         sphereRadiusMin: 1.02,
         dashOpacity: 0.55,
