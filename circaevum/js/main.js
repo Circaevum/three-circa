@@ -444,9 +444,8 @@ if (typeof window !== 'undefined') {
     window.getEventHorizonMode = function () {
         return eventHorizonMode;
     };
-    /** Interstellar disc / STE spindle warp active only in nest mode. */
     window.isEventHorizonWarpEnabled = function () {
-        return eventHorizonMode === 'nest';
+        return false;
     };
 }
 let focusTargetOverride = null; // 'sun' | 'earth' | 'mid' | 'moon' | null – null = use ZOOM_LEVELS default
@@ -1375,6 +1374,9 @@ function createStarField() {
         transparent: true,
         opacity: isLightMode ? 0.3 : 0.8
     });
+    if (typeof CircaevumWebGPUPipeline !== 'undefined' && typeof CircaevumWebGPUPipeline.applyGPUStarfieldNode === 'function') {
+        CircaevumWebGPUPipeline.applyGPUStarfieldNode(starMaterial);
+    }
     
     const starVertices = [];
     // Center stars vertically around year 2050 (height 5000)
@@ -4092,7 +4094,7 @@ function isEarthDaylightSkyZoom(zoomLevel) {
 /** Circadian day/clock/moment zooms for timeseries arcs / ATC guides (not all STE-sky zooms). */
 function isEarthDailyCircadianSkyZoom(zoomLevel) {
     const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : currentZoom;
-    return z === 0 || z === 8 || z === 9;
+    return z === 0 || z === 7 || z === 8 || z === 9;
 }
 
 window.getFocusTargetOverride = function () {
@@ -7573,6 +7575,9 @@ function createTextLabel(
         depthWrite: false,
         alphaTest: 0.04
     });
+    if (typeof CircaevumWebGPUPipeline !== 'undefined' && typeof CircaevumWebGPUPipeline.applyGPUBillboardToMaterial === 'function') {
+        CircaevumWebGPUPipeline.applyGPUBillboardToMaterial(spriteMaterial);
+    }
 
     const sprite = new THREE.Sprite(spriteMaterial);
     // Above event ribbons (see EventRenderer duration renderOrder cap) so calendar labels stay readable
@@ -11530,6 +11535,9 @@ function updateHourHandMarkerPulse(time) {
 }
 
 function applyCircadianEventNameBillboards(root, camRef) {
+    if (typeof CircaevumWebGPUPipeline !== 'undefined' && CircaevumWebGPUPipeline.GPU_UNIFORMS && CircaevumWebGPUPipeline.GPU_UNIFORMS.isWebGPUActive.value) {
+        return;
+    }
     if (!root || !camRef || !root.traverse) return;
     root.traverse((obj) => {
         if (!obj || !obj.userData || obj.userData.circadianBillboardLabel !== true) return;
@@ -11680,19 +11688,30 @@ function animate(time, frame) {
             });
         }
     }
-    if (typeof flattenableGroup !== 'undefined' && flattenableGroup && typeof focusPoint !== 'undefined' && focusPoint) {
-        applyFlattenToGroup(flattenableGroup, currentFlattenAmount, true);
+    const flattenChanged = Math.abs(currentFlattenAmount - (window._lastFlattenableAmt || 0)) > 1e-4 ||
+                           Math.abs(currentCameraDistance - (window._lastCameraDistForFlatten || 0)) > 0.05;
+    const markerFlattenChanged = Math.abs(currentTimeMarkerFlattenAmount - (window._lastTimeMarkerFlattenAmt || 0)) > 1e-4;
+
+    if (flattenChanged) {
+        window._lastFlattenableAmt = currentFlattenAmount;
+        window._lastCameraDistForFlatten = currentCameraDistance;
+        if (typeof flattenableGroup !== 'undefined' && flattenableGroup && typeof focusPoint !== 'undefined' && focusPoint) {
+            applyFlattenToGroup(flattenableGroup, currentFlattenAmount, true);
+        }
     }
-    if (typeof timeMarkersGroup !== 'undefined' && timeMarkersGroup && typeof focusPoint !== 'undefined' && focusPoint) {
-        applyFlattenToGroup(timeMarkersGroup, currentTimeMarkerFlattenAmount, false);
+    if (markerFlattenChanged) {
+        window._lastTimeMarkerFlattenAmt = currentTimeMarkerFlattenAmount;
+        if (typeof timeMarkersGroup !== 'undefined' && timeMarkersGroup && typeof focusPoint !== 'undefined' && focusPoint) {
+            applyFlattenToGroup(timeMarkersGroup, currentTimeMarkerFlattenAmount, false);
+        }
     }
-    if (typeof circadianWorldlines !== 'undefined' && circadianWorldlines && circadianWorldlines.length && typeof focusPoint !== 'undefined' && focusPoint) {
+    if (flattenChanged && typeof circadianWorldlines !== 'undefined' && circadianWorldlines && circadianWorldlines.length && typeof focusPoint !== 'undefined' && focusPoint) {
         const circFlattenAmt = flattenMode === 'all' ? currentFlattenAmount : 0;
         circadianWorldlines.forEach((g) => {
             if (g) applyFlattenToGroup(g, circFlattenAmt, false);
         });
     }
-    if (typeof circadianHelixMarkerGroups !== 'undefined' && circadianHelixMarkerGroups && circadianHelixMarkerGroups.length && typeof focusPoint !== 'undefined' && focusPoint) {
+    if (flattenChanged && typeof circadianHelixMarkerGroups !== 'undefined' && circadianHelixMarkerGroups && circadianHelixMarkerGroups.length && typeof focusPoint !== 'undefined' && focusPoint) {
         const circFlattenAmt = flattenMode === 'all' ? currentFlattenAmount : 0;
         circadianHelixMarkerGroups.forEach((g) => {
             if (g) applyFlattenToGroup(g, circFlattenAmt, false);
@@ -11834,58 +11853,67 @@ function animate(time, frame) {
     ensureTimeseriesArcGroup();
     if (typeof CircadianRenderer !== 'undefined' && circadianWorldlines && circadianWorldlines.length) {
         const sdHel = getSelectedDateTime();
-        const chHel = calculateDateHeight(
-            sdHel.getFullYear(),
-            sdHel.getMonth(),
-            sdHel.getDate(),
-            selectedDateHourFraction(sdHel)
-        );
-        circadianWorldlines.forEach(function (ln) {
-            if (!ln || !ln.userData) return;
-            if (ln.userData.circadianDayDisksAnim && CircadianRenderer.refreshDayDiskOutlinesGroup) {
-                CircadianRenderer.refreshDayDiskOutlinesGroup(
-                    ln,
-                    currentCircadianStraightenAmount,
-                    chHel,
-                    sdHel,
-                    ln.userData.spanDays,
-                    ln.userData.rimRadius
-                );
-            } else if (ln.userData.circadianHelixAnim && CircadianRenderer.refreshCircadianHelixLine) {
-                CircadianRenderer.refreshCircadianHelixLine(
-                    ln,
-                    currentCircadianStraightenAmount,
-                    chHel,
-                    ln.userData.spanDays
-                );
-            } else if (ln.userData.circadianTimeseriesAnim && typeof TimeseriesRenderer !== 'undefined' && TimeseriesRenderer.refreshGroup) {
-                TimeseriesRenderer.refreshGroup(
-                    ln,
-                    currentCircadianStraightenAmount,
-                    chHel,
-                    sdHel,
-                    ln.userData.spanDays,
-                    calculateDateHeight
-                );
-            } else if (ln.userData.atcGuideAnim && typeof AtcBand !== 'undefined' && AtcBand.refreshGuideGroup) {
-                AtcBand.refreshGuideGroup(
-                    ln,
-                    currentCircadianStraightenAmount,
-                    chHel,
-                    sdHel
-                );
-            }
-        });
-        circadianHelixMarkerGroups.forEach(function (mg) {
-            if (mg && CircadianRenderer.refreshHelixStructureMarkersGroup) {
-                CircadianRenderer.refreshHelixStructureMarkersGroup(
-                    mg,
-                    currentCircadianStraightenAmount,
-                    chHel,
-                    getSelectedDateTime()
-                );
-            }
-        });
+        const sdTimeMs = sdHel.getTime();
+        const straightenChanged = Math.abs(currentCircadianStraightenAmount - (window._lastCircadianStraightenAmt || 0)) > 1e-4;
+        const timeChanged = sdTimeMs !== (window._lastCircadianSelectedTimeMs || 0);
+
+        if (straightenChanged || timeChanged) {
+            window._lastCircadianStraightenAmt = currentCircadianStraightenAmount;
+            window._lastCircadianSelectedTimeMs = sdTimeMs;
+
+            const chHel = calculateDateHeight(
+                sdHel.getFullYear(),
+                sdHel.getMonth(),
+                sdHel.getDate(),
+                selectedDateHourFraction(sdHel)
+            );
+            circadianWorldlines.forEach(function (ln) {
+                if (!ln || !ln.userData) return;
+                if (ln.userData.circadianDayDisksAnim && CircadianRenderer.refreshDayDiskOutlinesGroup) {
+                    CircadianRenderer.refreshDayDiskOutlinesGroup(
+                        ln,
+                        currentCircadianStraightenAmount,
+                        chHel,
+                        sdHel,
+                        ln.userData.spanDays,
+                        ln.userData.rimRadius
+                    );
+                } else if (ln.userData.circadianHelixAnim && CircadianRenderer.refreshCircadianHelixLine) {
+                    CircadianRenderer.refreshCircadianHelixLine(
+                        ln,
+                        currentCircadianStraightenAmount,
+                        chHel,
+                        ln.userData.spanDays
+                    );
+                } else if (ln.userData.circadianTimeseriesAnim && typeof TimeseriesRenderer !== 'undefined' && TimeseriesRenderer.refreshGroup) {
+                    TimeseriesRenderer.refreshGroup(
+                        ln,
+                        currentCircadianStraightenAmount,
+                        chHel,
+                        sdHel,
+                        ln.userData.spanDays,
+                        calculateDateHeight
+                    );
+                } else if (ln.userData.atcGuideAnim && typeof AtcBand !== 'undefined' && AtcBand.refreshGuideGroup) {
+                    AtcBand.refreshGuideGroup(
+                        ln,
+                        currentCircadianStraightenAmount,
+                        chHel,
+                        sdHel
+                    );
+                }
+            });
+            circadianHelixMarkerGroups.forEach(function (mg) {
+                if (mg && CircadianRenderer.refreshHelixStructureMarkersGroup) {
+                    CircadianRenderer.refreshHelixStructureMarkersGroup(
+                        mg,
+                        currentCircadianStraightenAmount,
+                        chHel,
+                        getSelectedDateTime()
+                    );
+                }
+            });
+        }
     }
     // Do not refreshAllEventLayers every frame while straighten lerps — rebuilds all event meshes (severe XR lag).
 

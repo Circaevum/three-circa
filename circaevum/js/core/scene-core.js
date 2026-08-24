@@ -76,6 +76,9 @@ function createCircaevumRenderer(initW, initH) {
     rend.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     if (rend.xr) rend.xr.enabled = true;
     rend.userData = Object.assign(rend.userData || {}, { isWebGPU });
+    if (typeof window !== 'undefined' && window.CircaevumWebGPUPipeline && typeof window.CircaevumWebGPUPipeline.createGPUDepthPrepass === 'function') {
+        window.CircaevumWebGPUPipeline.createGPUDepthPrepass(rend);
+    }
     return rend;
 }
 

@@ -201,6 +201,9 @@
       depthWrite: false,
       depthTest: false
     });
+    if (typeof window !== 'undefined' && window.CircaevumWebGPUPipeline && typeof window.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial === 'function') {
+      window.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial(mat);
+    }
     const line = new THREE.Line(geo, mat);
     line.renderOrder = TS_RENDER_ORDER;
     line.raycast = function () {};
@@ -271,6 +274,9 @@
           depthWrite: false,
           depthTest: false
         });
+        if (typeof window !== 'undefined' && window.CircaevumWebGPUPipeline && typeof window.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial === 'function') {
+          window.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial(mat);
+        }
         const mesh = new THREE.Mesh(geo, mat);
         mesh.renderOrder = TS_RENDER_ORDER;
         mesh.raycast = function () {};

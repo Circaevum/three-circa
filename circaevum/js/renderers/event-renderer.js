@@ -598,7 +598,7 @@
     }
     root.position.y = 0;
     const outlineCtx = resolveRibbonOutlineCtx(root);
-    let fillMesh = null;
+    const fillMeshes = [];
     const tubesToReplace = [];
     root.traverse((child) => {
       if (child.userData && child.userData.type === 'EventRibbonArc') {
@@ -607,16 +607,15 @@
         } else {
           updateLineGeometryFromFlat(child, innerFlat);
         }
-      } else if (child.isMesh && child.userData && child.userData.longTermFill) {
-        fillMesh = child;
       } else if (
         child.isMesh &&
-        child.geometry &&
-        child.geometry.attributes &&
-        child.geometry.attributes.ribbonEdge &&
-        !fillMesh
+        (child.userData.longTermFill ||
+         child.userData.type === 'EventRibbonFill' ||
+         child.userData.type === 'EventPolygon3D' ||
+         child.userData.type === 'EventPickProxy' ||
+         (child.geometry && child.geometry.attributes && child.geometry.attributes.ribbonEdge))
       ) {
-        fillMesh = child;
+        fillMeshes.push(child);
       } else if (child.userData && child.userData.eventRibbonTube) {
         tubesToReplace.push(child);
       } else if (
@@ -638,7 +637,7 @@
         if (midFlat) updateLineGeometryFromFlat(child, midFlat);
       }
     });
-    if (fillMesh) updateRibbonFillMeshFromFlat(fillMesh, innerFlat, outerFlat);
+    fillMeshes.forEach((fm) => updateRibbonFillMeshFromFlat(fm, innerFlat, outerFlat));
     if (outlineCtx && tubesToReplace.length) {
       for (let ti = 0; ti < tubesToReplace.length; ti++) {
         const child = tubesToReplace[ti];
@@ -764,6 +763,12 @@
       const fr = sampleRibbonSurfaceFrame(innerFlat, outerFlat, idx, tAlong);
       if (!fr) return;
 
+      let labelY = fr.position.y;
+      if (flatAmount > 0.001) {
+        const focusY = typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
+        labelY = flattenTimelineLogicalY(labelY, focusY, flatAmount);
+      }
+
       if (ud.isRibbonSurfaceLabel && child.isMesh) {
         placeMeshOnRibbonFrame(child, fr, bump);
         if (ud.circadianShortRibbonLabel && typeof orientCircadianShortRibbonLabelMesh === 'function') {
@@ -773,7 +778,7 @@
           snapMeshPositionXZRadius(child, getMonthOuterInnerLabelRadiusXZ(earthDist));
         }
       } else if (child.isSprite) {
-        child.position.copy(fr.position);
+        child.position.set(fr.position.x, labelY, fr.position.z);
         if (bump && fr.normal) child.position.addScaledVector(fr.normal, bump);
         if (ud.kind === 'mid' || ud.labelIsName) {
           clampEventNameSpriteScaleToBand(child, fr.band, 0.88);
@@ -2958,11 +2963,13 @@
     if (!start || isNaN(start.getTime())) return;
     if (!end || !(end > start)) end = new Date(start.getTime() + 3600000);
     const durationH = durationHoursBetween(start, end);
-    if (durationH >= 24) return;
+    if (durationH > 7 * 24) return;
 
     const CR = typeof global.CircadianRenderer !== 'undefined' ? global.CircadianRenderer : null;
     const straightenBlend = getCircadianStraightenBlendForEvents();
     const midDate = new Date((start.getTime() + end.getTime()) / 2);
+    const amt = typeof global.currentFlattenAmount === 'number' ? global.currentFlattenAmount : 0;
+    const focusY = typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
 
     if (root.userData.circadianShortRibbon && CR && typeof CR.buildDiskRibbonBetween === 'function') {
       const earthDist = getEarthDistance();
@@ -2994,9 +3001,13 @@
         straightenBlend
       );
       if (ribbonPair && ribbonPair.innerFlat && ribbonPair.outerFlat) {
-        const innerFlat = ribbonPair.innerFlat;
-        const outerFlat = ribbonPair.outerFlat;
-        let fillMesh = null;
+        let innerFlat = ribbonPair.innerFlat;
+        let outerFlat = ribbonPair.outerFlat;
+        if (amt > 0.001) {
+          innerFlat = flattenTimelineFlatArray(innerFlat, focusY, amt);
+          outerFlat = flattenTimelineFlatArray(outerFlat, focusY, amt);
+        }
+        const fillMeshes = [];
         let connectorAnchor = null;
         root.traverse((child) => {
           if (child.userData && child.userData.type === 'EventCircadianConnector' && child.isLine) {
@@ -3012,8 +3023,15 @@
             if (!connectorAnchor && child.userData.arcEdge === 'inner') {
               connectorAnchor = { x: innerFlat[0], y: innerFlat[1], z: innerFlat[2] };
             }
-          } else if (child.isMesh && child.geometry && child.geometry.index && !fillMesh) {
-            fillMesh = child;
+          } else if (
+            child.isMesh &&
+            (child.userData.longTermFill ||
+             child.userData.type === 'EventRibbonFill' ||
+             child.userData.type === 'EventPolygon3D' ||
+             child.userData.type === 'EventPickProxy' ||
+             (child.geometry && child.geometry.index))
+          ) {
+            fillMeshes.push(child);
           }
         });
         if (!connectorAnchor) {
@@ -3031,7 +3049,8 @@
             );
           }
         });
-        if (fillMesh) updateRibbonFillMeshFromFlat(fillMesh, innerFlat, outerFlat);
+        fillMeshes.forEach((fm) => updateRibbonFillMeshFromFlat(fm, innerFlat, outerFlat));
+        updateEventRibbonLabelsForFlatten(root, innerFlat, outerFlat, amt);
       }
     } else {
       const dr = root.userData._diskRibbon;
@@ -3491,9 +3510,11 @@
     const useGradient = !forceUniformFill && longEventRibbonUsesRadialFillGradient(durationDays);
     const innerScale = contextFade && contextFade.innerScale != null ? contextFade.innerScale : 1;
     const outerScale = contextFade && contextFade.outerScale != null ? contextFade.outerScale : 1;
-    const mat = useGradient
-      ? createLongTermRibbonFillShaderMaterial(fillHex, fillOpacity, THREE, innerScale, outerScale)
-      : new THREE.MeshBasicMaterial({
+    let mat;
+    if (useGradient) {
+      mat = createLongTermRibbonFillShaderMaterial(fillHex, fillOpacity, THREE, innerScale, outerScale);
+    } else if (typeof global.createNodeCompatibleMaterial === 'function') {
+      mat = global.createNodeCompatibleMaterial(THREE, THREE.MeshBasicMaterial, {
         color: fillHex,
         transparent: true,
         opacity: fillOpacity * innerScale,
@@ -3503,6 +3524,21 @@
         polygonOffsetFactor: 2,
         polygonOffsetUnits: 1
       });
+    } else {
+      mat = new THREE.MeshBasicMaterial({
+        color: fillHex,
+        transparent: true,
+        opacity: fillOpacity * innerScale,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: 2,
+        polygonOffsetUnits: 1
+      });
+    }
+    if (typeof global.CircaevumWebGPUPipeline !== 'undefined' && typeof global.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial === 'function') {
+      global.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial(mat);
+    }
     const fillMesh = new global.THREE.Mesh(ribbonGeo, mat);
     if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
     fillMesh.renderOrder = roFill;
@@ -4227,7 +4263,14 @@
 
   function placeMeshOnRibbonFrame(mesh, frame, normalBump) {
     if (!mesh || !frame) return;
-    mesh.position.copy(frame.position);
+    let py = frame.position.y;
+    const amt = typeof global.currentFlattenAmount === 'number' ? global.currentFlattenAmount : 0;
+    if (amt > 0.001) {
+      const focusY = typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
+      py = flattenTimelineLogicalY(py, focusY, amt);
+    }
+    mesh.position.set(frame.position.x, py, frame.position.z);
+    mesh.userData.logicalY = frame.position.y;
     if (normalBump && frame.normal) mesh.position.addScaledVector(frame.normal, normalBump);
     mesh.quaternion.copy(frame.quaternion);
   }

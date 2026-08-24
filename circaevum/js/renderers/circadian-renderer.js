@@ -295,6 +295,9 @@
       opacity: st.markerOpacity != null ? st.markerOpacity : 0.88,
       depthWrite: false
     });
+    if (typeof window !== 'undefined' && window.CircaevumWebGPUPipeline && typeof window.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial === 'function') {
+      window.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial(mat);
+    }
     const lineSegments = new THREE.LineSegments(geom, mat);
     lineSegments.renderOrder = 6;
     const group = new THREE.Group();

@@ -190,6 +190,9 @@
       depthWrite: false,
       alphaTest: 0.05
     });
+    if (typeof global.CircaevumWebGPUPipeline !== 'undefined' && typeof global.CircaevumWebGPUPipeline.applyGPUBillboardToMaterial === 'function') {
+      global.CircaevumWebGPUPipeline.applyGPUBillboardToMaterial(mat);
+    }
     const sprite = new THREE.Sprite(mat);
     sprite.renderOrder = EVENT_LABEL_SPRITE_RENDER_ORDER;
     let finalY = y;
@@ -199,6 +202,8 @@
       finalY = typeof global.flattenTimelineLogicalY === 'function' ? global.flattenTimelineLogicalY(y, focusY, amt) : y;
     }
     sprite.position.set(x, finalY, z);
+    sprite.userData = sprite.userData || {};
+    sprite.userData.logicalY = y;
     const s = scale != null ? scale : 8;
     const sx = s * (width / minWidth);
     const sy = s * 0.3;

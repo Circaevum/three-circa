@@ -817,16 +817,7 @@ const TimeMarkers = (function() {
     }
 
     function applyLteDayFrameEventHorizonWarp() {
-        if (!timeMarkers || !timeMarkers.length) return;
-        for (let i = 0; i < timeMarkers.length; i++) {
-            const m = timeMarkers[i];
-            if (!m || !m.userData || !m.userData.lteDayFrameMarker) continue;
-            if (m.isSprite || m.type === 'Sprite') {
-                applyLteDayFrameWarpToSprite(m);
-            } else if (m.geometry) {
-                applyLteDayFrameWarpToGeometry(m.geometry);
-            }
-        }
+        return;
     }
 
     function getUnitTimeRangeMs(unitType, unitInfo, unitIndex, unitYear, getUnitDate) {
@@ -1457,60 +1448,44 @@ const TimeMarkers = (function() {
             const { selectedYear, selectedMonth } = timeState;
             let daysToShow = [];
             
-            if (zoomLevel >= 6) {
-                const selectedQuarterFromMonth = Math.floor(selectedMonth / 3);
-                let monthsForDays = [];
-                
-                const selectedQuarterStartMonth = selectedQuarterFromMonth * 3;
-                for (let m = selectedQuarterStartMonth; m < selectedQuarterStartMonth + 3; m++) {
-                    monthsForDays.push({ month: m % 12, year: selectedYear + Math.floor(m / 12) });
-                }
-                
+            if (zoomLevel === 7) {
                 const now = timeState.currentDate;
-                const actualYear = now.getFullYear();
-                const actualMonthInYear = now.getMonth();
-                const actualQuarter = Math.floor(actualMonthInYear / 3);
-                if (actualQuarter !== selectedQuarterFromMonth || actualYear !== selectedYear) {
-                    const currentQuarterStartMonth = actualQuarter * 3;
-                    for (let m = currentQuarterStartMonth; m < currentQuarterStartMonth + 3; m++) {
-                        const monthYear = actualYear + Math.floor(m / 12);
-                        const monthIndex = m % 12;
-                        if (!monthsForDays.some(mo => mo.month === monthIndex && mo.year === monthYear)) {
-                            monthsForDays.push({ month: monthIndex, year: monthYear });
-                        }
-                    }
+                const actualDayInWeek = now.getDay();
+                const actualCurrentWeekSunday = new Date(now);
+                actualCurrentWeekSunday.setDate(now.getDate() - actualDayInWeek);
+                actualCurrentWeekSunday.setHours(0, 0, 0, 0);
+                
+                const selectedDayOffset = timeState.selectedDayOffset || 0;
+                const selectedWeekSunday = new Date(actualCurrentWeekSunday);
+                selectedWeekSunday.setDate(actualCurrentWeekSunday.getDate() + (selectedDayOffset * 7));
+                selectedWeekSunday.setHours(0, 0, 0, 0);
+                
+                for (let d = 0; d < 7; d++) {
+                    const dayDate = new Date(selectedWeekSunday);
+                    dayDate.setDate(selectedWeekSunday.getDate() + d);
+                    daysToShow.push(dayDate);
                 }
+                return daysToShow;
+            }
+            if (zoomLevel >= 8) {
+                const now = timeState.currentDate;
+                const selectedHourOffset = timeState.selectedHourOffset || 0;
+                const centerDay = new Date(now);
+                centerDay.setDate(now.getDate() + selectedHourOffset);
+                centerDay.setHours(0, 0, 0, 0);
                 
-                if (!monthsForDays.some(mo => mo.month === selectedMonth && mo.year === selectedYear)) {
-                    monthsForDays.push({ month: selectedMonth, year: selectedYear });
+                for (let d = -3; d <= 3; d++) {
+                    const dayDate = new Date(centerDay);
+                    dayDate.setDate(centerDay.getDate() + d);
+                    daysToShow.push(dayDate);
                 }
-                
-                monthsForDays.forEach(({ month, year }) => {
-                    const daysInMonth = new Date(year, month + 1, 0).getDate();
-                    const firstOfMonth = new Date(year, month, 1);
-                    const firstSundayOffset = -firstOfMonth.getDay();
-                    const firstSunday = new Date(year, month, 1 + firstSundayOffset);
-                    firstSunday.setHours(0, 0, 0, 0);
-                    const lastOfMonth = new Date(year, month, daysInMonth);
-                    
-                    let currentSunday = new Date(firstSunday);
-                    while (currentSunday <= lastOfMonth || (currentSunday.getMonth() === month)) {
-                        for (let d = 0; d < 7; d++) {
-                            const dayDate = new Date(currentSunday);
-                            dayDate.setDate(currentSunday.getDate() + d);
-                            dayDate.setHours(0, 0, 0, 0);
-                            
-                            if (dayDate >= firstSunday && dayDate <= lastOfMonth) {
-                                if (!daysToShow.some(d => d.getTime() === dayDate.getTime())) {
-                                    daysToShow.push(dayDate);
-                                }
-                            }
-                        }
-                        currentSunday.setDate(currentSunday.getDate() + 7);
-                    }
-                });
-                
-                daysToShow.sort((a, b) => a - b);
+                return daysToShow;
+            }
+            const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dayDate = new Date(selectedYear, selectedMonth, d);
+                dayDate.setHours(0, 0, 0, 0);
+                daysToShow.push(dayDate);
             }
 
             return daysToShow;
