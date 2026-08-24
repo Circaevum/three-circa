@@ -17,7 +17,7 @@
     <link rel="service-desc" href="/.well-known/oauth-authorization-server" type="application/json">
     <link rel="service-doc" href="/.well-known/mcp/server-card.json" type="application/json">
 </head>
-<body>
+<body class="light-mode">
     <script src="circaevum/js/ui/viewer-bootstrap.js"></script>
     <!-- Nakama/login live in app.circaevum.com (account-wrapper). This build is viewer-only. -->
     <!-- UI layer: used as WebXR DOM overlay root so 2D UI appears in XR; in 2D it overlays the canvas -->
@@ -205,7 +205,15 @@
                     <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" opacity="0.9"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn active" id="day-frame-lte-sky-toggle" title="Earth LTE sky canvas on day frame (K)" aria-label="Toggle Earth day-frame LTE sky canvas" aria-pressed="true">
+            <button type="button" class="scene-icon-btn" id="worldlines-toggle" title="Earth helical worldline ribbon: hidden (W) — click to show" aria-label="Show Earth helical worldline ribbon (W)" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 2v20"/>
+                    <path d="M5 6c3.5 2.5 10.5 2.5 14 0"/>
+                    <path d="M5 12c3.5 2.5 10.5 2.5 14 0"/>
+                    <path d="M5 18c3.5 2.5 10.5 2.5 14 0"/>
+                </svg>
+            </button>
+            <button type="button" class="scene-icon-btn" id="day-frame-lte-sky-toggle" title="Earth LTE sky canvas: hidden (K) — click to show" aria-label="Toggle Earth day-frame LTE sky canvas" aria-pressed="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M4 18c2.5-7 5-11 8-14 3 3 5.5 7 8 14"/>
                     <path d="M6 16h12" opacity="0.4"/>
@@ -300,7 +308,7 @@
                     <path class="eh-icon-glare" d="M4.6 13.5c2.1 1.35 4.6 2.05 7.4 2.05s5.3-.7 7.4-2.05" stroke-width="1.2" stroke-linecap="round" opacity="0.75"/>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn" id="flatten-toggle" style="display: none;" title="Flatten view (F)" aria-label="Flatten time axis – show circles" aria-pressed="false">
+            <button type="button" class="scene-icon-btn active" id="flatten-toggle" style="display: none;" title="Flatten mode: markers + event worldlines (F)" aria-label="Flatten mode: time markers and event worldlines" aria-pressed="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="3"/><path d="M2 12h20"/></svg>
             </button>
             <button type="button" class="scene-icon-btn" id="webxr-toggle" title="XR mode (X)" aria-label="Enter WebXR / VR (X)" style="display: none;" aria-pressed="false">
@@ -651,20 +659,24 @@
     <script src="circaevum/js/geo/earth-globe.js?v=selected-time-wb-v1"></script>
     
     <!-- Utils (geometry helpers + shared ribbon / stroke primitives) -->
+    <script src="circaevum/js/theme/theme-controller.js"></script>
+    <script src="circaevum/js/utils/zoom-helpers.js"></script>
     <script src="circaevum/js/utils/geometry-helpers.js?v=orbit-phase-now-v1"></script>
     <script src="circaevum/js/utils/ribbon-geometry.js"></script>
     <script src="circaevum/js/utils/mesh-primitives.js"></script>
     <script src="circaevum/js/utils/context-sphere-clip.js?v=eh-reverse-v1"></script>
     <script src="circaevum/js/utils/context-sphere-warp.js?v=eh-off-no-warp-v1"></script>
     
-    <!-- Core (scene initialization) -->
+    <!-- Core (scene initialization & WebGPU pipeline) -->
     <script src="circaevum/js/core/scene-core.js"></script>
+    <script src="circaevum/js/core/webgpu-pipeline.js"></script>
     <script src="circaevum/js/core/moon-mechanics.js?v=circ-moon-outside-day-v2"></script>
     
     <!-- Renderers (worldlines, timemarkers, planets, events) -->
     <script src="circaevum/js/renderers/worldline-renderer.js?v=flatten-day-canvas-v1"></script>
     <script src="circaevum/js/renderers/timemarker-renderer.js?v=flatten-day-canvas-v1"></script>
     <script src="circaevum/js/renderers/planet-renderer.js"></script>
+    <script src="circaevum/js/renderers/event-label-renderer.js"></script>
     <script src="circaevum/js/renderers/event-renderer.js?v=orbit-phase-now-v1"></script>
     <script src="circaevum/js/renderers/circadian-renderer.js?v=circ-moon-outside-day-v2"></script>
     <script src="circaevum/js/atc/atc-band.js"></script>

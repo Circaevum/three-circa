@@ -603,10 +603,7 @@ const TimeMarkers = (function() {
             getUnits: (zoom, state) => {
                 const year = state.selectedYear;
                 if (zoom >= 3) {
-                    const months = Array.from({ length: 12 }, (_, i) => ({ index: i, year }));
-                    // Add a boundary marker at the start of the next year for continuous curves
-                    months.push({ index: 12, year });
-                    return months;
+                    return Array.from({ length: 12 }, (_, i) => ({ index: i, year }));
                 }
                 const units = [];
                 const selectedQ = Math.floor(state.selectedMonth / 3);
@@ -893,12 +890,13 @@ const TimeMarkers = (function() {
 
         // Label visibility is controlled purely by zoom level; the full-year toggle
         // only affects which days are generated, not which labels are allowed.
+        const isFlattenActive = typeof window !== 'undefined' && typeof window.flattenMode === 'string' && window.flattenMode !== 'off';
         const showText =
             !skipLabels &&
             ((unitType === 'quarter' && zoomLevel >= 3) ||
                 (unitType === 'month' && (zoomLevel >= 4 || (zoomLevel === 3 && tourMarkerStaged))) ||
                 (unitType === 'week' && zoomLevel >= 5) ||
-                (unitType === 'day' && zoomLevel >= 7));
+                (unitType === 'day' && zoomLevel >= 7 && !isFlattenActive));
         
         let unitsToShow = getUnitsToShow(zoomLevel, timeState);
         if (tourProgressiveMarkerMs != null && zoomLevel === 3 && (unitType === 'quarter' || unitType === 'month')) {

@@ -49,6 +49,51 @@ if (typeof window !== 'undefined') {
 // We don't declare them here to avoid "already declared" errors
 
 /**
+ * Create Three.js renderer supporting WebGPU with WebGL fallback
+ */
+function createCircaevumRenderer(initW, initH) {
+    const THREE = typeof window !== 'undefined' ? window.THREE : null;
+    let rend = null;
+    let isWebGPU = false;
+
+    if (typeof THREE !== 'undefined' && typeof THREE.WebGPURenderer === 'function') {
+        try {
+            rend = new THREE.WebGPURenderer({ antialias: true, alpha: true });
+            isWebGPU = true;
+            console.log('[Circaevum Engine] WebGPURenderer initialized');
+        } catch (e) {
+            console.warn('[Circaevum Engine] WebGPURenderer failed, falling back to WebGL:', e);
+        }
+    }
+
+    if (!rend) {
+        rend = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', alpha: true });
+        isWebGPU = false;
+        console.log('[Circaevum Engine] WebGLRenderer initialized');
+    }
+
+    rend.setSize(initW, initH);
+    rend.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    if (rend.xr) rend.xr.enabled = true;
+    rend.userData = Object.assign(rend.userData || {}, { isWebGPU });
+    return rend;
+}
+
+function getCircaevumRendererType() {
+    const rend = typeof renderer !== 'undefined' ? renderer : (typeof window !== 'undefined' ? window.renderer : null);
+    if (!rend) return 'none';
+    return (rend.userData && rend.userData.isWebGPU) ? 'WebGPU' : 'WebGL';
+}
+
+if (typeof window !== 'undefined') {
+    window.createCircaevumRenderer = createCircaevumRenderer;
+    window.getCircaevumRendererType = getCircaevumRendererType;
+    window.isWebGPUSupported = function() {
+        return getCircaevumRendererType() === 'WebGPU';
+    };
+}
+
+/**
  * Initialize the Three.js scene
  * @param {Object} dependencies - Required dependencies (THREE, config, datetime functions)
  */
@@ -106,12 +151,7 @@ function initScene(dependencies = {}) {
     // Camera lives under scene so system roll (R) rotates content and viewpoint together; focal math stays in scene-local space.
     scene.add(camera);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', alpha: true });
-    renderer.setSize(initW, initH);
-    // Limit pixel ratio on mobile for better performance (max 2)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    // Enable WebXR support
-    renderer.xr.enabled = true;
+    renderer = createCircaevumRenderer(initW, initH);
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
     const ambientLight = new THREE.AmbientLight(

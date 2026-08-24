@@ -132,13 +132,25 @@
   /**
    * Build a simple arc + count sprite indicating N overflow events at the layer's radius.
    * Returns a THREE.Group or null.
+  function createEventMaterial(THREE_REF, MatClass, options) {
+    const T = THREE_REF || (typeof global !== 'undefined' && global.THREE) || (typeof window !== 'undefined' && window.THREE) || null;
+    if (!T) return null;
+    const Mat = MatClass || T.MeshBasicMaterial;
+    if (typeof window !== 'undefined' && window.MeshPrimitives && typeof window.MeshPrimitives.createNodeCompatibleMaterial === 'function') {
+      return window.MeshPrimitives.createNodeCompatibleMaterial(T, Mat, options);
+    }
+    return new Mat(options);
+  }
+
+  /**
+   * Create an indicator geometry when event density exceeds budget.
    */
   function createOverflowIndicatorArc(overflowCount, earthDist, layerConfig) {
     if (!THREE || overflowCount <= 0) return null;
     try {
       const r = earthDist * EVENT_RADIUS_INNER_FRACTION;
       const arc = new THREE.RingGeometry(r * 0.995, r * 1.005, 64, 1, 0, Math.PI * 0.25);
-      const mat = new THREE.MeshBasicMaterial({
+      const mat = createEventMaterial(THREE, THREE.MeshBasicMaterial, {
         color: 0xffd060,
         transparent: true,
         opacity: 0.35,
@@ -271,26 +283,23 @@
     return durationDaysBetween(start, evEnd) < 2;
   }
 
-  /** Event overlaps the 3D Context Arc / Selected Time Frame window for the current zoom. */
-  function eventTouchesSelectedContextArcWindow(start, end) {
+  function isEventInSelectedYear(start, end) {
     if (!start || isNaN(start.getTime())) return false;
     const zl = getZoomLevelForEvents();
-    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    const boundsFn =
-      typeof global.getListContextDiscArcTimeBoundsMs === 'function'
-        ? global.getListContextDiscArcTimeBoundsMs
-        : null;
-    if (boundsFn) {
-      const bounds = boundsFn(zl);
-      if (bounds && typeof bounds.t0 === 'number' && typeof bounds.t1 === 'number') {
-        return evEnd.getTime() > bounds.t0 && start.getTime() < bounds.t1;
-      }
+    if (zl === 1 || zl === 2 || (typeof global.flattenMode === 'string' && global.flattenMode === 'all')) {
+      return true;
     }
-    // Fallback when arc bounds unavailable: month / week / day windows by zoom.
-    if (zl === 5 || zl === 6) return eventTouchesSelectedMonthWindow(start, evEnd);
-    if (zl === 7) return eventTouchesSelectedWeekWindow(start, evEnd);
-    if (zl === 8 || zl === 9 || zl === 0) return eventTouchesSelectedCalendarDay(start, evEnd);
-    return true;
+    const selFn = getSelectedDateTimeFn();
+    const sel = selFn ? selFn() : new Date();
+    const selectedYear = sel.getFullYear();
+    const evStartYear = start.getFullYear();
+    const evEndYear = (end && !isNaN(end.getTime())) ? end.getFullYear() : evStartYear;
+    return (evStartYear <= selectedYear && evEndYear >= selectedYear);
+  }
+
+  /** Event belongs to selected year (or all years for Zooms 1, 2, or flattened 3). */
+  function eventTouchesSelectedContextArcWindow(start, end) {
+    return isEventInSelectedYear(start, end);
   }
 
   /**
@@ -419,7 +428,7 @@
 
   function getTimelineFlattenYScale(amount) {
     const a = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
-    return Math.max(0.05, 1 - a * 0.95);
+    return Math.max(0, 1 - a);
   }
 
   function flattenTimelineFlatArray(logicalFlat, focusY, amount) {
@@ -512,14 +521,22 @@
   function applyFlattenedDayFrameHelixToRoot(root, focusY, amount) {
     if (!root || !root.userData || !root.userData.dayFrameHelixRef) return;
     const ref = root.userData.dayFrameHelixRef;
-    if (!ref.logicalInnerFlat || !ref.logicalOuterFlat) return;
+    const currentRefHeight = getWorldlineOrbitReferenceHeight();
+    if (!ref._cachedFlats || ref._cachedRefHeight !== currentRefHeight) {
+      ref._cachedRefHeight = currentRefHeight;
+      ref._cachedFlats = rebuildDayFrameHelixLogicalFlats(ref, root);
+    }
+    const freshFlats = ref._cachedFlats;
+    const baseInner = freshFlats && freshFlats.innerFlat ? freshFlats.innerFlat : ref.logicalInnerFlat;
+    const baseOuter = freshFlats && freshFlats.outerFlat ? freshFlats.outerFlat : ref.logicalOuterFlat;
+    if (!baseInner || !baseOuter) return;
     const amt = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
     let innerFlat = amt > 1e-6
-      ? flattenTimelineFlatArray(ref.logicalInnerFlat, focusY, amt)
-      : ref.logicalInnerFlat.slice();
+      ? flattenTimelineFlatArray(baseInner, focusY, amt)
+      : baseInner.slice();
     let outerFlat = amt > 1e-6
-      ? flattenTimelineFlatArray(ref.logicalOuterFlat, focusY, amt)
-      : ref.logicalOuterFlat.slice();
+      ? flattenTimelineFlatArray(baseOuter, focusY, amt)
+      : baseOuter.slice();
     applyDayFrameEhWarpToFlats(
       innerFlat,
       outerFlat,
@@ -555,14 +572,19 @@
       applyFlattenedSuperYearCylinderToRoot(root, focusY, amount);
       return;
     }
-    const pair = buildHelixPair(
-      ref.startHeight,
-      ref.endHeight,
-      ref.rInner,
-      ref.rOuter,
-      ref.refWorldline,
-      ref.segments
-    );
+    const currentRefHeight = getWorldlineOrbitReferenceHeight();
+    if (!ref._cachedPair || ref._cachedRefHeight !== currentRefHeight) {
+      ref._cachedRefHeight = currentRefHeight;
+      ref._cachedPair = buildHelixPair(
+        ref.startHeight,
+        ref.endHeight,
+        ref.rInner,
+        ref.rOuter,
+        currentRefHeight,
+        ref.segments
+      );
+    }
+    const pair = ref._cachedPair;
     if (!pair.innerFlat || !pair.outerFlat || pair.innerFlat.length < 6) return;
     const innerFlat = flattenTimelineFlatArray(pair.innerFlat, focusY, amount);
     const outerFlat = flattenTimelineFlatArray(pair.outerFlat, focusY, amount);
@@ -903,12 +925,7 @@
    * Zoom 0 / 8 / 9: only sub-day events on the selected calendar day accept pointer picks.
    */
   function isShortEventPointerPickableAtCurrentZoom(start, end) {
-    const zl = getZoomLevelForEvents();
-    if (zl !== 0 && zl !== 8 && zl !== 9) return true;
-    if (!start || isNaN(start.getTime())) return false;
-    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    if (!isSub24HourSpan(start, evEnd)) return false;
-    return eventTouchesSelectedCalendarDay(start, evEnd);
+    return true;
   }
 
   /** Moment (0): hide all LTEs. Clock (9): hide multi-day LTEs only; single all-day (24h) events pass through. Day zoom (8) keeps all LTEs. */
@@ -1036,28 +1053,7 @@
   }
 
   function getOffSelectedTimeLineOpacityMul(start, end) {
-    if (!start || isNaN(start.getTime())) return 1;
-    const zl = getZoomLevelForEvents();
-    if (eventTouchesSelectedCalendarDay(start, end)) {
-      if (zl === 0 && !eventTouchesSelectedHour(start, end)) {
-        return applyOffSelectedLineDimStrength(0.52);
-      }
-      return 1;
-    }
-    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    let dayProx = 1;
-    const selFn = getSelectedDateTimeFn();
-    const sel = selFn ? selFn() : null;
-    if (sel) {
-      const mid = new Date((start.getTime() + evEnd.getTime()) / 2);
-      const ua = Date.UTC(mid.getFullYear(), mid.getMonth(), mid.getDate());
-      const ub = Date.UTC(sel.getFullYear(), sel.getMonth(), sel.getDate());
-      const diffDays = Math.abs(Math.round((ua - ub) / 86400000));
-      dayProx = 0.04 + 0.96 * Math.exp(-diffDays / 4);
-    }
-    if (zl === 0) return applyOffSelectedLineDimStrength(0.06);
-    if (zl === 9) return applyOffSelectedLineDimStrength(Math.max(0.04, Math.min(0.18, 0.14 * dayProx)));
-    return applyOffSelectedLineDimStrength(Math.max(0.05, Math.min(0.2, 0.16 * dayProx)));
+    return 1;
   }
 
   function resolveShortCircadianLineOpacity(opacity, start, end) {
@@ -1501,20 +1497,12 @@
   function eventDurationEligibleForFullListAtZoom(durationDays, zl) {
     const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : 5;
     const d = typeof durationDays === 'number' && !isNaN(durationDays) ? durationDays : 0;
-    if (z <= 0 || z >= 9) return d >= 0 && d < 1;
-    if (z === 1) return d > CONTEXT_DECADE_DAYS && d <= CONTEXT_CENTURY_DAYS;
-    if (z === 2) return d > CONTEXT_YEAR_DAYS;
-    if (z === 3) return d > CONTEXT_QUARTER_DAYS && d < CONTEXT_YEAR_DAYS;
-    if (z === 4) return d > CONTEXT_MONTH_DAYS && d <= CONTEXT_QUARTER_DAYS;
-    if (z === 5 || z === 6) return d > 7 && d <= CONTEXT_MONTH_DAYS;
-    if (z === 7) {
-      const synDays =
-        typeof global.MoonMechanics !== 'undefined' && global.MoonMechanics.SYNODIC_MONTH_DAYS
-          ? global.MoonMechanics.SYNODIC_MONTH_DAYS
-          : 29.530588861;
-      return d > 1 && d <= synDays;
-    }
-    if (z === 8) return d > 0 && d <= 1;
+    if (z <= 0 || z >= 9) return d >= 0;
+    if (z === 1) return d > CONTEXT_DECADE_DAYS;
+    if (z === 2) return d > 1;
+    // Zooms 3-7 (Year, Quarter, Month, Lunar Month, Week): all sub-year to super-day events (d > 1 day) show up
+    if (z >= 3 && z <= 7) return d > 1;
+    if (z === 8) return d >= 0;
     return true;
   }
 
@@ -1538,41 +1526,19 @@
    */
   function applyConcentricEventRibbonRadii(earthDist, rInner, rOuter, rank01) {
     const W = earthDist;
-    const zoneA = W * 0.26;
-    const zoneB = W * 0.44;
-    const span = zoneB - zoneA;
-    const baseTh = Math.max(W * 0.018, Math.min(((rOuter - rInner) || W * 0.04) * 0.9, W * 0.055));
     const riBase = rInner;
     const roBase = rOuter;
-    let ri;
-    let ro;
+    let ri = riBase;
+    let ro = roBase;
     if (rank01 != null && isFinite(rank01)) {
       const u = Math.max(0, Math.min(1, rank01));
-      const { label: rDn, dayName: rDnm } = getDayNumberNameBand(W);
-      const bPad = W * 0.0025;
-      const outerMax = rDnm - bPad;
-      const outerMin = rDn + bPad;
-      const headroomIn = Math.max(0, riBase - W * 0.22);
-      const headroomOut = Math.max(0, outerMax - roBase);
-      const sunNudge = Math.min(W * 0.055, headroomIn * 0.92) * u;
-      const earthNudge = Math.min(W * 0.035, headroomOut * 0.98) * u;
-      ri = riBase - sunNudge;
-      ro = roBase + earthNudge;
-      if (ro < ri + baseTh) ro = ri + baseTh;
-      if (ro < ri + W * 0.014) ro = ri + W * 0.014;
-      ri = Math.max(W * 0.21, ri);
-      ro = Math.max(ri + W * 0.014, ro);
-      ro = Math.max(outerMin, Math.min(ro, outerMax));
+      const bandWidth = Math.max(W * 0.01, roBase - riBase);
+      ri = riBase + (bandWidth * 0.1) * u;
+      ro = Math.min(roBase, ri + bandWidth);
+      if (ro < ri + W * 0.008) ro = ri + W * 0.008;
       return { rInner: ri, rOuter: ro };
     }
-    const midOld = (riBase + roBase) / 2;
-    const t = Math.max(0, Math.min(1, (midOld - W * 0.26) / (W * 0.34)));
-    const mid = zoneA + span * (0.06 + 0.88 * t);
-    ri = mid - baseTh / 2;
-    ro = mid + baseTh / 2;
-    ri = Math.max(W * 0.22, Math.min(ri, W * 0.45));
-    ro = Math.max(ri + W * 0.014, Math.min(ro, W * 0.5));
-    return { rInner: ri, rOuter: ro };
+    return { rInner: riBase, rOuter: roBase };
   }
 
   /** Push overlapping long-term ribbons to slightly different radii when lane packing cannot split them on the disk. */
@@ -1851,23 +1817,11 @@
   function eventTouchesSelectedParentWindow(start, end) {
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    if (isSteStyleDailySpan(start, evEnd) && shouldRenderDayFrameSubDayOnAnnualHelix()) {
-      return eventTouchesZoom5DailyWindow(start, evEnd);
-    }
-    const b = isSteStyleDailySpan(start, evEnd)
-      ? getSelectedParentUnitBounds()
-      : getLteDensityTimeBounds();
-    if (!b) return true;
-    return evEnd.getTime() > b.t0 && start.getTime() < b.t1;
+    return isEventInSelectedYear(start, evEnd);
   }
 
-  /** Hard-cull: STE outside week horizon; LTE outside zoom parent nest. */
+  /** Hard-cull: LTE events only culled if outside selected year. */
   function shouldHideOutsideParentUnitWindow(start, end) {
-    if (!start || isNaN(start.getTime())) return true;
-    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    if (getZoomLevelForEvents() === 2 && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) {
-      return false;
-    }
     return !eventTouchesSelectedParentWindow(start, end);
   }
 
@@ -1940,7 +1894,7 @@
 
   function isZoom5AndHigher(zl) {
     const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : getZoomLevelForEvents();
-    return z === 5 || z === 6 || z === 7 || z === 8 || z === 9 || z === 0;
+    return z === 4 || z === 5 || z === 6 || z === 7 || z === 8 || z === 9 || z === 0;
   }
 
   function getCircadianWorldPointAtDate(atDate) {
@@ -1966,10 +1920,86 @@
     const refHeight = getWorldlineOrbitReferenceHeight();
     const eventTz = getEventTimeZoneId(null);
     const viewerTz = getUserTimeZoneId();
-    if (typeof computeDayFrameAnchor === 'function') {
-      return computeDayFrameAnchor(atDate, eventTz, viewerTz, earthDist, refHeight, 0, true);
+    if (typeof computeDayFrameAnchor === 'function' && typeof dayFramePositionFromAnchor === 'function') {
+      const anchor = computeDayFrameAnchor(atDate, eventTz, viewerTz, earthDist, refHeight, 0, true);
+      if (anchor) {
+        return dayFramePositionFromAnchor(anchor, anchor.rMid);
+      }
     }
     return null;
+  }
+
+  const RAY_CATEGORY_PALETTE = [
+    0xf59e0b, // Amber / Gold
+    0x3b82f6, // Blue
+    0x10b981, // Emerald Green
+    0xec4899, // Pink / Rose
+    0x8b5cf6, // Violet / Purple
+    0xf97316, // Orange
+    0x06b6d4, // Cyan
+    0x84cc16, // Lime
+    0xa855f7  // Deep Purple
+  ];
+
+  function hashStringToColorHex(str) {
+    if (!str) return 0xf59e0b;
+    let hash = 0;
+    const s = String(str);
+    for (let i = 0; i < s.length; i++) {
+      hash = (hash << 5) - hash + s.charCodeAt(i);
+      hash |= 0;
+    }
+    const idx = Math.abs(hash) % RAY_CATEGORY_PALETTE.length;
+    return RAY_CATEGORY_PALETTE[idx];
+  }
+
+  function resolveEventConnectorColor(colorHex, parent) {
+    const targets = [];
+    if (parent) {
+      if (parent.userData) targets.push(parent.userData);
+      if (parent.children && parent.children.length) {
+        parent.children.forEach(c => { if (c && c.userData) targets.push(c.userData); });
+      }
+    }
+
+    for (const u of targets) {
+      if (!u) continue;
+      const isDefaultCyan = (c) => c === 0x00b4d8 || c === '#00b4d8' || c === '0x00b4d8';
+      if (u.fillColor != null && u.fillColor !== '' && !isDefaultCyan(u.fillColor)) return u.fillColor;
+      if (u.eventHex != null && u.eventHex !== '' && !isDefaultCyan(u.eventHex)) return u.eventHex;
+      if (u.colorHex != null && u.colorHex !== '' && !isDefaultCyan(u.colorHex)) return u.colorHex;
+      if (u.color != null && u.color !== '' && !isDefaultCyan(u.color)) return u.color;
+      if (u.layerConfig) {
+        if (u.layerConfig.fillColor != null && u.layerConfig.fillColor !== '' && !isDefaultCyan(u.layerConfig.fillColor)) return u.layerConfig.fillColor;
+        if (u.layerConfig.color != null && u.layerConfig.color !== '' && !isDefaultCyan(u.layerConfig.color)) return u.layerConfig.color;
+      }
+      const ev = u.event || u.vevent;
+      if (ev) {
+        if (ev.fillColor != null && ev.fillColor !== '' && !isDefaultCyan(ev.fillColor)) return ev.fillColor;
+        if (ev.color != null && ev.color !== '' && !isDefaultCyan(ev.color)) return ev.color;
+        const cat = ev.category || (Array.isArray(ev.categories) && ev.categories[0]);
+        if (cat && typeof global !== 'undefined' && global.circaevumGL) {
+          const catStyles = global.circaevumGL.layerStylesByCategory || {};
+          if (catStyles[cat] && catStyles[cat].color) return catStyles[cat].color;
+        }
+      }
+    }
+
+    if (colorHex != null && colorHex !== undefined && colorHex !== 0x00b4d8 && colorHex !== '#00b4d8') {
+      return colorHex;
+    }
+
+    // Fallback: derive distinct, consistent category color from event category/summary hash
+    for (const u of targets) {
+      if (!u) continue;
+      const ev = u.event || u.vevent;
+      if (ev) {
+        const key = ev.category || (Array.isArray(ev.categories) && ev.categories[0]) || ev.summary || ev.title || ev.uid || ev.id;
+        if (key) return hashStringToColorHex(key);
+      }
+    }
+
+    return 0xf59e0b;
   }
 
   /**
@@ -1977,54 +2007,7 @@
    * Appears as a subtle, translucent ray in the event's category color.
    */
   function addCircadianConnectorIfApplicable(parent, ax, ay, az, atDate, colorHex) {
-    const zl = getZoomLevelForEvents();
-    const isZoom5Plus = isZoom5AndHigher(zl);
-    if (!isZoom5Plus && !isCircadianHelixZoom(zl)) return;
-    if (!parent) return;
-    const circ = normalizedCircadianState();
-    if (circ === 'off') return;
-    if (!isZoom5Plus && !isDateOnSelectedCalendarDay(atDate)) return;
-
-    if (typeof global.CircadianRenderer === 'undefined' || !global.CircadianRenderer.blendedDiskPointAtDate) return;
-    const currentHeight = getEventOrbitReferenceHeight();
-    const hl = typeof global.CircadianRenderer.getHandLength === 'function'
-      ? global.CircadianRenderer.getHandLength()
-      : 12;
-    const tip = global.CircadianRenderer.blendedDiskPointAtDate(
-      atDate,
-      hl,
-      currentHeight,
-      calculateDateHeight,
-      getCircadianStraightenBlendForEvents()
-    );
-    if (!tip) return;
-
-    const dx = tip.x - ax;
-    const dy = tip.y - ay;
-    const dz = tip.z - az;
-    const dist = Math.hypot(dx, dy, dz);
-    if (dist < 0.1) return;
-
-    const geo = new global.THREE.BufferGeometry();
-    geo.setAttribute('position', new global.THREE.Float32BufferAttribute([
-      ax, ay, az,
-      tip.x, tip.y, tip.z
-    ], 3));
-    const connMul = getDailyCircadianEventOpacityMul(atDate, atDate);
-    const rayOpacity = Math.max(0.06, Math.min(0.28, (isZoom5Plus ? 0.20 : 0.45) * connMul));
-    const mat = new global.THREE.LineBasicMaterial({
-      color: colorHex,
-      transparent: true,
-      opacity: rayOpacity,
-      depthWrite: false,
-      blending: global.THREE.AdditiveBlending
-    });
-    const line = new global.THREE.Line(geo, mat);
-    line.renderOrder = 3;
-    line.userData = { type: 'EventCircadianConnector' };
-    line.raycast = function () {};
-    parent.add(line);
-    return line;
+    return;
   }
 
   /**
@@ -2580,7 +2563,7 @@
    */
   function shouldRenderDayFrameSubDayOnAnnualHelix(zl) {
     const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : getZoomLevelForEvents();
-    if (z === 5 || z === 6 || z === 7 || z === 8 || z === 9 || z === 0) return true;
+    if (z === 4 || z === 5 || z === 6 || z === 7 || z === 8 || z === 9 || z === 0) return true;
     return shouldUseDayFrameSubDayHelixPlacement();
   }
 
@@ -2588,7 +2571,7 @@
   function prepareDayFrameRibbonUserData(userDataBase) {
     const ud = userDataBase ? { ...userDataBase } : {};
     const zl = getZoomLevelForEvents();
-    if (zl === 5 || zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) {
+    if (zl === 4 || zl === 5 || zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) {
       delete ud.circadianWorldSpaceLayer;
       ud.useWorldSpaceGroup = true;
       ud.immuneToFlatten = true;
@@ -2652,14 +2635,15 @@
     return isSteStyleDailySpan(start, end);
   }
 
-  /** Annual helix day-frame: Zoom-5 month of dailies, including closer zooms (no Shift). */
+  /** Annual helix day-frame: Zoom-4/5 month of dailies, including closer zooms (no Shift). */
   function shouldDrawAnnualDayFrameSteGeometry(start, end) {
+    if (typeof global.flattenMode === 'string' && global.flattenMode === 'all') return false;
     if (!shouldRenderDayFrameSubDayOnAnnualHelix()) return false;
     if (!isAnnualDayFrameSteSpan(start, end)) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (shouldHideLongTermOnDailySkySte(start, evEnd)) return false;
     const zl = getZoomLevelForEvents();
-    if (zl === 5 || zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) {
+    if (zl === 4 || zl === 5 || zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) {
       return eventTouchesZoom5DailyWindow(start, evEnd);
     }
     return true;
@@ -2675,7 +2659,7 @@
       return eventTouchesSelectedCalendarDay(start, end);
     }
     // Month: dailies inside Selected Time Frame use STE; rest → LTE manifold.
-    if (zl === 5 && isSteStyleDailySpan(start, end)) {
+    if ((zl === 4 || zl === 5) && isSteStyleDailySpan(start, end)) {
       return eventTouchesSelectedContextArcWindow(start, end);
     }
     return true;
@@ -2684,7 +2668,7 @@
   function getAnnualDayFrameRibbonBandHalf(earthDist, frameSpan, durationH) {
     const span = Math.max(frameSpan, earthDist * 0.008);
     const zl = getZoomLevelForEvents();
-    const frac = (zl === 5 || zl === 6 || zl === 7 || zl === 8) ? 0.17 : 0.14;
+    const frac = (zl === 4 || zl === 5 || zl === 6 || zl === 7 || zl === 8) ? 0.17 : 0.14;
     let half = Math.max(span * frac, earthDist * 0.012);
     const hrs = typeof durationH === 'number' && !isNaN(durationH) ? durationH : 2;
     if (hrs < 4) {
@@ -2698,7 +2682,7 @@
     // Nesting resolver LTE day events: full opacity across month/week/day zooms.
     if (!start) return 1;
     const zl = getZoomLevelForEvents();
-    if (zl === 5 || zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) return 1;
+    if (zl === 4 || zl === 5 || zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) return 1;
     if (eventTouchesSelectedCalendarDay(start, end)) return 1;
     return 0.88;
   }
@@ -2733,45 +2717,58 @@
    * Week corridor (≤7 d band, incl. ~5–10 d plateau): **inner** = mid between week label text and week outer curve;
    * **outer** = mid between day numbers and day names (same as `day.label`–`day.dayName`).
    */
+  /**
+   * Inner/outer radii for duration-event bands.
+   * Long-term events remain strictly within their respective radial sections:
+   * - Multi-Year (> 365d): Core area [0.04W, 0.125W]
+   * - Sub-Annual Super-Month (30d to 365d): Quarterly area [0.125W, 0.25W]
+   * - Sub-Month Super-Week (7d to 30d): Month area [0.25W, 0.50W]
+   * - Sub-Week Super-Day (1d to 7d): Week area [0.50W, 0.625W]
+   * - Sub-Day / Instant (<= 1d): Day realm [0.625W, 0.75W]
+   */
   function getEventBandRadii(earthDist, durationDays) {
     const W = earthDist;
-    const { label: rDayLabel, dayName: rDayName } = getDayNumberNameBand(W);
     const zones = (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getCanonicalRadialZones === 'function')
       ? TimeMarkers.getCanonicalRadialZones(W)
       : null;
-    let rMonthInner;
-    let rWeekInner;
-    let rWeekLabel;
-    let rWeekOuter;
-    if (zones) {
-      rMonthInner = zones.month.inner;
-      rWeekInner = zones.week.inner;
-      rWeekLabel = zones.week.label;
-      rWeekOuter = zones.week.outer;
-    } else {
-      rMonthInner = W * 0.25;
-      rWeekInner = W * 0.5;
-      rWeekLabel = W * (9 / 16);
-      rWeekOuter = W * (5 / 8);
-    }
+
+    const rQuarterInner = zones ? zones.quarter.inner : W * 0.125;
+    const rQuarterOuter = zones ? zones.quarter.outer : W * 0.25;
+    const rMonthInner   = zones ? zones.month.inner   : W * 0.25;
+    const rMonthOuter   = zones ? zones.month.outer   : W * 0.50;
+    const rWeekInner    = zones ? zones.week.inner    : W * 0.50;
+    const rWeekOuter    = zones ? zones.week.outer    : W * 0.625;
+
     const d = Math.max(durationDays, 1e-4);
-    const dBand = isWeekishDurationDays(d) ? 7 : d;
-    let rInner;
-    let rOuter;
-    if (dBand > 7) {
-      const t = Math.max(0, Math.min(1, Math.log(1 + dBand) / Math.log(366)));
-      rInner = rWeekInner + (rMonthInner - rWeekInner) * t;
-      const corPad = W * 0.0025;
-      const innerCor = rDayLabel + corPad;
-      const outerCor = rDayName - corPad;
-      const spanCor = Math.max(W * 0.004, outerCor - innerCor);
-      rOuter = innerCor + spanCor * t;
+
+    let rInner, rOuter;
+
+    if (d > 365) {
+      // Super-annual / Multi-year events (> 1 year): Core area
+      rInner = W * 0.04;
+      rOuter = rQuarterInner;
+    } else if (d > 30) {
+      // Sub-annual super-month events (30 days to 1 year, e.g. 8 months):
+      // Positioned away from the Sun, extending gracefully into the Month realm (up to ~0.45W)
+      const t = Math.min(1, (d - 30) / (365 - 30));
+      rInner = rQuarterOuter * 0.88;
+      rOuter = rQuarterOuter + (rMonthOuter - rQuarterOuter) * (0.35 + 0.65 * t);
+    } else if (d > 7) {
+      // Sub-month super-week events (7 days to 30 days): Month area
+      const t = Math.min(1, (d - 7) / (30 - 7));
+      rInner = rMonthInner;
+      rOuter = rMonthInner + (rMonthOuter - rMonthInner) * Math.max(0.6, t);
+    } else if (d > 1) {
+      // Sub-week super-day events (1 day to 7 days): Week area
+      const t = Math.min(1, (d - 1) / (7 - 1));
+      rInner = rWeekInner;
+      rOuter = rWeekInner + (rWeekOuter - rWeekInner) * Math.max(0.6, t);
     } else {
-      rInner = (rWeekLabel + rWeekOuter) / 2;
-      rOuter = (rDayLabel + rDayName) / 2;
-      const minBand = W * 0.022;
-      if (rInner > rOuter - minBand) rInner = rOuter - minBand;
+      // Sub-day / instant events (<= 1 day): Day realm
+      rInner = rWeekOuter;
+      rOuter = zones ? zones.day.outer : W * 0.75;
     }
+
     return { rInner, rOuter };
   }
 
@@ -4484,31 +4481,8 @@
     return lerpHexColor(hex, luminanceToGrayHex(hex), 0.9);
   }
 
-  /** Temporal peripheral fade (8/9+) or Moment hour focus (0). */
-  function applyEventDisplayColor(hex, anchorMs, start, end, durationDays) {
-    const zl = getZoomLevelForEvents();
-    const days = typeof durationDays === 'number' && !isNaN(durationDays)
-      ? durationDays
-      : durationDaysBetween(start, end);
-    if (zl === 2 && isSuperYearDurationDays(days)) return hex;
-    if (zl === 0) {
-      if (isCircadianShortEventsShiftPreview()) return hex;
-      return applyMomentZoomFocusColor(hex, start, end);
-    }
-    // Nesting resolver: LTE day events keep full chroma at month/week/day (5–8).
-    if (
-      (zl === 5 || zl === 6 || zl === 7 || zl === 8) &&
-      start &&
-      isSteStyleDailySpan(start, end)
-    ) {
-      return hex;
-    }
-    if (!shouldSkipTemporalVividnessAtDayHelixZooms()) {
-      if (typeof durationDays === 'number' && durationDays >= 1) {
-        return applyLongTermContextColorToHex(hex, anchorMs, start, end, durationDays);
-      }
-      return applyTemporalVividnessToHex(hex, anchorMs, start, end);
-    }
+  /** Return full vibrant event color without temporal fading or grayscale degradation. */
+  function applyEventDisplayColor(hex) {
     return hex;
   }
 
@@ -4622,69 +4596,11 @@
    */
   function createEventLinePointMarker(x, y, z, colorHex, size, userData, startForOpacity, endForOpacity, diskFrame) {
     const THREE = global.THREE;
-    const mul =
-      startForOpacity && !isNaN(startForOpacity.getTime())
-        ? getDailyCircadianEventOpacityMul(startForOpacity, endForOpacity || startForOpacity)
-        : 1;
-    const fillOp = Math.min(0.9, Math.max(0.16, 0.52 * mul));
-    const outlineOp = Math.min(0.95, Math.max(0.24, 0.78 * mul));
     const root = new THREE.Group();
-    const outerR = size * 0.94;
-    if (diskFrame && diskFrame.quaternion) {
-      const fillGeo = getSharedMarkerGeometry('disk-circle', () => new THREE.CircleGeometry(0.88, 20));
-      const fill = new THREE.Mesh(
-        fillGeo,
-        new THREE.MeshBasicMaterial({
-          color: colorHex,
-          transparent: true,
-          opacity: fillOp,
-          depthWrite: false,
-          side: THREE.DoubleSide
-        })
-      );
-      fill.scale.setScalar(outerR);
-      const rimGeo = getSharedMarkerGeometry('disk-ring', () => new THREE.RingGeometry(0.72, 1, 20));
-      const rim = new THREE.Mesh(
-        rimGeo,
-        new THREE.MeshBasicMaterial({
-          color: colorHex,
-          transparent: true,
-          opacity: outlineOp,
-          depthWrite: false,
-          side: THREE.DoubleSide
-        })
-      );
-      rim.scale.setScalar(outerR);
-      rim.renderOrder = 2;
-      root.add(fill);
-      root.add(rim);
-      root.quaternion.copy(diskFrame.quaternion);
-    } else {
-      const geo = getSharedMarkerGeometry('sphere', () => new THREE.SphereGeometry(1, 14, 14));
-      const fill = new THREE.Mesh(
-        geo,
-        new THREE.MeshBasicMaterial({
-          color: colorHex,
-          transparent: true,
-          opacity: fillOp,
-          depthWrite: false,
-          side: THREE.DoubleSide
-        })
-      );
-      fill.scale.setScalar(outerR);
-      const edges = new THREE.LineSegments(
-        getSharedMarkerGeometry('sphere-edges', () => new THREE.EdgesGeometry(new THREE.SphereGeometry(1, 14, 14))),
-        new THREE.LineBasicMaterial({
-          color: colorHex,
-          transparent: true,
-          opacity: outlineOp,
-          depthWrite: false
-        })
-      );
-      edges.scale.setScalar(outerR);
-      edges.renderOrder = 2;
-      root.add(fill);
-      root.add(edges);
+    const amt = typeof global.currentFlattenAmount === 'number' ? global.currentFlattenAmount : 0;
+    if (amt > 0.001) {
+      const focusY = typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
+      y = flattenTimelineLogicalY(y, focusY, amt);
     }
     root.position.set(x, y, z);
     root.userData = userData || { type: 'EventLineMarker' };
@@ -5887,9 +5803,8 @@
    * @param {Date|null} spanStart - event (or line) interval start; drives peripheral window test
    * @param {Date|null} spanEnd - interval end; omit or same as start for instant events
    */
-  function applyTemporalVividnessToHex(hex, anchorMs, spanStart, spanEnd) {
-    const f = getTemporalContextFactors(anchorMs, spanStart, spanEnd);
-    return lerpHexColor(TEMPORAL_NEUTRAL_HEX, hex, f.v);
+  function applyTemporalVividnessToHex(hex) {
+    return hex;
   }
 
   function applyLongTermContextColorToHex(hex, anchorMs, spanStart, spanEnd, durationDays) {
@@ -6289,61 +6204,10 @@
       }
     }
     const markerRoot = new THREE.Group();
-    const outerR = markerR * 0.94;
-    if (diskFrame && diskFrame.quaternion) {
-      const fillGeo = getSharedMarkerGeometry('disk-circle', () => new THREE.CircleGeometry(0.88, 20));
-      const fillDisk = new THREE.Mesh(
-        fillGeo,
-        new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity: fillOp,
-          depthWrite: false,
-          side: THREE.DoubleSide
-        })
-      );
-      fillDisk.scale.setScalar(outerR);
-      markerRoot.add(fillDisk);
-      const rim = new THREE.Mesh(
-        getSharedMarkerGeometry('disk-ring', () => new THREE.RingGeometry(0.72, 1, 20)),
-        new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity: outlineOp,
-          depthWrite: false,
-          side: THREE.DoubleSide
-        })
-      );
-      rim.scale.setScalar(outerR);
-      rim.renderOrder = 3;
-      markerRoot.add(rim);
-      markerRoot.quaternion.copy(diskFrame.quaternion);
-    } else {
-      const geo = getSharedMarkerGeometry('sphere16', () => new THREE.SphereGeometry(1, 16, 16));
-      const fillMesh = new THREE.Mesh(
-        geo,
-        new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity: fillOp,
-          depthWrite: false,
-          side: THREE.DoubleSide
-        })
-      );
-      fillMesh.scale.setScalar(outerR);
-      const edgeLines = new THREE.LineSegments(
-        getSharedMarkerGeometry('sphere16-edges', () => new THREE.EdgesGeometry(new THREE.SphereGeometry(1, 16, 16))),
-        new THREE.LineBasicMaterial({
-          color,
-          transparent: true,
-          opacity: outlineOp,
-          depthWrite: false
-        })
-      );
-      edgeLines.scale.setScalar(outerR);
-      edgeLines.renderOrder = 3;
-      markerRoot.add(fillMesh);
-      markerRoot.add(edgeLines);
+    const amt = typeof global.currentFlattenAmount === 'number' ? global.currentFlattenAmount : 0;
+    if (amt > 0.001) {
+      const focusY = typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
+      pos = new THREE.Vector3(pos.x, flattenTimelineLogicalY(pos.y, focusY, amt), pos.z);
     }
     markerRoot.position.set(pos.x, pos.y, pos.z);
     const userData = {
@@ -6359,9 +6223,10 @@
     markWorldSpaceIfNeeded(userData, start, spanEnd);
     markerRoot.userData = userData;
 
-    const showConn = isCircadianHelixZoom(getZoomLevelForEvents()) &&
+    const zlConn = getZoomLevelForEvents();
+    const showConn = (isZoom5AndHigher(zlConn) || isCircadianHelixZoom(zlConn)) &&
       normalizedCircadianState() !== 'off' &&
-      isDateOnSelectedCalendarDay(start);
+      (isZoom5AndHigher(zlConn) || isDateOnSelectedCalendarDay(start));
     if (showConn) {
       const grp = new THREE.Group();
       grp.userData = userData;
@@ -8266,9 +8131,7 @@
     if (!isEarthDailySkyEventZoom(zl)) return true;
     // Budget window is SHIFT-agnostic: SHIFT changes what's visible, not what competes for slots.
     if (isLongTermSpanForDailySky(start, evEnd)) {
-      if (zl === 8) return eventTouchesSelectedMonthWindow(start, evEnd);
-      if (zl === 9) return eventTouchesSelectedCalendarDay(start, evEnd);
-      return false; // zl === 0: LTEs excluded from moment budget
+      return isEventInSelectedYear(start, evEnd);
     }
     // STEs at daily-sky: month-range slider still applies inside Event Horizon week.
     return eventTouchesSelectedMonthRangeWindow(start, evEnd);

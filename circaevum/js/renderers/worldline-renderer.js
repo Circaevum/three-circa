@@ -79,6 +79,13 @@ const Worldlines = (function() {
         return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
     }
 
+    function createWorldlineMaterial(THREE, MatClass, options) {
+        if (typeof window !== 'undefined' && window.MeshPrimitives && typeof window.MeshPrimitives.createNodeCompatibleMaterial === 'function') {
+            return window.MeshPrimitives.createNodeCompatibleMaterial(THREE, MatClass, options);
+        }
+        return new MatClass(options);
+    }
+
     /** Earth helix stays gray. Selected year white/black. Present year is NOT red (a full coil reads as Mars). */
     function tintRibbonByPresentYear(geo) {
         if (!geo || !geo.getAttribute) return;
@@ -457,7 +464,7 @@ const Worldlines = (function() {
             const THREE =
                 typeof global !== 'undefined' && global.THREE ? global.THREE : typeof window !== 'undefined' ? window.THREE : null;
             if (isEarth) tintRibbonByPresentYear(ribbonGeo);
-            const material = new THREE.MeshBasicMaterial({
+            const material = createWorldlineMaterial(THREE, THREE.MeshBasicMaterial, {
                 color: isEarth ? 0xffffff : worldlineColor,
                 vertexColors: !!isEarth,
                 transparent: true,
@@ -513,7 +520,7 @@ const Worldlines = (function() {
         if (isEarth) tintRibbonByPresentYear(geometry);
         let lineWidth = isEarth && zoomLevel >= 3 ? 3 : 2;
         if (zoomLevel === 1) lineWidth += 4.5;
-        const lineMat = new THREE.LineBasicMaterial({
+        const lineMat = createWorldlineMaterial(THREE, THREE.LineBasicMaterial, {
             color: isEarth ? 0xffffff : worldlineColor,
             vertexColors: !!isEarth,
             transparent: true,

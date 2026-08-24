@@ -17,19 +17,45 @@
     return null;
   }
 
+  function createNodeCompatibleMaterial(THREE_REF, MaterialType, options) {
+    const T = THREE_REF || resolveTHREE();
+    if (!T) return null;
+    const MatClass = MaterialType || T.MeshBasicMaterial;
+    const opts = options || {};
+    const isWebGPU = typeof window !== 'undefined' && typeof window.isWebGPUSupported === 'function' && window.isWebGPUSupported();
+
+    let mat;
+    if (isWebGPU) {
+      if (MatClass === T.MeshBasicMaterial && typeof T.MeshBasicNodeMaterial === 'function') {
+        mat = new T.MeshBasicNodeMaterial(opts);
+      } else if (MatClass === T.MeshStandardMaterial && typeof T.MeshStandardNodeMaterial === 'function') {
+        mat = new T.MeshStandardNodeMaterial(opts);
+      } else {
+        mat = new MatClass(opts);
+      }
+    } else {
+      mat = new MatClass(opts);
+    }
+    if (typeof window !== 'undefined' && window.CircaevumWebGPUPipeline && typeof window.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial === 'function') {
+      window.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial(mat);
+    }
+    return mat;
+  }
+
   function lineFromFlat(flat, opts) {
     const THREE = resolveTHREE(opts && opts.THREE);
     if (!THREE || !flat || flat.length < 6) return null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3));
-    const mat = new THREE.LineBasicMaterial({
+    const matOpts = {
       color: opts && opts.color != null ? opts.color : 0xffffff,
       transparent: !!(opts && opts.transparent !== false && (opts.opacity == null || opts.opacity < 1)),
       opacity: opts && opts.opacity != null ? opts.opacity : 1,
       depthWrite: opts && opts.depthWrite === true,
       depthTest: opts && opts.depthTest === false ? false : true
-    });
-    if (opts && opts.materialOpts) Object.assign(mat, opts.materialOpts);
+    };
+    if (opts && opts.materialOpts) Object.assign(matOpts, opts.materialOpts);
+    const mat = createNodeCompatibleMaterial(THREE, THREE.LineBasicMaterial, matOpts);
     const line = new THREE.Line(geo, mat);
     if (opts && opts.renderOrder != null) line.renderOrder = opts.renderOrder;
     if (opts && opts.userData) line.userData = opts.userData;
@@ -47,7 +73,7 @@
     const radius = opts && opts.radius != null ? opts.radius : 0.05;
     const radialSegs = opts && opts.radialSegments != null ? opts.radialSegments : 6;
     const geom = new THREE.CylinderGeometry(radius, radius, len, radialSegs, 1, false);
-    const mat = new THREE.MeshBasicMaterial({
+    const mat = createNodeCompatibleMaterial(THREE, THREE.MeshBasicMaterial, {
       color: opts && opts.color != null ? opts.color : 0xffffff,
       transparent: true,
       opacity: opts && opts.opacity != null ? opts.opacity : 1,
@@ -147,6 +173,7 @@
   }
 
   global.MeshPrimitives = {
+    createNodeCompatibleMaterial,
     lineFromFlat,
     cylinderBetween,
     strokeAlongFlat,
