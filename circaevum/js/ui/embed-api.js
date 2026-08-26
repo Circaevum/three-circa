@@ -131,9 +131,10 @@
     setTimeout(function() { clearInterval(t0); }, 8000);
 
     // Notify parent when selected time changes (wrapper loads Garmin history on demand).
-    if (window.self !== window.top && window.parent.postMessage && gl && typeof gl.navigateToTime === 'function') {
-      var origNavigate = gl.navigateToTime.bind(gl);
-      gl.navigateToTime = function(date) {
+    var glForNav = window.circaevumGL || (window.getGL && window.getGL());
+    if (window.self !== window.top && window.parent.postMessage && glForNav && typeof glForNav.navigateToTime === 'function') {
+      var origNavigate = glForNav.navigateToTime.bind(glForNav);
+      glForNav.navigateToTime = function(date) {
         origNavigate(date);
         try {
           var d = date instanceof Date ? date : new Date(date);
