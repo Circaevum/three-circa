@@ -64,19 +64,34 @@
   }
 
   function sampleRibbonSurfaceFrame(innerFlat, outerFlat, idx, tAlongWidth) {
+    const THREE = global.THREE;
     const n = innerFlat.length / 3;
-    const i = Math.max(0, Math.min(n - 1, idx | 0));
-    const t = Math.max(0, Math.min(1, tAlongWidth));
-    const ix = i * 3;
-    const ax = innerFlat[ix], ay = innerFlat[ix + 1], az = innerFlat[ix + 2];
-    const bx = outerFlat[ix], by = outerFlat[ix + 1], bz = outerFlat[ix + 2];
-    const px = ax + (bx - ax) * t, py = ay + (by - ay) * t, pz = az + (bz - az) * t;
-    const band = Math.hypot(bx - ax, by - ay, bz - az);
-    // tangent along helix, normal across band
-    const i0 = Math.max(0, i - 1), i1 = Math.min(n - 1, i + 1);
-    const tx = innerFlat[i1 * 3] - innerFlat[i0 * 3], ty = innerFlat[i1 * 3 + 1] - innerFlat[i0 * 3 + 1], tz = innerFlat[i1 * 3 + 2] - innerFlat[i0 * 3 + 2];
-    const tlen = Math.hypot(tx, ty, tz) || 1;
-    return { position: { x: px, y: py, z: pz }, band, tangent: { x: tx / tlen, y: ty / tlen, z: tz / tlen }, normal: { x: (bx - ax) / (band || 1), y: (by - ay) / (band || 1), z: (bz - az) / (band || 1) } };
+    if (n < 2 || !outerFlat || outerFlat.length < n * 3) return null;
+    const clampI = (i) => Math.max(0, Math.min(n - 1, i));
+    const i = clampI(idx);
+    const iPrev = clampI(i - 1);
+    const iNext = clampI(i + 1);
+    const Pi = new THREE.Vector3(innerFlat[i * 3], innerFlat[i * 3 + 1], innerFlat[i * 3 + 2]);
+    const Po = new THREE.Vector3(outerFlat[i * 3], outerFlat[i * 3 + 1], outerFlat[i * 3 + 2]);
+    const PiPrev = new THREE.Vector3(innerFlat[iPrev * 3], innerFlat[iPrev * 3 + 1], innerFlat[iPrev * 3 + 2]);
+    const PiNext = new THREE.Vector3(innerFlat[iNext * 3], innerFlat[iNext * 3 + 1], innerFlat[iNext * 3 + 2]);
+    const tW = tAlongWidth != null && isFinite(tAlongWidth) ? Math.max(0, Math.min(1, Number(tAlongWidth))) : 0.5;
+    const center = new THREE.Vector3().lerpVectors(Pi, Po, tW);
+    const width = new THREE.Vector3().subVectors(Po, Pi);
+    const band = width.length();
+    if (band < 1e-6) width.set(1, 0, 0); else width.normalize();
+    const tangent = new THREE.Vector3().subVectors(PiNext, PiPrev);
+    if (tangent.lengthSq() < 1e-10) tangent.set(-width.z, 0, width.x);
+    const tw = tangent.dot(width);
+    tangent.addScaledVector(width, -tw);
+    if (tangent.lengthSq() < 1e-10) tangent.set(0, 1, 0); else tangent.normalize();
+    const bx = width, by = tangent;
+    const bz = new THREE.Vector3().crossVectors(bx, by);
+    if (bz.lengthSq() < 1e-10) return null;
+    bz.normalize();
+    const quat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(bx, by, bz));
+    const normal = bz.clone();
+    return { position: center, quaternion: quat, tangent, width, normal, band };
   }
 
   const Geometry = {
