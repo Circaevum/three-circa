@@ -3471,39 +3471,30 @@
   }
 
   function createRibbonBufferFromFlatArrays(innerFlat, outerFlat) {
+    if (typeof global.EventGeometry !== 'undefined' && global.EventGeometry.createRibbonBufferFromFlatArrays) {
+      return global.EventGeometry.createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
+    }
     if (typeof global.RibbonGeometry !== 'undefined' && global.RibbonGeometry.fromInnerOuter) {
       return global.RibbonGeometry.fromInnerOuter(innerFlat, outerFlat, {
         THREE: global.THREE,
         ribbonEdgeAttr: true,
-        // MeshBasic / fill shader ignore normals — skip Frenet-ish CPU on every rebuild.
         computeNormals: false
       });
     }
-    // Fallback if util script missing (standalone embeds)
     const n = innerFlat.length / 3;
     if (n < 2 || innerFlat.length !== outerFlat.length) return null;
     const pos = new Float32Array(n * 6);
     for (let i = 0; i < n; i++) {
-      pos[i * 6] = innerFlat[i * 3];
-      pos[i * 6 + 1] = innerFlat[i * 3 + 1];
-      pos[i * 6 + 2] = innerFlat[i * 3 + 2];
-      pos[i * 6 + 3] = outerFlat[i * 3];
-      pos[i * 6 + 4] = outerFlat[i * 3 + 1];
-      pos[i * 6 + 5] = outerFlat[i * 3 + 2];
+      pos[i * 6] = innerFlat[i * 3]; pos[i * 6 + 1] = innerFlat[i * 3 + 1]; pos[i * 6 + 2] = innerFlat[i * 3 + 2];
+      pos[i * 6 + 3] = outerFlat[i * 3]; pos[i * 6 + 4] = outerFlat[i * 3 + 1]; pos[i * 6 + 5] = outerFlat[i * 3 + 2];
     }
     const idx = [];
-    for (let i = 0; i < n - 1; i++) {
-      const a = 2 * i;
-      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
-    }
+    for (let i = 0; i < n - 1; i++) { const a = 2 * i; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
     const geo = new global.THREE.BufferGeometry();
     geo.setIndex(idx);
     geo.setAttribute('position', new global.THREE.BufferAttribute(pos, 3));
     const ribbonEdge = new Float32Array(n * 2);
-    for (let i = 0; i < n; i++) {
-      ribbonEdge[i * 2] = 0;
-      ribbonEdge[i * 2 + 1] = 1;
-    }
+    for (let i = 0; i < n; i++) { ribbonEdge[i * 2] = 0; ribbonEdge[i * 2 + 1] = 1; }
     geo.setAttribute('ribbonEdge', new global.THREE.BufferAttribute(ribbonEdge, 1));
     return geo;
   }
@@ -3654,6 +3645,9 @@
   }
 
   function buildHelixPair(startHeight, endHeight, rInner, rOuter, currentHeight, segments) {
+    if (typeof global.EventGeometry !== 'undefined' && global.EventGeometry.buildHelixPair) {
+      return global.EventGeometry.buildHelixPair(startHeight, endHeight, rInner, rOuter, currentHeight, segments);
+    }
     let innerFlat;
     let outerFlat;
     if (typeof SceneGeometry !== 'undefined' && SceneGeometry.createEarthHelicalCurve) {
@@ -4061,6 +4055,9 @@
    * @returns {{ position: THREE.Vector3, quaternion: THREE.Quaternion, tangent: THREE.Vector3, width: THREE.Vector3, normal: THREE.Vector3, band: number }|null}
    */
   function sampleRibbonSurfaceFrame(innerFlat, outerFlat, idx, tAlongWidth) {
+    if (typeof global.EventGeometry !== 'undefined' && global.EventGeometry.sampleRibbonSurfaceFrame) {
+      return global.EventGeometry.sampleRibbonSurfaceFrame(innerFlat, outerFlat, idx, tAlongWidth);
+    }
     const THREE = global.THREE;
     const n = innerFlat.length / 3;
     if (n < 2 || !outerFlat || outerFlat.length < n * 3) return null;
@@ -4427,6 +4424,9 @@
   }
 
   function chordLenAlongInner(innerFlat, i0, i1) {
+    if (typeof global.EventGeometry !== 'undefined' && global.EventGeometry.chordLenAlongInner) {
+      return global.EventGeometry.chordLenAlongInner(innerFlat, i0, i1);
+    }
     const THREE = global.THREE;
     const p0 = new THREE.Vector3(innerFlat[i0 * 3], innerFlat[i0 * 3 + 1], innerFlat[i0 * 3 + 2]);
     const p1 = new THREE.Vector3(innerFlat[i1 * 3], innerFlat[i1 * 3 + 1], innerFlat[i1 * 3 + 2]);
