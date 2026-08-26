@@ -1,15 +1,13 @@
 /**
  * Circaevum Main Application
  * Three.js-based planetary time visualization
- * 
- * This module contains:
- * - Scene initialization and rendering
- * - Planet and worldline creation
- * - Time marker systems
- * - Navigation and controls
- * - Animation loop
- * 
- * Dependencies: Three.js, config.js
+ *
+ * Split targets (loaded before this file):
+ * - circaevum/js/app/flatten.js   → AppFlatten (yScaleFor, focusY, applyFlattenToGroup)
+ * - circaevum/js/app/navigation.js→ AppNavigation (ZOOM_LEVELS, currentZoom)
+ * Next split will move applyFlattenToGroup and handleKeyWASD there.
+ *
+ * Dependencies: Three.js, config.js, config-rendering.js
  */
 
 // ============================================
