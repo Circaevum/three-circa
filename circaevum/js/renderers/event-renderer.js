@@ -94,16 +94,16 @@
    * Priority order within a layer: duration (longer first), then recency (later first).
    */
   const DENSITY_BUDGET = {
-    0: 120,   // MOMENT (hour) — clock zoom; limited visible time window
-    1: 20,    // CENTURY — 100 years; individual dots sub-pixel
-    2: 40,    // DECADE — 10 years
-    3: 300,   // YEAR — raised; calendar + timeseries years can run deep
-    4: 300,   // QUARTER
-    5: 300,   // MONTH — day-frame LTE dailies across ±month (restored, 120 culled week corridor)
-    6: 300,   // LUNAR — same as month
-    7: 80,    // WEEK — parent week + 1 adjacent (kept, was 800)
-    8: 700,   // DAY — month-range dailies + selected week
-    9: 120,   // CLOCK — polar day disk
+    0: 120,
+    1: 20,
+    2: 40,
+    3: 300,
+    4: 300,
+    5: 800,   // MONTH — restored to pre-refactor (300 culled week corridor at month)
+    6: 800,   // LUNAR — restored
+    7: 300,   // WEEK — restored to 300 (80 hid week at month transition)
+    8: 700,
+    9: 120,
   };
 
   /**
