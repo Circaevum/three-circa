@@ -10912,12 +10912,6 @@ function _mainSetZoomLevel(level, overrideDate) {
 }
 
 function setZoomLevel(level, overrideDate) {
-    if (typeof window !== 'undefined' && window.AppNavigation && typeof window.AppNavigation.setZoomLevel === 'function' && window.AppNavigation.setZoomLevel !== setZoomLevel) {
-        if (!window._navSetZoomActive) {
-            window._navSetZoomActive = true;
-            try { return window.AppNavigation.setZoomLevel(level, overrideDate); } catch(e){} finally { window._navSetZoomActive = false; }
-        }
-    }
     return _mainSetZoomLevel(level, overrideDate);
 }
 

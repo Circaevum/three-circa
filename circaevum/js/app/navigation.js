@@ -18,23 +18,13 @@
     return typeof global.currentZoom === 'number' ? global.currentZoom : 4;
   }
 
-  // Full setZoomLevel — delegate to main if main already defined (avoid double), else handle here.
-  // This is the canonical body from main.js:10743; main.js now delegates to AppNavigation.setZoomLevel when present.
   function setZoomLevel(level, overrideDate) {
+    if (typeof global._mainSetZoomLevel === 'function') {
+      return global._mainSetZoomLevel(level, overrideDate);
+    }
     if (typeof global.setZoomLevel === 'function' && global.setZoomLevel !== setZoomLevel) {
-      // If main.js already defined its own setZoomLevel and we're being called via AppNavigation, delegate back to avoid recursion
-      // But if main.js delegated to us, this check would recurse — so check caller: main.js wrapper calls us directly, so skip recursion
-      // Use a re-entrancy guard via _navSetZoomActive
-      if (!global._navSetZoomActive) {
-        try { return global.setZoomLevel(level, overrideDate); } catch (e) {}
-      }
+      try { return global.setZoomLevel(level, overrideDate); } catch (e) {}
     }
-    // If main's full impl is available as _mainSetZoomLevel, use it
-    if (typeof global._mainSetZoomLevel === 'function' && !global._navSetZoomActive) {
-      global._navSetZoomActive = true;
-      try { return global._mainSetZoomLevel(level, overrideDate); } finally { global._navSetZoomActive = false; }
-    }
-    // Fallback minimal (standalone test)
     if (typeof global.currentZoom !== 'undefined') global.currentZoom = level;
     return level;
   }
