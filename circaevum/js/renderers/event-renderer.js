@@ -99,9 +99,9 @@
     2: 40,
     3: 300,
     4: 300,
-    5: 800,   // MONTH — restored to pre-refactor (300 culled week corridor at month)
-    6: 800,   // LUNAR — restored
-    7: 300,   // WEEK — restored to 300 (80 hid week at month transition)
+    5: 500,   // MONTH — 500 keeps week corridor visible, 800 lagged 5→7; 300 culled at month
+    6: 500,   // LUNAR — same
+    7: 150,   // WEEK — 150 keeps week + adjacent, 80 hid, 300 lagged
     8: 700,
     9: 120,
   };

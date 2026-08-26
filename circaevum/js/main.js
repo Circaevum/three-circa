@@ -11592,8 +11592,8 @@ function animate(time, frame) {
         group.position.y = isTimeMarkers ? 0 : pivotY * (1 - yScaleLocal);
         if (amount > 0.01) {
             group.traverse((obj) => {
-                if (obj.isSprite && typeof obj.userData.logicalY === 'number') {
-                    obj.position.y = isTimeMarkers && typeof flattenTimelineLogicalY === 'function' ? flattenTimelineLogicalY(obj.userData.logicalY, pivotY, amount) : obj.userData.logicalY;
+                if (typeof obj.userData.logicalY === 'number') {
+                    obj.position.y = typeof flattenTimelineLogicalY === 'function' ? flattenTimelineLogicalY(obj.userData.logicalY, pivotY, amount) : obj.userData.logicalY;
                 } else if (includeEventStagger && obj.userData && obj.userData.eventStaggerRoot && typeof obj.userData.staggerLogical === 'number') {
                     obj.position.y = obj.userData.staggerLogical / yScaleLocal;
                 }
@@ -11626,7 +11626,7 @@ function animate(time, frame) {
             });
         } else {
             group.traverse((obj) => {
-                if (obj.isSprite && typeof obj.userData.logicalY === 'number') {
+                if (typeof obj.userData.logicalY === 'number') {
                     obj.position.y = obj.userData.logicalY;
                 } else if (includeEventStagger && obj.userData && obj.userData.eventStaggerRoot && typeof obj.userData.staggerLogical === 'number') {
                     obj.position.y = obj.userData.staggerLogical;
