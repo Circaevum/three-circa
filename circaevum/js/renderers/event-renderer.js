@@ -3553,7 +3553,12 @@
       global.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial(mat);
     }
     const fillMesh = new global.THREE.Mesh(ribbonGeo, mat);
-    if (plotType === 'polygon2d') fillMesh.scale.y = 0.02;
+    if (plotType === 'polygon2d') {
+      const amt = typeof global.currentFlattenAmount === 'number' ? global.currentFlattenAmount : 0;
+      const yScale = typeof getTimelineFlattenYScale === 'function' ? getTimelineFlattenYScale(amt) : 1;
+      fillMesh.scale.y = 0.02 / Math.max(0.05, yScale);
+      fillMesh.userData.polygon2dBaseScaleY = 0.02;
+    }
     fillMesh.renderOrder = roFill;
     fillMesh.userData.longTermFill = true;
     return fillMesh;

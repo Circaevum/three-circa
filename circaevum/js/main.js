@@ -11586,7 +11586,7 @@ function animate(time, frame) {
         if (amount > 0.01) {
             group.traverse((obj) => {
                 if (typeof obj.userData.logicalY === 'number') {
-                    obj.position.y = isTimeMarkers ? obj.userData.logicalY : (typeof flattenTimelineLogicalY === 'function' ? flattenTimelineLogicalY(obj.userData.logicalY, pivotY, amount) : obj.userData.logicalY);
+                    obj.position.y = obj.userData.logicalY;
                 } else if (includeEventStagger && obj.userData && obj.userData.eventStaggerRoot && typeof obj.userData.staggerLogical === 'number') {
                     obj.position.y = obj.userData.staggerLogical / yScaleLocal;
                 }
