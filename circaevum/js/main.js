@@ -11591,8 +11591,9 @@ function animate(time, frame) {
                     obj.position.y = obj.userData.staggerLogical / yScaleLocal;
                 }
                 const hasBaseScale = obj.userData && obj.userData.baseScale;
-                const isBillboard = obj.isSprite || (obj.userData.type === 'EventLineLabel' && !obj.userData.isRibbonSurfaceLabel);
-                if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
+                const isBillboard = obj.isSprite || (obj.userData.type === 'EventLineLabel' && !obj.userData.isRibbonSurfaceLabel) || !!obj.userData.isRibbonSurfaceLabel;
+                const isRibbonSurface = !!obj.userData.isRibbonSurfaceLabel;
+                if ((isBillboard || obj.userData.immuneToFlatten || isRibbonSurface) && hasBaseScale) {
                     const b = obj.userData.baseScale;
                     const mul = getEventNameLabelScaleMultiplier(obj, selectedMsForLabelScale);
                     const frac = obj.userData.scaleWithCameraDistance;
@@ -11625,8 +11626,9 @@ function animate(time, frame) {
                     obj.position.y = obj.userData.staggerLogical;
                 }
                 const hasBaseScale = obj.userData && obj.userData.baseScale;
-                const isBillboard = obj.isSprite || (obj.userData.type === 'EventLineLabel' && !obj.userData.isRibbonSurfaceLabel);
-                if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
+                const isBillboard = obj.isSprite || (obj.userData.type === 'EventLineLabel' && !obj.userData.isRibbonSurfaceLabel) || !!obj.userData.isRibbonSurfaceLabel;
+                const isRibbonSurface = !!obj.userData.isRibbonSurfaceLabel;
+                if ((isBillboard || obj.userData.immuneToFlatten || isRibbonSurface) && hasBaseScale) {
                     const b = obj.userData.baseScale;
                     const mul = getEventNameLabelScaleMultiplier(obj, selectedMsForLabelScale);
                     const frac = obj.userData.scaleWithCameraDistance;
@@ -11737,8 +11739,10 @@ function animate(time, frame) {
             });
         }
     }
+    const zoomChangedForHelix = typeof window._lastHelixZoom === 'undefined' || window._lastHelixZoom !== currentZoom;
+    if (zoomChangedForHelix) window._lastHelixZoom = currentZoom;
     if (
-        flattenChanged &&
+        (flattenChanged || zoomChangedForHelix) &&
         typeof EventRenderer !== 'undefined' &&
         typeof EventRenderer.updateTimelineHelixEventsForFlatten === 'function' &&
         typeof focusPoint !== 'undefined' &&
