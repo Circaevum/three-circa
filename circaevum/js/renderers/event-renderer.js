@@ -88,9 +88,9 @@
     2: 40,    // DECADE — 10 years
     3: 300,   // YEAR — raised; calendar + timeseries years can run deep
     4: 300,   // QUARTER
-    5: 300,   // MONTH — day-frame LTE dailies across ±month (was 800, cut for 5→7 transition)
-    6: 300,   // LUNAR — same month of day-frame dailies as zoom 5 (was 800)
-    7: 200,   // WEEK — day-frame LTE across parent week / zoom window (was 800, ~7d visible)
+    5: 120,   // MONTH — day-frame LTE dailies across ±month (was 800→300, now 120 = one month)
+    6: 120,   // LUNAR — same month of day-frame dailies as zoom 5 (was 800→300)
+    7: 80,    // WEEK — parent week + 1 adjacent (was 800→200, now 80)
     8: 700,   // DAY — month-range dailies + selected week
     9: 120,   // CLOCK — polar day disk
   };

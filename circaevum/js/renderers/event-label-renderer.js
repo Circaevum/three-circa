@@ -142,6 +142,8 @@
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = EVENT_LABEL_SPRITE_RENDER_ORDER;
+    mesh.userData = mesh.userData || {};
+    mesh.userData.baseScale = { x: planeWorldW, y: planeWorldH, z: 1 };
     return mesh;
   }
 

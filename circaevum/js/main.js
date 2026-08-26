@@ -11596,8 +11596,9 @@ function animate(time, frame) {
                     obj.position.y = obj.userData.staggerLogical / yScaleLocal;
                 }
                 const hasBaseScale = obj.userData && obj.userData.baseScale;
-                const isBillboard = obj.isSprite || (obj.userData.type === 'EventLineLabel' && !obj.userData.isRibbonSurfaceLabel);
-                if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
+                const isBillboard = obj.isSprite || (obj.userData.type === 'EventLineLabel' && !obj.userData.isRibbonSurfaceLabel) || !!obj.userData.isRibbonSurfaceLabel;
+                const isRibbonSurface = !!obj.userData.isRibbonSurfaceLabel;
+                if ((isBillboard || obj.userData.immuneToFlatten || isRibbonSurface) && hasBaseScale) {
                     const b = obj.userData.baseScale;
                     const mul = getEventNameLabelScaleMultiplier(obj, selectedMsForLabelScale);
                     const frac = obj.userData.scaleWithCameraDistance;
@@ -11610,6 +11611,7 @@ function animate(time, frame) {
                     }
                 } else if (
                     obj.userData.immuneToFlatten ||
+                    obj.userData.isRibbonSurfaceLabel ||
                     obj.userData.type === 'EventLineMarker' ||
                     obj.userData.type === 'LagrangeL1DayDot' ||
                     (obj.userData.type === 'EventObject' && obj.userData.dayBandDot)
@@ -11628,8 +11630,9 @@ function animate(time, frame) {
                     obj.position.y = obj.userData.staggerLogical;
                 }
                 const hasBaseScale = obj.userData && obj.userData.baseScale;
-                const isBillboard = obj.isSprite || (obj.userData.type === 'EventLineLabel' && !obj.userData.isRibbonSurfaceLabel);
-                if ((isBillboard || obj.userData.immuneToFlatten) && hasBaseScale) {
+                const isBillboard = obj.isSprite || (obj.userData.type === 'EventLineLabel' && !obj.userData.isRibbonSurfaceLabel) || !!obj.userData.isRibbonSurfaceLabel;
+                const isRibbonSurface = !!obj.userData.isRibbonSurfaceLabel;
+                if ((isBillboard || obj.userData.immuneToFlatten || isRibbonSurface) && hasBaseScale) {
                     const b = obj.userData.baseScale;
                     const mul = getEventNameLabelScaleMultiplier(obj, selectedMsForLabelScale);
                     const frac = obj.userData.scaleWithCameraDistance;
@@ -11642,6 +11645,7 @@ function animate(time, frame) {
                     }
                 } else if (
                     obj.userData.immuneToFlatten ||
+                    obj.userData.isRibbonSurfaceLabel ||
                     obj.userData.type === 'EventLineMarker' ||
                     obj.userData.type === 'LagrangeL1DayDot' ||
                     (obj.userData.type === 'EventObject' && obj.userData.dayBandDot)
@@ -11741,6 +11745,7 @@ function animate(time, frame) {
         }
     }
     if (
+        flattenChanged &&
         typeof EventRenderer !== 'undefined' &&
         typeof EventRenderer.updateTimelineHelixEventsForFlatten === 'function' &&
         typeof focusPoint !== 'undefined' &&
