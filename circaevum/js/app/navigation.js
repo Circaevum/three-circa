@@ -50,22 +50,26 @@
     var g = global;
     var curZoom = typeof g.currentZoom === 'number' ? g.currentZoom : 4;
     var blockMoment = curZoom === 0;
+    var doZoom = function(lvl){
+      if (typeof g._mainSetZoomLevel === 'function') return g._mainSetZoomLevel(lvl);
+      if (typeof g.setZoomLevel === 'function') return g.setZoomLevel(lvl);
+    };
     if (key >= 0 && key <= 9) {
       if (e.repeat) return true;
-      if (key !== curZoom && typeof g.setZoomLevel === 'function') { g.setZoomLevel(key); }
+      if (key !== curZoom) doZoom(key);
       return true;
     } else if (e.key.toLowerCase() === 'w') {
       if (blockMoment) return false;
       if (e.repeat) return true;
-      if (typeof g.getNextKeyboardZoomLevel === 'function' && typeof g.setZoomLevel === 'function') {
-        var nz = g.getNextKeyboardZoomLevel(1); if (typeof nz === 'number') g.setZoomLevel(nz);
+      if (typeof g.getNextKeyboardZoomLevel === 'function') {
+        var nz = g.getNextKeyboardZoomLevel(1); if (typeof nz === 'number') doZoom(nz);
       }
       return true;
     } else if (e.key.toLowerCase() === 's') {
       if (blockMoment) return false;
       if (e.repeat) return true;
-      if (typeof g.getNextKeyboardZoomLevel === 'function' && typeof g.setZoomLevel === 'function') {
-        var nz2 = g.getNextKeyboardZoomLevel(-1); if (typeof nz2 === 'number') g.setZoomLevel(nz2);
+      if (typeof g.getNextKeyboardZoomLevel === 'function') {
+        var nz2 = g.getNextKeyboardZoomLevel(-1); if (typeof nz2 === 'number') doZoom(nz2);
       }
       return true;
     } else if (e.key === '[' || e.code === 'BracketLeft') {
