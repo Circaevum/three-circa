@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "three": ["./circaevum/js/three.min.js"]
+    }
+  },
+  "include": ["circaevum/js/**/*"],
+  "exclude": ["node_modules"]
+}

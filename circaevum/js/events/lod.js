@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * events/lod.js — Level-of-detail budgets and priority
  * Split from renderers/event-renderer.js:85-130 for readability.

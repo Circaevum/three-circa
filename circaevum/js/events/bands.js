@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * events/bands.js — radial band math for event ribbons
  * Split from renderers/event-renderer.js:500-650.

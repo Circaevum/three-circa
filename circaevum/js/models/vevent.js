@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * VEVENT Format (RFC 5545) Implementation
  * 

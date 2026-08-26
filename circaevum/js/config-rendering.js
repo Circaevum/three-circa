@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Circaevum Rendering Configuration — centralized visual constants
  *

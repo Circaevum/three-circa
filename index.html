@@ -623,7 +623,8 @@
         </div>
     </div>
 
-    <!-- External Dependencies -->
+    <!-- Offline: vendored three.min.js (r128) is file:// fallback; importmap allows `import "three"` in modules without CDN -->
+    <script type="importmap">{"imports":{"three":"./circaevum/js/three.min.js"}}</script>
     <script src="circaevum/js/three.min.js"></script>
     
     <!-- Circaevum Modules (load in dependency order) -->
