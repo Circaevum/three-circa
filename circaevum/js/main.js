@@ -7578,15 +7578,8 @@ function createTextLabel(
     }
 
     const sprite = new THREE.Sprite(spriteMaterial);
-    // Above event ribbons (see EventRenderer duration renderOrder cap) so calendar labels stay readable
     sprite.renderOrder = 50;
-    let finalY = height;
-    const amt = typeof currentFlattenAmount === 'number' ? currentFlattenAmount : 0;
-    if (amt > 0.001) {
-        const focusY = typeof flattenTimelineFocusY === 'function' ? flattenTimelineFocusY() : (typeof focusPoint !== 'undefined' && focusPoint ? focusPoint.y : 0);
-        finalY = typeof flattenTimelineLogicalY === 'function' ? flattenTimelineLogicalY(height, focusY, amt) : height;
-    }
-    sprite.position.set(Math.cos(angle) * radius, finalY, Math.sin(angle) * radius);
+    sprite.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
     sprite.userData.logicalY = height;
 
     // Scale based on zoom level - larger for zoomed out views, smaller for zoomed in
@@ -11585,15 +11578,15 @@ function animate(time, frame) {
     function applyFlattenToGroup(group, amount, includeEventStagger) {
         if (!group || !focusPoint) return;
         const isTimeMarkers = group === timeMarkersGroup;
-        const yScaleLocal = isTimeMarkers ? 1 : Math.max(0.05, 1 - amount * 0.95);
+        const yScaleLocal = Math.max(0.05, 1 - amount * 0.95);
         const pivotY =
             typeof window.flattenTimelineFocusY === 'function' ? window.flattenTimelineFocusY() : focusPoint.y;
         group.scale.set(1, yScaleLocal, 1);
-        group.position.y = isTimeMarkers ? 0 : pivotY * (1 - yScaleLocal);
+        group.position.y = pivotY * (1 - yScaleLocal);
         if (amount > 0.01) {
             group.traverse((obj) => {
                 if (typeof obj.userData.logicalY === 'number') {
-                    obj.position.y = typeof flattenTimelineLogicalY === 'function' ? flattenTimelineLogicalY(obj.userData.logicalY, pivotY, amount) : obj.userData.logicalY;
+                    obj.position.y = isTimeMarkers ? obj.userData.logicalY : (typeof flattenTimelineLogicalY === 'function' ? flattenTimelineLogicalY(obj.userData.logicalY, pivotY, amount) : obj.userData.logicalY);
                 } else if (includeEventStagger && obj.userData && obj.userData.eventStaggerRoot && typeof obj.userData.staggerLogical === 'number') {
                     obj.position.y = obj.userData.staggerLogical / yScaleLocal;
                 }
