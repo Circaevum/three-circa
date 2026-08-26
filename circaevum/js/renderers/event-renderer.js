@@ -10,6 +10,13 @@
  * — band fractions, tube LOD, DENSITY_BUDGET, ANIMATION_LERP. This file keeps
  * local fallbacks for standalone load but prefers window.RENDERING_CONFIG when present.
  *
+ * Split targets (loaded before this file via index.html):
+ * - circaevum/js/events/lod.js       → EventLod (DENSITY_BUDGET, TUBE_LOD, computeEventTubeQualityScale)
+ * - circaevum/js/events/bands.js     → EventBands (getEventBandRadii, week corridor)
+ * - circaevum/js/events/geometry.js  → EventGeometry (RibbonGeometry facades)
+ * - circaevum/js/events/labels.js   → EventLabels (surface/sprite contract)
+ * Next split will move implementations there and keep this file as EventRenderer facade.
+ *
  * Dependencies (globals): THREE, calculateDateHeight, calculateCurrentDateHeight, SceneGeometry
  * Optional: PLANET_DATA (Earth distance), or use default radius 50
  */
