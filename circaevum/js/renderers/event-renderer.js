@@ -6,6 +6,10 @@
  *
  * EventObject: a Three.js object with userData.vevent, userData.layerId, userData.type === 'EventObject'
  *
+ * Rendering constants centralized in circaevum/js/config-rendering.js (RENDERING_CONFIG)
+ * — band fractions, tube LOD, DENSITY_BUDGET, ANIMATION_LERP. This file keeps
+ * local fallbacks for standalone load but prefers window.RENDERING_CONFIG when present.
+ *
  * Dependencies (globals): THREE, calculateDateHeight, calculateCurrentDateHeight, SceneGeometry
  * Optional: PLANET_DATA (Earth distance), or use default radius 50
  */
