@@ -10856,17 +10856,38 @@ function setZoomLevel(level, overrideDate) {
         });
     }
     
-    createStarField(); // Update star visibility based on zoom level
-    createPlanets(currentZoom);
-    updateTimeDisplays(); // Update time displays after zoom change
+    if (Math.abs(targetCameraDistance - (typeof currentCameraDistance === 'number' ? currentCameraDistance : targetCameraDistance)) > 1000 || prevZoom <= 2 || level <= 2) {
+        createStarField(); // Only when zoom distance changes significantly or at coarse zooms
+    }
+    const planetsNeedRebuild = prevZoom <= 2 || level <= 2 || Math.abs(ZOOM_LEVELS[prevZoom].distance - ZOOM_LEVELS[level].distance) > 50 || level === 0 || prevZoom === 0 || level === 9 || prevZoom === 9;
+    if (planetsNeedRebuild) {
+        createPlanets(currentZoom);
+    } else {
+        // Keep planet meshes, just update worldline visibility and time markers
+        if (Array.isArray(worldlines)) worldlines.forEach(w => { if (w) w.visible = isWorldlineVisibleForZoom(level); });
+        if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
+            // Already updated, will createTimeMarkers via next block
+        }
+        if (typeof Worldlines !== 'undefined' && typeof Worldlines.updateWorldlineVisibility === 'function') {
+            try { Worldlines.updateWorldlineVisibility(level); } catch (e) {}
+        }
+    }
+    updateTimeDisplays();
     updateFlattenIconVisibility();
 
     const gl = typeof window !== 'undefined' ? window.circaevumGL : null;
     if (!eventsRefreshedDuringCreatePlanets && gl && typeof gl.refreshAllEventLayers === 'function') {
+        // Only refresh event layers when zoom actually changes event density/window
         const wasMonthPlus = prevZoom >= 5;
         const isMonthPlus = level >= 5;
-        if (wasMonthPlus !== isMonthPlus || isMonthPlus) {
+        const densityChanged = DENSITY_BUDGET[prevZoom] !== DENSITY_BUDGET[level] || wasMonthPlus !== isMonthPlus;
+        if (densityChanged || Math.abs(level - prevZoom) > 1 || level === 5 || level === 7 || prevZoom === 5 || prevZoom === 7) {
             try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
+        } else {
+            // Keep existing EventObjects, just update flatten/time window via existing traverse
+            if (typeof EventRenderer !== 'undefined' && EventRenderer.updateTimelineHelixEventsForFlatten) {
+                try { EventRenderer.updateTimelineHelixEventsForFlatten(gl, typeof flattenTimelineFocusY === 'function' ? flattenTimelineFocusY() : 0, typeof currentFlattenAmount === 'number' ? currentFlattenAmount : 0); } catch (e) {}
+            }
         }
     }
     if (typeof window.refreshEventsList === 'function') {
