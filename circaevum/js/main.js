@@ -7582,13 +7582,8 @@ function createTextLabel(
     const sprite = new THREE.Sprite(spriteMaterial);
     // Above event ribbons (see EventRenderer duration renderOrder cap) so calendar labels stay readable
     sprite.renderOrder = 50;
-    let finalY = height;
-    const amt = typeof currentFlattenAmount === 'number' ? currentFlattenAmount : 0;
-    if (amt > 0.001) {
-        const focusY = typeof flattenTimelineFocusY === 'function' ? flattenTimelineFocusY() : (typeof focusPoint !== 'undefined' && focusPoint ? focusPoint.y : 0);
-        finalY = typeof flattenTimelineLogicalY === 'function' ? flattenTimelineLogicalY(height, focusY, amt) : height;
-    }
-    sprite.position.set(Math.cos(angle) * radius, finalY, Math.sin(angle) * radius);
+    sprite.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
+    sprite.userData.logicalY = height;
 
     // Scale based on zoom level - larger for zoomed out views, smaller for zoomed in
     let scale;
