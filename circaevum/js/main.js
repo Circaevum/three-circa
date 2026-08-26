@@ -975,6 +975,7 @@ if (typeof window !== 'undefined') {
     window.updateSunLightingTowardEarth = updateSunLightingTowardEarth;
     window.getSelectedDateTime = getSelectedDateTime;
     window.setZoomLevel = setZoomLevel;
+    window._mainSetZoomLevel = _mainSetZoomLevel;
     window.setSelectedDateTime = setSelectedDateTime;
     window.createPlanets = createPlanets;
     window.onOrbitalDataVisibilityChange = function(visible) {
@@ -8331,6 +8332,13 @@ function initControls() {
     // Zoom 0 (Moment): A/D = hour, Shift+A/D = day, [ ] = 15 min; block mode toggles that fight polar landing view.
     const blockMomentModeShortcuts = currentZoom === 0;
         
+        // Delegate to AppNavigation facade when present (keeps window.* fallback)
+        if (typeof window !== 'undefined' && window.AppNavigation && typeof window.AppNavigation.handleKeyWASD === 'function') {
+            try {
+                var handled = window.AppNavigation.handleKeyWASD(e);
+                if (handled) { /* facade handled zoom/navigate */ return; }
+            } catch(e2){}
+        }
         const key = parseInt(e.key);
         if (key >= 0 && key <= 9) {
             if (e.repeat) return;
@@ -10740,7 +10748,7 @@ function getBackgroundColor(viewMode, appearance) {
     return [0x000814, 0x140808, 0x080814][vm];
 }
 
-function setZoomLevel(level, overrideDate) {
+function _mainSetZoomLevel(level, overrideDate) {
     // CRITICAL: Get selected date BEFORE changing currentZoom (or use override when navigating to a specific event)
     const selectedDate = overrideDate instanceof Date ? overrideDate : getSelectedDateTime();
 
@@ -10901,6 +10909,16 @@ function setZoomLevel(level, overrideDate) {
         const ep = document.getElementById('events-panel');
         if (ep && ep.classList.contains('open')) window.refreshEventsList(false);
     }
+}
+
+function setZoomLevel(level, overrideDate) {
+    if (typeof window !== 'undefined' && window.AppNavigation && typeof window.AppNavigation.setZoomLevel === 'function' && window.AppNavigation.setZoomLevel !== setZoomLevel) {
+        if (!window._navSetZoomActive) {
+            window._navSetZoomActive = true;
+            try { return window.AppNavigation.setZoomLevel(level, overrideDate); } catch(e){} finally { window._navSetZoomActive = false; }
+        }
+    }
+    return _mainSetZoomLevel(level, overrideDate);
 }
 
 function selectedCalendarDayKey(d) {
@@ -11603,7 +11621,7 @@ function animate(time, frame) {
         ? getSelectedDateTime().getTime()
         : Date.now();
 
-    function applyFlattenToGroup(group, amount, includeEventStagger) {
+    function _mainApplyFlattenToGroup(group, amount, includeEventStagger) {
         if (!group || !focusPoint) return;
         const isTimeMarkers = group === timeMarkersGroup;
         const yScaleLocal = Math.max(0.05, 1 - amount * 0.95);
@@ -11682,6 +11700,8 @@ function animate(time, frame) {
         }
     }
 
+    function applyFlattenToGroup(group, amount, includeEventStagger) { if (typeof window !== 'undefined' && window.AppFlatten && typeof window.AppFlatten.applyFlattenToGroup === 'function') { try { return window.AppFlatten.applyFlattenToGroup(group, amount, includeEventStagger);} catch(e){} } return _mainApplyFlattenToGroup(group, amount, includeEventStagger); }
+    if (typeof window !== 'undefined') window._mainApplyFlattenToGroup = _mainApplyFlattenToGroup;
     // Smooth flatten transition (split: all-timeline vs time-markers-only).
     const flattenTargetAll = flattenMode === 'all' ? flattenIntensity : 0;
     const flattenTargetMarkers = flattenMode === 'markers'

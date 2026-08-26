@@ -121,6 +121,9 @@
    * short-term events to be cut first whenever the density budget was hit).
    */
   function scoreEventPriority(event) {
+    if (typeof global.EventLod !== 'undefined' && typeof global.EventLod.scoreEventPriority === 'function') {
+      return global.EventLod.scoreEventPriority(event);
+    }
     const zl = getZoomLevelForEvents();
     const start = getEventStart(event);
     const end = getEventEnd(event);
@@ -3520,6 +3523,9 @@
   }
 
   function createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays, contextFade, forceUniformFill) {
+    if (typeof global.EventGeometry !== 'undefined' && typeof global.EventGeometry.createRibbonFillMesh === 'function') {
+      return global.EventGeometry.createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays, contextFade, forceUniformFill);
+    }
     const THREE = global.THREE;
     const useGradient = !forceUniformFill && longEventRibbonUsesRadialFillGradient(durationDays);
     const innerScale = contextFade && contextFade.innerScale != null ? contextFade.innerScale : 1;
@@ -3606,6 +3612,10 @@
   }
 
   function addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder, tubeRadius) {
+    if (typeof global.EventGeometry !== 'undefined' && typeof global.EventGeometry.addBandEndConnectors === 'function') {
+      // Delegate to geometry module but preserve early-return semantics via its impl
+      return global.EventGeometry.addBandEndConnectors(group, innerFlat, outerFlat, colorHex, opacity, renderOrder, tubeRadius);
+    }
     // Cap cylinders/lines usually read as useless beads — skip unless Context Sphere
     // clipped this ribbon at the event horizon (show that the event continues beyond).
     const forceHorizonCaps = !!(group && group.userData && group.userData.contextSphereClipped);

@@ -25,12 +25,36 @@
     return DENSITY[z] ?? 100;
   }
 
+  /** Score event for density-budget priority — moved from event-renderer.js:123-140 */
+  function scoreEventPriority(event) {
+    // Prefer EventRenderer helpers when available (loaded after this file)
+    var getZoom = (typeof global.getZoomLevelForEvents === 'function') ? global.getZoomLevelForEvents : function(){ return 5; };
+    var getStart = (typeof global.getEventStart === 'function') ? global.getEventStart : function(e){ return e && e.start ? new Date(e.start) : null; };
+    var getEnd = (typeof global.getEventEnd === 'function') ? global.getEventEnd : function(e){ return e && e.end ? new Date(e.end) : null; };
+    var isCirc = (typeof global.isCircadianHelixZoom === 'function') ? global.isCircadianHelixZoom : function(zl){ return zl===0||zl===5||zl===7||zl===8||zl===9; };
+    var shouldDay = (typeof global.shouldRenderDayFrameSubDayOnAnnualHelix === 'function') ? global.shouldRenderDayFrameSubDayOnAnnualHelix : function(){ return false; };
+    try {
+      var zl = getZoom();
+      var start = getStart(event);
+      var end = getEnd(event);
+      var durationMs = (end && start) ? Math.max(0, end.getTime() - start.getTime()) : 0;
+      var recencyScore = start ? start.getTime() / 1e12 : 0;
+      var durationDays = durationMs / 86400000;
+      var durationScore = durationDays > 0 ? Math.log2(1 + durationDays) : 0;
+      var steBoostMag = (zl === 8 || zl === 9 || zl === 0) ? 5.0 : 1.5;
+      var steBoost = (durationDays < 1 && isCirc(zl)) ? steBoostMag : 0;
+      var dayFrameLteBoost = durationDays < 2 && shouldDay() ? 2.2 : 0;
+      return durationScore + recencyScore + steBoost + dayFrameLteBoost;
+    } catch (e) { return 0; }
+  }
+
   // Expose; event-renderer will delegate to these when present
   const Lod = {
     TUBE,
     DENSITY,
     computeEventTubeQualityScale,
     getEventDensityBudget,
+    scoreEventPriority,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Lod;
@@ -38,6 +62,7 @@
     global.EventLod = Lod;
     // Back-compat: keep globals so existing event-renderer fallbacks work
     global.computeEventTubeQualityScale = computeEventTubeQualityScale;
+    global.scoreEventPriority = scoreEventPriority;
     global.getEventDensityBudget = getEventDensityBudget;
     global.DENSITY_BUDGET = DENSITY;
     global.EVENT_TUBE_BUDGET = TUBE.BUDGET;
