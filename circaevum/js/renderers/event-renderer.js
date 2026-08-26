@@ -2358,8 +2358,9 @@
       : start;
     const near = getSelectedWeekLteWarpAmount(mid);
     if (near > 0.05) {
-      const arc = Math.ceil((hrs / 24) * 128);
-      return Math.max(16, Math.min(128, Math.max(arc, Math.ceil(hrs * 4))));
+      // Week-ish plateau (5–10d) was 128 segs → lag per-frame flatten; reduce to 24 max
+      const arc = Math.ceil((hrs / 24) * 32);
+      return Math.max(8, Math.min(24, Math.max(arc, Math.ceil(hrs * 1.2))));
     }
     return Math.max(3, Math.min(8, Math.ceil(hrs * 0.9)));
   }
@@ -3011,7 +3012,7 @@
         rIn = Math.max(hl * 0.72, hl - halfRadial, minR);
         rOut = Math.max(hl + halfRadial, rIn + minSpan);
       }
-      const segments = Math.max(8, Math.min(48, Math.ceil(durationH * 4)));
+      const segments = Math.max(8, Math.min(24, Math.ceil(durationH * 1.5)));
       const ribbonPair = CR.buildDiskRibbonBetween(
         start,
         end,
