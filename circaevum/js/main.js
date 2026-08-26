@@ -7703,27 +7703,34 @@ function createTimeMarkers(zoomLevel) {
     initTimeMarkers();
     
     // Delegate to TimeMarkers module if available, otherwise fall back to old code
-    if (typeof TimeMarkers !== 'undefined' && TimeMarkers.createTimeMarkers) {
-        // CRITICAL: Update offset values before recreating markers
-        // These are captured by value in TimeMarkers.init(), so we need to update them
-        if (typeof TimeMarkers.updateOffsets === 'function') {
-            TimeMarkers.updateOffsets({
+    const _tmPayload = {
                 selectedYearOffset,
                 selectedQuarterOffset,
                 selectedWeekOffset,
                 selectedDayOffset,
                 selectedHourOffset,
-                selectedLunarOffset, // Needed for Zoom 6 lunar calculation
-                currentYear, // Needed for Zoom 1 and 2 year highlighting
+                selectedLunarOffset,
+                currentYear,
                 currentMonthInYear,
                 currentMonth,
-                currentWeekInMonth, // Needed for Zoom 5 and 6 week calculation
-                currentQuarter, // Needed for Zoom 3 quarter navigation
-                currentDayInWeek, // Needed for Zoom 7 day calculation
+                currentWeekInMonth,
+                currentQuarter,
+                currentDayInWeek,
                 currentDayOfMonth,
-                currentHourInDay // Needed for Zoom 8/9 hour calculation
-            });
+                currentHourInDay
+            };
+    const _tmKey = JSON.stringify(_tmPayload) + '|' + zoomLevel + '|' + !!showFullYearTimeMarkers + '|' + !!tourHideAllTimeMarkers;
+    if (typeof TimeMarkers !== 'undefined' && TimeMarkers.createTimeMarkers) {
+        if (typeof TimeMarkers.updateOffsets === 'function') {
+            TimeMarkers.updateOffsets(_tmPayload);
         }
+        // Cache: 5→7 within same year keeps day lines, avoid 365-line rebuild
+        if (window._lastTimeMarkersKey === _tmKey && zoomLevel >= 5 && window._lastTimeMarkersKey) {
+            // Keep existing markers, just ensure visibility
+            if (typeof refreshContextSphereVisualClip === 'function') refreshContextSphereVisualClip();
+            return;
+        }
+        window._lastTimeMarkersKey = _tmKey;
         // Full-year toggle now only controls whether day markers span the entire year.
         const options = {};
         if (showFullYearTimeMarkers) options.fullYearScope = true;
