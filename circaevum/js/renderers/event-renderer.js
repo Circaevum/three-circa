@@ -88,9 +88,9 @@
     2: 40,    // DECADE — 10 years
     3: 300,   // YEAR — raised; calendar + timeseries years can run deep
     4: 300,   // QUARTER
-    5: 800,   // MONTH — day-frame LTE dailies across ±month
-    6: 800,   // LUNAR — same month of day-frame dailies as zoom 5
-    7: 800,   // WEEK — day-frame LTE across parent month / zoom window
+    5: 300,   // MONTH — day-frame LTE dailies across ±month (was 800, cut for 5→7 transition)
+    6: 300,   // LUNAR — same month of day-frame dailies as zoom 5 (was 800)
+    7: 200,   // WEEK — day-frame LTE across parent week / zoom window (was 800, ~7d visible)
     8: 700,   // DAY — month-range dailies + selected week
     9: 120,   // CLOCK — polar day disk
   };
@@ -2630,6 +2630,12 @@
 
   function maybeAppendAnnualDayFrameSte(circadianRoot, ribbonOpts, userData, start, end) {
     if (!shouldDrawAnnualDayFrameSteGeometry(start, end)) return circadianRoot;
+    // LOD: at WEEK and closer, circadian disk is the primary view — skip dual
+    // annual+circadian placement to avoid 2× ribbons + connector per daily.
+    const zl = getZoomLevelForEvents();
+    if ((zl === 7 || zl === 8 || zl === 9 || zl === 0) && circadianRoot) {
+      return circadianRoot;
+    }
     const annualRoot = tryCreateDayFrameSubDayRibbon(
       Object.assign({}, ribbonOpts, { skipLabels: !!circadianRoot })
     );
@@ -2640,7 +2646,9 @@
     return isSteStyleDailySpan(start, end);
   }
 
-  /** Annual helix day-frame: Zoom-4/5 month of dailies, including closer zooms (no Shift). */
+  /** Annual helix day-frame: Zoom-4/5 month of dailies, including closer zooms (no Shift).
+   * LOD fix: WEEK (7) uses week window (~7d) not month window (~60d) to avoid
+   * rebuilding 60 annual ribbons when only 7 are visible on circadian disks. */
   function shouldDrawAnnualDayFrameSteGeometry(start, end) {
     if (typeof global.flattenMode === 'string' && global.flattenMode === 'all') return false;
     if (!shouldRenderDayFrameSubDayOnAnnualHelix()) return false;
@@ -2648,8 +2656,11 @@
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (shouldHideLongTermOnDailySkySte(start, evEnd)) return false;
     const zl = getZoomLevelForEvents();
-    if (zl === 4 || zl === 5 || zl === 6 || zl === 7 || zl === 8 || zl === 9 || zl === 0) {
+    if (zl === 4 || zl === 5 || zl === 6 || zl === 8 || zl === 9 || zl === 0) {
       return eventTouchesZoom5DailyWindow(start, evEnd);
+    }
+    if (zl === 7) {
+      return eventTouchesSelectedWeekWindow(start, evEnd);
     }
     return true;
   }
