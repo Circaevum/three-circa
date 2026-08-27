@@ -58,7 +58,7 @@ let focusPoint = null; // Initialized in initScene after THREE is loaded
 let targetFocusPoint = null; // Initialized in initScene after THREE is loaded
 let targetCameraDistance = 800;
 let currentCameraDistance = 800;
-let cameraTransitionSpeed = 0.15; // Camera transition speed for zoom level changes
+let cameraTransitionSpeed = 0.35; // W/S zoom — faster lerp (was 0.15, too much delay for 5→7)
 /**
  * Optional override after Event Horizon fit-cam (normally unused — classic ZOOM_LEVELS.distance).
  */
@@ -10874,15 +10874,11 @@ function _mainSetZoomLevel(level, overrideDate) {
     if (Math.abs(targetCameraDistance - (typeof currentCameraDistance === 'number' ? currentCameraDistance : targetCameraDistance)) > 1000 || prevZoom <= 2 || level <= 2) {
         createStarField(); // Only when zoom distance changes significantly or at coarse zooms
     }
-    const planetsNeedRebuild = prevZoom <= 2 || level <= 2 || Math.abs(ZOOM_LEVELS[prevZoom].distance - ZOOM_LEVELS[level].distance) > 50 || level === 0 || prevZoom === 0 || level === 9 || prevZoom === 9;
+    const planetsNeedRebuild = prevZoom <= 2 || level <= 2 || Math.abs(ZOOM_LEVELS[prevZoom].distance - ZOOM_LEVELS[level].distance) > 10 || level === 5 || level === 7 || prevZoom === 5 || prevZoom === 7 || level === 0 || prevZoom === 0 || level === 9 || prevZoom === 9;
     if (planetsNeedRebuild) {
         createPlanets(currentZoom);
     } else {
-        // Keep planet meshes, just update worldline visibility and time markers
         if (Array.isArray(worldlines)) worldlines.forEach(w => { if (w) w.visible = isWorldlineVisibleForZoom(level); });
-        if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
-            // Already updated, will createTimeMarkers via next block
-        }
         if (typeof Worldlines !== 'undefined' && typeof Worldlines.updateWorldlineVisibility === 'function') {
             try { Worldlines.updateWorldlineVisibility(level); } catch (e) {}
         }
