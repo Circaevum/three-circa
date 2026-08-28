@@ -26,6 +26,7 @@ let scene, camera, renderer;
 let sceneContentGroup = null;
 let flattenableGroup = null; // Worldlines and time markers only; scaled when flatten is on. Sun/planets stay in sceneContentGroup.
 let timeMarkersGroup = null; // Time markers only; enables marker-only flatten mode.
+let timeMarkerLabelsGroup = null; // Text sprites — flatten Y position, never box height.
 let sunMesh = null;
 let sunGlow = null;
 let sunLight = null;
@@ -40,6 +41,7 @@ let orbitLines = [];
 let worldlines = [];
 let timeMarkers = [];
 let currentZoom = 4;
+if (typeof window !== 'undefined') window.currentZoom = currentZoom;
 // Set true while createPlanets() runs and after it refreshes event layers, so
 // callers that invoke createPlanets() can skip an immediately-following
 // refreshAllEventLayers() (a full event rebuild) instead of doing it twice.
@@ -1240,6 +1242,8 @@ function initScene() {
         sceneContentGroup.add(flattenableGroup);
         timeMarkersGroup = new THREE.Group();
         sceneContentGroup.add(timeMarkersGroup);
+        timeMarkerLabelsGroup = new THREE.Group();
+        sceneContentGroup.add(timeMarkerLabelsGroup);
     } else {
         // Fallback: original implementation (should not be needed if SceneCore is loaded)
         console.warn('SceneCore not available, using fallback initScene');
@@ -1258,6 +1262,8 @@ function initScene() {
         sceneContentGroup.add(flattenableGroup);
         timeMarkersGroup = new THREE.Group();
         sceneContentGroup.add(timeMarkersGroup);
+        timeMarkerLabelsGroup = new THREE.Group();
+        sceneContentGroup.add(timeMarkerLabelsGroup);
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
         const currentYearHeight = getHeightForYear(currentYear, 1);
         camera.position.set(0, currentYearHeight + 400, 800);
@@ -2756,6 +2762,9 @@ function refreshContextSphereVisualClip() {
         if (typeof timeMarkersGroup !== 'undefined' && timeMarkersGroup) {
             steRoots.push(timeMarkersGroup);
         }
+        if (typeof timeMarkerLabelsGroup !== 'undefined' && timeMarkerLabelsGroup) {
+            steRoots.push(timeMarkerLabelsGroup);
+        }
         if (typeof timeMarkers !== 'undefined' && Array.isArray(timeMarkers)) {
             for (let i = 0; i < timeMarkers.length; i++) {
                 if (timeMarkers[i]) steRoots.push(timeMarkers[i]);
@@ -2802,6 +2811,9 @@ function refreshContextSphereVisualClip() {
     }
     if (typeof timeMarkersGroup !== 'undefined' && timeMarkersGroup) {
         lteRoots.push(timeMarkersGroup);
+    }
+    if (typeof timeMarkerLabelsGroup !== 'undefined' && timeMarkerLabelsGroup) {
+        lteRoots.push(timeMarkerLabelsGroup);
     }
     if (typeof timeMarkers !== 'undefined' && Array.isArray(timeMarkers)) {
         for (let i = 0; i < timeMarkers.length; i++) {
@@ -7582,6 +7594,7 @@ function createTextLabel(
     sprite.renderOrder = 50;
     sprite.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
     sprite.userData.logicalY = height;
+    sprite.userData.flattenPositionOnly = true;
 
     // Scale based on zoom level - larger for zoomed out views, smaller for zoomed in
     let scale;
@@ -7603,29 +7616,18 @@ function createTextLabel(
         scale = 6; // Day
     }
 
-    const looksLikeYear = /^\d{4}$/.test(String(text));
-    if (looksLikeYear) {
-        const dist =
-            typeof currentCameraDistance === 'number' && currentCameraDistance > 0
-                ? currentCameraDistance
-                : (typeof ZOOM_LEVELS !== 'undefined' && ZOOM_LEVELS[zoomLevel] && ZOOM_LEVELS[zoomLevel].distance) || 140;
-        const sy = Math.max(5, dist * 0.07);
-        const aspect = canvasWidth / canvasHeight;
-        sprite.scale.set(sy * aspect, sy, 1);
-        sprite.userData.baseScale = { x: sy * aspect, y: sy, z: 1 };
-        sprite.userData.scaleWithCameraDistance = 0.07;
-    } else {
-        scale = scale * sizeMultiplier;
-        const scaleY = scale * 0.25;
-        const scaleX = scaleY * (canvasWidth / canvasHeight);
-        sprite.scale.set(scaleX, scaleY, 1);
-        sprite.userData.baseScale = { x: scaleX, y: scaleY, z: 1 };
-    }
+    // Zoom-table world size. Do not scale years by currentCameraDistance —
+    // that starts at 800 on boot and makes "2026" eat the screen.
+    scale = scale * sizeMultiplier;
+    const scaleY = scale * 0.25;
+    const scaleX = scaleY * (canvasWidth / canvasHeight);
+    sprite.scale.set(scaleX, scaleY, 1);
+    sprite.userData.baseScale = { x: scaleX, y: scaleY, z: 1 };
     if (tourRevealTier != null && typeof tourRevealTier === 'number') {
         sprite.userData.circaevumTourRevealTier = tourRevealTier;
     }
 
-    (timeMarkersGroup || flattenableGroup || sceneContentGroup).add(sprite);
+    (timeMarkerLabelsGroup || timeMarkersGroup || flattenableGroup || sceneContentGroup).add(sprite);
     timeMarkers.push(sprite);
 }
 
@@ -7697,6 +7699,14 @@ function initTimeMarkers() {
  * Default off — LTE chrome lives *outside* the sphere (invert fragment clip).
  * Toggle: `window.setClipTimeMarkersToContextSphere(true)`.
  */
+function applyTimeMarkerLabelFlatten() {
+    if (typeof timeMarkerLabelsGroup === 'undefined' || !timeMarkerLabelsGroup) return;
+    const amt = typeof currentTimeMarkerFlattenAmount === 'number' ? currentTimeMarkerFlattenAmount : 0;
+    if (typeof window !== 'undefined' && window.AppFlatten && typeof window.AppFlatten.applyPositionFlattenToSprites === 'function') {
+        window.AppFlatten.applyPositionFlattenToSprites(timeMarkerLabelsGroup, amt);
+    }
+}
+
 let clipTimeMarkersToContextSphere = false;
 
 function createTimeMarkers(zoomLevel) {
@@ -7720,26 +7730,32 @@ function createTimeMarkers(zoomLevel) {
                 currentDayOfMonth,
                 currentHourInDay
             };
-    const _tmKey = JSON.stringify(_tmPayload) + '|' + zoomLevel + '|' + !!showFullYearTimeMarkers + '|' + !!tourHideAllTimeMarkers;
+    const markerBand = (zoomLevel >= 8 || zoomLevel === 0)
+        ? 'hours'
+        : (zoomLevel >= 5 ? 'year-onion' : String(zoomLevel));
+    const _tmKey = JSON.stringify(_tmPayload) + '|' + markerBand + '|' + !!showFullYearTimeMarkers + '|' + !!tourHideAllTimeMarkers;
     if (typeof TimeMarkers !== 'undefined' && TimeMarkers.createTimeMarkers) {
         if (typeof TimeMarkers.updateOffsets === 'function') {
             TimeMarkers.updateOffsets(_tmPayload);
         }
-        // Cache: 5→7 within same year keeps day lines, avoid 365-line rebuild
+        // Cache: zoom 5–7 share full-year onion (year/quarter/month/week/day).
+        // Skip 365-line rebuild on 5↔7 hops.
         if (window._lastTimeMarkersKey === _tmKey && zoomLevel >= 5 && window._lastTimeMarkersKey) {
             // Keep existing markers, just ensure visibility
             if (typeof refreshContextSphereVisualClip === 'function') refreshContextSphereVisualClip();
+            applyTimeMarkerLabelFlatten();
             return;
         }
         window._lastTimeMarkersKey = _tmKey;
         // Full-year toggle now only controls whether day markers span the entire year.
         const options = {};
-        if (showFullYearTimeMarkers) options.fullYearScope = true;
+        if (showFullYearTimeMarkers || (zoomLevel >= 5 && zoomLevel <= 7)) options.fullYearScope = true;
         if (tourHideAllTimeMarkers) {
             options.tourHideAll = true;
             TimeMarkers.createTimeMarkers(zoomLevel, options);
             applyTimeMarkerVisibility();
             if (typeof refreshContextSphereVisualClip === 'function') refreshContextSphereVisualClip();
+            applyTimeMarkerLabelFlatten();
             return;
         }
         if (tourOrbitMarkersFromCalendar) {
@@ -7780,6 +7796,7 @@ function createTimeMarkers(zoomLevel) {
             } catch (e2) { /* optional */ }
         }
         if (typeof refreshContextSphereVisualClip === 'function') refreshContextSphereVisualClip();
+        if (typeof applyTimeMarkerLabelFlatten === 'function') applyTimeMarkerLabelFlatten();
         return;
     }
     // If TimeMarkers module is not available, log a warning
@@ -10748,6 +10765,91 @@ function getBackgroundColor(viewMode, appearance) {
     return [0x000814, 0x140808, 0x080814][vm];
 }
 
+function zoomSceneRebuildFamily(z) {
+    const zl = typeof z === 'number' && !isNaN(z) ? z : 4;
+    if (zl <= 2) return 'coarse';
+    if (zl === 0 || zl >= 8) return 'sky';
+    if (zl === 6) return 'lunar';
+    if (zl >= 5 && zl <= 7) return 'month-week';
+    return 'year-quarter';
+}
+
+/**
+ * Camera look-at + dolly for a zoom hop without tearing down planets.
+ * Month (5) mid = week band; Week (7) mid = day band; distances 25 vs 13.
+ */
+function applyZoomCameraFraming(zoomLevel) {
+    const config = typeof ZOOM_LEVELS !== 'undefined' ? ZOOM_LEVELS[zoomLevel] : null;
+    if (!config || !targetFocusPoint) return;
+
+    if (typeof config.distance === 'number' && config.distance > 0) {
+        targetCameraDistance = config.distance;
+        zoomFramedCameraDistance = null;
+    }
+
+    const { currentDateHeight, selectedDateHeight, selectedDate } = computeSceneDateHeights(zoomLevel);
+    const selectedSceneY = typeof getFlattenedSceneY === 'function'
+        ? getFlattenedSceneY(selectedDateHeight)
+        : selectedDateHeight;
+    const effectiveFocusTarget = focusTargetOverride || config.focusTarget;
+
+    try {
+        if (typeof ensureContextSphereState === 'function') ensureContextSphereState(zoomLevel);
+    } catch (e) { /* optional */ }
+
+    if (effectiveFocusTarget === 'earth' || effectiveFocusTarget === 'mid') {
+        if (
+            preferEarthEventHorizonCamera &&
+            contextSphereState &&
+            typeof contextSphereState.x === 'number' &&
+            isFinite(contextSphereState.radius) &&
+            contextSphereState.radius > 0
+        ) {
+            targetFocusPoint.set(contextSphereState.x, getFlattenedSceneY(contextSphereState.y), contextSphereState.z);
+        } else {
+            const earth = PLANET_DATA.find((p) => p.name === 'Earth');
+            if (earth) {
+                const earthPos = getPlanetXZAtSelectedDate(earth, selectedDate, currentDateHeight, selectedDateHeight);
+                if (effectiveFocusTarget === 'mid' && !preferEarthEventHorizonCamera) {
+                    const midFrac = getFocusMidRadialFrac(zoomLevel);
+                    targetFocusPoint.set(earthPos.x * midFrac, selectedSceneY, earthPos.z * midFrac);
+                } else {
+                    targetFocusPoint.set(earthPos.x, selectedSceneY, earthPos.z);
+                }
+            }
+        }
+    } else if (effectiveFocusTarget === 'moon') {
+        const earth = PLANET_DATA.find((p) => p.name === 'Earth');
+        const MM = typeof MoonMechanics !== 'undefined' ? MoonMechanics : null;
+        if (MM && typeof MM.moonXZPedagogicalFromEarthMesh === 'function' && earth) {
+            const earthPos = getPlanetXZAtSelectedDate(earth, selectedDate, currentDateHeight, selectedDateHeight);
+            const stub = { position: { x: earthPos.x, y: selectedDateHeight, z: earthPos.z } };
+            const mxz = MM.moonXZPedagogicalFromEarthMesh(
+                stub,
+                selectedDate,
+                null,
+                currentDateHeight,
+                selectedDateHeight
+            );
+            targetFocusPoint.set(mxz.x, selectedSceneY, mxz.z);
+        } else if (earth) {
+            const earthPos = getPlanetXZAtSelectedDate(earth, selectedDate, currentDateHeight, selectedDateHeight);
+            const midFrac = getFocusMidRadialFrac(zoomLevel);
+            targetFocusPoint.set(earthPos.x * midFrac, selectedSceneY, earthPos.z * midFrac);
+        } else {
+            targetFocusPoint.set(0, selectedSceneY, 0);
+        }
+    } else {
+        targetFocusPoint.set(0, selectedSceneY, 0);
+    }
+
+    try {
+        if (typeof syncEventHorizonCameraAfterSphere === 'function') {
+            syncEventHorizonCameraAfterSphere(zoomLevel);
+        }
+    } catch (e2) { /* optional */ }
+}
+
 function _mainSetZoomLevel(level, overrideDate) {
     // CRITICAL: Get selected date BEFORE changing currentZoom (or use override when navigating to a specific event)
     const selectedDate = overrideDate instanceof Date ? overrideDate : getSelectedDateTime();
@@ -10757,6 +10859,7 @@ function _mainSetZoomLevel(level, overrideDate) {
 
     // Now change the zoom level
     currentZoom = level;
+    if (typeof window !== 'undefined') window.currentZoom = currentZoom;
     if (Array.isArray(worldlines)) {
         worldlines.forEach((w) => {
             if (w) w.visible = isWorldlineVisibleForZoom(level);
@@ -10821,6 +10924,14 @@ function _mainSetZoomLevel(level, overrideDate) {
     // Set target camera distance for smooth transition (classic ZOOM_LEVELS.distance).
     targetCameraDistance = config.distance;
     zoomFramedCameraDistance = null;
+    // Bootstrap camera is 800. Snap when first zoom is close (70/25/13) so labels
+    // and framing are not born at the far dummy distance.
+    if (
+        typeof currentCameraDistance === 'number' &&
+        Math.abs(currentCameraDistance - targetCameraDistance) > Math.max(400, targetCameraDistance * 5)
+    ) {
+        currentCameraDistance = targetCameraDistance;
+    }
 
     // Unwind any Zoom-0 telephoto magnification when changing zoom band.
     if (camera && Math.abs(camera.fov - BASE_CAMERA_FOV) > 1e-3) {
@@ -10874,7 +10985,7 @@ function _mainSetZoomLevel(level, overrideDate) {
     if (Math.abs(targetCameraDistance - (typeof currentCameraDistance === 'number' ? currentCameraDistance : targetCameraDistance)) > 1000 || prevZoom <= 2 || level <= 2) {
         createStarField(); // Only when zoom distance changes significantly or at coarse zooms
     }
-    const planetsNeedRebuild = prevZoom <= 2 || level <= 2 || Math.abs(ZOOM_LEVELS[prevZoom].distance - ZOOM_LEVELS[level].distance) > 10 || level === 5 || level === 7 || prevZoom === 5 || prevZoom === 7 || level === 0 || prevZoom === 0 || level === 9 || prevZoom === 9;
+    const planetsNeedRebuild = zoomSceneRebuildFamily(prevZoom) !== zoomSceneRebuildFamily(level);
     if (planetsNeedRebuild) {
         createPlanets(currentZoom);
     } else {
@@ -10882,17 +10993,19 @@ function _mainSetZoomLevel(level, overrideDate) {
         if (typeof Worldlines !== 'undefined' && typeof Worldlines.updateWorldlineVisibility === 'function') {
             try { Worldlines.updateWorldlineVisibility(level); } catch (e) {}
         }
+        createTimeMarkers(currentZoom);
+        applyZoomCameraFraming(level);
     }
     updateTimeDisplays();
     updateFlattenIconVisibility();
 
     const gl = typeof window !== 'undefined' ? window.circaevumGL : null;
     if (!eventsRefreshedDuringCreatePlanets && gl && typeof gl.refreshAllEventLayers === 'function') {
-        // Only refresh event layers when zoom actually changes event density/window
+        const familyChanged = zoomSceneRebuildFamily(prevZoom) !== zoomSceneRebuildFamily(level);
         const wasMonthPlus = prevZoom >= 5;
         const isMonthPlus = level >= 5;
         const densityChanged = DENSITY_BUDGET[prevZoom] !== DENSITY_BUDGET[level] || wasMonthPlus !== isMonthPlus;
-        if (densityChanged || Math.abs(level - prevZoom) > 1 || level === 5 || level === 7 || prevZoom === 5 || prevZoom === 7) {
+        if (familyChanged && (densityChanged || Math.abs(level - prevZoom) > 1)) {
             try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
         } else {
             // Keep existing EventObjects, just update flatten/time window via existing traverse
@@ -11733,12 +11846,14 @@ function animate(time, frame) {
         if (typeof flattenableGroup !== 'undefined' && flattenableGroup && typeof focusPoint !== 'undefined' && focusPoint) {
             applyFlattenToGroup(flattenableGroup, currentFlattenAmount, true);
         }
+        applyTimeMarkerLabelFlatten();
     }
     if (markerFlattenChanged) {
         window._lastTimeMarkerFlattenAmt = currentTimeMarkerFlattenAmount;
         if (typeof timeMarkersGroup !== 'undefined' && timeMarkersGroup && typeof focusPoint !== 'undefined' && focusPoint) {
             applyFlattenToGroup(timeMarkersGroup, currentTimeMarkerFlattenAmount, false);
         }
+        applyTimeMarkerLabelFlatten();
     }
     if (flattenChanged && typeof circadianWorldlines !== 'undefined' && circadianWorldlines && circadianWorldlines.length && typeof focusPoint !== 'undefined' && focusPoint) {
         const circFlattenAmt = flattenMode === 'all' ? currentFlattenAmount : 0;
@@ -12176,6 +12291,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const variedZoom = pickInitialZoomLevel();
         if (typeof variedZoom === 'number') {
             currentZoom = variedZoom;
+            if (typeof window !== 'undefined') window.currentZoom = currentZoom;
         }
         // Route through window.setZoomLevel so the embed-api monkey-patch fires
         // and any parent wrapper (e.g. yin-portal on app.circaevum.com) receives

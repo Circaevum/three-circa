@@ -81,6 +81,33 @@
           }
         });
       }
+    },
+    /**
+     * Flatten sprite Y *positions* toward pivot, keep billboard box size.
+     * Time-marker text lives in an unscaled sibling group so parent scale.y
+     * cannot pancake the quad (THREE.Sprite local Y ≠ world Y).
+     */
+    applyPositionFlattenToSprites: function (group, amount) {
+      if (!group || typeof group.traverse !== 'function') return;
+      var yScaleLocal = Flatten.yScaleFor(amount);
+      var pivotY = Flatten.focusY();
+      var curDist = typeof global.currentCameraDistance === 'number' ? global.currentCameraDistance : 0;
+      group.traverse(function (obj) {
+        if (!obj || !obj.userData) return;
+        if (typeof obj.userData.logicalY !== 'number') return;
+        if (!(obj.isSprite || obj.userData.flattenPositionOnly)) return;
+        obj.position.y = obj.userData.logicalY * yScaleLocal + pivotY * (1 - yScaleLocal);
+        var b = obj.userData.baseScale;
+        if (!b) return;
+        var frac = obj.userData.scaleWithCameraDistance;
+        if (typeof frac === 'number' && frac > 0 && curDist > 0) {
+          var aspect = b.y > 1e-6 ? b.x / b.y : 1;
+          var sy = Math.max(5, curDist * frac);
+          obj.scale.set(sy * aspect, sy, b.z);
+        } else {
+          obj.scale.set(b.x, b.y, b.z);
+        }
+      });
     }
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Flatten;

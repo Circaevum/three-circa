@@ -1865,7 +1865,7 @@ const TimeMarkers = (function() {
         const spanYears = Math.max(1, Math.round((markerConfig.timeYears || 1) * mul));
         const startYear = selectedYear - Math.floor((spanYears - 1) / 2);
 
-        const textSizeMultiplier = (zoomLevel === 1) ? 1.0 : 2.0;
+        const textSizeMultiplier = 1.0;
         const textZoom = zoomLevel || 3;
         const yTier = tourMarkerStaged && zoomLevel >= 3 && tourProgressiveMs == null ? 3 : undefined;
 
@@ -2242,7 +2242,9 @@ const TimeMarkers = (function() {
     // ============================================
     
     function createTimeMarkers(zoomLevel, options) {
-        timeMarkers.forEach(m => scene.remove(m));
+        timeMarkers.forEach(m => {
+            if (m && m.parent) m.parent.remove(m);
+        });
         timeMarkers.length = 0;
 
         if (options && options.tourHideAll === true) {

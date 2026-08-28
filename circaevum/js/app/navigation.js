@@ -14,8 +14,28 @@
     const now = new Date(); return now;
   }
 
+  /** W/S ladder — skip Lunar (6). Digit 6 still jumps there. */
+  var KEYBOARD_ZOOM_SEQUENCE = [1, 2, 3, 4, 5, 7, 8, 9, 0];
+
   function getCurrentZoomLevel() {
+    if (typeof global.getCurrentZoomLevel === 'function' && global.getCurrentZoomLevel !== getCurrentZoomLevel) {
+      try {
+        var z = global.getCurrentZoomLevel();
+        if (typeof z === 'number' && !isNaN(z)) return z;
+      } catch (e) {}
+    }
     return typeof global.currentZoom === 'number' ? global.currentZoom : 4;
+  }
+
+  function getNextKeyboardZoomLevel(direction, fromZoom) {
+    var cur = typeof fromZoom === 'number' ? fromZoom : getCurrentZoomLevel();
+    if (cur === 6) return direction > 0 ? 7 : 5;
+    var currentIdx = KEYBOARD_ZOOM_SEQUENCE.indexOf(cur);
+    var nextIdx = currentIdx === -1
+      ? (direction > 0 ? 0 : KEYBOARD_ZOOM_SEQUENCE.length - 1)
+      : currentIdx + (direction > 0 ? 1 : -1);
+    if (nextIdx < 0 || nextIdx >= KEYBOARD_ZOOM_SEQUENCE.length) return null;
+    return KEYBOARD_ZOOM_SEQUENCE[nextIdx];
   }
 
   function setZoomLevel(level, overrideDate) {
@@ -38,7 +58,7 @@
     if (!e || !e.key) return false;
     var key = parseInt(e.key);
     var g = global;
-    var curZoom = typeof g.currentZoom === 'number' ? g.currentZoom : 4;
+    var curZoom = getCurrentZoomLevel();
     var blockMoment = curZoom === 0;
     var doZoom = function(lvl){
       if (typeof g._mainSetZoomLevel === 'function') return g._mainSetZoomLevel(lvl);
@@ -51,16 +71,14 @@
     } else if (e.key.toLowerCase() === 'w') {
       if (blockMoment) return false;
       if (e.repeat) return true;
-      if (typeof g.getNextKeyboardZoomLevel === 'function') {
-        var nz = g.getNextKeyboardZoomLevel(1); if (typeof nz === 'number') doZoom(nz);
-      }
+      var nz = getNextKeyboardZoomLevel(1, curZoom);
+      if (typeof nz === 'number') doZoom(nz);
       return true;
     } else if (e.key.toLowerCase() === 's') {
       if (blockMoment) return false;
       if (e.repeat) return true;
-      if (typeof g.getNextKeyboardZoomLevel === 'function') {
-        var nz2 = g.getNextKeyboardZoomLevel(-1); if (typeof nz2 === 'number') doZoom(nz2);
-      }
+      var nz2 = getNextKeyboardZoomLevel(-1, curZoom);
+      if (typeof nz2 === 'number') doZoom(nz2);
       return true;
     } else if (e.key === '[' || e.code === 'BracketLeft') {
       if (typeof g.nudgeSelectedWallTime === 'function') g.nudgeSelectedWallTime(-15 * 60 * 1000);
@@ -99,8 +117,10 @@
   const Navigation = {
     getSelectedDateTime,
     getCurrentZoomLevel,
+    getNextKeyboardZoomLevel,
     setZoomLevel,
     handleKeyWASD,
+    KEYBOARD_ZOOM_SEQUENCE,
     ZOOM_LEVELS: (typeof window !== 'undefined' && window.ZOOM_LEVELS) || null,
   };
 
@@ -108,6 +128,7 @@
   else {
     global.AppNavigation = Navigation;
     if (!global.getCurrentZoomLevel) global.getCurrentZoomLevel = getCurrentZoomLevel;
+    if (!global.getNextKeyboardZoomLevel) global.getNextKeyboardZoomLevel = getNextKeyboardZoomLevel;
     global.handleKeyWASD = handleKeyWASD;
     // Expose setZoomLevel via window fallback so main.js wrapper can delegate
     if (!global.AppNavigation.setZoomLevel) global.AppNavigation.setZoomLevel = setZoomLevel;

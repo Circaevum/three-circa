@@ -21,7 +21,7 @@
   const THREE = typeof window !== 'undefined' ? window.THREE : null;
 
   const GPU_UNIFORMS = {
-    flattenAmount: { value: 1.0 },
+    flattenAmount: { value: 0.0 },
     focusY: { value: 0.0 },
     eventHorizonWarp: { value: 0.0 },
     selectedTimeMs: { value: Date.now() },
@@ -53,44 +53,11 @@
   }
 
   /**
-   * Attach GPU Flattening Shader node / custom vertex shader logic to a material.
-   * When flattenAmount changes, vertex Y positions deform on GPU in real time.
+   * CPU group.scale.y already flattens meshes in flattenableGroup / timeMarkersGroup.
+   * Vertex Y squash here would double-flatten (pancake text boxes + ribbons).
+   * Kept as a no-op hook so callers stay valid.
    */
   function applyGPUFlattenToMaterial(material) {
-    if (!material) return material;
-
-    if (material.isNodeMaterial || (material.type && material.type.includes('NodeMaterial'))) {
-      try {
-        if (typeof THREE !== 'undefined' && THREE.nodes) {
-          const positionNode = THREE.nodes.positionLocal || THREE.nodes.position;
-          if (positionNode) {
-            const yScale = THREE.nodes.max(THREE.nodes.float(0.0), THREE.nodes.sub(THREE.nodes.float(1.0), THREE.nodes.uniform(GPU_UNIFORMS.flattenAmount)));
-            const yOffset = THREE.nodes.mul(THREE.nodes.uniform(GPU_UNIFORMS.focusY), THREE.nodes.sub(THREE.nodes.float(1.0), yScale));
-            const flattenedY = THREE.nodes.add(THREE.nodes.mul(positionNode.y, yScale), yOffset);
-            material.positionNode = THREE.nodes.vec3(positionNode.x, flattenedY, positionNode.z);
-          }
-        }
-      } catch (e) {
-        console.warn('[WebGPU Pipeline] TSL node attachment fallback:', e);
-      }
-    } else if (material.onBeforeCompile) {
-      const oldCompile = material.onBeforeCompile;
-      material.onBeforeCompile = function (shader, renderer) {
-        if (typeof oldCompile === 'function') oldCompile.call(this, shader, renderer);
-        shader.uniforms.uFlattenAmount = GPU_UNIFORMS.flattenAmount;
-        shader.uniforms.uFocusY = GPU_UNIFORMS.focusY;
-        shader.vertexShader = 'uniform float uFlattenAmount;\nuniform float uFocusY;\n' + shader.vertexShader;
-        shader.vertexShader = shader.vertexShader.replace(
-          '#include <begin_vertex>',
-          `
-          #include <begin_vertex>
-          float yScale = max(0.0, 1.0 - uFlattenAmount);
-          float yOffset = uFocusY * (1.0 - yScale);
-          transformed.y = transformed.y * yScale + yOffset;
-          `
-        );
-      };
-    }
     return material;
   }
 
@@ -101,6 +68,9 @@
    */
   function applyGPUBillboardToMaterial(material) {
     if (!material) return material;
+    // THREE.Sprite already faces the camera. Patching SpriteMaterial vertices
+    // pancakes label boxes under flatten / non-uniform parent scale.
+    if (material.isSpriteMaterial || material.type === 'SpriteMaterial') return material;
     if (material.isNodeMaterial || (material.type && material.type.includes('NodeMaterial'))) {
       try {
         if (typeof THREE !== 'undefined' && THREE.nodes && THREE.nodes.billboard) {

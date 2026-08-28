@@ -36,9 +36,6 @@
     } else {
       mat = new MatClass(opts);
     }
-    if (typeof window !== 'undefined' && window.CircaevumWebGPUPipeline && typeof window.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial === 'function') {
-      window.CircaevumWebGPUPipeline.applyGPUFlattenToMaterial(mat);
-    }
     return mat;
   }
 
