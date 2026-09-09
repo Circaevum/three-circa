@@ -2015,36 +2015,43 @@ function getListContextDiscTimeBoundsMs(zoomLevel, refDate) {
 }
 
 /**
- * Time bounds for the 3D context arc — calendar box for the zoom grain
- * (week / month / quarter / …). Same window as event cull + layer rebuild key.
+ * Selected calendar quarter [t0, t1] (inclusive end of last day).
+ * Parent window for month-grain events (zoom 5).
  */
-function getListContextDiscArcTimeBoundsMs(zoomLevel, refDate) {
-    const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
+function getSelectedQuarterTimeBoundsMs(refDate) {
     const ref =
         refDate instanceof Date && !isNaN(refDate.getTime())
             ? refDate
             : typeof getSelectedDateTime === 'function'
               ? getSelectedDateTime()
               : new Date();
-    // Calendar box for Context Arc borders:
-    // z≤4 (year / quarter / super-week hoop) = full year ring
-    // z≥5 (month and closer) = selected month slice
-    const dayMs = EVENT_LIST_MS_PER_DAY;
-    const zFloor = Math.floor(z);
-    if (zFloor === 0) {
-        const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), ref.getHours(), 0, 0, 0);
-        return { t0: start.getTime(), t1: start.getTime() + dayMs / 24, ref };
-    }
-    if (zFloor <= 4) {
-        return {
-            t0: new Date(ref.getFullYear(), 0, 1, 0, 0, 0, 0).getTime(),
-            t1: new Date(ref.getFullYear(), 11, 31, 23, 59, 59, 999).getTime(),
-            ref
-        };
-    }
+    const q = Math.floor(ref.getMonth() / 3) * 3;
     return {
-        t0: new Date(ref.getFullYear(), ref.getMonth(), 1, 0, 0, 0, 0).getTime(),
-        t1: new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999).getTime(),
+        t0: new Date(ref.getFullYear(), q, 1, 0, 0, 0, 0).getTime(),
+        t1: new Date(ref.getFullYear(), q + 3, 0, 23, 59, 59, 999).getTime(),
+        ref
+    };
+}
+
+/**
+ * Context-arc + event-cull window = **parent** of the zoom grain
+ * (day events → week, week → month, month → quarter, quarter → year, …).
+ * Same ladder as {@link getParentUnitTimeBoundsMs}.
+ */
+function getListContextDiscArcTimeBoundsMs(zoomLevel, refDate) {
+    const p = getParentUnitTimeBoundsMs(zoomLevel, refDate);
+    if (p && isFinite(p.t0) && isFinite(p.t1)) {
+        return { t0: p.t0, t1: p.t1, ref: p.ref };
+    }
+    const ref =
+        refDate instanceof Date && !isNaN(refDate.getTime())
+            ? refDate
+            : typeof getSelectedDateTime === 'function'
+              ? getSelectedDateTime()
+              : new Date();
+    return {
+        t0: new Date(ref.getFullYear(), 0, 1, 0, 0, 0, 0).getTime(),
+        t1: new Date(ref.getFullYear(), 11, 31, 23, 59, 59, 999).getTime(),
         ref
     };
 }
@@ -3384,7 +3391,8 @@ function getListContextDiscArcRad(zoomLevel, refDate) {
 
     const thetaRef = thetaAtMs(bounds.ref.getTime());
     const zFloor = Math.floor(z);
-    // Quarter and coarser (super-week LTE hoop): closed ring. Month+ zooms: month pie.
+    // Year/quarter (parent ≥ year): closed ring. Finer zooms: parent-unit pie
+    // (month→quarter, lunar/week→month, day→week).
     if (zFloor <= 4) {
         return { theta0: 0, theta1: TWO_PI, spanRad: TWO_PI, fullCircle: true, thetaMid: thetaRef };
     }
@@ -6303,7 +6311,7 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
     const blueHex = colorHex != null ? colorHex : 0x22d3ee;
 
     // Zoom 5–6: keep a full-year ring around the inner year/quarter zone.
-    // Live hoop stays a month pie (LTE spine or month band).
+    // Live hoop = parent-unit pie (month→quarter, lunar→month).
     if (
         yearQuarterZoom &&
         typeof TimeMarkers !== 'undefined' &&
@@ -6658,7 +6666,6 @@ function updateSunEarthTimeRadials(zoomLevel) {
     const orbitsFromCurrentToSelected = yearsFromCurrentToSelected / earth.orbitalPeriod;
     const angleFromCurrentToSelected = orbitsFromCurrentToSelected * Math.PI * 2;
     const earthAngleSelected = earth.startAngle - angleFromCurrentToSelected;
-    const earthAngleCurrent = earth.startAngle;
 
     // Sun Hands: thinner than before so day/time markers stay readable under them.
     let tubeRSelected = Math.max(0.022, d * 0.00205);
@@ -6675,11 +6682,6 @@ function updateSunEarthTimeRadials(zoomLevel) {
         z: Math.sin(earthAngleSelected) * d
     };
     const sunCur = { x: 0, y: currentSceneY, z: 0 };
-    const earthCur = {
-        x: Math.cos(earthAngleCurrent) * d,
-        y: currentSceneY,
-        z: Math.sin(earthAngleCurrent) * d
-    };
 
     const earthMesh = planetMeshes.find((p) => p.userData && p.userData.name === 'Earth');
     const earthSurfaceRadius = resolveEarthGlobeSurfaceRadius(earthMesh) ||
@@ -6688,22 +6690,30 @@ function updateSunEarthTimeRadials(zoomLevel) {
     const ringPad = Math.max(tubeRSelected * 0.35, 0.012);
     const sunHandRingRadius = hourNumberRadius * 1.2 + ringPad;
 
+    const nowDate = new Date();
+    const earthCurrentXZ = getPlanetXZAtSelectedDate(
+        earth,
+        nowDate,
+        currentDateHeight,
+        currentDateHeight
+    );
     const sunRingEarthCenterSel = new THREE.Vector3(
         earthMesh ? earthMesh.position.x : earthSel.x,
         selectedSceneY,
         earthMesh ? earthMesh.position.z : earthSel.z
     );
+    // Red = wall-clock Earth, never selected mesh XZ.
     const sunRingEarthCenterCur = new THREE.Vector3(
-        earthMesh ? earthMesh.position.x : earthCur.x,
+        earthCurrentXZ.x,
         currentSceneY,
-        earthMesh ? earthMesh.position.z : earthCur.z
+        earthCurrentXZ.z
     );
 
     const eps = 0.2;
     function near3(a, b) {
         return Math.abs(a.x - b.x) < eps && Math.abs(a.y - b.y) < eps && Math.abs(a.z - b.z) < eps;
     }
-    const sameRadial = near3(sunSel, sunCur) && near3(earthSel, earthCur);
+    const sameRadial = near3(sunSel, sunCur) && near3(sunRingEarthCenterSel, sunRingEarthCenterCur);
 
     // Stem stops before Earth; torus sits outside hour numerals (avoids doubling Earth hour hands at zoom 0/9).
     if (sameRadial) {
@@ -6741,14 +6751,13 @@ function updateSunEarthTimeRadials(zoomLevel) {
 
     if (zoomLevel === 0 || zoomLevel === 8 || zoomLevel === 9) {
         const selectedDate = getSelectedDateTime();
-        const currentDate = new Date();
         if (typeof EarthGlobe !== 'undefined' && earthMesh && EarthGlobe.updateGlobeHands) {
             EarthGlobe.updateGlobeHands({
                 earthGroup: earthMesh,
                 selectedDate,
-                currentDate,
+                currentDate: nowDate,
                 hourNumberRadius,
-                selectedDateHeight,
+                selectedDateHeight: selectedSceneY,
                 zoomLevel,
                 sceneContentGroup,
                 tourMinimalOrbitMode,
@@ -12927,18 +12936,13 @@ function animate(time, frame) {
         const earthMeshForHands = planetMeshes.find((p) => p && p.userData && p.userData.name === 'Earth');
         if (typeof EarthGlobe !== 'undefined' && earthMeshForHands && EarthGlobe.updateGlobeHands) {
             const sdForHands = getSelectedDateTime();
-            const cdForHands = typeof currentDate !== 'undefined' ? currentDate : null;
-            const sdhForHands = calculateDateHeight(
-                sdForHands.getFullYear(),
-                sdForHands.getMonth(),
-                sdForHands.getDate(),
-                selectedDateHourFraction(sdForHands)
-            );
+            const nowForHands = new Date();
+            const handHeights = computeSceneDateHeights(currentZoom);
             EarthGlobe.updateGlobeHands({
                 earthGroup: earthMeshForHands,
                 selectedDate: sdForHands,
-                currentDate: cdForHands,
-                selectedDateHeight: sdhForHands,
+                currentDate: nowForHands,
+                selectedDateHeight: getFlattenedSceneY(handHeights.selectedDateHeight),
                 zoomLevel: currentZoom,
                 sceneContentGroup,
                 tourMinimalOrbitMode: typeof isTourMinimalOrbitMode === 'function' ? isTourMinimalOrbitMode() : false,

@@ -1832,40 +1832,54 @@
   }
 
   /**
-   * Painted context-arc [t0, t1]. Zoom 5 = month grain (day events in that month
-   * + multi-year LTE that intersect). Same overlap test at every zoom.
+   * Painted context-arc [t0, t1] = parent of zoom grain
+   * (day→week, week→month, month→quarter, quarter→year, …).
+   * Multi-year LTE that intersect the frame stay. Same overlap test at every zoom.
    * @returns {{ t0: number, t1: number }|null} null = do not time-cull
    */
   function getFallbackContextArcFrameBounds(zl) {
+    if (typeof global.getParentUnitTimeBoundsMs === 'function') {
+      try {
+        const p = global.getParentUnitTimeBoundsMs(zl);
+        if (p && isFinite(p.t0) && isFinite(p.t1) && p.t1 >= p.t0) return p;
+      } catch (e) { /* fall through */ }
+    }
     const fn = getSelectedDateTimeFn();
     const sel = fn ? fn() : new Date();
     const dayMs = 86400000;
-    if (zl === 8 || zl === 9 || zl === 0) {
+    if (zl === 0 || zl === 9) {
       const d0 = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
       return { t0: d0.getTime(), t1: d0.getTime() + dayMs - 1 };
     }
-    if (zl === 7) {
+    if (zl === 8) {
       const d0 = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
       d0.setDate(d0.getDate() - d0.getDay());
       return { t0: d0.getTime(), t1: d0.getTime() + 7 * dayMs - 1 };
     }
-    if (zl === 5 || zl === 6) {
+    if (zl === 7 || zl === 6) {
       return {
         t0: new Date(sel.getFullYear(), sel.getMonth(), 1, 0, 0, 0, 0).getTime(),
         t1: new Date(sel.getFullYear(), sel.getMonth() + 1, 0, 23, 59, 59, 999).getTime()
       };
     }
-    if (zl === 4) {
+    if (zl === 5) {
       const q = Math.floor(sel.getMonth() / 3) * 3;
       return {
         t0: new Date(sel.getFullYear(), q, 1, 0, 0, 0, 0).getTime(),
         t1: new Date(sel.getFullYear(), q + 3, 0, 23, 59, 59, 999).getTime()
       };
     }
-    if (zl === 3) {
+    if (zl === 4) {
       return {
         t0: new Date(sel.getFullYear(), 0, 1, 0, 0, 0, 0).getTime(),
         t1: new Date(sel.getFullYear(), 11, 31, 23, 59, 59, 999).getTime()
+      };
+    }
+    if (zl === 3) {
+      const y0 = sel.getFullYear() - (sel.getFullYear() % 10);
+      return {
+        t0: new Date(y0, 0, 1, 0, 0, 0, 0).getTime(),
+        t1: new Date(y0 + 10, 0, 1, 0, 0, 0, 0).getTime() - 1
       };
     }
     return null;

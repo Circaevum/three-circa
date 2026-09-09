@@ -191,15 +191,7 @@ const Worldlines = (function() {
     }
 
     function getMoonIncludedPathBoundsMs(zoomLevel, selDate) {
-        const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
         const ref = selDate instanceof Date && !isNaN(selDate.getTime()) ? selDate : new Date();
-        const arcFn =
-            typeof getListContextDiscArcTimeBoundsMs === 'function'
-                ? getListContextDiscArcTimeBoundsMs
-                : typeof window !== 'undefined' && typeof window.getListContextDiscArcTimeBoundsMs === 'function'
-                  ? window.getListContextDiscArcTimeBoundsMs
-                  : null;
-        if (z >= 5 && arcFn) return arcFn(z, ref);
         return {
             t0: new Date(ref.getFullYear(), ref.getMonth(), 1, 0, 0, 0, 0).getTime(),
             t1: new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999).getTime(),
