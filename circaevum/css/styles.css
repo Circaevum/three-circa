@@ -2781,6 +2781,19 @@ body.light-mode .circaevum-attribution {
     stroke: #ffe29a;
 }
 
+#event-horizon-mode-toggle[data-eh-mode="splice"] {
+    color: #7dd3fc;
+}
+#event-horizon-mode-toggle[data-eh-mode="splice"] .eh-icon-disk,
+#event-horizon-mode-toggle[data-eh-mode="splice"] .eh-icon-disk-inner,
+#event-horizon-mode-toggle[data-eh-mode="splice"] .eh-icon-glare {
+    stroke: #7dd3fc;
+}
+#event-horizon-mode-toggle[data-eh-mode="splice"] .eh-icon-lensed,
+#event-horizon-mode-toggle[data-eh-mode="splice"] .eh-icon-photon {
+    stroke: #bae6fd;
+}
+
 #event-horizon-mode-toggle[data-eh-mode="inside"] {
     color: #67e8f9;
 }
@@ -2823,6 +2836,18 @@ body.light-mode #event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-glare {
 body.light-mode #event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-lensed,
 body.light-mode #event-horizon-mode-toggle[data-eh-mode="nest"] .eh-icon-photon {
     stroke: #f59e0b;
+}
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="splice"] {
+    color: #0e7490;
+}
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="splice"] .eh-icon-disk,
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="splice"] .eh-icon-disk-inner,
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="splice"] .eh-icon-glare {
+    stroke: #0e7490;
+}
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="splice"] .eh-icon-lensed,
+body.light-mode #event-horizon-mode-toggle[data-eh-mode="splice"] .eh-icon-photon {
+    stroke: #155e75;
 }
 
 .eh-dual-range {
@@ -3617,11 +3642,11 @@ h1 {
 }
 
 #selected-time {
-    color: #ffffff;
+    color: #22d3ee;
 }
 
 body.light-mode #selected-time {
-    color: #000000;
+    color: #0891b2;
 }
 
 /* ============================================

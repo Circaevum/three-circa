@@ -4,22 +4,31 @@
  * Modes (per material via userData.contextSphereClipInvert):
  *   false (STE): discard outside sphere — short-term lives inside
  *   true  (LTE): discard inside sphere — long-term / time-frame lives outside
+ * LTE + splice: nest hole with a Sun→tangent door — keep the pie even inside
+ * the sphere (same-week LTE visible). Off-wedge LTE still show if outside the ball.
+ * Event set / density follow zoom context, not this wedge.
  */
 (function (global) {
+  const CLIP_SHADER_REV = 3;
   const uniforms = {
     uClipSphereCenter: { value: null },
     uClipSphereRadius: { value: 0 },
-    uClipSphereEnabled: { value: 0 }
+    uClipSphereEnabled: { value: 0 },
+    uClipSun: { value: null },
+    uClipSpliceEnabled: { value: 0 }
   };
 
   function ensureUniforms(THREE) {
     if (!uniforms.uClipSphereCenter.value && THREE) {
       uniforms.uClipSphereCenter.value = new THREE.Vector3();
     }
+    if (!uniforms.uClipSun.value && THREE) {
+      uniforms.uClipSun.value = new THREE.Vector3();
+    }
     return uniforms;
   }
 
-  function syncFromState(state, THREE) {
+  function syncFromState(state, THREE, sun, spliceOn) {
     ensureUniforms(THREE || global.THREE);
     if (state && typeof state.radius === 'number' && state.radius > 0 &&
         typeof state.x === 'number' && typeof state.y === 'number' && typeof state.z === 'number') {
@@ -30,6 +39,14 @@
     } else {
       uniforms.uClipSphereEnabled.value = 0;
     }
+    if (uniforms.uClipSun.value) {
+      if (sun && typeof sun.x === 'number') {
+        uniforms.uClipSun.value.set(sun.x, sun.y, sun.z);
+      } else if (state && typeof state.y === 'number') {
+        uniforms.uClipSun.value.set(0, state.y, 0);
+      }
+    }
+    uniforms.uClipSpliceEnabled.value = spliceOn ? 1 : 0;
   }
 
   function patchMaterial(material, invert) {
@@ -38,10 +55,11 @@
     const wantInvert = !!invert;
     material.userData.contextSphereClipInvert = wantInvert;
 
-    // Re-patch if mode changed (old compile lacked invert uniform).
+    // Re-patch if mode changed (old compile lacked invert / splice uniforms).
     if (
       material.userData.contextSphereClipPatched &&
-      material.userData.contextSphereClipInvertUniform
+      material.userData.contextSphereClipInvertUniform &&
+      material.userData.contextSphereClipShaderRev >= CLIP_SHADER_REV
     ) {
       material.userData.contextSphereClipInvertUniform.value = wantInvert ? 1 : 0;
       return;
@@ -57,6 +75,7 @@
 
     const invertUniform = { value: wantInvert ? 1 : 0 };
     material.userData.contextSphereClipInvertUniform = invertUniform;
+    material.userData.contextSphereClipShaderRev = CLIP_SHADER_REV;
 
     material.onBeforeCompile = function (shader) {
       if (typeof prev === 'function') prev.call(this, shader);
@@ -65,6 +84,8 @@
       shader.uniforms.uClipSphereRadius = uniforms.uClipSphereRadius;
       shader.uniforms.uClipSphereEnabled = uniforms.uClipSphereEnabled;
       shader.uniforms.uClipSphereInvert = invertUniform;
+      shader.uniforms.uClipSun = uniforms.uClipSun;
+      shader.uniforms.uClipSpliceEnabled = uniforms.uClipSpliceEnabled;
 
       if (shader.vertexShader.indexOf('vCtxSphereWorldPos') < 0) {
         shader.vertexShader = 'varying vec3 vCtxSphereWorldPos;\n' + shader.vertexShader;
@@ -84,20 +105,37 @@
         }
       }
 
-      if (shader.fragmentShader.indexOf('uClipSphereInvert') < 0) {
+      if (shader.fragmentShader.indexOf('uClipSpliceEnabled') < 0) {
         shader.fragmentShader =
           'varying vec3 vCtxSphereWorldPos;\n' +
           'uniform vec3 uClipSphereCenter;\n' +
           'uniform float uClipSphereRadius;\n' +
           'uniform float uClipSphereEnabled;\n' +
           'uniform float uClipSphereInvert;\n' +
+          'uniform vec3 uClipSun;\n' +
+          'uniform float uClipSpliceEnabled;\n' +
           shader.fragmentShader;
 
         const discardBlock = [
           'if (uClipSphereEnabled > 0.5 && uClipSphereRadius > 0.0) {',
           '  float _ctxOutside = distance(vCtxSphereWorldPos, uClipSphereCenter) > uClipSphereRadius ? 1.0 : 0.0;',
           '  if (uClipSphereInvert > 0.5) {',
-          '    if (_ctxOutside < 0.5) discard;',
+          '    if (uClipSpliceEnabled > 0.5) {',
+          '      float _inPie = 0.0;',
+          '      vec2 _p = vCtxSphereWorldPos.xz - uClipSun.xz;',
+          '      vec2 _e = uClipSphereCenter.xz - uClipSun.xz;',
+          '      float _d = length(_e);',
+          '      float _lp = length(_p);',
+          '      if (_d > uClipSphereRadius + 0.0001 && _lp > 0.0001) {',
+          '        float _sinA = uClipSphereRadius / _d;',
+          '        float _cosA = sqrt(max(0.0, 1.0 - _sinA * _sinA));',
+          '        float _c = dot(_p / _lp, _e / _d);',
+          '        if (_c >= _cosA) _inPie = 1.0;',
+          '      }',
+          '      if (_inPie < 0.5 && _ctxOutside < 0.5) discard;',
+          '    } else {',
+          '      if (_ctxOutside < 0.5) discard;',
+          '    }',
           '  } else {',
           '    if (_ctxOutside > 0.5) discard;',
           '  }',
@@ -125,7 +163,14 @@
   function patchObject(root, invert) {
     if (!root) return;
     root.traverse(function (obj) {
-      if (obj.userData && obj.userData.type === 'ContextSphere') return;
+      if (
+        obj.userData &&
+        (obj.userData.type === 'ContextSphere' ||
+          obj.userData.type === 'ContextSphereSplice' ||
+          obj.userData.type === 'ContextSphereSpliceRay')
+      ) {
+        return;
+      }
       let skip = false;
       let p = obj.parent;
       while (p) {
@@ -218,7 +263,9 @@
   function refresh(opts) {
     const THREE = (opts && opts.THREE) || global.THREE;
     ensureUniforms(THREE);
-    syncFromState(opts && opts.state, THREE);
+    const sun = opts && opts.sun;
+    const spliceOn = !!(opts && opts.splice);
+    syncFromState(opts && opts.state, THREE, sun, spliceOn);
 
     const padWorld = opts && typeof opts.padWorld === 'number' ? opts.padWorld : 0;
     const state = opts && opts.state;

@@ -6,7 +6,7 @@
     <meta name="description" content="Circaevum — open 3D time visualization: planetary orbits, circadian rhythm, and calendar events. WebXR on HTTPS. Machine-readable: /llms.txt, /index.md">
     <title>Circaevum - Planetary Time</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="circaevum/css/styles.css?v=selected-time-wb-v1">
+    <link rel="stylesheet" href="circaevum/css/styles.css?v=context-arc-cyan-v1">
     <link rel="describedby" href="/llms.txt" type="text/plain">
     <link rel="alternate" type="text/markdown" href="/index.md" title="Circaevum (markdown)">
     <link rel="help" href="/developers.html" title="Developers &amp; AI agents">
@@ -293,7 +293,7 @@
                     <text x="4.5" y="10.5" font-size="5.5" font-weight="700" fill="#3b82f6" text-anchor="middle" font-family="system-ui, sans-serif">Z</text>
                 </svg>
             </button>
-            <button type="button" class="scene-icon-btn active" id="event-horizon-mode-toggle" title="Event Horizon: nest (Interstellar)" aria-label="Cycle Event Horizon mode" aria-pressed="true" data-eh-mode="nest">
+            <button type="button" class="scene-icon-btn" id="event-horizon-mode-toggle" title="Event Horizon off" aria-label="Event Horizon off" aria-pressed="false" data-eh-mode="off" style="display: none;" aria-hidden="true">
                 <svg class="eh-mode-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <!-- Far-side accretion band lensed over the top (Interstellar signature) -->
                     <path class="eh-icon-lensed" d="M5.2 10.2C6.4 7.1 9 5.4 12 5.4s5.6 1.7 6.8 4.8" stroke-width="1.35" stroke-linecap="round"/>
@@ -629,7 +629,7 @@
     
     <!-- Circaevum Modules (load in dependency order) -->
     <script src="circaevum/js/config.js?v=circ-moon-outside-day-v2"></script>
-    <script src="circaevum/js/config-rendering.js?v=1"></script>
+    <script src="circaevum/js/config-rendering.js?v=density-budget-v1"></script>
     <script src="circaevum/js/datetime.js?v=orbit-phase-now-v1"></script>
     
     <!-- Astro scaffold (feature-flagged ephemeris pipeline) -->
@@ -658,15 +658,15 @@
     <script src="circaevum/js/geo/geophysical-shells.js?v=aria-pass-v1"></script>
     <script src="circaevum/js/geo/ionosphere-shell.js"></script>
     <script src="circaevum/js/geo/magnetosphere-shell.js"></script>
-    <script src="circaevum/js/geo/earth-globe.js?v=selected-time-wb-v1"></script>
+    <script src="circaevum/js/geo/earth-globe.js?v=context-arc-cyan-v1"></script>
     
     <!-- Utils (geometry helpers + shared ribbon / stroke primitives) -->
     <script src="circaevum/js/theme/theme-controller.js"></script>
     <script src="circaevum/js/utils/zoom-helpers.js"></script>
     <script src="circaevum/js/utils/geometry-helpers.js?v=orbit-phase-now-v1"></script>
     <script src="circaevum/js/utils/ribbon-geometry.js"></script>
-    <script src="circaevum/js/utils/mesh-primitives.js?v=2"></script>
-    <script src="circaevum/js/utils/context-sphere-clip.js?v=eh-reverse-v1"></script>
+    <script src="circaevum/js/utils/mesh-primitives.js?v=outline-line-ribbon-v1"></script>
+    <script src="circaevum/js/utils/context-sphere-clip.js?v=eh-splice-zoom-v1"></script>
     <script src="circaevum/js/utils/context-sphere-warp.js?v=eh-off-no-warp-v1"></script>
     
     <!-- Core (scene initialization & WebGPU pipeline) -->
@@ -675,15 +675,15 @@
     <script src="circaevum/js/core/moon-mechanics.js?v=circ-moon-outside-day-v2"></script>
     
     <!-- Renderers (worldlines, timemarkers, planets, events) -->
-    <script src="circaevum/js/renderers/worldline-renderer.js?v=flatten-day-canvas-v1"></script>
-    <script src="circaevum/js/renderers/timemarker-renderer.js?v=year-label-size-v1"></script>
+    <script src="circaevum/js/renderers/worldline-renderer.js?v=context-arc-cyan-v1"></script>
+    <script src="circaevum/js/renderers/timemarker-renderer.js?v=context-arc-cyan-v1"></script>
     <script src="circaevum/js/renderers/planet-renderer.js"></script>
     <script src="circaevum/js/renderers/event-label-renderer.js"></script>
-    <script src="circaevum/js/events/lod.js?v=1"></script>
+    <script src="circaevum/js/events/lod.js?v=density-budget-v1"></script>
     <script src="circaevum/js/events/bands.js?v=1"></script>
     <script src="circaevum/js/events/geometry.js?v=1"></script>
     <script src="circaevum/js/events/labels.js?v=1"></script>
-    <script src="circaevum/js/renderers/event-renderer.js?v=orbit-phase-now-v1"></script>
+    <script src="circaevum/js/renderers/event-renderer.js?v=context-arc-overlap-v1"></script>
     <script src="circaevum/js/renderers/circadian-renderer.js?v=circ-moon-outside-day-v2"></script>
     <script src="circaevum/js/atc/atc-band.js"></script>
     <script src="circaevum/js/renderers/garmin-renderer.js?v=hr-ribbon-v1"></script>
@@ -705,10 +705,10 @@
     <script src="circaevum/js/app/flatten.js?v=2"></script>
     <script src="circaevum/js/app/navigation.js?v=3"></script>
     <!-- Main Application Script -->
-    <script src="circaevum/js/main.js?v=zoom-ws-fix-v5"></script>
+    <script src="circaevum/js/main.js?v=context-arc-month-sky-v1"></script>
     
     <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
-    <script src="circaevum/js/api/circaevum-gl.js?v=2"></script>
+    <script src="circaevum/js/api/circaevum-gl.js?v=eh-clip-day-lte-v1"></script>
     
     <!-- Circaevum GL API helpers: use from console or scripts -->
     <script src="circaevum/js/ui/gl-api-bridge.js"></script>

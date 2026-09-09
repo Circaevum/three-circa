@@ -12,7 +12,7 @@ const TimeMarkers = (function() {
     // ============================================
     // STATE & DEPENDENCIES
     // ============================================
-    let scene, timeMarkers, getMarkerColor, createTextLabel;
+    let scene, timeMarkers, getMarkerColor, createTextLabel, createBatchedTextLabels;
     let PLANET_DATA, ZOOM_LEVELS, TIME_MARKERS, CENTURY_START;
     /** When true, quarter/month/week/day systems show all units for the full year (_fullYearYear). */
     let _fullYearScope = false;
@@ -56,6 +56,7 @@ const TimeMarkers = (function() {
         timeMarkers = dependencies.timeMarkers;
         getMarkerColor = dependencies.getMarkerColor;
         createTextLabel = dependencies.createTextLabel;
+        createBatchedTextLabels = dependencies.createBatchedTextLabels || null;
         PLANET_DATA = dependencies.PLANET_DATA;
         ZOOM_LEVELS = dependencies.ZOOM_LEVELS;
         TIME_MARKERS = dependencies.TIME_MARKERS;
@@ -220,9 +221,9 @@ const TimeMarkers = (function() {
         return earth.startAngle - (orbits * Math.PI * 2);
     }
 
-    /** Selected-time marker lines: black in light mode, white in dark (pairs with getSelectedTimeColor). */
+    /** Selected-time marker lines: cyan/blue (pairs with getSelectedTimeColor + red current-time). */
     function getSelectedMarkerLineColor() {
-        return isLightMode ? 0x000000 : 0xffffff;
+        return isLightMode ? 0x0891b2 : 0x22d3ee;
     }
 
     function getColor(isCurrent, isSelected, hasOffset) {
@@ -806,6 +807,10 @@ const TimeMarkers = (function() {
             applyLteDayFrameWarpToSprite(obj);
             return;
         }
+        // Unit-plane InstancedMesh: warp lives on instance matrices, not geometry.
+        if (obj.isInstancedMesh || (obj.userData && obj.userData.isTimeMarkerText)) {
+            return;
+        }
         const geom = obj.geometry;
         if (geom && geom.attributes && geom.attributes.position) {
             if (!geom.userData) geom.userData = {};
@@ -860,6 +865,117 @@ const TimeMarkers = (function() {
         return unitRangeOverlapsContextArc(range.t0, range.t1, zoomLevel);
     }
     
+    const pendingDaySpokes = { current: null, selected: null, rest: null };
+    let pendingDaySpokeRadii = { inner: 0, outer: 0 };
+    let pendingDayLabels = [];
+
+    function resetPendingDayBatches() {
+        pendingDaySpokes.current = [];
+        pendingDaySpokes.selected = [];
+        pendingDaySpokes.rest = [];
+        pendingDaySpokeRadii = { inner: 0, outer: 0 };
+        pendingDayLabels = [];
+    }
+
+    function getDaySpokeSegmentCount() {
+        try {
+            const W = typeof window !== 'undefined' ? window.ContextSphereWarp : null;
+            if (W && typeof W.isWarpModeEnabled === 'function' && W.isWarpModeEnabled()) return 128;
+        } catch (e) { /* warp off */ }
+        return 1;
+    }
+
+    function appendPolylineAsLineSegments(dst, points) {
+        if (!dst || !points || points.length < 6) return;
+        const n = points.length / 3;
+        for (let i = 0; i < n - 1; i++) {
+            const a = i * 3;
+            const b = (i + 1) * 3;
+            dst.push(
+                points[a], points[a + 1], points[a + 2],
+                points[b], points[b + 1], points[b + 2]
+            );
+        }
+    }
+
+    function disposeTimeMarkerGpu(obj) {
+        if (!obj) return;
+        if (obj.isSprite || obj.type === 'Sprite') {
+            const mat = obj.material;
+            if (mat && !(mat.userData && mat.userData.__sharedCached)) {
+                if (mat.map && !(mat.map.userData && mat.map.userData.__sharedCached)) {
+                    try { mat.map.dispose(); } catch (e) { /* ok */ }
+                }
+                try { mat.dispose(); } catch (e2) { /* ok */ }
+            }
+            return;
+        }
+        if (obj.geometry && !(obj.geometry.userData && obj.geometry.userData.__sharedCached)) {
+            try { obj.geometry.dispose(); } catch (e) { /* ok */ }
+        }
+        const mats = obj.material ? (Array.isArray(obj.material) ? obj.material : [obj.material]) : [];
+        for (let mi = 0; mi < mats.length; mi++) {
+            const mat = mats[mi];
+            if (!mat || (mat.userData && mat.userData.__sharedCached)) continue;
+            if (mat.map && !(mat.map.userData && mat.map.userData.__sharedCached)) {
+                try { mat.map.dispose(); } catch (e) { /* ok */ }
+            }
+            try { mat.dispose(); } catch (e2) { /* ok */ }
+        }
+    }
+
+    function flushDaySpokeBucket(positions, colorHex, opacity) {
+        if (!positions || positions.length < 6 || typeof THREE === 'undefined') return;
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        const material = new THREE.LineBasicMaterial({
+            color: colorHex,
+            transparent: true,
+            opacity: opacity,
+            linewidth: 2
+        });
+        const line = new THREE.LineSegments(geometry, material);
+        line.renderOrder = 4;
+        tagLteDayFrameMarker(line, pendingDaySpokeRadii.inner, pendingDaySpokeRadii.outer);
+        scene.add(line);
+        timeMarkers.push(line);
+    }
+
+    function flushPendingDayBatches() {
+        const selColor = getSelectedMarkerLineColor();
+        const restColor = typeof getMarkerColor === 'function' ? getMarkerColor() : 0x888888;
+        const selOp = isLightMode ? 0.82 : 0.9;
+        flushDaySpokeBucket(pendingDaySpokes.current, 0xFF0000, 0.9);
+        flushDaySpokeBucket(pendingDaySpokes.selected, selColor, selOp);
+        flushDaySpokeBucket(pendingDaySpokes.rest, restColor, 0.7);
+        if (pendingDayLabels.length) {
+            let mesh = null;
+            if (typeof createBatchedTextLabels === 'function') {
+                mesh = createBatchedTextLabels(pendingDayLabels);
+            }
+            if (mesh) {
+                tagLteDayFrameMarker(mesh, pendingDaySpokeRadii.inner, pendingDaySpokeRadii.outer);
+            } else {
+                for (let i = 0; i < pendingDayLabels.length; i++) {
+                    const p = pendingDayLabels[i];
+                    createTextLabel(
+                        p.text, p.height, p.radius, p.zoomLevel, p.angle,
+                        p.colorType, false, p.sizeMultiplier, p.tourRevealTier
+                    );
+                    if (timeMarkers.length) {
+                        tagLteDayFrameMarker(
+                            timeMarkers[timeMarkers.length - 1],
+                            p.innerRadius, p.outerRadius
+                        );
+                    }
+                }
+            }
+        }
+        resetPendingDayBatches();
+    }
+
+    resetPendingDayBatches();
+
     function createTimeFrame(config) {
         const {
             unitType,
@@ -984,7 +1100,7 @@ const TimeMarkers = (function() {
             // Day spokes densify along day-pitch so EH warp can unwrap midnight→evening
             // into a full circadian circle (2-point lines stay a diameter / half-bow).
             if (unitType === 'day') {
-                const nSeg = 128;
+                const nSeg = getDaySpokeSegmentCount();
                 const dense = [];
                 const ang =
                     typeof angle === 'number' && isFinite(angle)
@@ -999,36 +1115,38 @@ const TimeMarkers = (function() {
                 }
                 points = dense;
             }
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-            
-            const lineColor = getColor(
-                isCurrent || prevIsCurrent,
-                highlightSelected,
-                hasOffset || prevHasOffset
-            );
-            const sel = highlightSelected;
+
             const cur = isCurrent || prevIsCurrent;
-            let lineOp = cur || sel ? 0.9 : 0.7;
-            if (isLightMode && sel && !cur) lineOp = 0.82;
-            const material = new THREE.LineBasicMaterial({
-                color: lineColor,
-                transparent: true,
-                opacity: lineOp,
-                linewidth: (isCurrent || (isSelected && inArc)) ? 3 : 2
-            });
-            
-            const line = new THREE.Line(geometry, material);
-            line.renderOrder = 4;
-            if (tourMarkerStaged && zoomLevel === 3 && tourProgressiveMarkerMs == null) {
-                if (unitType === 'quarter') line.userData.circaevumTourRevealTier = 4;
-                else if (unitType === 'month') line.userData.circaevumTourRevealTier = 5;
-            }
+            const sel = highlightSelected;
+
             if (unitType === 'day') {
-                tagLteDayFrameMarker(line, startRadius, endRadius);
+                pendingDaySpokeRadii.inner = startRadius;
+                pendingDaySpokeRadii.outer = endRadius;
+                const bucket = cur ? pendingDaySpokes.current : (sel ? pendingDaySpokes.selected : pendingDaySpokes.rest);
+                appendPolylineAsLineSegments(bucket, points);
+            } else {
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+
+                const lineColor = getColor(cur, sel, hasOffset || prevHasOffset);
+                let lineOp = cur || sel ? 0.9 : 0.7;
+                if (isLightMode && sel && !cur) lineOp = 0.82;
+                const material = new THREE.LineBasicMaterial({
+                    color: lineColor,
+                    transparent: true,
+                    opacity: lineOp,
+                    linewidth: (isCurrent || (isSelected && inArc)) ? 3 : 2
+                });
+
+                const line = new THREE.Line(geometry, material);
+                line.renderOrder = 4;
+                if (tourMarkerStaged && zoomLevel === 3 && tourProgressiveMarkerMs == null) {
+                    if (unitType === 'quarter') line.userData.circaevumTourRevealTier = 4;
+                    else if (unitType === 'month') line.userData.circaevumTourRevealTier = 5;
+                }
+                scene.add(line);
+                timeMarkers.push(line);
             }
-            scene.add(line);
-            timeMarkers.push(line);
             
             // Create label
             if (showText) {
@@ -1067,9 +1185,6 @@ const TimeMarkers = (function() {
                     const labelAngle = getAngle(labelHeight, timeState.currentDateHeight);
                     const calcLabelRadius = labelRadius || (innerRadius ? (innerRadius + outerRadius) / 2 : outerRadius / 2);
                     const labelColor = getLabelColor(isCurrent, isSelected && inArc, hasOffset);
-                    // Debug logging for Zoom 8/9
-                    if ((zoomLevel === 8 || zoomLevel === 9) && (unitType === 'quarter' || unitType === 'month' || unitType === 'week' || unitType === 'day')) {
-                    }
                     const textZoom = (unitType === 'quarter' || unitType === 'month') ? 4 : (unitType === 'week' ? 5 : zoomLevel);
                     const labelTier =
                         tourMarkerStaged && zoomLevel === 3 && tourProgressiveMarkerMs == null
@@ -1079,13 +1194,21 @@ const TimeMarkers = (function() {
                                   ? 5
                                   : undefined
                             : undefined;
-                    createTextLabel(labelText, labelHeight, calcLabelRadius, textZoom, labelAngle, labelColor, false, 0.85, labelTier);
-                    if (unitType === 'day' && timeMarkers.length) {
-                        tagLteDayFrameMarker(
-                            timeMarkers[timeMarkers.length - 1],
-                            innerRadius || 0,
-                            outerRadius
-                        );
+                    if (unitType === 'day') {
+                        pendingDayLabels.push({
+                            text: labelText,
+                            height: labelHeight,
+                            radius: calcLabelRadius,
+                            angle: labelAngle,
+                            colorType: labelColor,
+                            zoomLevel: textZoom,
+                            sizeMultiplier: 0.85,
+                            tourRevealTier: labelTier,
+                            innerRadius: innerRadius || 0,
+                            outerRadius: outerRadius
+                        });
+                    } else {
+                        createTextLabel(labelText, labelHeight, calcLabelRadius, textZoom, labelAngle, labelColor, false, 0.85, labelTier);
                     }
                 }
             }
@@ -1431,6 +1554,9 @@ const TimeMarkers = (function() {
         const outerRadius = dayRadii.outer;
         const labelRadius = dayRadii.label;  // Day numbers
         const dayNameRadius = dayRadii.dayName;  // Day names
+        resetPendingDayBatches();
+        pendingDaySpokeRadii.inner = innerRadius;
+        pendingDaySpokeRadii.outer = outerRadius;
         
         function getDaysToShow(zoomLevel, timeState) {
             if (_fullYearScope && _fullYearYear != null) {
@@ -1690,16 +1816,20 @@ const TimeMarkers = (function() {
                 const dayHeight = calculateDateHeight(dayCenterDate.getFullYear(), dayCenterDate.getMonth(), 
                                                      dayCenterDate.getDate(), dayCenterDate.getHours());
                 const dayAngle = getAngle(dayHeight, timeState.currentDateHeight);
-                createTextLabel(dayOfWeekText, dayHeight, dayOfWeekLabelRadius, 7, dayAngle, dayOfWeekColor, false, 0.85);
-                if (timeMarkers.length) {
-                    tagLteDayFrameMarker(
-                        timeMarkers[timeMarkers.length - 1],
-                        innerRadius,
-                        outerRadius
-                    );
-                }
+                pendingDayLabels.push({
+                    text: dayOfWeekText,
+                    height: dayHeight,
+                    radius: dayOfWeekLabelRadius,
+                    angle: dayAngle,
+                    colorType: dayOfWeekColor,
+                    zoomLevel: 7,
+                    sizeMultiplier: 0.85,
+                    innerRadius: innerRadius,
+                    outerRadius: outerRadius
+                });
             });
         }
+        flushPendingDayBatches();
     }
 
     // ============================================
@@ -2244,8 +2374,10 @@ const TimeMarkers = (function() {
     function createTimeMarkers(zoomLevel, options) {
         timeMarkers.forEach(m => {
             if (m && m.parent) m.parent.remove(m);
+            disposeTimeMarkerGpu(m);
         });
         timeMarkers.length = 0;
+        resetPendingDayBatches();
 
         if (options && options.tourHideAll === true) {
             return;

@@ -5,9 +5,10 @@
  *   1. THREE.Line / LineLoop     — 1 draw, no Frenet, linewidth ignored in WebGL
  *   2. Ribbon strip Mesh         — flat quad band (RibbonGeometry); good “thick line”
  *   3. Cylinder segment Mesh     — short 2-point spokes (6 radial segs)
- *   4. TubeGeometry Mesh         — CatmullRom + Frenet (`mn`/`Ro`); costliest; use sparingly
+ *   4. TubeGeometry Mesh         — CatmullRom + Frenet (`mn`/`Ro`); costliest; opt-in mode:'tube' only
  *
- * Callers pick mode explicitly, or use strokeAlongFlat({ mode: 'auto', … }).
+ * Callers pick mode explicitly, or use strokeAlongFlat({ mode: 'auto', … }) — auto is Line
+ * (ribbon if preferRibbon). Never Tube unless mode==='tube'.
  */
 (function (global) {
   function resolveTHREE(explicit) {
@@ -87,8 +88,10 @@
 
   /**
    * Polyline stroke along flat [x,y,z,...].
-   * @param {'line'|'tube'|'auto'} [opts.mode='auto']
-   * @param {number} [opts.qualityScale=1] - when mode auto and scale < preferLineBelow, use Line
+   * @param {'line'|'ribbon'|'tube'|'auto'} [opts.mode='auto']
+   *   auto → line (or ribbon when preferRibbon). Tube only if mode==='tube'.
+   * @param {boolean} [opts.preferRibbon=false] - auto picks ribbon strip (thick, no Frenet)
+   * @param {number} [opts.qualityScale=1]
    * @param {number} [opts.preferLineBelow=0.55]
    * @param {boolean} [opts.forceLine=false]
    */
@@ -105,11 +108,9 @@
 
     let mode = o.mode || 'auto';
     if (o.forceLine) mode = 'line';
-    if (mode === 'auto') {
-      mode = q < preferLineBelow || nPts < 2 ? 'line' : 'tube';
-    }
+    if (mode === 'auto') mode = o.preferRibbon ? 'ribbon' : 'line';
 
-    if (mode === 'line') {
+    function asLine() {
       return lineFromFlat(flat, {
         THREE,
         color,
@@ -122,7 +123,36 @@
       });
     }
 
+    if (mode === 'line') return asLine();
+
     const radius = o.radius != null && o.radius > 0 ? o.radius : 0.05;
+
+    if (mode === 'ribbon') {
+      const RG = typeof global !== 'undefined' ? global.RibbonGeometry
+        : (typeof window !== 'undefined' ? window.RibbonGeometry : null);
+      if (RG && typeof RG.fromCenterline === 'function') {
+        const geo = RG.fromCenterline(flat, radius, {
+          THREE,
+          ribbonEdgeAttr: false,
+          computeNormals: false
+        });
+        if (geo) {
+          const mat = createNodeCompatibleMaterial(THREE, THREE.MeshBasicMaterial, {
+            color,
+            transparent: true,
+            opacity,
+            side: THREE.DoubleSide,
+            depthWrite: false
+          });
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.renderOrder = renderOrder;
+          if (o.userData) mesh.userData = o.userData;
+          return mesh;
+        }
+      }
+      return asLine();
+    }
+
     if (nPts === 2) {
       return cylinderBetween(
         { x: flat[0], y: flat[1], z: flat[2] },
@@ -156,7 +186,6 @@
       return mesh;
     }
 
-    // Fallback: segmented cylinders (still cheaper than failed TubeGeometry path)
     const group = new THREE.Group();
     for (let i = 0; i < nPts - 1; i++) {
       const c = cylinderBetween(

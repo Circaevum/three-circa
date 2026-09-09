@@ -1009,6 +1009,43 @@ class CircaevumGL {
     if (filteredEvents.length > 0 && typeof EventRenderer === 'undefined') {
       console.warn('EventRenderer not available. Events will not be rendered.');
     }
+    if (typeof refreshContextSphereVisualClip === 'function') {
+      try {
+        refreshContextSphereVisualClip();
+      } catch (e) { /* clip optional */ }
+    }
+    if (!this._helixFlattenBatch) this._applyLiveHelixFlatten();
+  }
+
+  /**
+   * Re-apply live flatten lerp to helix verts after a layer mesh rebuild.
+   * Amount may be 0 (flatten off / easing from helical) — do not snap to flat.
+   */
+  _applyLiveHelixFlatten() {
+    if (typeof window !== 'undefined' && typeof window.applyTimelineHelixFlattenAfterEventRebuild === 'function') {
+      try {
+        window.applyTimelineHelixFlattenAfterEventRebuild();
+        return;
+      } catch (e) { /* fall through */ }
+    }
+    if (typeof EventRenderer === 'undefined' || typeof EventRenderer.updateTimelineHelixEventsForFlatten !== 'function') {
+      return;
+    }
+    const flattenAll =
+      typeof window !== 'undefined' &&
+      typeof window.isFlattenTimeStraightenActive === 'function' &&
+      !!window.isFlattenTimeStraightenActive();
+    const amount =
+      flattenAll && typeof window !== 'undefined' && typeof window.currentFlattenAmount === 'number'
+        ? window.currentFlattenAmount
+        : 0;
+    const pivotY =
+      typeof window !== 'undefined' && typeof window.flattenTimelineFocusY === 'function'
+        ? window.flattenTimelineFocusY()
+        : 0;
+    try {
+      EventRenderer.updateTimelineHelixEventsForFlatten(this, pivotY, amount);
+    } catch (e) { /* optional */ }
   }
 
   /**
@@ -1129,9 +1166,12 @@ class CircaevumGL {
    * Re-render every layer (e.g. after selected year changes while in "year" scope).
    */
   refreshAllEventLayers() {
+    this._helixFlattenBatch = true;
     for (const layerId of this.layers.keys()) {
       this._renderLayer(layerId);
     }
+    this._helixFlattenBatch = false;
+    this._applyLiveHelixFlatten();
     // Keep main.js rebuild-key cache honest after forced / ingest refreshes.
     if (typeof window !== 'undefined' && typeof window.noteEventLayersRebuilt === 'function') {
       try { window.noteEventLayersRebuilt(); } catch (e) { /* optional */ }

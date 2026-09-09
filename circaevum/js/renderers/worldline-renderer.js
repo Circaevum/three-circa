@@ -104,7 +104,13 @@ const Worldlines = (function() {
         const cs = typeof CENTURY_START === 'number' ? CENTURY_START : 2000;
         const hpy = typeof HEIGHT_PER_YEAR !== 'undefined' ? HEIGHT_PER_YEAR : 100;
         const quiet = isLightMode ? [0.42, 0.447, 0.502] : [0.612, 0.639, 0.686];
-        const sel = isLightMode ? [0, 0, 0] : [1, 1, 1];
+        let sel = isLightMode ? [0.031, 0.569, 0.698] : [0.133, 0.827, 0.933];
+        if (typeof getSelectedTimeColor === 'function') {
+            const hex = getSelectedTimeColor();
+            if (typeof hex === 'number' && isFinite(hex)) {
+                sel = [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
+            }
+        }
         const colors = new Float32Array(pos.count * 3);
         for (let i = 0; i < pos.count; i++) {
             const y = pos.getY(i);

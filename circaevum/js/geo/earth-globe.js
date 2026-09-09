@@ -1524,7 +1524,7 @@ const EarthGlobe = (function () {
         const selectedHandColor =
             typeof getSelectedTimeColor === 'function'
                 ? getSelectedTimeColor()
-                : 0xffffff;
+                : 0x22d3ee;
         addMeridianHand(selectedDate, selectedHandColor, 13, null);
         if (!tourMinimalOrbitMode && currentDate) {
             const nowDate =

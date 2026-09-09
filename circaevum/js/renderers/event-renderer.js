@@ -40,17 +40,16 @@
   const DAY_NAME_RADIUS_FRAC = DAY_INNER_FRAC + (DAY_OUTER_FRAC - DAY_INNER_FRAC) * DAY_NAME_T;
   const DAY_EVENT_DOT_RADIUS_FRAC = DAY_INNER_FRAC + (DAY_OUTER_FRAC - DAY_INNER_FRAC) * DAY_SPHERE_T;
   /**
-   * LineBasicMaterial.linewidth is ignored in WebGL on most platforms; ribbon outlines use mesh tubes instead.
-   * Radius = earthDist * FRAC * (outline emphasis); ~0.005 reads clearly at Earth orbit scale (~50).
+   * LineBasicMaterial.linewidth is ignored in WebGL on most platforms.
+   * Outlines: THREE.Line by default; ribbon strip on selected-day (thick, no Frenet).
+   * TubeGeometry is not used for event outlines.
+   * Radius = earthDist * FRAC * (outline emphasis) — ribbon half-width when selected.
    */
   const RIBBON_OUTLINE_TUBE_RADIUS_FRAC = 0.0003;
 
   /**
-   * Adaptive tube level-of-detail. Each duration event builds two TubeGeometry
-   * outlines (inner+outer); with "all events" on, a zoom hop rebuilds hundreds of
-   * them and the TubeGeometry/Frenet-frame work (three.js `mn`/`Ro`) dominates the
-   * frame. Below the budget, quality stays at 1 (no visible change). Above it,
-   * tube segment counts fall off so total geometry work stays roughly bounded.
+   * Adaptive outline LOD leftover: still bounds any explicit Tube callers.
+   * Event outlines themselves are Line / ribbon (see createTubeOutlineAlongFlat).
    */
   /** Start degrading tube segments earlier — Frenet work dominates lag before verts do. */
   const EVENT_TUBE_BUDGET = 48;
@@ -63,18 +62,13 @@
   let _eventTubeQualityScale = 1;
 
   /**
-   * Temporal distance LOD: events whose time is far from SELECTED TIME draw their
-   * outlines as cheap THREE.Line polylines instead of TubeGeometry (which runs
-   * expensive Frenet-frame math — the `mn`/`Ro` hotspot). Far events are already
-   * desaturated/de-emphasized, so a thin line reads fine. Threshold = this many
-   * "in-focus half spans" (zoom-aware) away from selected time. Set to 0/Infinity
-   * to disable. `_eventOutlineLineMode` is set per event before its tubes build.
-   *
-   * Prefer Line / ribbon fill / flat borders over tubes wherever fidelity allows
-   * (see MeshPrimitives.COST). Day-frame LTE borders already use flat Lines.
+   * Temporal distance LOD: far from SELECTED TIME → Line (never ribbon).
+   * Selected-day close events → ribbon strip. All other outlines → Line.
+   * No TubeGeometry / Frenet on this path.
    */
   const EVENT_LINE_LOD_FAR_FACTOR = 2;
   let _eventOutlineLineMode = false;
+  let _eventOutlineRibbonMode = false;
   function computeEventTubeQualityScale(eventCount) {
     const n = Math.max(1, eventCount | 0);
     if (n <= EVENT_TUBE_BUDGET) return 1;
@@ -93,25 +87,38 @@
    *
    * Priority order within a layer: duration (longer first), then recency (later first).
    */
-  const DENSITY_BUDGET = {
-    0: 120,
-    1: 20,
-    2: 40,
-    3: 300,
-    4: 300,
-    5: 500,   // MONTH — 500 keeps week corridor visible, 800 lagged 5→7; 300 culled at month
-    6: 500,   // LUNAR — same
-    7: 150,   // WEEK — 150 keeps week + adjacent, 80 hid, 300 lagged
-    8: 700,
-    9: 120,
+  if (!global.RENDERING_CONFIG && typeof require === 'function') {
+    try {
+      global.RENDERING_CONFIG = require('../config-rendering.js');
+      if (!global.DENSITY_BUDGET) global.DENSITY_BUDGET = global.RENDERING_CONFIG.DENSITY_BUDGET;
+    } catch (e) { /* browser / path */ }
+  }
+
+  /** Last-resort copy of config-rendering.js DENSITY_BUDGET (standalone load). */
+  const DENSITY_BUDGET_FALLBACK = {
+    0: 120, 1: 20, 2: 40, 3: 300, 4: 300, 5: 500, 6: 500, 7: 150, 8: 700, 9: 120
   };
+
+  function getDensityBudgetTable() {
+    if (global.EventLod && global.EventLod.DENSITY) return global.EventLod.DENSITY;
+    if (global.RENDERING_CONFIG && global.RENDERING_CONFIG.DENSITY_BUDGET) {
+      return global.RENDERING_CONFIG.DENSITY_BUDGET;
+    }
+    if (global.DENSITY_BUDGET) return global.DENSITY_BUDGET;
+    return DENSITY_BUDGET_FALLBACK;
+  }
+
+  const DENSITY_BUDGET = getDensityBudgetTable();
 
   /**
    * Return the budget for the given zoom level (default 100 for unknown zooms).
    */
   function getEventDensityBudget(zoomLevel) {
+    if (global.EventLod && typeof global.EventLod.getEventDensityBudget === 'function') {
+      return global.EventLod.getEventDensityBudget(zoomLevel);
+    }
     const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
-    return DENSITY_BUDGET[z] ?? 100;
+    return getDensityBudgetTable()[z] ?? 100;
   }
 
   /**
@@ -143,9 +150,6 @@
     return durationScore + recencyScore + steBoost + dayFrameLteBoost;
   }
 
-  /**
-   * Build a simple arc + count sprite indicating N overflow events at the layer's radius.
-   * Returns a THREE.Group or null.
   function createEventMaterial(THREE_REF, MatClass, options) {
     const T = THREE_REF || (typeof global !== 'undefined' && global.THREE) || (typeof window !== 'undefined' && window.THREE) || null;
     if (!T) return null;
@@ -157,7 +161,8 @@
   }
 
   /**
-   * Create an indicator geometry when event density exceeds budget.
+   * Build a simple arc + count sprite indicating N overflow events at the layer's radius.
+   * Returns a THREE.Group or null.
    */
   function createOverflowIndicatorArc(overflowCount, earthDist, layerConfig) {
     if (!THREE || overflowCount <= 0) return null;
@@ -300,7 +305,7 @@
   function isEventInSelectedYear(start, end) {
     if (!start || isNaN(start.getTime())) return false;
     const zl = getZoomLevelForEvents();
-    if (zl === 1 || zl === 2 || (typeof global.flattenMode === 'string' && global.flattenMode === 'all')) {
+    if (zl === 1 || zl === 2) {
       return true;
     }
     const selFn = getSelectedDateTimeFn();
@@ -311,9 +316,15 @@
     return (evStartYear <= selectedYear && evEndYear >= selectedYear);
   }
 
-  /** Event belongs to selected year (or all years for Zooms 1, 2, or flattened 3). */
+  /** Event overlaps the 3D context arc frame (zoom grain). Century/decade: no time cull. */
   function eventTouchesSelectedContextArcWindow(start, end) {
-    return isEventInSelectedYear(start, end);
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    const zl = getZoomLevelForEvents();
+    if (zl === 1 || zl === 2) return true;
+    const b = getContextArcFrameBounds();
+    if (!b) return isEventInSelectedYear(start, evEnd);
+    return evEnd.getTime() > b.t0 && start.getTime() < b.t1;
   }
 
   /**
@@ -373,6 +384,19 @@
       }
     }
     return 'lines';
+  }
+
+  /**
+   * Annual-helix day LTE: filled polygons unless HUD plot type is lines.
+   */
+  function resolveDayFrameLtePlotType() {
+    let mode = 'auto';
+    if (typeof global.getGlobalEventPlotType === 'function') {
+      mode = global.getGlobalEventPlotType();
+    }
+    if (mode === 'lines') return 'lines';
+    // Day-frame LTE: filled ribbon unless HUD forces lines.
+    return 'polygon3d';
   }
 
   /** Match main.js: landing/month/week/day/clock show circadian helix ribbons and connectors. */
@@ -1808,6 +1832,76 @@
   }
 
   /**
+   * Painted context-arc [t0, t1]. Zoom 5 = month grain (day events in that month
+   * + multi-year LTE that intersect). Same overlap test at every zoom.
+   * @returns {{ t0: number, t1: number }|null} null = do not time-cull
+   */
+  function getFallbackContextArcFrameBounds(zl) {
+    const fn = getSelectedDateTimeFn();
+    const sel = fn ? fn() : new Date();
+    const dayMs = 86400000;
+    if (zl === 8 || zl === 9 || zl === 0) {
+      const d0 = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
+      return { t0: d0.getTime(), t1: d0.getTime() + dayMs - 1 };
+    }
+    if (zl === 7) {
+      const d0 = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
+      d0.setDate(d0.getDate() - d0.getDay());
+      return { t0: d0.getTime(), t1: d0.getTime() + 7 * dayMs - 1 };
+    }
+    if (zl === 5 || zl === 6) {
+      return {
+        t0: new Date(sel.getFullYear(), sel.getMonth(), 1, 0, 0, 0, 0).getTime(),
+        t1: new Date(sel.getFullYear(), sel.getMonth() + 1, 0, 23, 59, 59, 999).getTime()
+      };
+    }
+    if (zl === 4) {
+      const q = Math.floor(sel.getMonth() / 3) * 3;
+      return {
+        t0: new Date(sel.getFullYear(), q, 1, 0, 0, 0, 0).getTime(),
+        t1: new Date(sel.getFullYear(), q + 3, 0, 23, 59, 59, 999).getTime()
+      };
+    }
+    if (zl === 3) {
+      return {
+        t0: new Date(sel.getFullYear(), 0, 1, 0, 0, 0, 0).getTime(),
+        t1: new Date(sel.getFullYear(), 11, 31, 23, 59, 59, 999).getTime()
+      };
+    }
+    return null;
+  }
+
+  function getContextArcFrameBounds() {
+    const zl = getZoomLevelForEvents();
+    if (zl === 1 || zl === 2) {
+      return null;
+    }
+    if (typeof global.getListContextDiscArcTimeBoundsMs === 'function') {
+      try {
+        const b = global.getListContextDiscArcTimeBoundsMs(zl);
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
+      } catch (e) { /* fall through */ }
+    }
+    if (typeof global.getZoomRelativeContextTimeBoundsMs === 'function') {
+      try {
+        const b = global.getZoomRelativeContextTimeBoundsMs(zl);
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) {
+          let t0 = b.t0;
+          let t1 = b.t1;
+          if (typeof global.getZoomRelativeContextContentPad === 'function') {
+            const pad = global.getZoomRelativeContextContentPad(zl);
+            const p = pad && pad.padMs > 0 ? pad.padMs : 0;
+            t0 -= p;
+            t1 += p;
+          }
+          return { t0, t1 };
+        }
+      } catch (e) { /* fall through */ }
+    }
+    return getFallbackContextArcFrameBounds(zl);
+  }
+
+  /**
    * Clamp STE nest to Event Horizon week. Day-frame LTE dailies keep full span
    * on the annual day time frame (same Zoom-5 month, no week chop, no Shift).
    */
@@ -1830,18 +1924,58 @@
   }
 
   /**
-   * STE circadian nest → Event Horizon week (Shift may widen).
-   * Day-frame LTE dailies → Zoom-5 month (visible at closer zooms without Shift).
+   * Create-time mesh window — wider than the live hoop so z4–6 share one set.
+   * Live arc only toggles visibility (see syncEventVisibilityToContextArc).
    */
-  function eventTouchesSelectedParentWindow(start, end) {
-    if (!start || isNaN(start.getTime())) return false;
-    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    return isEventInSelectedYear(start, evEnd);
+  function getPersistentEventMeshBounds() {
+    const zl = getZoomLevelForEvents();
+    if (zl >= 4 && zl <= 6 && typeof global.getListContextDiscArcTimeBoundsMs === 'function') {
+      try {
+        const b = global.getListContextDiscArcTimeBoundsMs(4);
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
+      } catch (e) { /* fall through */ }
+    }
+    return getContextArcFrameBounds();
   }
 
-  /** Hard-cull: LTE events only culled if outside selected year. */
+  function eventTouchesPersistentMeshWindow(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    const zl = getZoomLevelForEvents();
+    if (zl === 1 || zl === 2) return true;
+    const b = getPersistentEventMeshBounds();
+    if (!b) return isEventInSelectedYear(start, evEnd);
+    return evEnd.getTime() > b.t0 && start.getTime() < b.t1;
+  }
+
+  /**
+   * Context arc overlap (zoom grain). Multi-year LTE that nick the frame stay;
+   * events wholly outside the frame never get meshes.
+   */
+  function eventTouchesSelectedParentWindow(start, end) {
+    return eventTouchesSelectedContextArcWindow(start, end);
+  }
+
+  /** Hard-cull at create: persistent mesh window (not the live hoop). */
   function shouldHideOutsideParentUnitWindow(start, end) {
-    return !eventTouchesSelectedParentWindow(start, end);
+    return !eventTouchesPersistentMeshWindow(start, end);
+  }
+
+  function syncEventVisibilityToContextArc(gl) {
+    const visit = function (root) {
+      if (!root || !root.userData) return;
+      const ev = root.userData.vevent || resolveDayFrameHelixEvent(root);
+      const start = ev ? getEventStart(ev) : root.userData.start;
+      const end = ev ? getEventEnd(ev) : root.userData.end;
+      if (!start || isNaN(start.getTime())) {
+        root.visible = true;
+        return;
+      }
+      root.visible = eventTouchesSelectedContextArcWindow(start, end);
+    };
+    if (gl && typeof gl.forEachLayerObjectRoot === 'function') {
+      gl.forEachLayerObjectRoot(visit);
+    }
   }
 
   function getSelectedDateTimeFn() {
@@ -2661,23 +2795,13 @@
     return isSteStyleDailySpan(start, end);
   }
 
-  /** Annual helix day-frame: Zoom-4/5 month of dailies, including closer zooms (no Shift).
-   * LOD fix: WEEK (7) uses week window (~7d) not month window (~60d) to avoid
-   * rebuilding 60 annual ribbons when only 7 are visible on circadian disks. */
+  /** Annual helix day-frame: only dailies that overlap the current context-arc frame. */
   function shouldDrawAnnualDayFrameSteGeometry(start, end) {
-    if (typeof global.flattenMode === 'string' && global.flattenMode === 'all') return false;
     if (!shouldRenderDayFrameSubDayOnAnnualHelix()) return false;
     if (!isAnnualDayFrameSteSpan(start, end)) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (shouldHideLongTermOnDailySkySte(start, evEnd)) return false;
-    const zl = getZoomLevelForEvents();
-    if (zl === 4 || zl === 5 || zl === 6 || zl === 8 || zl === 9 || zl === 0) {
-      return eventTouchesZoom5DailyWindow(start, evEnd);
-    }
-    if (zl === 7) {
-      return eventTouchesSelectedWeekWindow(start, evEnd);
-    }
-    return true;
+    return eventTouchesSelectedContextArcWindow(start, evEnd);
   }
 
   /** Circadian disk-stack STEs — selected day at close zooms; Zoom 5 keeps the month on the nest. */
@@ -2689,9 +2813,9 @@
       if (isCircadianShortEventsShiftPreview()) return true;
       return eventTouchesSelectedCalendarDay(start, end);
     }
-    // Month: dailies inside Selected Time Frame use STE; rest → LTE manifold.
+    // Month/quarter: STE nest = selected calendar day. Rest of the hoop = LTE day-frame fills.
     if ((zl === 4 || zl === 5) && isSteStyleDailySpan(start, end)) {
-      return eventTouchesSelectedContextArcWindow(start, end);
+      return eventTouchesSelectedCalendarDay(start, end);
     }
     return true;
   }
@@ -3283,11 +3407,15 @@
     if (!ribbonPair || !ribbonPair.innerFlat || ribbonPair.innerFlat.length < 6) return null;
 
     const durationDays = Math.max(durationH / 24, 1 / 24);
-    const plotType = 'polygon3d';
+    const plotType = resolveDayFrameLtePlotType(start, end);
+    const wantFill = plotType === 'polygon3d' || plotType === 'polygon2d';
     const offDayMul = getAnnualDayFrameOffDayOpacityMul(start, end);
     const dailyMul = getDailyCircadianEventOpacityMul(start, end);
+    const warpOn =
+      typeof global.isEventHorizonWarpEnabled === 'function' &&
+      !!global.isEventHorizonWarpEnabled();
     const nearSel = getSelectedWeekLteWarpAmount(start);
-    const farDayFrame = nearSel < 0.2;
+    const farDayFrame = warpOn && nearSel < 0.2;
     const opacity = Math.min(1,
       ((lineStyle && lineStyle.opacity != null ? lineStyle.opacity : layerConfig.opacity) ?? 0.78) *
         getDurationOpacityScale(durationDays) * dailyMul * offDayMul *
@@ -3340,21 +3468,23 @@
     group.userData = userData;
     group.userData.dayFrameAnnualHelix = true;
 
-    const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
-    if (ribbonGeo) {
-      const fillMesh = createRibbonFillMesh(
-        ribbonGeo,
-        fillHex,
-        fillOpacity,
-        plotType,
-        roFill,
-        durationDays,
-        null,
-        true
-      );
-      group.add(fillMesh);
-      addDayFrameFlatRibbonBorders(group, innerFlat, outerFlat, borderHex, borderOp, roLine);
+    if (wantFill) {
+      const ribbonGeo = createRibbonBufferFromFlatArrays(innerFlat, outerFlat);
+      if (ribbonGeo) {
+        const fillMesh = createRibbonFillMesh(
+          ribbonGeo,
+          fillHex,
+          fillOpacity,
+          plotType,
+          roFill,
+          durationDays,
+          null,
+          true
+        );
+        group.add(fillMesh);
+      }
     }
+    addDayFrameFlatRibbonBorders(group, innerFlat, outerFlat, borderHex, borderOp, roLine);
 
     if (group.children.length === 0) return null;
 
@@ -3414,7 +3544,9 @@
       );
     }
 
-    addEventRibbonPickProxy(group, innerFlat, outerFlat);
+    if (!wantFill && !farDayFrame) {
+      addEventRibbonPickProxy(group, innerFlat, outerFlat);
+    }
     markCircadianShortScrubRoot(group, layerConfig._diskRibbon, false);
     markShortEventPointerPickability(group, start, end);
     return group;
@@ -5585,22 +5717,23 @@
   }
 
   /**
-   * Thick polyline stroke along flat [x,y,z,...].
-   * Prefer Line when far-LOD / low quality; Tube only when close + budget allows.
-   * @param {number} [radiusScale] - multiply tube radius (e.g. short circadian arcs).
+   * Polyline stroke along flat [x,y,z,...].
+   * Line by default; ribbon strip on selected-day (`_eventOutlineRibbonMode`).
+   * Never TubeGeometry on this path.
+   * @param {number} [radiusScale] - multiply ribbon half-width (e.g. short circadian arcs).
    */
   function createTubeOutlineAlongFlat(flat, colorHex, opacity, renderOrder, earthDist, layerConfig, radiusScale) {
     let r = getRibbonOutlineTubeRadius(earthDist, layerConfig);
     if (radiusScale != null && isFinite(radiusScale) && radiusScale > 0) r *= radiusScale;
-    const forceLine =
-      _eventOutlineLineMode ||
-      (_eventTubeQualityScale < EVENT_OUTLINE_PREFER_LINE_QUALITY);
+    const forceLine = _eventOutlineLineMode || !_eventOutlineRibbonMode;
+    const preferRibbon = !forceLine && _eventOutlineRibbonMode;
 
     if (typeof global.MeshPrimitives !== 'undefined' && global.MeshPrimitives.strokeAlongFlat) {
       return global.MeshPrimitives.strokeAlongFlat(flat, {
         THREE: global.THREE,
-        mode: forceLine ? 'line' : 'auto',
+        mode: preferRibbon ? 'ribbon' : 'line',
         forceLine,
+        preferRibbon,
         qualityScale: _eventTubeQualityScale,
         preferLineBelow: EVENT_OUTLINE_PREFER_LINE_QUALITY,
         radius: r,
@@ -5610,33 +5743,22 @@
       });
     }
 
-    // Fallback without MeshPrimitives
     const THREE = global.THREE;
     const nPts = flat.length / 3;
     if (nPts < 2) return null;
-    if (forceLine) {
-      const lineGeo = new THREE.BufferGeometry();
-      lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3));
-      const line = new THREE.Line(
-        lineGeo,
-        new THREE.LineBasicMaterial({
-          color: colorHex,
-          transparent: true,
-          opacity: opacity,
-          depthWrite: false
-        })
-      );
-      line.renderOrder = renderOrder;
-      return line;
-    }
-    if (nPts === 2) {
-      return cylinderBetweenPoints(
-        new THREE.Vector3(flat[0], flat[1], flat[2]),
-        new THREE.Vector3(flat[3], flat[4], flat[5]),
-        r, colorHex, opacity, renderOrder
-      );
-    }
-    return null;
+    const lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3));
+    const line = new THREE.Line(
+      lineGeo,
+      new THREE.LineBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: opacity,
+        depthWrite: false
+      })
+    );
+    line.renderOrder = renderOrder;
+    return line;
   }
 
   /** lineThickness scales radial span of inner/outer helix (portal “band width”). */
@@ -6352,6 +6474,7 @@
       contextSphereClipped = true;
     }
     _eventOutlineLineMode = eventOutlineShouldUseLine(start, end);
+    _eventOutlineRibbonMode = !_eventOutlineLineMode && eventTouchesSelectedCalendarDay(start, end);
 
     const midTitleAlong01 =
       layerConfig && layerConfig._midTitleAlongSpan != null && !isNaN(layerConfig._midTitleAlongSpan)
@@ -6934,6 +7057,7 @@
     if (!lines || !Array.isArray(lines) || !layerConfig) return objects;
     _eventTubeQualityScale = computeEventTubeQualityScale(lines.length);
     _eventOutlineLineMode = false;
+    _eventOutlineRibbonMode = false;
     const group = sceneContentGroup || null;
     const worldGroup = worldSpaceGroup || null;
     const lineZl = getZoomLevelForEvents();
@@ -6981,6 +7105,7 @@
       }
       // Same far/density LOD as createEventWorldline — line-objects path used to force tubes always.
       _eventOutlineLineMode = eventOutlineShouldUseLine(start, end);
+      _eventOutlineRibbonMode = !_eventOutlineLineMode && eventTouchesSelectedCalendarDay(start, end);
 
       const startHeight = typeof calculateDateHeight === 'function'
         ? calculateDateHeight(start.getFullYear(), start.getMonth(), start.getDate(), start.getHours())
@@ -8198,8 +8323,8 @@
 
   /**
    * Is this event inside its density window?
-   * STE → Event Horizon week; LTE → zoom parent nest (outside horizon).
-   * Used for window-before-budget at every zoom.
+   * Overlap with the current context-arc frame (month at 5, week at 7, …).
+   * Multi-year LTE that intersect the frame count as on-screen.
    */
   function isEventOnScreenForDensityBudget(event, zl) {
     const start = getEventStart(event);
@@ -8207,12 +8332,12 @@
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (zl === 2 && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) return true;
-    if (!eventTouchesSelectedParentWindow(start, evEnd)) return false;
+    if (!eventTouchesSelectedContextArcWindow(start, evEnd)) return false;
 
     if (!isEarthDailySkyEventZoom(zl)) return true;
     // Budget window is SHIFT-agnostic: SHIFT changes what's visible, not what competes for slots.
     if (isLongTermSpanForDailySky(start, evEnd)) {
-      return isEventInSelectedYear(start, evEnd);
+      return eventTouchesSelectedContextArcWindow(start, evEnd);
     }
     // STEs at daily-sky: month-range slider still applies inside Event Horizon week.
     return eventTouchesSelectedMonthRangeWindow(start, evEnd);
@@ -8273,6 +8398,7 @@
 
     _eventTubeQualityScale = computeEventTubeQualityScale(renderEvents.length);
     _eventOutlineLineMode = false;
+    _eventOutlineRibbonMode = false;
     const group = sceneContentGroup || null;
     const worldGroup = worldSpaceGroup || null;
     const byCategory = layerConfig.layerStylesByCategory || {};
@@ -8419,6 +8545,7 @@
     isEventOnScreenForDensityBudget,
     getEventDensityBudget,
     scoreEventPriority,
+    resolveDayFrameLtePlotType,
     eventTouchesSelectedParentWindow,
     getSelectedParentUnitBounds,
     isCircadianHelixZoom,
@@ -8444,7 +8571,8 @@
     getEventHorizonRadius,
     getEarthEventHorizonCenter,
     isSteStyleDailySpan,
-    eventTouchesSelectedContextArcWindow
+    eventTouchesSelectedContextArcWindow,
+    syncEventVisibilityToContextArc
   };
 
   if (typeof module !== 'undefined' && module.exports) {

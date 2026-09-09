@@ -8,9 +8,13 @@
  * event-renderer wires at runtime.
  */
 (function (global) {
-  const RC = (typeof window !== 'undefined' && window.RENDERING_CONFIG) || {};
+  let RC = (typeof window !== 'undefined' && window.RENDERING_CONFIG) || global.RENDERING_CONFIG || {};
+  if (!RC.DENSITY_BUDGET && typeof require === 'function') {
+    try { RC = require('../config-rendering.js'); } catch (e) { /* browser / path */ }
+  }
   const TUBE = RC.TUBE_LOD || { BUDGET: 48, QUALITY_FLOOR: 0.34, PREFER_LINE_QUALITY: 0.55, FAR_FACTOR: 2 };
-  const DENSITY = RC.DENSITY_BUDGET || { 0: 120, 1: 20, 2: 40, 3: 300, 4: 300, 5: 300, 6: 300, 7: 80, 8: 700, 9: 120 };
+  // Fallback must match config-rendering.js DENSITY_BUDGET.
+  const DENSITY = RC.DENSITY_BUDGET || { 0: 120, 1: 20, 2: 40, 3: 300, 4: 300, 5: 500, 6: 500, 7: 150, 8: 700, 9: 120 };
 
   /** Adaptive tube quality 1→0.34, budget 48 — see event-renderer.js:45 */
   function computeEventTubeQualityScale(eventCount) {

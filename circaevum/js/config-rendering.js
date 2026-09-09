@@ -35,24 +35,30 @@ const RIBBON_OUTLINE = {
   TUBE_RADIUS_FRAC: 0.0003, // ×earthDist
 };
 
-/** Adaptive LOD — Frenet frames dominate, not verts */
+/** Adaptive LOD — event outlines use Line/ribbon; these remain for any explicit tube */
 const TUBE_LOD = {
   BUDGET: 48,               // below → quality 1
   QUALITY_FLOOR: 0.34,
-  PREFER_LINE_QUALITY: 0.55, // below → THREE.Line not TubeGeometry
+  PREFER_LINE_QUALITY: 0.55, // unused for event outlines (always Line/ribbon); kept for explicit tube
   FAR_FACTOR: 2,            // half-spans from selected time → Line
 };
 
-/** Per-zoom event geometry caps — priority sort, overflow arc */
+/**
+ * Per-zoom event geometry caps — priority sort, overflow arc.
+ * Sole source of truth. lod.js + event-renderer.js + main.js all read this.
+ *
+ * Month/lunar 500: 300 culled week-corridor at month; 800 lagged 5→7.
+ * Week 150: 80 hid adjacent days; 300 lagged.
+ */
 const DENSITY_BUDGET = {
   0: 120,  // MOMENT
   1: 20,   // CENTURY
   2: 40,   // DECADE
   3: 300,  // YEAR
   4: 300,  // QUARTER
-  5: 300,  // MONTH (week corridor visible)
-  6: 300,  // LUNAR
-  7: 80,   // WEEK (parent week +1)
+  5: 500,  // MONTH
+  6: 500,  // LUNAR
+  7: 150,  // WEEK
   8: 700,  // DAY
   9: 120,  // CLOCK
 };
