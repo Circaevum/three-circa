@@ -3683,6 +3683,46 @@ body.light-mode #selected-time {
     animation: pulse 2s ease-in-out infinite;
 }
 
+/* Portal event ingest: corner badge while Nakama pages stream in. */
+.event-ingest-loading {
+    position: absolute;
+    left: 16px;
+    bottom: 18px;
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px 8px 10px;
+    pointer-events: none;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--cosmic-cyan);
+    background: color-mix(in srgb, var(--cosmic-cyan) 12%, rgba(8, 18, 28, 0.72));
+    border: 1px solid color-mix(in srgb, var(--cosmic-cyan) 45%, transparent);
+    border-radius: 999px;
+}
+
+.event-ingest-loading[hidden] {
+    display: none;
+}
+
+.event-ingest-loading-orb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--cosmic-cyan) 35%, transparent);
+    border-top-color: var(--cosmic-cyan);
+    animation: spin 0.7s linear infinite;
+}
+
+body.light-mode .event-ingest-loading {
+    color: #0891b2;
+    background: color-mix(in srgb, #0891b2 10%, rgba(241, 245, 249, 0.88));
+    border-color: color-mix(in srgb, #0891b2 40%, transparent);
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }

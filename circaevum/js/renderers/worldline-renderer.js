@@ -190,6 +190,110 @@ const Worldlines = (function() {
         return geo;
     }
 
+    function getMoonIncludedPathBoundsMs(zoomLevel, selDate) {
+        const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? Math.floor(zoomLevel) : 5;
+        const ref = selDate instanceof Date && !isNaN(selDate.getTime()) ? selDate : new Date();
+        const arcFn =
+            typeof getListContextDiscArcTimeBoundsMs === 'function'
+                ? getListContextDiscArcTimeBoundsMs
+                : typeof window !== 'undefined' && typeof window.getListContextDiscArcTimeBoundsMs === 'function'
+                  ? window.getListContextDiscArcTimeBoundsMs
+                  : null;
+        if (z >= 5 && arcFn) return arcFn(z, ref);
+        return {
+            t0: new Date(ref.getFullYear(), ref.getMonth(), 1, 0, 0, 0, 0).getTime(),
+            t1: new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999).getTime(),
+            ref
+        };
+    }
+
+    function contextArcOutlineColorHex() {
+        if (typeof getListHorizonRingColorHex === 'function') return getListHorizonRingColorHex();
+        return isLightMode ? 0x0891b2 : 0x22d3ee;
+    }
+
+    function sampleMoonSynodicFlat(t0, t1, nSeg, refH, selH, selDate, earth, moonSep, moonXZFn, mm) {
+        if (!(t1 > t0) || !moonXZFn || !selDate) return null;
+        const n = Math.max(8, nSeg | 0);
+        const hpy = typeof HEIGHT_PER_YEAR !== 'undefined' ? HEIGHT_PER_YEAR : 100;
+        const MS_PER_ORBIT_YEAR = 365.2425 * 86400000;
+        const out = new Float32Array((n + 1) * 3);
+        for (let i = 0; i <= n; i++) {
+            const ms = t0 + (i / n) * (t1 - t0);
+            const at = new Date(ms);
+            const h = selH + ((ms - selDate.getTime()) / MS_PER_ORBIT_YEAR) * hpy;
+            const mxz = moonXZFn.call(mm, h, refH, earth, moonSep, at, null, selH);
+            if (!mxz || isNaN(mxz.x) || isNaN(mxz.z) || isNaN(h)) return null;
+            const ix = i * 3;
+            out[ix] = mxz.x;
+            out[ix + 1] = h;
+            out[ix + 2] = mxz.z;
+        }
+        return out;
+    }
+
+    /** Cyan inner/outer + end caps — same language as Context Arc outline, on the included moon path. */
+    function addMoonIncludedPathOutline(root, centerFlat, halfWidth) {
+        const THREE = typeof global !== 'undefined' && global.THREE
+            ? global.THREE
+            : typeof window !== 'undefined' ? window.THREE : null;
+        if (!THREE || !root || !centerFlat || centerFlat.length < 6) return;
+        const n = centerFlat.length / 3;
+        const inner = new Float32Array(centerFlat.length);
+        const outer = new Float32Array(centerFlat.length);
+        const up = new THREE.Vector3(0, 1, 0);
+        const tan = new THREE.Vector3();
+        const side = new THREE.Vector3();
+        const hw = typeof halfWidth === 'number' && halfWidth > 0 ? halfWidth : 0.55;
+        for (let i = 0; i < n; i++) {
+            const ix = i * 3;
+            const xPrev = centerFlat[Math.max(0, i - 1) * 3];
+            const yPrev = centerFlat[Math.max(0, i - 1) * 3 + 1];
+            const zPrev = centerFlat[Math.max(0, i - 1) * 3 + 2];
+            const xNext = centerFlat[Math.min(n - 1, i + 1) * 3];
+            const yNext = centerFlat[Math.min(n - 1, i + 1) * 3 + 1];
+            const zNext = centerFlat[Math.min(n - 1, i + 1) * 3 + 2];
+            tan.set(xNext - xPrev, yNext - yPrev, zNext - zPrev);
+            if (tan.lengthSq() < 1e-12) tan.set(0, 1, 0);
+            else tan.normalize();
+            side.crossVectors(tan, up);
+            if (side.lengthSq() < 1e-10) {
+                side.set(1, 0, 0).cross(tan);
+            }
+            side.normalize().multiplyScalar(hw);
+            inner[ix] = centerFlat[ix] + side.x;
+            inner[ix + 1] = centerFlat[ix + 1] + side.y;
+            inner[ix + 2] = centerFlat[ix + 2] + side.z;
+            outer[ix] = centerFlat[ix] - side.x;
+            outer[ix + 1] = centerFlat[ix + 1] - side.y;
+            outer[ix + 2] = centerFlat[ix + 2] - side.z;
+        }
+        const positions = [];
+        for (let i = 0; i < n - 1; i++) {
+            const a = i * 3;
+            const b = (i + 1) * 3;
+            positions.push(inner[a], inner[a + 1], inner[a + 2], inner[b], inner[b + 1], inner[b + 2]);
+            positions.push(outer[a], outer[a + 1], outer[a + 2], outer[b], outer[b + 1], outer[b + 2]);
+        }
+        const last = (n - 1) * 3;
+        positions.push(inner[0], inner[1], inner[2], outer[0], outer[1], outer[2]);
+        positions.push(inner[last], inner[last + 1], inner[last + 2], outer[last], outer[last + 1], outer[last + 2]);
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
+        const mat = new THREE.LineBasicMaterial({
+            color: contextArcOutlineColorHex(),
+            transparent: true,
+            opacity: isLightMode ? 0.9 : 1,
+            depthTest: true,
+            depthWrite: false,
+            blending: isLightMode ? THREE.NormalBlending : THREE.AdditiveBlending
+        });
+        const line = new THREE.LineSegments(geom, mat);
+        line.renderOrder = 16;
+        line.userData = { type: 'MoonMonthPathOutline' };
+        root.add(line);
+    }
+
     /**
      * Synodic new and full moons whose instants fall in [tMinMs, tMaxMs] (UTC ms), sorted by time.
      */
@@ -604,9 +708,32 @@ const Worldlines = (function() {
                 : MM && typeof MM.moonXZAtHeight === 'function'
                   ? MM.moonXZAtHeight
                   : null;
+        const moonSep =
+            MM && typeof MM.getOffset === 'function' ? MM.getOffset() : moonDistance;
+        const halfWidth = Math.max(moonDistance * 0.085, 0.55);
+        const includeBounds = getMoonIncludedPathBoundsMs(zoomLevel, selDate);
+        const monthFlat = moonXZForWorldline
+            ? sampleMoonSynodicFlat(
+                includeBounds.t0,
+                includeBounds.t1,
+                80,
+                refH,
+                selH,
+                selDate,
+                earth,
+                moonSep,
+                moonXZForWorldline,
+                MM
+            )
+            : null;
+        if (Math.floor(zoomLevel) === 4) {
+            const monthRoot = new THREE.Group();
+            monthRoot.userData = { type: 'MoonWorldlineRoot' };
+            if (monthFlat) addMoonIncludedPathOutline(monthRoot, monthFlat, halfWidth);
+            return monthRoot.children.length ? monthRoot : null;
+        }
 
         if (moonXZForWorldline) {
-            const moonSep = typeof MM.getOffset === 'function' ? MM.getOffset() : moonDistance;
             for (let i = 0; i <= segments; i++) {
                 const t = i / segments;
                 const height = startHeight + (t * totalSpan);
@@ -671,7 +798,6 @@ const Worldlines = (function() {
         
         const moonColor = isLightMode ? 0x666666 : 0x888888;
         const centerFlat = new Float32Array(moonPoints);
-        const halfWidth = Math.max(moonDistance * 0.085, 0.55);
 
         const tSpanMin =
             selDate.getTime() + ((startHeight - selH) / hpy) * MS_PER_ORBIT_YEAR;
@@ -700,7 +826,6 @@ const Worldlines = (function() {
             root.add(mesh);
 
             if (moonXZForWorldline) {
-                const moonSep = typeof MM.getOffset === 'function' ? MM.getOffset() : moonDistance;
                 const mr = Math.max(0.3, moonSep * 0.026);
                 for (let pi = 0; pi < phaseEvents.length; pi++) {
                     const ev = phaseEvents[pi];
@@ -779,6 +904,7 @@ const Worldlines = (function() {
                 }
             }
 
+            if (monthFlat) addMoonIncludedPathOutline(root, monthFlat, halfWidth);
             return root;
         }
 
@@ -790,7 +916,15 @@ const Worldlines = (function() {
             opacity: 0.4,
             linewidth: 1
         });
-        return new THREE.Line(moonGeometry, lineMat);
+        const fallbackLine = new THREE.Line(moonGeometry, lineMat);
+        if (monthFlat) {
+            const lineRoot = new THREE.Group();
+            lineRoot.userData = { type: 'MoonWorldlineRoot' };
+            lineRoot.add(fallbackLine);
+            addMoonIncludedPathOutline(lineRoot, monthFlat, halfWidth);
+            return lineRoot;
+        }
+        return fallbackLine;
     }
     
     return {

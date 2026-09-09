@@ -279,6 +279,13 @@ const MoonMechanics = (function () {
 
         const refH = opts.currentDateHeight;
         const selH = typeof opts.selectedDateHeight === 'number' ? opts.selectedDateHeight : refH;
+        let sceneY = selH;
+        if (typeof opts.selectedSceneY === 'number' && !isNaN(opts.selectedSceneY)) {
+            sceneY = opts.selectedSceneY;
+        } else if (typeof window !== 'undefined' && typeof window.getFlattenedSceneY === 'function') {
+            const fy = window.getFlattenedSceneY(selH);
+            if (typeof fy === 'number' && !isNaN(fy)) sceneY = fy;
+        }
         const isLightMode = !!opts.isLightMode;
         const planetScaleFactor = opts.planetScaleFactor != null ? opts.planetScaleFactor : 0.3;
 
@@ -321,14 +328,14 @@ const MoonMechanics = (function () {
             emissiveIntensity: 0.08
         });
         const moonMesh = new T.Mesh(moonGeo, moonMat);
-        moonMesh.position.set(mex, selH, mez);
+        moonMesh.position.set(mex, sceneY, mez);
         moonMesh.userData = { type: 'MoonMechanics', role: 'pedagogicalMoon' };
         opts.sceneContentGroup.add(moonMesh);
         out.push(moonMesh);
 
         const { x: eex, z: eez } = { x: ex, z: ez };
         const dashGeom = new T.BufferGeometry();
-        dashGeom.setAttribute('position', new T.Float32BufferAttribute([eex, selH, eez, mex, selH, mez], 3));
+        dashGeom.setAttribute('position', new T.Float32BufferAttribute([eex, sceneY, eez, mex, sceneY, mez], 3));
         const dashMat = new T.LineDashedMaterial({
             color: isLightMode ? 0x64748b : 0x94a3b8,
             transparent: true,
@@ -339,7 +346,7 @@ const MoonMechanics = (function () {
         const dash = new T.Line(dashGeom, dashMat);
         dash.computeLineDistances();
         dash.userData = { type: 'MoonMechanics', role: 'earthMoonGuide' };
-        opts.flatGroup.add(dash);
+        opts.sceneContentGroup.add(dash);
         out.push(dash);
 
         return out;

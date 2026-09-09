@@ -25,6 +25,12 @@
 let scene, camera, renderer;
 let sceneContentGroup = null;
 let flattenableGroup = null; // Worldlines and time markers only; scaled when flatten is on. Sun/planets stay in sceneContentGroup.
+/** Portal event ingest: 0–1 galactic spin of Earth's-orbit disc (events ride flattenableGroup). */
+let eventIngestLoading = false;
+let eventIngestLoadAmt = 0;
+let eventIngestSpinPhase = 0;
+let eventIngestLoadStartedAt = 0;
+let eventIngestLastFrameMs = 0;
 let timeMarkersGroup = null; // Time markers only; enables marker-only flatten mode.
 let timeMarkerLabelsGroup = null; // Text sprites — flatten Y position, never box height.
 let sunMesh = null;
@@ -195,11 +201,13 @@ function isMoonLayerEffectiveAtZoom(zl) {
     return true;
 }
 
-/** Lunar orbit ribbon only — off at Moment (0) and Clock (9); pedagogical Moon mesh may still show. */
+/** Lunar ribbon + month-path outline — off at Moment (0) and Clock (9). Quarter (4) keeps month outline. */
 function isMoonWorldlineVisibleAtZoom(zl) {
-    if (!isMoonLayerEffectiveAtZoom(zl)) return false;
+    if (!showMoonLayer) return false;
     const z = typeof zl === 'number' && !isNaN(zl) ? zl : currentZoom;
-    return z !== 0 && z !== 9;
+    if (z === 0 || z === 9) return false;
+    if (z >= 1 && z <= 3) return false;
+    return true;
 }
 let moonWorldlines = []; // Store moon worldline meshes
 let lagrangeMarkerObjects = []; // Sun–Earth L1–L5 at selected time (orbital plane)
@@ -347,7 +355,12 @@ function flattenAllYScale() {
         ? currentFlattenAmount
         : 0;
     if (amt <= 0.001) return 1;
-    return Math.max(0, 1 - amt);
+    // Must match AppFlatten.yScaleFor — else Shift+A/D at zoom 1–2 slides helix/year
+    // ticks while Earth/camera sit still (0 vs 0.05), so Y looks inverted.
+    if (typeof window !== 'undefined' && window.AppFlatten && typeof window.AppFlatten.yScaleFor === 'function') {
+        return window.AppFlatten.yScaleFor(amt);
+    }
+    return Math.max(0.05, 1 - amt * 0.95);
 }
 
 function ensureFlattenWorldOriginFromLogicalY(logicalY) {
@@ -1203,6 +1216,11 @@ let polarViewDir = null; // Unit offset focus→camera in polar zooms; updated b
 let needPolarOrbitInit = true; // After non-polar → polar, seed polarViewDir from camera or default
 let forcePolarDefaultOnInit = false; // Force default Earth-pole entry orientation on zoom handoff
 let isPolarView = false; // Track if in polar view mode
+/** Slow Day (8) ↔ Clock (9) and Month (5) → Quarter (4) camera so pose change is readable. */
+let zoom89HandoffUntilMs = 0;
+let zoom89PolarTargetDir = null;
+const ZOOM_89_HANDOFF_MS = 1600;
+const ZOOM_89_HANDOFF_LERP = 0.038;
 if (typeof window !== 'undefined') {
     window.requestCircaevumPolarReseed = function () {
         needPolarOrbitInit = true;
@@ -1218,6 +1236,35 @@ function isEarthZoomRig(zoomLevel) {
     return zoomLevel === 9 || zoomLevel === 0;
 }
 
+function isZoom89HandoffActive() {
+    const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    return zoom89HandoffUntilMs > now;
+}
+
+function beginZoom89Handoff() {
+    const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    zoom89HandoffUntilMs = now + ZOOM_89_HANDOFF_MS;
+}
+
+function getCameraPoseLerp() {
+    if (isZoom89HandoffActive()) return ZOOM_89_HANDOFF_LERP;
+    if (isEarthZoomRig(currentZoom)) return 1;
+    return cameraTransitionSpeed;
+}
+
+/** Day (8) orbit pose: from +Y, looking at Earth with selected-hour on the near side. */
+function setCameraRotationAboveSelectedTime() {
+    if (typeof cameraRotation !== 'object' || !cameraRotation) return;
+    const dir = typeof buildDefaultPolarViewDirection === 'function'
+        ? buildDefaultPolarViewDirection()
+        : null;
+    if (dir && typeof dir.x === 'number' && typeof dir.z === 'number') {
+        cameraRotation.y = Math.atan2(dir.x, dir.z);
+    }
+    cameraRotation.x = Math.PI / 6;
+    if (typeof clampCameraRotationPitch === 'function') clampCameraRotationPitch();
+}
+
 // Initialize scene
 function initScene() {
     // Use SceneCore.initScene if available, otherwise fallback to local implementation
@@ -1229,6 +1276,7 @@ function initScene() {
         currentCameraUp = new THREE.Vector3(0, 1, 0);
         targetCameraPosition = new THREE.Vector3(0, 0, 0);
         polarViewDir = new THREE.Vector3(0, -1, 0);
+        zoom89PolarTargetDir = new THREE.Vector3(0, -1, 0);
         
         // Call SceneCore.initScene which will set scene, camera, renderer, etc. on window
         SceneCore.initScene({
@@ -1255,6 +1303,7 @@ function initScene() {
         currentCameraUp = new THREE.Vector3(0, 1, 0);
         targetCameraPosition = new THREE.Vector3(0, 0, 0);
         polarViewDir = new THREE.Vector3(0, -1, 0);
+        zoom89PolarTargetDir = new THREE.Vector3(0, -1, 0);
         
         scene = new THREE.Scene();
         scene.background = new THREE.Color(SCENE_CONFIG.backgroundColor);
@@ -3460,9 +3509,23 @@ function listHorizonHelixPointAtTheta(theta, r, arc, bounds, refCurrentHeight, r
     return listHorizonHelixPointAtMs(ms, r, refCurrentHeight, refSelectedHeight, bandHalfH, bandSign);
 }
 
-function storeListHorizonLogicalPositions(geom) {
+function storeListHorizonLogicalPositions(geom, bandOffsets) {
     if (!geom || !geom.attributes || !geom.attributes.position) return;
     geom.userData.listHorizonLogical = new Float32Array(geom.attributes.position.array);
+    if (bandOffsets && bandOffsets.length) {
+        geom.userData.listHorizonBandOffset = bandOffsets instanceof Float32Array
+            ? bandOffsets
+            : new Float32Array(bandOffsets);
+    } else if (geom.userData.listHorizonBandOffset) {
+        delete geom.userData.listHorizonBandOffset;
+    }
+}
+
+/** Local Y offset from helix centerline (top/bottom of context-arc box). */
+function listHorizonBandYOffset(bandHalfH, bandSign) {
+    if (!bandSign) return 0;
+    const h = typeof bandHalfH === 'number' && !isNaN(bandHalfH) ? bandHalfH : 0;
+    return bandSign < 0 ? -h : h;
 }
 
 /** Re-apply Event Horizon warp to day markers / sky / day-frame events (no mesh rebuild). */
@@ -3593,14 +3656,16 @@ function onInterstellarHorizonCameraCross() {
     } catch (e3) { /* optional */ }
 }
 
-function flattenListHorizonPositionArray(logical, focusY, amount) {
+function flattenListHorizonPositionArray(logical, focusY, amount, bandOffsets) {
     if (!logical || logical.length < 3) return logical;
     const yScale = Math.max(0, 1 - (typeof amount === 'number' && !isNaN(amount) ? amount : 0));
-    const offset = (typeof focusY === 'number' && !isNaN(focusY) ? focusY : 0) * (1 - yScale);
+    const pivot = (typeof focusY === 'number' && !isNaN(focusY) ? focusY : 0) * (1 - yScale);
     const out = new Float32Array(logical.length);
-    for (let i = 0; i < logical.length; i += 3) {
+    const hasBand = !!(bandOffsets && bandOffsets.length * 3 >= logical.length);
+    for (let i = 0, vi = 0; i < logical.length; i += 3, vi++) {
+        const band = hasBand ? bandOffsets[vi] : 0;
         out[i] = logical[i];
-        out[i + 1] = logical[i + 1] * yScale + offset;
+        out[i + 1] = (logical[i + 1] - band) * yScale + pivot + band;
         out[i + 2] = logical[i + 2];
     }
     return out;
@@ -3616,7 +3681,12 @@ function updateListHorizonContextArcFlatten(focusY, amount) {
         if (!geom || !geom.attributes || !geom.attributes.position || !geom.userData.listHorizonLogical) {
             return;
         }
-        const flat = flattenListHorizonPositionArray(geom.userData.listHorizonLogical, focusY, amount);
+        const flat = flattenListHorizonPositionArray(
+            geom.userData.listHorizonLogical,
+            focusY,
+            amount,
+            geom.userData.listHorizonBandOffset
+        );
         geom.attributes.position.array.set(flat);
         geom.attributes.position.needsUpdate = true;
         if (geom.computeVertexNormals) geom.computeVertexNormals();
@@ -3991,14 +4061,24 @@ function applySkyDiskOpacityForShift(mesh) {
     if (!mesh || !mesh.isMesh || !mesh.material) return;
     const ud = mesh.userData || {};
     if (!ud.listHorizonSkyFill && ud.type !== 'EarthDaylightSky' && ud.type !== 'DayFrameLteSky') return;
+    const mat = mesh.material;
     if (typeof ud.skyDiskBaseOpacity !== 'number') {
-        ud.skyDiskBaseOpacity = mesh.material.opacity;
+        ud.skyDiskBaseOpacity =
+            mat.uniforms && mat.uniforms.uOpacity
+                ? mat.uniforms.uOpacity.value
+                : mat.opacity;
     }
     const target = isSkyDiskShiftPreviewActive()
         ? LIST_HORIZON_SKY_DISK_SHIFT_OPACITY
         : ud.skyDiskBaseOpacity;
-    if (Math.abs(mesh.material.opacity - target) > 1e-4) {
-        mesh.material.opacity = target;
+    if (mat.uniforms && mat.uniforms.uOpacity) {
+        if (Math.abs(mat.uniforms.uOpacity.value - target) > 1e-4) {
+            mat.uniforms.uOpacity.value = target;
+        }
+        return;
+    }
+    if (Math.abs(mat.opacity - target) > 1e-4) {
+        mat.opacity = target;
     }
 }
 
@@ -5066,37 +5146,124 @@ function resolveDayFrameLteSkyRadii() {
     return { inner, outer };
 }
 
+/** Day-frame LTE sky: inner midnight → outer next midnight (same as day-marker events). */
+function dayFrameLteDiskHourFromRadialT(radialT) {
+    return Math.max(0, Math.min(1, radialT)) * 24;
+}
+
+function lteSkyAlphaFromDiurnalWeights(weights) {
+    if (!weights) return 0;
+    const day = weights.day || 0;
+    const dawn = weights.dawn || 0;
+    const dusk = weights.dusk || 0;
+    const twi = weights.twi || 0;
+    return Math.max(0, Math.min(1, day * 0.92 + dawn * 0.58 + dusk * 0.58 + twi * 0.16));
+}
+
+/**
+ * Per-vertex diurnal sky on the month helix. Color from true solar altitude
+ * for that calendar day; night alpha → 0 so blue tracks daylight only.
+ * Sample by helix index (not warped XZ radius).
+ */
 function applyDayFrameLteSkyVertexColors(geom, ri, ro, isLight, edgeColorHex, observerCtx) {
     const T = getThreeNamespace();
     if (!T || !geom || !geom.attributes || !geom.attributes.position) return;
     const ctx = observerCtx || getSkyCanvasObserverContext(8);
     const pos = geom.attributes.position;
-    const span = Math.max(ro - ri, 1e-4);
     const colors = new Float32Array(pos.count * 3);
-    const refDate = ctx.selectedDate || (typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : new Date());
-    const alts = ctx.lon != null
-        ? getSolarAltitudeSeriesForCalendarDate(ctx.lat, ctx.lon, refDate)
+    const alphas = new Float32Array(pos.count);
+    const ud = geom.userData || {};
+    const layout = ud.contextArcSkyLayout;
+    const rowLen = ud.contextArcSkyInnerCount > 0 ? ud.contextArcSkyInnerCount : 0;
+    const nRadial = ud.contextArcSkyRadialSegments > 0 ? ud.contextArcSkyRadialSegments : 24;
+    const month = typeof getSelectedCalendarDayHelixBounds === 'function'
+        ? getSelectedCalendarDayHelixBounds()
         : null;
+    const t0 = month && month.t0 != null ? month.t0 : Date.now();
+    const t1 = month && month.t1 != null && month.t1 > t0 ? month.t1 : t0 + 86400000 - 1;
+    const span = Math.max(ro - ri, 1e-4);
+
     for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const z = pos.getZ(i);
-        const r = Math.sqrt(x * x + z * z);
-        const radialT = Math.max(0, Math.min(1, (r - ri) / span));
-        const diskHour = radialT * 24;
+        let radialT;
+        let ms = t0;
+        if (layout === 'helixStrip' && rowLen > 0) {
+            const timeIdx = i % rowLen;
+            const ring = Math.floor(i / rowLen);
+            radialT = ring / nRadial;
+            const nHelix = Math.max(1, rowLen - 1);
+            ms = t0 + (timeIdx / nHelix) * (t1 - t0);
+        } else {
+            const x = pos.getX(i);
+            const z = pos.getZ(i);
+            const r = Math.sqrt(x * x + z * z);
+            radialT = Math.max(0, Math.min(1, (r - ri) / span));
+        }
+        const diskHour = dayFrameLteDiskHourFromRadialT(radialT);
         let weights;
-        if (alts) {
-            const alt = interpolateObserverSolarAltitude(alts, diskHour);
-            weights = skyDiurnalWeightsFromSolarAltitude(alt, diskHour);
+        if (ctx && ctx.lon != null) {
+            const alts = getSolarAltitudeSeriesForCalendarDate(ctx.lat, ctx.lon, new Date(ms));
+            weights = skyDiurnalWeightsForContextArcHour(alts, diskHour);
         } else {
             weights = skyDiurnalWeightsAtHour(diskHour);
         }
-        let col = skyColorFromDiurnalWeights(weights, 0.5, isLight, edgeColorHex);
+        let col = skyColorFromDiurnalWeights(weights, radialT, isLight, edgeColorHex);
         col = applySelectedHourSkyHighlight(col, diskHour, ctx, T, isLight);
         colors[i * 3] = col.r;
         colors[i * 3 + 1] = col.g;
         colors[i * 3 + 2] = col.b;
+        alphas[i] = lteSkyAlphaFromDiurnalWeights(weights);
     }
     geom.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
+    geom.setAttribute('skyAlpha', new T.Float32BufferAttribute(alphas, 1));
+    if (geom.attributes.color) geom.attributes.color.needsUpdate = true;
+    if (geom.attributes.skyAlpha) geom.attributes.skyAlpha.needsUpdate = true;
+}
+
+/** MeshBasic + vertex skyAlpha so Event Horizon clip can still patch. Night discards. */
+function createDayFrameLteSkyMaterial(THREE) {
+    const mat = new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: DAY_FRAME_LTE_SKY_OPACITY,
+        side: THREE.DoubleSide,
+        depthTest: true,
+        depthWrite: false,
+        blending: THREE.NormalBlending,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2
+    });
+    mat.userData.dayFrameLteSkyAlpha = true;
+    mat.customProgramCacheKey = function () {
+        return 'DayFrameLteSkyAlpha';
+    };
+    mat.onBeforeCompile = function (shader) {
+        shader.vertexShader = shader.vertexShader.replace(
+            'void main() {',
+            [
+                'attribute float skyAlpha;',
+                'varying float vSkyAlpha;',
+                'void main() {',
+                '  vSkyAlpha = skyAlpha;'
+            ].join('\n')
+        );
+        shader.fragmentShader = shader.fragmentShader.replace(
+            'void main() {',
+            'varying float vSkyAlpha;\nvoid main() {'
+        );
+        if (shader.fragmentShader.indexOf('#include <color_fragment>') >= 0) {
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <color_fragment>',
+                [
+                    '#include <color_fragment>',
+                    'diffuseColor.a *= vSkyAlpha;',
+                    'if (diffuseColor.a < 0.008) discard;'
+                ].join('\n')
+            );
+        }
+        mat.userData.dayFrameLteSkyShader = shader;
+    };
+    return mat;
 }
 
 function buildDayFrameLteSkyMesh(T, ri, ro, dayStartY, dayEndY, refWorldline) {
@@ -5143,8 +5310,7 @@ function buildDayFrameLteSkyMesh(T, ri, ro, dayStartY, dayEndY, refWorldline) {
     geom.userData.contextArcSkyRo = outer;
     storeListHorizonLogicalPositions(geom);
     applyDayFrameLteSkyInterstellarWarp(geom);
-    const mat = createListHorizonSkyDiskMaterial(T);
-    mat.opacity = DAY_FRAME_LTE_SKY_OPACITY;
+    const mat = createDayFrameLteSkyMaterial(T);
     const mesh = new T.Mesh(geom, mat);
     mesh.renderOrder = DAY_FRAME_LTE_SKY_RENDER_ORDER;
     mesh.userData = {
@@ -5158,19 +5324,20 @@ function buildDayFrameLteSkyMesh(T, ri, ro, dayStartY, dayEndY, refWorldline) {
 
 function refreshDayFrameLteSkyColors(mesh, ri, ro, observerCtx) {
     if (!mesh || !mesh.geometry) return;
-    const geom = mesh.geometry;
-    const z = typeof currentZoom === 'number' ? currentZoom : 8;
-    const month = getSelectedCalendarDayHelixBounds();
-    const bounds = month && month.t0 != null
-        ? { t0: month.t0, t1: month.t1 }
-        : getListContextDiscArcTimeBoundsMs(Math.max(5, Math.floor(z)));
-    applyContextArcSkyVertexColors(geom, ri, ro, z, {
-        bounds,
-        layout: 'helixStrip',
-        helixInnerVertexCount: geom.userData.contextArcSkyInnerCount || 49,
-        helixRadialSegments: geom.userData.contextArcSkyRadialSegments || 24
-    });
-    void observerCtx;
+    const T = getThreeNamespace();
+    if (T && (!mesh.material || !mesh.material.userData || !mesh.material.userData.dayFrameLteSkyAlpha)) {
+        if (mesh.material) mesh.material.dispose();
+        mesh.material = createDayFrameLteSkyMaterial(T);
+        mesh.userData.skyDiskBaseOpacity = DAY_FRAME_LTE_SKY_OPACITY;
+    }
+    applyDayFrameLteSkyVertexColors(
+        mesh.geometry,
+        ri,
+        ro,
+        typeof isLightMode !== 'undefined' ? isLightMode : false,
+        typeof getListHorizonRingColorHex === 'function' ? getListHorizonRingColorHex() : 0x22d3ee,
+        observerCtx || getSkyCanvasObserverContext(typeof currentZoom === 'number' ? currentZoom : 8)
+    );
 }
 
 function disposeDayFrameLteSky() {
@@ -5212,7 +5379,7 @@ function updateDayFrameLteSkyBackdrop(zoomLevel) {
     const refWorldline = getDayFrameLteSkyWorldlineRef();
     const geomKey =
         `${zoomLevel}:${dayBounds.dayKey}:${inner.toFixed(3)}:${outer.toFixed(3)}:` +
-        `${dayBounds.dayStartY.toFixed(4)}:${dayBounds.dayEndY.toFixed(4)}:${refWorldline.toFixed(4)}`;
+        `${dayBounds.dayStartY.toFixed(4)}:${dayBounds.dayEndY.toFixed(4)}:${refWorldline.toFixed(4)}:lteSkyA1`;
     const colorKey = buildEarthDaylightSkyColorKey(getSkyCanvasObserverContext(zoomLevel));
 
     if (!dayFrameLteSkyMesh || dayFrameLteSkyGeomKey !== geomKey) {
@@ -5601,11 +5768,15 @@ function buildListHorizonHoopWallMesh(THREE, radius, y0, y1, nSeg, colorHex, ren
         : Math.max(12, Math.min(96, Math.round((52 + ro * 0.28) * (span / TWO_PI))));
     const useHelix = helixCtx && helixCtx.bounds;
     const bandHalfH = helixCtx && helixCtx.bandHalfH != null ? helixCtx.bandHalfH : 0;
+    const offLo = listHorizonBandYOffset(bandHalfH, -1);
+    const offHi = listHorizonBandYOffset(bandHalfH, 1);
     const positions = [];
+    const bandOffsets = [];
     const indices = [];
     let vi = 0;
-    function addV(x, y, z) {
+    function addV(x, y, z, bandOff) {
         positions.push(x, y, z);
+        bandOffsets.push(typeof bandOff === 'number' && !isNaN(bandOff) ? bandOff : 0);
         return vi++;
     }
     function addQuad(a, b, c, d) {
@@ -5643,17 +5814,17 @@ function buildListHorizonHoopWallMesh(THREE, radius, y0, y1, nSeg, colorHex, ren
             pC = wallPoint(th1, 1);
             pD = wallPoint(th0, 1);
         }
-        const a = addV(pA.x, pA.y, pA.z);
-        const b = addV(pB.x, pB.y, pB.z);
-        const c = addV(pC.x, pC.y, pC.z);
-        const d = addV(pD.x, pD.y, pD.z);
+        const a = addV(pA.x, pA.y, pA.z, offLo);
+        const b = addV(pB.x, pB.y, pB.z, offLo);
+        const c = addV(pC.x, pC.y, pC.z, offHi);
+        const d = addV(pD.x, pD.y, pD.z, offHi);
         addQuad(a, b, c, d);
     }
     const wallGeom = new THREE.BufferGeometry();
     wallGeom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
     wallGeom.setIndex(indices);
     wallGeom.computeVertexNormals();
-    if (useHelix) storeListHorizonLogicalPositions(wallGeom);
+    if (useHelix) storeListHorizonLogicalPositions(wallGeom, bandOffsets);
     const baseOp = isInnerEdge ? 0.78 : 0.62;
     const op = Math.min(0.96, baseOp * (opacityMul != null ? opacityMul : 1));
     const matWall = new THREE.MeshBasicMaterial({
@@ -5717,7 +5888,15 @@ function buildListHorizonContextEndCapMesh(THREE, ri, ro, y0, y1, colorHex, rend
     );
     geom.setIndex([0, 1, 2, 0, 2, 3]);
     geom.computeVertexNormals();
-    if (useHelix) storeListHorizonLogicalPositions(geom);
+    if (useHelix) {
+        const hOff = helixCtx.bandHalfH != null ? helixCtx.bandHalfH : 0;
+        storeListHorizonLogicalPositions(geom, [
+            listHorizonBandYOffset(hOff, -1),
+            listHorizonBandYOffset(hOff, 1),
+            listHorizonBandYOffset(hOff, 1),
+            listHorizonBandYOffset(hOff, -1)
+        ]);
+    }
     const mat = new THREE.MeshBasicMaterial({
         color: colorHex,
         transparent: true,
@@ -5746,9 +5925,12 @@ function buildListHorizonContextOutlineLines(THREE, ri, ro, y0, y1, colorHex, re
         ? listHorizonSegmentCountForArc(helixCtx.bounds, 52, arc)
         : Math.max(12, Math.min(96, Math.round(52 * (span / TWO_PI))));
     const positions = [];
-    function pushPt(p) {
+    const bandOffsets = [];
+    function pushPt(p, bandOff) {
         positions.push(p.x, p.y, p.z);
+        bandOffsets.push(typeof bandOff === 'number' && !isNaN(bandOff) ? bandOff : 0);
     }
+    const hOff = helixCtx && helixCtx.bandHalfH != null ? helixCtx.bandHalfH : Math.abs(y1 - y0) * 0.5;
     const rings = [
         { r: ri, sign: -1, y: y0 },
         { r: ri, sign: 1, y: y1 },
@@ -5758,16 +5940,17 @@ function buildListHorizonContextOutlineLines(THREE, ri, ro, y0, y1, colorHex, re
     const vertsPer = n + 1;
     for (let k = 0; k < rings.length; k++) {
         const ring = rings[k];
+        const bandOff = listHorizonBandYOffset(hOff, ring.sign);
         for (let i = 0; i <= n; i++) {
             if (useHelix) {
                 const ms = helixCtx.bounds.t0 + (i / n) * (helixCtx.bounds.t1 - helixCtx.bounds.t0);
                 pushPt(listHorizonHelixPointAtMs(
                     ms, ring.r, helixCtx.refCurrentHeight, helixCtx.refSelectedHeight,
                     helixCtx.bandHalfH || 0, ring.sign
-                ));
+                ), bandOff);
             } else {
                 const th = t0 + (i / n) * span;
-                pushPt({ x: Math.cos(th) * ring.r, y: ring.y, z: Math.sin(th) * ring.r });
+                pushPt({ x: Math.cos(th) * ring.r, y: ring.y, z: Math.sin(th) * ring.r }, bandOff);
             }
         }
     }
@@ -5782,7 +5965,7 @@ function buildListHorizonContextOutlineLines(THREE, ri, ro, y0, y1, colorHex, re
         if (fullCircle) indices.push(base + n, base);
     }
     geom.setIndex(indices);
-    if (useHelix) storeListHorizonLogicalPositions(geom);
+    if (useHelix) storeListHorizonLogicalPositions(geom, bandOffsets);
     const mat = new THREE.LineBasicMaterial({
         color: colorHex,
         transparent: true,
@@ -6007,6 +6190,42 @@ function buildListHorizonContextExteriorVeilMesh(
 }
 
 /**
+ * Full-year Context Arc (Zoom 4 grain). Inner year/quarter onion stays a closed ring
+ * when the live hoop at Zoom 5–6 is a month pie.
+ */
+function getListHorizonFullYearArcAndHelix(yCenter, bandHalfH) {
+    const yearArc = getListContextDiscArcRad(4);
+    const yearHelix = getListHorizonHelixBuildContext(yCenter, 4);
+    yearHelix.bandHalfH = bandHalfH;
+    return { yearArc, yearHelix };
+}
+
+function addListHorizonFullYearContextHoop(group, THREE, ri, ro, y0, y1, yCenter, colorHex, renderOrder, n, extraUserData) {
+    if (!group || !THREE || !(ro > ri)) return;
+    const half = Math.abs(y1 - y0) * 0.5;
+    const { yearArc, yearHelix } = getListHorizonFullYearArcAndHelix(yCenter, half);
+    const roOrder = renderOrder != null ? renderOrder : 7;
+    const inner = buildListHorizonHoopWallMesh(
+        THREE, ri, y0, y1, n, colorHex, roOrder, 1.4, true, yearArc, yearHelix
+    );
+    const outer = buildListHorizonHoopWallMesh(
+        THREE, ro, y0, y1, n, colorHex, roOrder, 1.15, false, yearArc, yearHelix
+    );
+    const ud = extraUserData && typeof extraUserData === 'object' ? extraUserData : {};
+    if (inner) {
+        inner.userData = Object.assign({}, inner.userData, ud);
+        group.add(inner);
+    }
+    if (outer) {
+        outer.userData = Object.assign({}, outer.userData, ud);
+        group.add(outer);
+    }
+    addListHorizonContextWindowOutline(
+        group, THREE, ri, ro, y0, y1, colorHex, roOrder, yearArc, yearHelix
+    );
+}
+
+/**
  * Context annulus: inner hoop = list span band; sky fill between inner/outer; outer hoop = time-marker context.
  * Sun-ward of inner: events may render but are excluded from the Event List at this zoom.
  * @param {object} [opts] - `{ extendToEarthOrbit?: boolean }` relaxes outer radius cap toward W (Day/Clock).
@@ -6031,7 +6250,7 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
     const arc =
         opts && opts.arc ? opts.arc : getListContextDiscArcRad(zDisc);
     const halfH = Math.max(1.35, earthW * 0.028);
-    const bandHalfH = Math.max(0.55, halfH * 0.48);
+    const bandHalfH = Math.max(0.55, halfH * 0.48) * 0.5;
     const y0 = yCenter - bandHalfH;
     const y1 = yCenter + bandHalfH;
 
@@ -6079,47 +6298,81 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
     if (wallOuter) group.add(wallOuter);
     addListHorizonContextWindowOutline(group, THREE, ri, ro, y0, y1, colorHex, renderOrder, arc, helixCtx);
 
+    const zFloor = Math.floor(zDisc);
+    const yearQuarterZoom = zFloor === 5 || zFloor === 6;
+    const blueHex = colorHex != null ? colorHex : 0x22d3ee;
+
+    // Zoom 5–6: keep a full-year ring around the inner year/quarter zone.
+    // Live hoop stays a month pie (LTE spine or month band).
+    if (
+        yearQuarterZoom &&
+        typeof TimeMarkers !== 'undefined' &&
+        typeof TimeMarkers.getClassicListContextRingRadiiForZoom === 'function'
+    ) {
+        const qz = TimeMarkers.getClassicListContextRingRadiiForZoom(2, earthW);
+        let qRo = Math.max(earthW * 0.08, Math.min(qz.rOuter, earthW * 0.5));
+        let qRi = Math.max(earthW * 0.05, Math.min(qz.rInner, qRo - earthW * 0.012));
+        if (qRi >= qRo - earthW * 0.008) qRi = Math.max(earthW * 0.05, qRo * 0.55);
+        if (qRo < ri - earthW * 0.004) {
+            addListHorizonFullYearContextHoop(
+                group, THREE, qRi, qRo, y0, y1, yCenter, blueHex,
+                (renderOrder != null ? renderOrder : 7) + 1, n,
+                { type: 'ListHorizonYearQuarterContext', classicContextArc: true }
+            );
+            group.userData.yearQuarterInnerRadius = qRi;
+            group.userData.yearQuarterOuterRadius = qRo;
+        }
+    }
+
     // Singular: keep LTE day-spine sky above; also show classic blue Context Arc at
     // older zoom onion radii (Earth / Event Horizon sit outside the LTE day frame).
     if (singularBand && typeof TimeMarkers !== 'undefined' &&
         typeof TimeMarkers.getClassicListContextRingRadiiForZoom === 'function') {
-        const classic = TimeMarkers.getClassicListContextRingRadiiForZoom(zDisc, earthW);
+        const classicZoom = yearQuarterZoom ? 4 : zDisc;
+        const classic = TimeMarkers.getClassicListContextRingRadiiForZoom(classicZoom, earthW);
         let cRo = Math.max(earthW * 0.2, Math.min(classic.rOuter, earthW * 0.92));
         let cRi = Math.max(earthW * 0.06, Math.min(classic.rInner, cRo - earthW * 0.015));
         if (cRi >= cRo - earthW * 0.02) cRi = Math.max(earthW * 0.06, cRo * 0.5);
         // Only add if classic band is clearly sunward of LTE day spine (avoid double walls).
         if (cRo < ri - earthW * 0.01) {
-            const blueHex = colorHex != null ? colorHex : 0x22d3ee;
-            const classicInner = buildListHorizonHoopWallMesh(
-                THREE, cRi, y0, y1, n, blueHex, (renderOrder != null ? renderOrder : 7) + 2,
-                1.4, true, arc, helixCtx
-            );
-            const classicOuter = buildListHorizonHoopWallMesh(
-                THREE, cRo, y0, y1, n, blueHex, (renderOrder != null ? renderOrder : 7) + 2,
-                1.15, false, arc, helixCtx
-            );
-            if (classicInner) {
-                classicInner.userData = Object.assign({}, classicInner.userData, {
-                    type: 'ListHorizonClassicContextInner',
-                    classicContextArc: true
-                });
-                group.add(classicInner);
+            if (yearQuarterZoom) {
+                addListHorizonFullYearContextHoop(
+                    group, THREE, cRi, cRo, y0, y1, yCenter, blueHex,
+                    (renderOrder != null ? renderOrder : 7) + 2, n,
+                    { type: 'ListHorizonClassicContextOuter', classicContextArc: true }
+                );
+            } else {
+                const classicInner = buildListHorizonHoopWallMesh(
+                    THREE, cRi, y0, y1, n, blueHex, (renderOrder != null ? renderOrder : 7) + 2,
+                    1.4, true, arc, helixCtx
+                );
+                const classicOuter = buildListHorizonHoopWallMesh(
+                    THREE, cRo, y0, y1, n, blueHex, (renderOrder != null ? renderOrder : 7) + 2,
+                    1.15, false, arc, helixCtx
+                );
+                if (classicInner) {
+                    classicInner.userData = Object.assign({}, classicInner.userData, {
+                        type: 'ListHorizonClassicContextInner',
+                        classicContextArc: true
+                    });
+                    group.add(classicInner);
+                }
+                if (classicOuter) {
+                    classicOuter.userData = Object.assign({}, classicOuter.userData, {
+                        type: 'ListHorizonClassicContextOuter',
+                        classicContextArc: true
+                    });
+                    group.add(classicOuter);
+                }
+                addListHorizonContextWindowOutline(
+                    group, THREE, cRi, cRo, y0, y1, blueHex,
+                    (renderOrder != null ? renderOrder : 7) + 2, arc, helixCtx
+                );
+                const classicVeil = buildListHorizonContextExteriorVeilMesh(
+                    THREE, cRi, cRo, earthW, yCenter, blueHex, skyRo, helixCtx.bounds, helixCtx
+                );
+                if (classicVeil) group.add(classicVeil);
             }
-            if (classicOuter) {
-                classicOuter.userData = Object.assign({}, classicOuter.userData, {
-                    type: 'ListHorizonClassicContextOuter',
-                    classicContextArc: true
-                });
-                group.add(classicOuter);
-            }
-            addListHorizonContextWindowOutline(
-                group, THREE, cRi, cRo, y0, y1, blueHex,
-                (renderOrder != null ? renderOrder : 7) + 2, arc, helixCtx
-            );
-            const classicVeil = buildListHorizonContextExteriorVeilMesh(
-                THREE, cRi, cRo, earthW, yCenter, blueHex, skyRo, helixCtx.bounds, helixCtx
-            );
-            if (classicVeil) group.add(classicVeil);
             group.userData.classicInnerRadius = cRi;
             group.userData.classicOuterRadius = cRo;
         }
@@ -7281,6 +7534,7 @@ function createPlanets(zoomLevel) {
             earthPlanet,
             currentDateHeight,
             selectedDateHeight,
+            selectedSceneY,
             selectedDate: getSelectedDateTime(),
             flatGroup,
             sceneContentGroup,
@@ -9500,6 +9754,69 @@ function hideLoadingScreen() {
     loadingElement.setAttribute('aria-hidden', 'true');
 }
 
+const EVENT_INGEST_SPIN_MAX_MS = 45000;
+
+function syncEventIngestLoadingHud(received) {
+    const el = document.getElementById('event-ingest-loading');
+    const text = document.getElementById('event-ingest-loading-text');
+    if (!el) return;
+    const on = eventIngestLoading || eventIngestLoadAmt > 0.04;
+    el.hidden = !on;
+    if (text) {
+        const n = typeof received === 'number' && received > 0 ? received : 0;
+        text.textContent = n > 0 ? 'Catching events · ' + n : 'Catching events…';
+    }
+}
+
+function setEventIngestLoading(on, meta) {
+    eventIngestLoading = !!on;
+    if (eventIngestLoading) {
+        if (!eventIngestLoadStartedAt) eventIngestLoadStartedAt = performance.now();
+    } else {
+        eventIngestLoadStartedAt = 0;
+    }
+    syncEventIngestLoadingHud(meta && meta.received);
+}
+
+function resetEventIngestSpinPose() {
+    if (!flattenableGroup) return;
+    flattenableGroup.rotation.set(0, 0, 0);
+}
+
+/** Wonky galactic yaw/precession of Earth's-orbit disc while events stream in. */
+function updateEventIngestLoadSpin(nowMs) {
+    const now = typeof nowMs === 'number' && isFinite(nowMs) ? nowMs : performance.now();
+    let dt = eventIngestLastFrameMs > 0 ? (now - eventIngestLastFrameMs) / 1000 : 0.016;
+    eventIngestLastFrameMs = now;
+    if (!(dt > 0) || dt > 0.08) dt = 0.016;
+    if (eventIngestLoading && eventIngestLoadStartedAt > 0 && now - eventIngestLoadStartedAt > EVENT_INGEST_SPIN_MAX_MS) {
+        eventIngestLoading = false;
+        eventIngestLoadStartedAt = 0;
+    }
+    const target = eventIngestLoading ? 1 : 0;
+    const k = 1 - Math.exp(-dt * (eventIngestLoading ? 3.6 : 2.1));
+    eventIngestLoadAmt += (target - eventIngestLoadAmt) * k;
+    if (eventIngestLoadAmt < 0.002 && !eventIngestLoading) {
+        eventIngestLoadAmt = 0;
+        eventIngestSpinPhase = 0;
+        resetEventIngestSpinPose();
+        syncEventIngestLoadingHud();
+        return;
+    }
+    eventIngestSpinPhase += dt * (1.05 + 3.6 * eventIngestLoadAmt);
+    const amt = eventIngestLoadAmt;
+    if (flattenableGroup) {
+        flattenableGroup.rotation.y = eventIngestSpinPhase * amt;
+        flattenableGroup.rotation.x = Math.sin(eventIngestSpinPhase * 0.61) * 0.24 * amt;
+        flattenableGroup.rotation.z = Math.cos(eventIngestSpinPhase * 0.47) * 0.16 * amt;
+    }
+    syncEventIngestLoadingHud();
+}
+
+if (typeof window !== 'undefined') {
+    window.setEventIngestLoading = setEventIngestLoading;
+}
+
 function toggleTimeMarkerLines() {
     showTimeMarkerLines = !showTimeMarkerLines;
     const button = document.getElementById('markers-lines-toggle');
@@ -11369,6 +11686,70 @@ function zoomSceneRebuildFamily(z) {
     return 'year-quarter';
 }
 
+/** Dec/Jun solstice of the selected calendar year (Astronomy.Seasons, else ~Dec 21 / Jun 21 noon). */
+function getSelectedYearSolsticeDate(which) {
+    const sel = typeof getSelectedDateTime === 'function' ? getSelectedDateTime() : new Date();
+    const y = sel instanceof Date && !isNaN(sel.getTime()) ? sel.getFullYear() : new Date().getFullYear();
+    try {
+        if (typeof Astronomy !== 'undefined' && Astronomy.Seasons) {
+            const s = Astronomy.Seasons(y);
+            if (which === 'jun' && s && s.jun_solstice && s.jun_solstice.date) {
+                return new Date(s.jun_solstice.date);
+            }
+            if (which !== 'jun' && s && s.dec_solstice && s.dec_solstice.date) {
+                return new Date(s.dec_solstice.date);
+            }
+        }
+    } catch (e) { /* fall through */ }
+    return which === 'jun'
+        ? new Date(y, 5, 21, 12, 0, 0, 0)
+        : new Date(y, 11, 21, 12, 0, 0, 0);
+}
+
+/**
+ * Zoom 4 yaw: winter-solstice Earth XZ toward the camera.
+ * Angled view: near edge of the year ring = screen bottom (south / new year);
+ * summer solstice on the far edge = screen top (north / Jun–Jul).
+ */
+function computeZoom4WinterSolsticeSouthYaw() {
+    const winter = getSelectedYearSolsticeDate('dec');
+    const earth = typeof PLANET_DATA !== 'undefined' ? PLANET_DATA.find((p) => p && p.name === 'Earth') : null;
+    if (!earth || typeof computeSceneDateHeights !== 'function' || typeof getPlanetXZAtSelectedDate !== 'function') {
+        return null;
+    }
+    if (!(winter instanceof Date) || isNaN(winter.getTime())) return null;
+    let currentDateHeight;
+    try {
+        currentDateHeight = computeSceneDateHeights(4).currentDateHeight;
+    } catch (e) {
+        return null;
+    }
+    if (currentDateHeight == null || isNaN(currentDateHeight)) return null;
+    const h = typeof sceneDateHeightForInstant === 'function'
+        ? sceneDateHeightForInstant(winter)
+        : currentDateHeight;
+    const xz = getPlanetXZAtSelectedDate(earth, winter, currentDateHeight, h);
+    if (!xz || isNaN(xz.x) || isNaN(xz.z)) return null;
+    if (Math.hypot(xz.x, xz.z) < 1e-8) return null;
+    return Math.atan2(xz.x, xz.z);
+}
+
+/** Default Zoom 4 pose: winter south / summer north. Re-applied each visit. */
+function applyZoom4AnnualOrbitDefaultOrientation() {
+    if (typeof tourMinimalOrbitMode !== 'undefined' && tourMinimalOrbitMode) return;
+    if (typeof cameraRotation !== 'object' || !cameraRotation) return;
+    const yaw = computeZoom4WinterSolsticeSouthYaw();
+    if (yaw == null || isNaN(yaw)) return;
+    cameraRotation.y = yaw;
+    if (typeof viewMode === 'number' && viewMode === 0) {
+        cameraRotation.x = Math.PI / 6;
+        if (typeof clampCameraRotationPitch === 'function') clampCameraRotationPitch();
+    }
+    if (typeof sceneRollTargetRad === 'number') {
+        sceneRollTargetRad = 0;
+    }
+}
+
 /**
  * Camera look-at + dolly for a zoom hop without tearing down planets.
  * Month (5) mid = week band; Week (7) mid = day band; distances 25 vs 13.
@@ -11466,7 +11847,22 @@ function _mainSetZoomLevel(level, overrideDate) {
     if (nextPolar && !prevPolar) {
         needPolarOrbitInit = true;
     }
-    if (level === 9 && prevZoom !== 9) {
+    if (prevZoom === 8 && level === 9) {
+        beginZoom89Handoff();
+        forcePolarDefaultOnInit = false;
+        needPolarOrbitInit = true;
+        if (typeof THREE !== 'undefined') {
+            if (!zoom89PolarTargetDir) zoom89PolarTargetDir = new THREE.Vector3();
+            zoom89PolarTargetDir.copy(buildDefaultPolarViewDirection());
+        }
+    } else if (prevZoom === 9 && level === 8) {
+        setCameraRotationAboveSelectedTime();
+        beginZoom89Handoff();
+    } else if (prevZoom === 5 && level === 4) {
+        beginZoom89Handoff();
+    } else if (prevZoom === 4 && level === 5) {
+        beginZoom89Handoff();
+    } else if (level === 9 && prevZoom !== 9) {
         forcePolarDefaultOnInit = true;
         needPolarOrbitInit = true;
     }
@@ -11556,6 +11952,10 @@ function _mainSetZoomLevel(level, overrideDate) {
     // Preserve selected time across zoom levels by converting the selected date
     // to the new zoom level's offset system
     applySelectedDateToZoomLevel(selectedDate, level);
+
+    if (level === 4) {
+        applyZoom4AnnualOrbitDefaultOrientation();
+    }
     
     // Update TimeMarkers module with new offsets
     if (typeof TimeMarkers !== 'undefined' && TimeMarkers.updateOffsets) {
@@ -12750,11 +13150,16 @@ function animate(time, frame) {
     }
 
     // Planets stay at rest at their accurate positions
-    // No orbital animation
+    // No orbital animation — except temporary ingest spin on Earth's-orbit disc.
+    updateEventIngestLoadSpin(typeof performance !== 'undefined' ? performance.now() : Date.now());
 
     updateSunLightingTowardEarth();
 
-    const focusLerp = currentZoom === 0 ? 0.38 : cameraTransitionSpeed;
+    if (typeof isDragging !== 'undefined' && isDragging && isZoom89HandoffActive()) {
+        zoom89HandoffUntilMs = 0;
+    }
+    const poseLerp = getCameraPoseLerp();
+    const focusLerp = currentZoom === 0 && !isZoom89HandoffActive() ? 0.38 : poseLerp;
     const flattenLockY =
         flattenMode === 'all' &&
         typeof currentFlattenAmount === 'number' &&
@@ -12771,7 +13176,7 @@ function animate(time, frame) {
     focusPoint.z += (targetFocusPoint.z - focusPoint.z) * focusLerp;
     
     // Smooth camera distance transition
-    currentCameraDistance += (targetCameraDistance - currentCameraDistance) * cameraTransitionSpeed;
+    currentCameraDistance += (targetCameraDistance - currentCameraDistance) * poseLerp;
     
     const distance = currentCameraDistance;
 
@@ -12797,6 +13202,16 @@ function animate(time, frame) {
             }
             needPolarOrbitInit = false;
             forcePolarDefaultOnInit = false;
+        }
+
+        if (
+            isZoom89HandoffActive() &&
+            currentZoom === 9 &&
+            polarViewDir &&
+            zoom89PolarTargetDir
+        ) {
+            polarViewDir.lerp(zoom89PolarTargetDir, ZOOM_89_HANDOFF_LERP);
+            if (polarViewDir.lengthSq() > 1e-12) polarViewDir.normalize();
         }
 
         const earthMesh = planetMeshes.find(p => p.userData && p.userData.name === 'Earth');
@@ -12848,7 +13263,7 @@ function animate(time, frame) {
     );
 
     const polarCam = isEarthZoomRig(currentZoom);
-    const camLerp = polarCam ? 1 : cameraTransitionSpeed;
+    const camLerp = poseLerp;
     currentPos.lerp(targetCameraPosition, camLerp);
     if (polarCam) {
         clampPolarCameraOutsideEarth(currentPos, focusPoint);
@@ -12862,6 +13277,7 @@ function animate(time, frame) {
             focusPoint.z + currentPos.z
         );
         currentCameraUp.lerp(targetCameraUp, camLerp);
+        if (currentCameraUp.lengthSq() > 1e-12) currentCameraUp.normalize();
         cam.up.copy(currentCameraUp);
         cam.lookAt(focusPoint);
         if (typeof circadianState !== 'undefined' && circadianState !== 'off') {

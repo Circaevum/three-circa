@@ -39,6 +39,12 @@
       window.openKeyboardControlsPanel();
       return;
     }
+    if (data.type === 'CIRCAEVUM_EVENTS_LOADING') {
+      if (typeof window.setEventIngestLoading === 'function') {
+        window.setEventIngestLoading(!!data.active, data);
+      }
+      return;
+    }
     if (data.type === 'CIRCAEVUM_INGEST_GIT_TIMELINE' && typeof window.ingestGitTimeline === 'function') {
       var glGit = window.circaevumGL || (window.getGL && window.getGL());
       if (!glGit) return;

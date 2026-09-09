@@ -6,7 +6,7 @@
     <meta name="description" content="Circaevum — open 3D time visualization: planetary orbits, circadian rhythm, and calendar events. WebXR on HTTPS. Machine-readable: /llms.txt, /index.md">
     <title>Circaevum - Planetary Time</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="circaevum/css/styles.css?v=context-arc-cyan-v1">
+    <link rel="stylesheet" href="circaevum/css/styles.css?v=event-ingest-spin-v1">
     <link rel="describedby" href="/llms.txt" type="text/plain">
     <link rel="alternate" type="text/markdown" href="/index.md" title="Circaevum (markdown)">
     <link rel="help" href="/developers.html" title="Developers &amp; AI agents">
@@ -429,6 +429,10 @@
         <div class="loading-spinner" aria-hidden="true"></div>
         <div class="loading-text">INITIALIZING SOLAR SYSTEM...</div>
     </div>
+    <div class="event-ingest-loading" id="event-ingest-loading" hidden role="status" aria-live="polite">
+        <span class="event-ingest-loading-orb" aria-hidden="true"></span>
+        <span id="event-ingest-loading-text">Catching events…</span>
+    </div>
 
     <!-- Landing Page (About) -->
     <div class="landing-page" id="landing-page">
@@ -672,10 +676,10 @@
     <!-- Core (scene initialization & WebGPU pipeline) -->
     <script src="circaevum/js/core/scene-core.js"></script>
     <script src="circaevum/js/core/webgpu-pipeline.js?v=2"></script>
-    <script src="circaevum/js/core/moon-mechanics.js?v=circ-moon-outside-day-v2"></script>
+    <script src="circaevum/js/core/moon-mechanics.js?v=moon-flatten-y-v1"></script>
     
     <!-- Renderers (worldlines, timemarkers, planets, events) -->
-    <script src="circaevum/js/renderers/worldline-renderer.js?v=context-arc-cyan-v1"></script>
+    <script src="circaevum/js/renderers/worldline-renderer.js?v=moon-month-outline-v1"></script>
     <script src="circaevum/js/renderers/timemarker-renderer.js?v=context-arc-cyan-v1"></script>
     <script src="circaevum/js/renderers/planet-renderer.js"></script>
     <script src="circaevum/js/renderers/event-label-renderer.js"></script>
@@ -705,7 +709,7 @@
     <script src="circaevum/js/app/flatten.js?v=2"></script>
     <script src="circaevum/js/app/navigation.js?v=3"></script>
     <!-- Main Application Script -->
-    <script src="circaevum/js/main.js?v=context-arc-month-sky-v1"></script>
+    <script src="circaevum/js/main.js?v=ctx-arc-h-half-v1"></script>
     
     <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
     <script src="circaevum/js/api/circaevum-gl.js?v=eh-clip-day-lte-v1"></script>
@@ -725,7 +729,7 @@
     <!-- Intro: startup gate, prompt (uses CircaevumIntroTour when present) -->
     <script src="circaevum/js/presentation/intro.js"></script>
     <!-- Embed API: when used as viewer (?viewer=1 or iframe), parent can send events via postMessage -->
-    <script src="circaevum/js/ui/embed-api.js?v=birthday-decade-v1"></script>
+    <script src="circaevum/js/ui/embed-api.js?v=event-ingest-spin-v1"></script>
     <script src="circaevum/js/ui/webmcp-tools.js"></script>
     
     <!-- Audio Script -->
