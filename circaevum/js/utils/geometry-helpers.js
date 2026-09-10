@@ -43,7 +43,11 @@ const SceneGeometry = (function() {
         const earth = PLANET_DATA.find(p => p.name === 'Earth');
         const period = orbitalPeriod || earth.orbitalPeriod;
         const start = startAngle !== null ? startAngle : earth.startAngle;
-        
+
+        if (typeof HelicalProjection !== 'undefined' && HelicalProjection.thetaFromHeight) {
+            return HelicalProjection.thetaFromHeight(height, currentHeight, period, start, 100);
+        }
+
         const years = (height - currentHeight) / 100;
         const orbits = years / period;
         return start - (orbits * Math.PI * 2);
@@ -78,9 +82,13 @@ const SceneGeometry = (function() {
             return { x: 0, y: 0, z: 0 };
         }
         
-        const x = Math.cos(angle) * radius;
-        const y = height;
-        const z = Math.sin(angle) * radius;
+        const projected =
+            typeof HelicalProjection !== 'undefined' && HelicalProjection.point
+                ? HelicalProjection.point(radius, angle, height, 1)
+                : { x: Math.cos(angle) * radius, y: height, z: Math.sin(angle) * radius };
+        const x = projected.x;
+        const y = projected.y;
+        const z = projected.z;
         
         // Validate outputs
         if (isNaN(x) || isNaN(y) || isNaN(z)) {
@@ -139,6 +147,19 @@ const SceneGeometry = (function() {
             if (Array.isArray(astroPoints) && astroPoints.length > 0) {
                 return astroPoints;
             }
+        }
+
+        if (typeof HelicalProjection !== 'undefined' && HelicalProjection.sampleHelix) {
+            return HelicalProjection.sampleHelix(
+                startHeight,
+                endHeight,
+                radius,
+                currentHeight,
+                orbitalPeriod,
+                startAngle,
+                segments,
+                100
+            );
         }
 
         const points = [];
