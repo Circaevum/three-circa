@@ -1,0 +1,9 @@
+{
+  "name": "three-circa",
+  "private": true,
+  "description": "Circaevum GL (Yang) — static Three.js viewer.",
+  "scripts": {
+    "start": "npx -y serve . -p 8080",
+    "all": "npx -y serve . -p 8080"
+  }
+}

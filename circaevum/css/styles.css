@@ -2126,6 +2126,11 @@ body.light-mode .event-list-panel-list .draw-line-btn.drawn {
     display: none;
 }
 
+/* The controls collapse button also clears their sliders from the canvas. */
+.scene-icon-overlay.collapsed ~ .scene-sliders-stack {
+    display: none !important;
+}
+
 .circaevum-intro-replay-btn {
     flex-shrink: 0;
 }
@@ -5228,4 +5233,280 @@ body.dev-doc-page pre {
 
 .dev-doc-footer a {
     color: #0369a1;
+}
+
+/* Admin render-tax HUD */
+#circa-perf-hud {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    z-index: 240;
+    width: min(720px, calc(100vw - 24px));
+    pointer-events: auto;
+    padding: 10px 12px 12px;
+    border-radius: 10px;
+    background: rgba(4, 10, 22, 0.88);
+    border: 1px solid rgba(34, 211, 238, 0.32);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+    color: #e2e8f0;
+    font-family: 'Space Mono', ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    backdrop-filter: blur(6px);
+}
+
+#circa-perf-hud[hidden] {
+    display: none !important;
+}
+
+.circa-perf-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.circa-perf-head strong {
+    color: #f8fafc;
+    letter-spacing: 0.02em;
+}
+
+.circa-perf-axes {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #94a3b8;
+    flex: 1;
+}
+
+.circa-perf-swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 2px;
+}
+
+.circa-perf-swatch-ms { background: #22d3ee; }
+.circa-perf-swatch-draw { background: #fbbf24; margin-left: 8px; }
+
+.circa-perf-close,
+.circa-perf-pause,
+.circa-perf-freeze {
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.5);
+    color: #cbd5e1;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 10px;
+    padding: 2px 7px;
+    cursor: pointer;
+}
+
+.circa-perf-freeze.active {
+    border-color: rgba(251, 113, 133, 0.65);
+    color: #fda4af;
+}
+
+#circa-perf-hud.circa-perf-paused {
+    border-color: rgba(251, 191, 36, 0.55);
+}
+
+.circa-perf-frozen {
+    color: #fbbf24;
+    font-weight: 700;
+}
+
+.circa-perf-spike {
+    margin: 0 0 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgba(244, 63, 94, 0.12);
+    border: 1px solid rgba(244, 63, 94, 0.28);
+    color: #fecdd3;
+}
+
+.circa-perf-spike strong { color: #fb7185; margin-right: 8px; }
+.circa-perf-spike-ago { color: #94a3b8; }
+.circa-perf-spike-why { margin-top: 4px; color: #e2e8f0; }
+.circa-perf-spike-wait { color: #64748b; }
+
+.circa-perf-lag-sum {
+    margin: 0 0 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.circa-perf-lag-head {
+    color: #e2e8f0;
+    margin-bottom: 4px;
+}
+
+.circa-perf-lag-causes,
+.circa-perf-lag-moments {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.circa-perf-lag-causes {
+    margin-bottom: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.circa-perf-lag-causes li,
+.circa-perf-lag-moments li {
+    display: grid;
+    grid-template-columns: 36px 1fr auto;
+    gap: 6px;
+    align-items: baseline;
+    padding: 2px 0;
+}
+
+.circa-perf-lag-moments li {
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.circa-perf-lag-moments li:hover {
+    background: rgba(148, 163, 184, 0.08);
+}
+
+.circa-perf-log-h {
+    margin: 8px 0 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.circa-perf-log {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    max-height: 7.2em;
+    overflow-y: auto;
+}
+
+.circa-perf-log li {
+    display: grid;
+    grid-template-columns: 36px 1fr auto;
+    gap: 6px;
+    padding: 1px 0;
+}
+
+.circa-perf-log-ago { color: #64748b; }
+
+.circa-perf-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: #cbd5e1;
+    margin-bottom: 6px;
+}
+
+.circa-perf-ms { color: #22d3ee; font-weight: 700; }
+.circa-perf-draws { color: #fbbf24; }
+
+.circa-perf-split-label {
+    display: flex;
+    justify-content: space-between;
+    color: #64748b;
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    margin: 0 0 3px;
+}
+
+.circa-perf-canvas {
+    display: block;
+    width: 100%;
+    height: 140px;
+    cursor: crosshair;
+    border-radius: 6px;
+    background: rgba(2, 6, 18, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.circa-perf-crumbs {
+    margin: 6px 0 8px;
+    color: #94a3b8;
+    min-height: 1.4em;
+    word-break: break-word;
+}
+
+.circa-perf-crumb { white-space: nowrap; }
+
+.circa-perf-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.circa-perf-cols h3 {
+    margin: 0 0 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.circa-perf-hot {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.circa-perf-hot li {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    gap: 6px;
+    align-items: baseline;
+    padding: 2px 0;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.circa-perf-hot li:hover { background: rgba(148, 163, 184, 0.08); }
+
+.circa-perf-hot-n { color: #fb7185; }
+.circa-perf-hot-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #e2e8f0;
+}
+.circa-perf-hot-meta { color: #64748b; font-size: 10px; }
+.circa-perf-empty { color: #475569; }
+
+.circa-perf-hover {
+    position: absolute;
+    max-width: 240px;
+    padding: 4px 7px;
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    pointer-events: none;
+}
+
+body.light-mode #circa-perf-hud {
+    background: rgba(248, 250, 252, 0.92);
+    border-color: rgba(8, 145, 178, 0.35);
+    color: #0f172a;
+}
+
+body.light-mode .circa-perf-head strong { color: #0f172a; }
+body.light-mode .circa-perf-hot-title { color: #0f172a; }
+body.light-mode .circa-perf-close {
+    background: rgba(255, 255, 255, 0.7);
+    color: #334155;
+}
+
+@media (max-width: 640px) {
+    .circa-perf-cols { grid-template-columns: 1fr; }
 }

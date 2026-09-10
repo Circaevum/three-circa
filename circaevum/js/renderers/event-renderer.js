@@ -77,15 +77,9 @@
   }
 
   /**
-   * Per-zoom event geometry budget. When a layer's event count exceeds the budget
-   * at the current zoom, events are priority-sorted and only the top N are rendered
-   * as full geometry. A count indicator arc is appended for the overflow.
-   *
-   * Rationale: at wide zooms (Century/Decade) individual markers are sub-pixel and
-   * serve no informational purpose — TubeGeometry / Frenet-frame work still runs
-   * for each one. The budget caps geometry count per zoom tier.
-   *
-   * Priority order within a layer: duration (longer first), then recency (later first).
+   * Density window = painted cyan Context Arc. Events that overlap that hoop
+   * all get meshes. Do not score-cut inside the hoop (that looked like random
+   * vanish in the pie). scoreEventPriority stays for HUD / tests only.
    */
   if (!global.RENDERING_CONFIG && typeof require === 'function') {
     try {
@@ -1008,8 +1002,8 @@
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (isLongTermSpanForDailySky(start, evEnd)) {
-      // Day zoom: LTEs visible across the full calendar month.
-      if (zl === 8) return eventTouchesSelectedMonthWindow(start, evEnd);
+      // Day zoom: LTE only inside the context arc (week).
+      if (zl === 8) return eventTouchesSelectedContextArcWindow(start, evEnd);
       // Clock zoom: same-day all-day events only (multi-day already blocked above).
       if (zl === 9) return eventTouchesSelectedCalendarDay(start, evEnd);
       return false;
@@ -1200,9 +1194,9 @@
       return false;
     }
 
-    // Day zoom: long-term spans visible across the full calendar month.
+    // Day zoom: LTE only inside the painted context arc (week).
     if (zl === 8 && isLongTermSpanForDailySky(start, evEnd)) {
-      return !eventTouchesSelectedMonthWindow(start, evEnd);
+      return !eventTouchesSelectedContextArcWindow(start, evEnd);
     }
 
     if (isCircadianShortEventsShiftPreview()) return false;
@@ -1664,7 +1658,7 @@
   function areEventTextLabelsVisibleAtCurrentZoom(start, end) {
     if (!start || !end || !(end > start)) return false;
     const zlLbl = getZoomLevelForEvents();
-    if (zlLbl === 8 && isLongTermSpanForDailySky(start, end) && eventTouchesSelectedMonthWindow(start, end)) {
+    if (zlLbl === 8 && isLongTermSpanForDailySky(start, end) && eventTouchesSelectedContextArcWindow(start, end)) {
       return true;
     }
     if (isSub24HourSpan(start, end) && !eventTouchesSelectedCalendarDay(start, end)) return false;
@@ -1682,7 +1676,7 @@
   function areEventNameLabelsVisibleAtCurrentZoom(start, end) {
     if (!start || !end || !(end > start)) return false;
     const zlLbl = getZoomLevelForEvents();
-    if (zlLbl === 8 && isLongTermSpanForDailySky(start, end) && eventTouchesSelectedMonthWindow(start, end)) {
+    if (zlLbl === 8 && isLongTermSpanForDailySky(start, end) && eventTouchesSelectedContextArcWindow(start, end)) {
       return true;
     }
     if (isSub24HourSpan(start, end) && !eventTouchesSelectedCalendarDay(start, end)) return false;
@@ -1816,71 +1810,93 @@
    * @returns {{ t0: number, t1: number, unit?: string }|null}
    */
   function getLteDensityTimeBounds() {
-    if (typeof global.getZoomRelativeContextTimeBoundsMs === 'function') {
-      try {
-        const b = global.getZoomRelativeContextTimeBoundsMs(getZoomLevelForEvents());
-        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
-      } catch (e) { /* optional */ }
-    }
-    if (typeof global.getParentUnitTimeBoundsMs === 'function') {
-      try {
-        const b = global.getParentUnitTimeBoundsMs(getZoomLevelForEvents());
-        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
-      } catch (e) { /* optional */ }
-    }
+    const arc = getContextArcFrameBounds();
+    if (arc) return arc;
     return getSelectedParentUnitBounds();
   }
 
   /**
-   * Painted context-arc [t0, t1] = parent of zoom grain
-   * (day→week, week→month, month→quarter, quarter→year, …).
-   * Multi-year LTE that intersect the frame stay. Same overlap test at every zoom.
-   * @returns {{ t0: number, t1: number }|null} null = do not time-cull
+   * false (load): cyan selected pie only — no full-year first paint.
+   * true (idle expand): onion union so later chunks can mesh outside the pie.
    */
-  function getFallbackContextArcFrameBounds(zl) {
+  let meshWindowOnionUnion = false;
+
+  function setEventMeshWindowOnionUnion(on) {
+    meshWindowOnionUnion = !!on;
+  }
+
+  function getSelectedCyanArcBounds(zl) {
+    if (typeof global.getSelectedContextArcTimeBoundsMs === 'function') {
+      try {
+        const b = global.getSelectedContextArcTimeBoundsMs(zl);
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
+      } catch (e) { /* fall through */ }
+    }
+    const paintZ =
+      typeof global.getSelectedContextArcPaintZoom === 'function'
+        ? global.getSelectedContextArcPaintZoom(zl)
+        : zl;
     if (typeof global.getParentUnitTimeBoundsMs === 'function') {
       try {
-        const p = global.getParentUnitTimeBoundsMs(zl);
+        const p = global.getParentUnitTimeBoundsMs(paintZ);
+        if (p && isFinite(p.t0) && isFinite(p.t1) && p.t1 >= p.t0) return p;
+      } catch (e) { /* fall through */ }
+    }
+    return null;
+  }
+
+  /**
+   * Frame when live helpers miss. Default = cyan pie. Onion year only after expand.
+   */
+  function getFallbackContextArcFrameBounds(zl) {
+    if (zl >= 3 && zl <= 7 && meshWindowOnionUnion) {
+      if (typeof global.getParentUnitTimeBoundsMs === 'function') {
+        try {
+          const year = global.getParentUnitTimeBoundsMs(4);
+          if (year && isFinite(year.t0) && isFinite(year.t1) && year.t1 >= year.t0) {
+            return year;
+          }
+        } catch (e) { /* fall through */ }
+      }
+      const fnY = getSelectedDateTimeFn();
+      const selY = fnY ? fnY() : new Date();
+      return {
+        t0: new Date(selY.getFullYear(), 0, 1, 0, 0, 0, 0).getTime(),
+        t1: new Date(selY.getFullYear(), 11, 31, 23, 59, 59, 999).getTime()
+      };
+    }
+    if (typeof global.getSelectedContextArcTimeBoundsMs === 'function') {
+      try {
+        const p = global.getSelectedContextArcTimeBoundsMs(zl);
+        if (p && isFinite(p.t0) && isFinite(p.t1) && p.t1 >= p.t0) return p;
+      } catch (e) { /* fall through */ }
+    }
+    const paintZ =
+      typeof global.getSelectedContextArcPaintZoom === 'function'
+        ? global.getSelectedContextArcPaintZoom(zl)
+        : zl;
+    if (typeof global.getParentUnitTimeBoundsMs === 'function') {
+      try {
+        const p = global.getParentUnitTimeBoundsMs(paintZ);
         if (p && isFinite(p.t0) && isFinite(p.t1) && p.t1 >= p.t0) return p;
       } catch (e) { /* fall through */ }
     }
     const fn = getSelectedDateTimeFn();
     const sel = fn ? fn() : new Date();
     const dayMs = 86400000;
-    if (zl === 0 || zl === 9) {
+    const z = paintZ;
+    if (z === 0 || z === 9) {
       const d0 = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
       return { t0: d0.getTime(), t1: d0.getTime() + dayMs - 1 };
     }
-    if (zl === 8) {
+    if (z === 8) {
       const d0 = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
       d0.setDate(d0.getDate() - d0.getDay());
       return { t0: d0.getTime(), t1: d0.getTime() + 7 * dayMs - 1 };
     }
-    if (zl === 7 || zl === 6) {
-      return {
-        t0: new Date(sel.getFullYear(), sel.getMonth(), 1, 0, 0, 0, 0).getTime(),
-        t1: new Date(sel.getFullYear(), sel.getMonth() + 1, 0, 23, 59, 59, 999).getTime()
-      };
-    }
-    if (zl === 5) {
-      const q = Math.floor(sel.getMonth() / 3) * 3;
-      return {
-        t0: new Date(sel.getFullYear(), q, 1, 0, 0, 0, 0).getTime(),
-        t1: new Date(sel.getFullYear(), q + 3, 0, 23, 59, 59, 999).getTime()
-      };
-    }
-    if (zl === 4) {
-      return {
-        t0: new Date(sel.getFullYear(), 0, 1, 0, 0, 0, 0).getTime(),
-        t1: new Date(sel.getFullYear(), 11, 31, 23, 59, 59, 999).getTime()
-      };
-    }
-    if (zl === 3) {
-      const y0 = sel.getFullYear() - (sel.getFullYear() % 10);
-      return {
-        t0: new Date(y0, 0, 1, 0, 0, 0, 0).getTime(),
-        t1: new Date(y0 + 10, 0, 1, 0, 0, 0, 0).getTime() - 1
-      };
+    if (z >= 3 && z <= 7) {
+      const cyan = getSelectedCyanArcBounds(zl);
+      if (cyan) return cyan;
     }
     return null;
   }
@@ -1890,42 +1906,60 @@
     if (zl === 1 || zl === 2) {
       return null;
     }
-    if (typeof global.getListContextDiscArcTimeBoundsMs === 'function') {
+    if (zl >= 3 && zl <= 7) {
+      if (meshWindowOnionUnion && typeof global.getOnionContextArcsUnionTimeBoundsMs === 'function') {
+        try {
+          const u = global.getOnionContextArcsUnionTimeBoundsMs(zl);
+          if (u && isFinite(u.t0) && isFinite(u.t1) && u.t1 >= u.t0) return u;
+        } catch (e) { /* fall through */ }
+      }
+      const cyan = getSelectedCyanArcBounds(zl);
+      if (cyan) return cyan;
+      return getFallbackContextArcFrameBounds(zl);
+    }
+    if (typeof global.getSelectedContextArcTimeBoundsMs === 'function') {
       try {
-        const b = global.getListContextDiscArcTimeBoundsMs(zl);
+        const b = global.getSelectedContextArcTimeBoundsMs(zl);
         if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
       } catch (e) { /* fall through */ }
     }
-    if (typeof global.getZoomRelativeContextTimeBoundsMs === 'function') {
+    if (typeof global.getListContextDiscArcTimeBoundsMs === 'function') {
       try {
-        const b = global.getZoomRelativeContextTimeBoundsMs(zl);
-        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) {
-          let t0 = b.t0;
-          let t1 = b.t1;
-          if (typeof global.getZoomRelativeContextContentPad === 'function') {
-            const pad = global.getZoomRelativeContextContentPad(zl);
-            const p = pad && pad.padMs > 0 ? pad.padMs : 0;
-            t0 -= p;
-            t1 += p;
-          }
-          return { t0, t1 };
-        }
+        const paintZ =
+          typeof global.getSelectedContextArcPaintZoom === 'function'
+            ? global.getSelectedContextArcPaintZoom(zl)
+            : zl;
+        const b = global.getListContextDiscArcTimeBoundsMs(paintZ);
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
       } catch (e) { /* fall through */ }
     }
     return getFallbackContextArcFrameBounds(zl);
   }
 
   /**
-   * Clamp STE nest to Event Horizon week. Day-frame LTE dailies keep full span
-   * on the annual day time frame (same Zoom-5 month, no week chop, no Shift).
+   * Clip span to the event frame. Zooms 3–7 = onion-arc union (year nest).
+   * Other zooms = painted cyan hoop. STE dailies still use Event Horizon week
+   * unless they sit on the annual day-frame.
    */
   function clampEventSpanToContextSphere(start, end) {
     if (!start || isNaN(start.getTime())) return null;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (!isSteStyleDailySpan(start, evEnd)) {
-      return { start, end: evEnd, clipped: false };
+      const arc = getContextArcFrameBounds();
+      if (!arc) return { start, end: evEnd, clipped: false };
+      const s = Math.max(start.getTime(), arc.t0);
+      const e = Math.min(evEnd.getTime(), arc.t1);
+      if (!(e > s)) return null;
+      return {
+        start: new Date(s),
+        end: new Date(e),
+        clipped: s > start.getTime() || e < evEnd.getTime()
+      };
     }
     if (shouldRenderDayFrameSubDayOnAnnualHelix()) {
+      const arc = getContextArcFrameBounds();
+      if (!arc) return { start, end: evEnd, clipped: false };
+      if (!(evEnd.getTime() > arc.t0 && start.getTime() < arc.t1)) return null;
       return { start, end: evEnd, clipped: false };
     }
     const b = getSelectedParentUnitBounds();
@@ -1938,17 +1972,9 @@
   }
 
   /**
-   * Create-time mesh window — wider than the live hoop so z4–6 share one set.
-   * Live arc only toggles visibility (see syncEventVisibilityToContextArc).
+   * Create-time mesh window = onion union at zooms 3–7, else cyan hoop.
    */
   function getPersistentEventMeshBounds() {
-    const zl = getZoomLevelForEvents();
-    if (zl >= 4 && zl <= 6 && typeof global.getListContextDiscArcTimeBoundsMs === 'function') {
-      try {
-        const b = global.getListContextDiscArcTimeBoundsMs(4);
-        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
-      } catch (e) { /* fall through */ }
-    }
     return getContextArcFrameBounds();
   }
 
@@ -1970,7 +1996,7 @@
     return eventTouchesSelectedContextArcWindow(start, end);
   }
 
-  /** Hard-cull at create: persistent mesh window (not the live hoop). */
+  /** Hard-cull at create: onion union (3–7) or painted cyan hoop. */
   function shouldHideOutsideParentUnitWindow(start, end) {
     return !eventTouchesPersistentMeshWindow(start, end);
   }
@@ -1982,10 +2008,11 @@
       const start = ev ? getEventStart(ev) : root.userData.start;
       const end = ev ? getEventEnd(ev) : root.userData.end;
       if (!start || isNaN(start.getTime())) {
-        root.visible = true;
         return;
       }
-      root.visible = eventTouchesSelectedContextArcWindow(start, end);
+      const inside = eventTouchesSelectedContextArcWindow(start, end);
+      if (!inside) root.visible = false;
+      else root.visible = true;
     };
     if (gl && typeof gl.forEachLayerObjectRoot === 'function') {
       gl.forEachLayerObjectRoot(visit);
@@ -3404,6 +3431,7 @@
     } = opts;
     const skipLabels = !!(opts && opts.skipLabels);
     if (!start || !end || !(end > start)) return null;
+    if (shouldHideOutsideParentUnitWindow(start, end)) return null;
 
     const overlapLane = (layerConfig && layerConfig._overlapLane) || 0;
     const segments = getDayFrameRibbonSegmentCount(durationH, start, end);
@@ -6799,6 +6827,7 @@
     // Sub-day / all-day on annual helix: calendar-day pitch (midnight→next), not week-corridor
     // radial stretch from getEventBandRadii (that path is for multi-day LTE only).
     if (isSteStyleDailySpan(start, end) && shouldRenderDayFrameSubDayOnAnnualHelix()) {
+      if (!eventTouchesSelectedContextArcWindow(start, end)) return null;
       const anchorMsDay = getEventTemporalAnchorMs(start, end);
       const eventColorRawDay = event.color ?? event.colorId ?? null;
       const explicitDay = hasExplicitEventColor(event);
@@ -7572,6 +7601,7 @@
 
       // Sub-day LTE on annual helix: day pitch (last→next midnight), not week-corridor radii.
       if (isShortEvent && shouldRenderDayFrameSubDayOnAnnualHelix()) {
+        if (!eventTouchesSelectedContextArcWindow(start, end)) continue;
         const dayFrameLineRoot = tryCreateDayFrameSubDayRibbon({
           start,
           end,
@@ -8358,14 +8388,15 @@
   }
 
   /**
-   * Apply the per-zoom density budget to a layer's standard (non-timeseries) events.
-   * Window-before-budget: parent-unit window first (all zooms), then daily-sky sub-filters.
+   * Context-arc membership is the filter. Do not priority-drop events that
+   * already sit in the painted hoop — that looked like random vanish inside
+   * the cyan pie. Density budget only applies outside that window (none, once
+   * the hard cull ran).
    */
   function selectEventsForDensityBudget(standardEvents, zl) {
-    const budget = getEventDensityBudget(zl);
     const list = standardEvents || [];
     const alwaysShow = [];
-    const rest = [];
+    const inArc = [];
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
       const start = getEventStart(e);
@@ -8373,20 +8404,11 @@
       const evEnd = end && end > start ? end : (start ? new Date(start.getTime() + 3600000) : null);
       if (zl === 2 && start && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) {
         alwaysShow.push(e);
-      } else {
-        rest.push(e);
+        continue;
       }
+      if (isEventOnScreenForDensityBudget(e, zl)) inArc.push(e);
     }
-    const inScope = rest.filter((e) => isEventOnScreenForDensityBudget(e, zl));
-    if (inScope.length <= budget) {
-      return { rendered: alwaysShow.concat(inScope), overflowCount: 0 };
-    }
-    const scored = inScope.map((e, i) => ({ e, i, score: scoreEventPriority(e) }));
-    scored.sort((a, b) => b.score - a.score);
-    return {
-      rendered: alwaysShow.concat(scored.slice(0, budget).map((x) => x.e)),
-      overflowCount: inScope.length - budget
-    };
+    return { rendered: alwaysShow.concat(inArc), overflowCount: 0 };
   }
 
   function createEventObjects(events, layerConfig, sceneContentGroup, scene, worldSpaceGroup) {
@@ -8394,7 +8416,7 @@
     if (!events || !layerConfig) return objects;
     ensureSceneGeometryInitialized();
 
-    // Density budget: cap geometry per zoom level. Priority-sort, render top N, badge the rest.
+    // Keep every event that overlaps the cyan Context Arc. No in-hoop score cut.
     const zl = getZoomLevelForEvents();
     // Timeseries events (Garmin HR, sleep arcs) render via TimeseriesRenderer, not as
     // worldline ribbons. Excluding them from the worldline density budget prevents hundreds
@@ -8446,6 +8468,13 @@
       const hasEnd = !!getEventEnd(event);
       const obj = hasEnd ? createEventWorldline(event, effectiveConfig) : createEventMarker(event, effectiveConfig);
       if (obj) {
+        if (typeof global.CircaevumPerf !== 'undefined' && global.CircaevumPerf && typeof global.CircaevumPerf.noteEventRemesh === 'function') {
+          try {
+            const uid = eventUidForDisk(event, i);
+            const title = event && (event.summary || event.title) ? (event.summary || event.title) : uid;
+            global.CircaevumPerf.noteEventRemesh(uid, layerConfig.id || layerConfig.name || '', title);
+          } catch (ePerf) { /* HUD optional */ }
+        }
         const evStart = getEventStart(event);
         const evEnd = getEventEnd(event);
         markShortEventPointerPickability(obj, evStart, evEnd);
@@ -8545,6 +8574,7 @@
   }
 
   const EventRenderer = {
+    setEventMeshWindowOnionUnion,
     createEventObjects,
     createEventLineObjects,
     createEventMarker,

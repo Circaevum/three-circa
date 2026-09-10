@@ -25,12 +25,6 @@
 let scene, camera, renderer;
 let sceneContentGroup = null;
 let flattenableGroup = null; // Worldlines and time markers only; scaled when flatten is on. Sun/planets stay in sceneContentGroup.
-/** Portal event ingest: 0–1 galactic spin of Earth's-orbit disc (events ride flattenableGroup). */
-let eventIngestLoading = false;
-let eventIngestLoadAmt = 0;
-let eventIngestSpinPhase = 0;
-let eventIngestLoadStartedAt = 0;
-let eventIngestLastFrameMs = 0;
 let timeMarkersGroup = null; // Time markers only; enables marker-only flatten mode.
 let timeMarkerLabelsGroup = null; // Text sprites — flatten Y position, never box height.
 let sunMesh = null;
@@ -2034,9 +2028,8 @@ function getSelectedQuarterTimeBoundsMs(refDate) {
 }
 
 /**
- * Context-arc + event-cull window = **parent** of the zoom grain
- * (day events → week, week → month, month → quarter, quarter → year, …).
- * Same ladder as {@link getParentUnitTimeBoundsMs}.
+ * Pie for a given grain zoom = parent of that grain
+ * (day→week, week→month, month→quarter, …). Onion zones pass their grainZoom here.
  */
 function getListContextDiscArcTimeBoundsMs(zoomLevel, refDate) {
     const p = getParentUnitTimeBoundsMs(zoomLevel, refDate);
@@ -2260,31 +2253,107 @@ function getZoomRelativeContextContentPad(zoomLevel) {
 }
 
 /**
- * Events visible in the scene — same calendar box as the context arc.
- * Shift → parent nest (wider).
+ * Grain zoom whose parent-unit pie is the cyan selected Context Arc (onion 3–7).
+ * Lockstep with {@link getZoom37OnionZones} `selected` / `grainZoom`.
+ */
+function getSelectedContextArcPaintZoom(zoomLevel) {
+    const z = Math.floor(
+        typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom
+    );
+    if (z === 3) return 4;
+    if (z === 4) return 5;
+    if (z === 5 || z === 6) return 7;
+    if (z === 7) return 8;
+    return z;
+}
+
+/**
+ * Time window of the painted selected Context Arc (cyan hoop).
+ * Paint / cyan grain only — event set at zooms 3–7 uses
+ * {@link getOnionContextArcsUnionTimeBoundsMs}.
+ */
+function getSelectedContextArcTimeBoundsMs(zoomLevel, refDate) {
+    const paintZ = getSelectedContextArcPaintZoom(zoomLevel);
+    const b = getListContextDiscArcTimeBoundsMs(paintZ, refDate);
+    if (b && isFinite(b.t0) && isFinite(b.t1)) {
+        return { t0: b.t0, t1: b.t1, ref: b.ref, unit: 'selected-arc', paintZoom: paintZ };
+    }
+    return getParentUnitTimeBoundsMs(paintZ, refDate);
+}
+
+/**
+ * Union of every onion Context Arc at zooms 3–7 (quarterly year ring,
+ * selected quarter / month / week pies). Same event set across those zooms.
+ */
+function getOnionContextArcsUnionTimeBoundsMs(zoomLevel, refDate) {
+    const z = Math.floor(
+        typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom
+    );
+    if (z < 3 || z > 7) {
+        return getSelectedContextArcTimeBoundsMs(z, refDate);
+    }
+    const grains = getZoom37OnionZones(1, z).map(function (spec) {
+        return spec.grainZoom;
+    });
+    let t0 = Infinity;
+    let t1 = -Infinity;
+    let ref = null;
+    for (let i = 0; i < grains.length; i++) {
+        const b = getListContextDiscArcTimeBoundsMs(grains[i], refDate);
+        if (!b || !isFinite(b.t0) || !isFinite(b.t1)) continue;
+        if (b.t0 < t0) t0 = b.t0;
+        if (b.t1 > t1) t1 = b.t1;
+        if (!ref) ref = b.ref;
+    }
+    if (!(t1 > t0)) {
+        return getListContextDiscArcTimeBoundsMs(4, refDate);
+    }
+    return { t0: t0, t1: t1, ref: ref, unit: 'onion-union', paintZoom: 4 };
+}
+
+/**
+ * Events visible in the scene. Zooms 3–7 = onion-arc union (year nest).
+ * Other zooms = cyan Context Arc. Shift → parent nest (wider peek).
  */
 function getEventDisplayTimeBoundsMs(zoomLevel, refDate) {
+    const z = Math.floor(
+        typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom
+    );
     const shift =
         typeof window !== 'undefined' &&
         typeof window.getCircadianShortEventsShiftPreview === 'function' &&
         !!window.getCircadianShortEventsShiftPreview();
     if (shift) {
         const p = getParentUnitTimeBoundsMs(zoomLevel, refDate);
-        if (p && p.t1 > p.t0) return Object.assign({}, p, { extended: true });
-    }
-    if (typeof getListContextDiscArcTimeBoundsMs === 'function') {
-        try {
-            const arc = getListContextDiscArcTimeBoundsMs(zoomLevel, refDate);
-            if (arc && isFinite(arc.t0) && isFinite(arc.t1) && arc.t1 > arc.t0) {
-                return {
-                    t0: arc.t0,
-                    t1: arc.t1,
-                    ref: arc.ref,
-                    unit: 'arc',
-                    extended: false
-                };
+        if (p && p.t1 > p.t0) {
+            if (z < 3 || z > 7) return Object.assign({}, p, { extended: true });
+            const onion = getOnionContextArcsUnionTimeBoundsMs(z, refDate);
+            if (onion && isFinite(onion.t0) && (p.t1 - p.t0) > (onion.t1 - onion.t0)) {
+                return Object.assign({}, p, { extended: true });
             }
-        } catch (e) { /* fall through */ }
+        }
+    }
+    if (z >= 3 && z <= 7) {
+        const onion = getOnionContextArcsUnionTimeBoundsMs(z, refDate);
+        if (onion && isFinite(onion.t0) && isFinite(onion.t1) && onion.t1 > onion.t0) {
+            return {
+                t0: onion.t0,
+                t1: onion.t1,
+                ref: onion.ref,
+                unit: onion.unit || 'onion-union',
+                extended: false
+            };
+        }
+    }
+    const arc = getSelectedContextArcTimeBoundsMs(zoomLevel, refDate);
+    if (arc && isFinite(arc.t0) && isFinite(arc.t1) && arc.t1 > arc.t0) {
+        return {
+            t0: arc.t0,
+            t1: arc.t1,
+            ref: arc.ref,
+            unit: arc.unit || 'arc',
+            extended: false
+        };
     }
     return getContextSphereTimeBoundsMs(zoomLevel, refDate);
 }
@@ -2385,6 +2454,9 @@ if (typeof window !== 'undefined') {
     window.getZoomRelativeContextContentPad = getZoomRelativeContextContentPad;
     window.getEventDisplayTimeBoundsMs = getEventDisplayTimeBoundsMs;
     window.getExplodedContextTimeBoundsMs = getExplodedContextTimeBoundsMs;
+    window.getSelectedContextArcPaintZoom = getSelectedContextArcPaintZoom;
+    window.getSelectedContextArcTimeBoundsMs = getSelectedContextArcTimeBoundsMs;
+    window.getOnionContextArcsUnionTimeBoundsMs = getOnionContextArcsUnionTimeBoundsMs;
     window.getContextSphereState = function () {
         return contextSphereState;
     };
@@ -3556,7 +3628,7 @@ function refreshLiveEventHorizonWarp() {
  * Warp LTE day-frame sky near selected-week Event Horizon band (smooth fade).
  * Outside that band → classic helix. Inside camera → logical helix.
  */
-function resolveDayFrameLteSkySourcePositions(logical) {
+function resolveDayFrameLteSkySourcePositions(logical, target) {
     const flattenAmt =
         typeof getActiveTimelineFlattenAmount === 'function' ? getActiveTimelineFlattenAmount() : 0;
     if (!(flattenAmt > 0.001) || !logical) return logical;
@@ -3564,22 +3636,48 @@ function resolveDayFrameLteSkySourcePositions(logical) {
         typeof window !== 'undefined' && typeof window.flattenTimelineFocusY === 'function'
             ? window.flattenTimelineFocusY()
             : 0;
-    return flattenListHorizonPositionArray(logical, focusY, flattenAmt);
+    return flattenListHorizonPositionArray(logical, focusY, flattenAmt, undefined, target);
+}
+
+// Scratch buffers belong to their geometry and disappear with it. Compare Float32
+// results, not input state: every horizon/flatten dependency remains authoritative.
+function getSkyGeometryScratch(geom, key, length) {
+    let buffer = geom.userData[key];
+    if (!buffer || buffer.length !== length) {
+        buffer = new Float32Array(length);
+        geom.userData[key] = buffer;
+    }
+    return buffer;
+}
+
+function commitSkyGeometryPositions(geom, next) {
+    const attribute = geom.attributes.position;
+    const current = attribute.array;
+    let changed = false;
+    for (let i = 0; i < next.length; i++) {
+        if (current[i] !== next[i]) { changed = true; break; }
+    }
+    if (!changed) return false;
+    current.set(next);
+    attribute.needsUpdate = true;
+    if (geom.computeVertexNormals) geom.computeVertexNormals();
+    if (geom.computeBoundingSphere) geom.computeBoundingSphere();
+    return true;
 }
 
 function applyDayFrameLteSkyInterstellarWarp(geom) {
     if (!geom || !geom.attributes || !geom.attributes.position) return;
     const logical = geom.userData.listHorizonLogical;
     if (!logical || !logical.length) return;
-    const pos = geom.attributes.position.array;
-    const source = resolveDayFrameLteSkySourcePositions(logical);
+    const pos = getSkyGeometryScratch(geom, 'skyWarpScratch', logical.length);
+    const source = resolveDayFrameLteSkySourcePositions(
+        logical, getSkyGeometryScratch(geom, 'skyFlattenScratch', logical.length)
+    );
     const W = typeof ContextSphereWarp !== 'undefined' ? ContextSphereWarp : null;
     const state = typeof getContextSphereState === 'function' ? getContextSphereState() : contextSphereState;
     const warpOn = W && typeof W.isWarpModeEnabled === 'function' ? !!W.isWarpModeEnabled() : false;
     if (!warpOn || !W || !W.warpLtePointToRing || !state || !(state.radius > 0) || W.getCameraInsideCached()) {
-        pos.set(source);
-        geom.attributes.position.needsUpdate = true;
-        if (geom.computeVertexNormals) geom.computeVertexNormals();
+        commitSkyGeometryPositions(geom, source);
         return;
     }
     const ri = typeof geom.userData.dayFrameLteSkyRi === 'number' ? geom.userData.dayFrameLteSkyRi : 0;
@@ -3625,9 +3723,7 @@ function applyDayFrameLteSkyInterstellarWarp(geom) {
         pos[i + 1] = q.y;
         pos[i + 2] = q.z;
     }
-    geom.attributes.position.needsUpdate = true;
-    if (geom.computeVertexNormals) geom.computeVertexNormals();
-    if (geom.computeBoundingSphere) geom.computeBoundingSphere();
+    commitSkyGeometryPositions(geom, pos);
 }
 
 /** Re-apply Interstellar LTE sky warp on all day-frame LTE sky meshes. */
@@ -3664,11 +3760,11 @@ function onInterstellarHorizonCameraCross() {
     } catch (e3) { /* optional */ }
 }
 
-function flattenListHorizonPositionArray(logical, focusY, amount, bandOffsets) {
+function flattenListHorizonPositionArray(logical, focusY, amount, bandOffsets, target) {
     if (!logical || logical.length < 3) return logical;
     const yScale = Math.max(0, 1 - (typeof amount === 'number' && !isNaN(amount) ? amount : 0));
     const pivot = (typeof focusY === 'number' && !isNaN(focusY) ? focusY : 0) * (1 - yScale);
-    const out = new Float32Array(logical.length);
+    const out = target && target.length === logical.length ? target : new Float32Array(logical.length);
     const hasBand = !!(bandOffsets && bandOffsets.length * 3 >= logical.length);
     for (let i = 0, vi = 0; i < logical.length; i += 3, vi++) {
         const band = hasBand ? bandOffsets[vi] : 0;
@@ -3693,11 +3789,10 @@ function updateListHorizonContextArcFlatten(focusY, amount) {
             geom.userData.listHorizonLogical,
             focusY,
             amount,
-            geom.userData.listHorizonBandOffset
+            geom.userData.listHorizonBandOffset,
+            getSkyGeometryScratch(geom, 'skyFlattenScratch', geom.userData.listHorizonLogical.length)
         );
-        geom.attributes.position.array.set(flat);
-        geom.attributes.position.needsUpdate = true;
-        if (geom.computeVertexNormals) geom.computeVertexNormals();
+        commitSkyGeometryPositions(geom, flat);
     });
 }
 
@@ -3779,8 +3874,14 @@ function getListHorizonContextRenderOrder() {
 }
 
 function rebuildListHorizonEarthRingMesh(outerRadius, innerRadius, yCenter, earthW, z) {
+    const __perfHoop = (typeof window !== 'undefined' && window.CircaevumPerf && typeof window.CircaevumPerf.begin === 'function')
+        ? window.CircaevumPerf.begin('hoop', 'hoop z' + z)
+        : null;
     const T = getThreeNamespace();
-    if (!T || !sceneContentGroup || !isFinite(outerRadius) || !isFinite(yCenter) || !isFinite(earthW)) return;
+    if (!T || !sceneContentGroup || !isFinite(outerRadius) || !isFinite(yCenter) || !isFinite(earthW)) {
+        if (__perfHoop) __perfHoop.end();
+        return;
+    }
     disposeListHorizonEarthRing();
     const extendEarth = Math.floor(z) >= 8;
     const ri = isFinite(innerRadius) ? innerRadius : resolveListHorizonRingInnerRadius(z, earthW);
@@ -3795,7 +3896,10 @@ function rebuildListHorizonEarthRingMesh(outerRadius, innerRadius, yCenter, eart
         getListHorizonContextRenderOrder(),
         { extendToEarthOrbit: extendEarth, arc }
     );
-    if (!mesh) return;
+    if (!mesh) {
+        if (__perfHoop) __perfHoop.end();
+        return;
+    }
     sceneContentGroup.add(mesh);
     listHorizonEarthRingMesh = mesh;
     updateListHorizonSkyDiskUniforms();
@@ -3807,6 +3911,7 @@ function rebuildListHorizonEarthRingMesh(outerRadius, innerRadius, yCenter, eart
                 : yCenter);
     updateListHorizonContextArcFlatten(focusY, getActiveTimelineFlattenAmount());
     listHorizonSkyColorKey = buildEarthDaylightSkyColorKey(getSkyCanvasObserverContext(z));
+    if (__perfHoop) __perfHoop.end();
 }
 
 /** Legacy accent for the hoop wall (annuli use sky shader). */
@@ -6012,8 +6117,22 @@ function addListHorizonContextWindowOutline(group, THREE, ri, ro, y0, y1, colorH
 }
 
 /**
- * Parent ring the selected slice sits on — remainder fades (hidden).
- * Year/quarter/month: rest of year. Week: rest of month. Day: rest of week.
+ * Next-outer pie the hoop sits on. Onion grains (not camera zoom):
+ * day hoop (8) = week pie → fade rest of month
+ * week hoop (7) = month pie → fade rest of quarter
+ * month hoop (5) = quarter pie → fade rest of year
+ * quarter hoop (4) = year ring → no extra time fade
+ */
+function getContextArcVeilParentGrainZoom(grainZoom) {
+    const z = Math.floor(typeof grainZoom === 'number' && !isNaN(grainZoom) ? grainZoom : currentZoom);
+    if (z >= 8 || z === 0 || z === 9) return 7;
+    if (z === 7 || z === 6) return 5;
+    if (z === 5) return 4;
+    return z;
+}
+
+/**
+ * Parent ring the slice sits on — remainder fades (hidden).
  */
 function getContextArcVeilTimeBoundsMs(zoomLevel, windowBounds, refDate) {
     const z = Math.floor(typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom);
@@ -6025,15 +6144,15 @@ function getContextArcVeilTimeBoundsMs(zoomLevel, windowBounds, refDate) {
               : typeof getSelectedDateTime === 'function'
                 ? getSelectedDateTime()
                 : new Date();
-    if (z <= 3 && windowBounds) return { t0: windowBounds.t0, t1: windowBounds.t1 };
-    if (z === 7) {
-        return {
-            t0: new Date(ref.getFullYear(), ref.getMonth(), 1, 0, 0, 0, 0).getTime(),
-            t1: new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999).getTime()
-        };
+    const parentGrain = getContextArcVeilParentGrainZoom(z);
+    if (parentGrain !== z) {
+        const parent = getListContextDiscArcTimeBoundsMs(parentGrain, ref);
+        if (parent && isFinite(parent.t0) && isFinite(parent.t1) && parent.t1 > parent.t0) {
+            return { t0: parent.t0, t1: parent.t1 };
+        }
     }
-    if (z >= 8 || z === 0) {
-        return getZoom7WeekTimeBoundsMs(ref);
+    if (windowBounds && isFinite(windowBounds.t0) && isFinite(windowBounds.t1)) {
+        return { t0: windowBounds.t0, t1: windowBounds.t1 };
     }
     const y = ref.getFullYear();
     return {
@@ -6197,6 +6316,74 @@ function buildListHorizonContextExteriorVeilMesh(
     return mesh;
 }
 
+function getContextArcActiveColorHex() {
+    return getListHorizonRingColorHex();
+}
+
+function getContextArcIdleColorHex() {
+    return isLightMode ? 0x94a3b8 : 0xffffff;
+}
+
+/**
+ * Zoom 3–7 onion: each time-marker zone draws the parent frame.
+ * Quarterly zone = full year; monthly = quarter arc; weekly = month arc; daily = week arc.
+ * Cyan only when that frame is the current zoom (weekly-zone month → Zoom 5/6).
+ */
+function getZoom37OnionZones(earthW, zFloor) {
+    const W = earthW;
+    return [
+        { zone: 'quarter', grainZoom: 4, selected: zFloor === 3, ri: W / 6, ro: W / 4 },
+        { zone: 'month', grainZoom: 5, selected: zFloor === 4, ri: W / 4, ro: W / 2 },
+        { zone: 'week', grainZoom: 7, selected: zFloor === 5 || zFloor === 6, ri: W / 2, ro: W * 5 / 8 },
+        { zone: 'day', grainZoom: 8, selected: zFloor === 7, ri: W * 5 / 8, ro: W * 3 / 4 }
+    ];
+}
+
+function addListHorizonGrainContextHoop(group, THREE, spec, y0, y1, yCenter, n, renderOrder, earthW) {
+    if (!group || !THREE || !spec || !(spec.ro > spec.ri)) return;
+    const colorHex = spec.selected ? getContextArcActiveColorHex() : getContextArcIdleColorHex();
+    const half = Math.abs(y1 - y0) * 0.5;
+    const arc = getListContextDiscArcRad(spec.grainZoom);
+    const helixCtx = getListHorizonHelixBuildContext(yCenter, spec.grainZoom);
+    helixCtx.bandHalfH = half;
+    const roOrder = (renderOrder != null ? renderOrder : getListHorizonContextRenderOrder()) + (spec.selected ? 2 : 0);
+    const ud = { type: 'ListHorizonOnionContext', onionZone: spec.zone, classicContextArc: true };
+    if (spec.selected) {
+        const skyFill = buildListHorizonSkyFillMesh(
+            THREE, spec.ri, spec.ro, yCenter, n, colorHex, roOrder, arc, helixCtx
+        );
+        if (skyFill) {
+            skyFill.userData = Object.assign({}, skyFill.userData, ud);
+            group.add(skyFill);
+        }
+    }
+    if (helixCtx && helixCtx.bounds) {
+        const veil = buildListHorizonContextExteriorVeilMesh(
+            THREE, spec.ri, spec.ro, earthW, yCenter, colorHex, roOrder, helixCtx.bounds, helixCtx
+        );
+        if (veil) group.add(veil);
+    }
+    const innerMul = spec.selected ? 1.85 : 1.05;
+    const outerMul = spec.selected ? 1.45 : 0.85;
+    const inner = buildListHorizonHoopWallMesh(
+        THREE, spec.ri, y0, y1, n, colorHex, roOrder, innerMul, true, arc, helixCtx
+    );
+    const outer = buildListHorizonHoopWallMesh(
+        THREE, spec.ro, y0, y1, n, colorHex, roOrder, outerMul, false, arc, helixCtx
+    );
+    if (inner) {
+        inner.userData = Object.assign({}, inner.userData, ud);
+        group.add(inner);
+    }
+    if (outer) {
+        outer.userData = Object.assign({}, outer.userData, ud);
+        group.add(outer);
+    }
+    addListHorizonContextWindowOutline(
+        group, THREE, spec.ri, spec.ro, y0, y1, colorHex, roOrder, arc, helixCtx
+    );
+}
+
 /**
  * Full-year Context Arc (Zoom 4 grain). Inner year/quarter onion stays a closed ring
  * when the live hoop at Zoom 5–6 is a month pie.
@@ -6255,6 +6442,7 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
     }
     const n = Math.max(36, Math.min(96, Math.round(52 + ro * 0.28)));
     const zDisc = typeof currentZoom !== 'undefined' ? currentZoom : 9;
+    const zFloor = Math.floor(zDisc);
     const arc =
         opts && opts.arc ? opts.arc : getListContextDiscArcRad(zDisc);
     const halfH = Math.max(1.35, earthW * 0.028);
@@ -6272,6 +6460,20 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
         listOuterRadius: ro,
         immuneToFlatten: true
     };
+
+    if (zFloor >= 3 && zFloor <= 7) {
+        const onion = getZoom37OnionZones(earthW, zFloor);
+        const selected = onion.find((s) => s.selected) || onion[0];
+        group.userData.listInnerRadius = selected.ri;
+        group.userData.listOuterRadius = selected.ro;
+        const onionN = Math.max(n, Math.max(36, Math.min(96, Math.round(52 + selected.ro * 0.28))));
+        onion.forEach((spec) => {
+            addListHorizonGrainContextHoop(
+                group, THREE, spec, y0, y1, yCenter, onionN, renderOrder, earthW
+            );
+        });
+        return group;
+    }
 
     const skyRo = renderOrder != null ? renderOrder : getListHorizonContextRenderOrder();
 
@@ -6306,7 +6508,6 @@ function buildListHorizonHoopGroup(THREE, rHoopOuter, rHoopInner, earthW, yCente
     if (wallOuter) group.add(wallOuter);
     addListHorizonContextWindowOutline(group, THREE, ri, ro, y0, y1, colorHex, renderOrder, arc, helixCtx);
 
-    const zFloor = Math.floor(zDisc);
     const yearQuarterZoom = zFloor === 5 || zFloor === 6;
     const blueHex = colorHex != null ? colorHex : 0x22d3ee;
 
@@ -6422,8 +6623,12 @@ function updateListHorizonEarthRing(zoomLevel) {
     listHorizonEarthRingEarthDistance = W;
     listHorizonEarthRingTargetZoom = z;
 
-    const arcKey = listContextDiscArcKey(z);
-    const helixKey = listContextDiscHelixTimeKey(z);
+    const arcKey = (Math.floor(z) >= 3 && Math.floor(z) <= 7)
+        ? [4, 5, 7, 8].map((gz) => listContextDiscArcKey(gz)).join('|') + '|onion' + Math.floor(z)
+        : listContextDiscArcKey(z);
+    const helixKey = (Math.floor(z) >= 3 && Math.floor(z) <= 7)
+        ? [4, 5, 7, 8].map((gz) => listContextDiscHelixTimeKey(gz)).join('|') + '|onion' + Math.floor(z)
+        : listContextDiscHelixTimeKey(z);
     const needRebuild =
         listHorizonEarthRingCurrentRadius == null ||
         listHorizonEarthRingCurrentInnerRadius == null ||
@@ -6468,7 +6673,7 @@ if (typeof window !== 'undefined') {
     /** Panel ring SVG: arc length and start offset (pathLength 100), aligned to selected list span. */
     window.getListContextDiscArcForPanel = function (zoomLevel) {
         const z = typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom;
-        const arc = getListContextDiscArcRad(z);
+        const arc = getListContextDiscArcRad(getSelectedContextArcPaintZoom(z));
         const C = 100;
         if (arc.fullCircle) {
             return { arcLen: C, arcGap: 0, arcOffset: 0, fullCircle: true };
@@ -7118,6 +7323,9 @@ function expectedVisiblePlanetCount(zoomLevel) {
 }
 
 function createPlanets(zoomLevel) {
+    const __perfPlanets = (typeof window !== 'undefined' && window.CircaevumPerf && typeof window.CircaevumPerf.begin === 'function')
+        ? window.CircaevumPerf.begin('planets', 'createPlanets z' + zoomLevel)
+        : null;
     eventsRefreshedDuringCreatePlanets = false;
     // Ensure Worldlines is initialized before use
     if (typeof Worldlines !== 'undefined' && typeof Worldlines.init === 'function') {
@@ -7153,6 +7361,7 @@ function createPlanets(zoomLevel) {
 
     if (typeof isSmoothNavigatingTime !== 'undefined' && isSmoothNavigatingTime) {
         if (applyLightTimeScrubUpdate(zoomLevel)) {
+            if (__perfPlanets) __perfPlanets.end();
             return;
         }
     }
@@ -7633,9 +7842,12 @@ function createPlanets(zoomLevel) {
         try {
             // Event meshes live on GL groups (not torn down with planets). Skip rebuild when
             // zoom/day/style key unchanged — biggest thrash cut on time-scrub full createPlanets.
-            refreshEventLayersIfNeeded(false);
+            const didRefreshEvents = refreshEventLayersIfNeeded(false);
             eventsRefreshedDuringCreatePlanets = true;
-            syncEventMeshesToContextArc();
+            const zNow = typeof zoomLevel === 'number' ? zoomLevel : currentZoom;
+            if (didRefreshEvents || zNow < 3 || zNow > 7) {
+                syncEventMeshesToContextArc();
+            }
         } catch (err) { /* GL may be disposing */ }
     }
     try {
@@ -7674,6 +7886,7 @@ function createPlanets(zoomLevel) {
         tourWorldlineRevealProgress >= 0 &&
         tourWorldlineRevealProgress <= 1 &&
         worldlines.some((w) => w && w.userData && w.userData.narrClipUniform);
+    if (__perfPlanets) __perfPlanets.end();
 }
 
 // Get marker color based on light mode
@@ -8580,6 +8793,9 @@ function applyTimeMarkerLabelFlatten() {
 let clipTimeMarkersToContextSphere = false;
 
 function createTimeMarkers(zoomLevel) {
+    const __perfMarkers = (typeof window !== 'undefined' && window.CircaevumPerf && typeof window.CircaevumPerf.begin === 'function')
+        ? window.CircaevumPerf.begin('markers', 'markers z' + zoomLevel)
+        : null;
     // Initialize TimeMarkers if not already done
     initTimeMarkers();
     
@@ -8614,6 +8830,7 @@ function createTimeMarkers(zoomLevel) {
             // Keep existing markers, just ensure visibility
             if (typeof refreshContextSphereVisualClip === 'function') refreshContextSphereVisualClip();
             applyTimeMarkerLabelFlatten();
+            if (__perfMarkers) __perfMarkers.end({ skip: true });
             return;
         }
         window._lastTimeMarkersKey = _tmKey;
@@ -8626,6 +8843,7 @@ function createTimeMarkers(zoomLevel) {
             applyTimeMarkerVisibility();
             if (typeof refreshContextSphereVisualClip === 'function') refreshContextSphereVisualClip();
             applyTimeMarkerLabelFlatten();
+            if (__perfMarkers) __perfMarkers.end();
             return;
         }
         if (tourOrbitMarkersFromCalendar) {
@@ -8667,10 +8885,12 @@ function createTimeMarkers(zoomLevel) {
         }
         if (typeof refreshContextSphereVisualClip === 'function') refreshContextSphereVisualClip();
         if (typeof applyTimeMarkerLabelFlatten === 'function') applyTimeMarkerLabelFlatten();
+        if (__perfMarkers) __perfMarkers.end();
         return;
     }
     // If TimeMarkers module is not available, log a warning
     console.warn('TimeMarkers module not available');
+    if (__perfMarkers) __perfMarkers.end();
 }
 
 function timeMarkerIntersectsContextSphere(marker, sphere) {
@@ -9280,6 +9500,11 @@ function initControls() {
                 e.preventDefault();
                 toggleMoonLayer();
             }
+        } else if (e.key.toLowerCase() === 'p' && e.shiftKey) {
+            e.preventDefault();
+            if (typeof window !== 'undefined' && window.CircaevumPerf && typeof window.CircaevumPerf.toggle === 'function') {
+                window.CircaevumPerf.toggle();
+            }
         } else if (e.key.toLowerCase() === 'p' && !blockMomentModeShortcuts) {
             e.preventDefault();
             toggleOtherPlanets();
@@ -9763,28 +9988,8 @@ function hideLoadingScreen() {
     loadingElement.setAttribute('aria-hidden', 'true');
 }
 
-const EVENT_INGEST_SPIN_MAX_MS = 45000;
-
-function syncEventIngestLoadingHud(received) {
-    const el = document.getElementById('event-ingest-loading');
-    const text = document.getElementById('event-ingest-loading-text');
-    if (!el) return;
-    const on = eventIngestLoading || eventIngestLoadAmt > 0.04;
-    el.hidden = !on;
-    if (text) {
-        const n = typeof received === 'number' && received > 0 ? received : 0;
-        text.textContent = n > 0 ? 'Catching events · ' + n : 'Catching events…';
-    }
-}
-
-function setEventIngestLoading(on, meta) {
-    eventIngestLoading = !!on;
-    if (eventIngestLoading) {
-        if (!eventIngestLoadStartedAt) eventIngestLoadStartedAt = performance.now();
-    } else {
-        eventIngestLoadStartedAt = 0;
-    }
-    syncEventIngestLoadingHud(meta && meta.received);
+function setEventIngestLoading() {
+    /* ingest still streams; no HUD / no disc wobble — looked broken */
 }
 
 function resetEventIngestSpinPose() {
@@ -9792,34 +9997,8 @@ function resetEventIngestSpinPose() {
     flattenableGroup.rotation.set(0, 0, 0);
 }
 
-/** Wonky galactic yaw/precession of Earth's-orbit disc while events stream in. */
-function updateEventIngestLoadSpin(nowMs) {
-    const now = typeof nowMs === 'number' && isFinite(nowMs) ? nowMs : performance.now();
-    let dt = eventIngestLastFrameMs > 0 ? (now - eventIngestLastFrameMs) / 1000 : 0.016;
-    eventIngestLastFrameMs = now;
-    if (!(dt > 0) || dt > 0.08) dt = 0.016;
-    if (eventIngestLoading && eventIngestLoadStartedAt > 0 && now - eventIngestLoadStartedAt > EVENT_INGEST_SPIN_MAX_MS) {
-        eventIngestLoading = false;
-        eventIngestLoadStartedAt = 0;
-    }
-    const target = eventIngestLoading ? 1 : 0;
-    const k = 1 - Math.exp(-dt * (eventIngestLoading ? 3.6 : 2.1));
-    eventIngestLoadAmt += (target - eventIngestLoadAmt) * k;
-    if (eventIngestLoadAmt < 0.002 && !eventIngestLoading) {
-        eventIngestLoadAmt = 0;
-        eventIngestSpinPhase = 0;
-        resetEventIngestSpinPose();
-        syncEventIngestLoadingHud();
-        return;
-    }
-    eventIngestSpinPhase += dt * (1.05 + 3.6 * eventIngestLoadAmt);
-    const amt = eventIngestLoadAmt;
-    if (flattenableGroup) {
-        flattenableGroup.rotation.y = eventIngestSpinPhase * amt;
-        flattenableGroup.rotation.x = Math.sin(eventIngestSpinPhase * 0.61) * 0.24 * amt;
-        flattenableGroup.rotation.z = Math.cos(eventIngestSpinPhase * 0.47) * 0.16 * amt;
-    }
-    syncEventIngestLoadingHud();
+function updateEventIngestLoadSpin() {
+    resetEventIngestSpinPose();
 }
 
 if (typeof window !== 'undefined') {
@@ -11844,6 +12023,9 @@ function _mainSetZoomLevel(level, overrideDate) {
 
     // Now change the zoom level
     currentZoom = level;
+    if (prevZoom !== level && typeof window !== 'undefined' && window.CircaevumPerf && typeof window.CircaevumPerf.mark === 'function') {
+        try { window.CircaevumPerf.mark('zoom', 'z' + prevZoom + '→z' + level); } catch (e) { /* HUD optional */ }
+    }
     if (typeof window !== 'undefined') window.currentZoom = currentZoom;
     if (Array.isArray(worldlines)) {
         worldlines.forEach((w) => {
@@ -12000,19 +12182,25 @@ function _mainSetZoomLevel(level, overrideDate) {
         createTimeMarkers(currentZoom);
         applyZoomCameraFraming(level);
     }
+    // Onion Context Arc cyan is baked at hoop rebuild. Same-family zoom (3↔4, 5↔7)
+    // skips createPlanets — still refresh so selected grain recolors immediately.
+    if (typeof updateListHorizonEarthRing === 'function') {
+        try { updateListHorizonEarthRing(currentZoom); } catch (e) { /* hoop optional */ }
+    }
     updateTimeDisplays();
     updateFlattenIconVisibility();
 
     const gl = typeof window !== 'undefined' ? window.circaevumGL : null;
-    if (!eventsRefreshedDuringCreatePlanets && gl) {
+    const onionStay = isZoom37OnionEventMeshZoom(prevZoom) && isZoom37OnionEventMeshZoom(level);
+    if (!eventsRefreshedDuringCreatePlanets && gl && !onionStay) {
         const eventFamilyChanged = eventLayersMeshFamily(prevZoom) !== eventLayersMeshFamily(level);
-        if (eventFamilyChanged) {
-            if (typeof refreshEventLayersIfNeeded === 'function') {
-                try { refreshEventLayersIfNeeded(false); } catch (e) { /* GL may be disposing */ }
-            } else if (typeof gl.refreshAllEventLayers === 'function') {
-                try { gl.refreshAllEventLayers(); } catch (e) { /* GL may be disposing */ }
-            }
-        } else if (typeof EventRenderer !== 'undefined' && EventRenderer.updateTimelineHelixEventsForFlatten) {
+        let rebuilt = false;
+        if (typeof refreshEventLayersIfNeeded === 'function') {
+            try { rebuilt = !!refreshEventLayersIfNeeded(false); } catch (e) { rebuilt = false; }
+        } else if (eventFamilyChanged && typeof gl.refreshAllEventLayers === 'function') {
+            try { gl.refreshAllEventLayers(); rebuilt = true; } catch (e) { /* GL may be disposing */ }
+        }
+        if (!rebuilt && typeof EventRenderer !== 'undefined' && EventRenderer.updateTimelineHelixEventsForFlatten) {
             try {
                 EventRenderer.updateTimelineHelixEventsForFlatten(
                     gl,
@@ -12022,7 +12210,7 @@ function _mainSetZoomLevel(level, overrideDate) {
             } catch (e) { /* optional */ }
         }
     }
-    syncEventMeshesToContextArc();
+    if (!onionStay) syncEventMeshesToContextArc();
     if (typeof window.refreshEventsList === 'function') {
         const ep = document.getElementById('events-panel');
         if (ep && ep.classList.contains('open')) window.refreshEventsList(false);
@@ -12038,33 +12226,44 @@ function selectedCalendarDayKey(d) {
     return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
 }
 
+function isZoom37OnionEventMeshZoom(zl) {
+    const z = typeof zl === 'number' && !isNaN(zl) ? zl : currentZoom;
+    return z >= 3 && z <= 7;
+}
+
 /**
  * Mesh family that can share EventObjects without a full layer rebuild.
- * helix (z3–6) keeps day-frame LTE polygons across quarter/month/lunar.
+ * onion (z3–7) keeps LTE ribbons across year / quarter / month / week hops.
  */
 function eventLayersMeshFamily(zl) {
     const z = typeof zl === 'number' && !isNaN(zl) ? zl : currentZoom;
     if (z <= 2) return 'coarse';
-    if (z === 3) return 'year';
+    if (z >= 3 && z <= 7) return 'onion';
     if (z === 0 || z >= 8) return 'sky';
-    if (z === 7) return 'week';
     return 'helix';
 }
 
 /**
- * Rebuild grain for event meshes — coarser than the live hoop.
- * z4–6 share a calendar quarter so A/D and 4↔5↔6 do not tear polygons down.
+ * Rebuild when the onion-union window moves (selected year at zooms 3–7).
  */
 function eventLayersSelectedTimeframeKey(zoomLevel, sel) {
     const zl = zoomLevel != null ? zoomLevel : currentZoom;
     const d = sel instanceof Date && !isNaN(sel.getTime()) ? sel : new Date();
     const family = eventLayersMeshFamily(zl);
+    if (family === 'onion' && typeof getOnionContextArcsUnionTimeBoundsMs === 'function') {
+        try {
+            const b = getOnionContextArcsUnionTimeBoundsMs(zl, d);
+            if (b && isFinite(b.t0) && isFinite(b.t1)) {
+                return family + ':onion:' + b.t0 + ':' + b.t1;
+            }
+        } catch (e) { /* fall through */ }
+    }
+    if (family === 'onion') {
+        return 'onion:' + d.getFullYear();
+    }
     if (family === 'helix') {
         const q = Math.floor(d.getMonth() / 3);
         return 'quarter:' + d.getFullYear() + '-' + q;
-    }
-    if (family === 'year') {
-        return 'year:' + d.getFullYear();
     }
     if (family === 'week' && typeof getZoom7WeekTimeBoundsMs === 'function') {
         try {
@@ -12165,6 +12364,9 @@ function refreshEventLayersIfNeeded(force) {
     const key = buildEventLayersRebuildKey(currentZoom);
     if (!force && key === lastEventLayersRebuildKey) return false;
     try {
+        if (typeof window !== 'undefined' && window.CircaevumPerf && typeof window.CircaevumPerf.mark === 'function') {
+            try { window.CircaevumPerf.mark('events', force ? 'refreshAll force' : 'refreshAll'); } catch (e0) { /* HUD optional */ }
+        }
         gl.refreshAllEventLayers();
         lastEventLayersRebuildKey = key;
         return true;
@@ -12986,7 +13188,7 @@ function animate(time, frame) {
             typeof window.flattenTimelineFocusY === 'function' ? window.flattenTimelineFocusY() : focusPoint.y;
         updateListHorizonContextArcFlatten(flattenPivotY, getActiveTimelineFlattenAmount());
         updateDayFrameLteSkyFlatten(flattenPivotY, getActiveTimelineFlattenAmount());
-        refreshLiveEventHorizonWarp();
+        // updateDayFrameLteSkyFlatten already applies the live sky warp.
         if (typeof syncContextSphereLteSlopeRing === 'function') {
             try {
                 syncContextSphereLteSlopeRing();
@@ -13299,6 +13501,9 @@ function animate(time, frame) {
             xrAdapter.applyScenePlacement();
         }
         renderer.render(scene, camera);
+    }
+    if (typeof window !== 'undefined' && window.CircaevumPerf && typeof window.CircaevumPerf.tick === 'function') {
+        try { window.CircaevumPerf.tick(renderer); } catch (e) { /* HUD optional */ }
     }
 }
 

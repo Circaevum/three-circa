@@ -66,7 +66,8 @@ If the URL looks like a **public** view (`view=public`, or `bundle` + `owner`, o
 Serve this folder (e.g. port 8080) so the wrapper can load it:
 
 ```bash
-npx serve . -p 8080
+npm run all
+# or: npx serve . -p 8080
 ```
 
 Open `http://localhost:8080` for the GL with navbar, or use the wrapper’s `npm run dev:all` from `yang/account-wrapper` to run GL + wrapper together.

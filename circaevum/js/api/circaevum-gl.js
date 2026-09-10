@@ -508,7 +508,9 @@ class CircaevumGL {
       });
     }
     if (options.timelineEventFilter === 'all' || options.timelineEventFilter === 'year') {
-      this.setTimelineEventFilter(options.timelineEventFilter);
+      if (this.timelineEventFilter !== options.timelineEventFilter) {
+        this.timelineEventFilter = options.timelineEventFilter;
+      }
     }
     if (options.circadianShortEventScope === 'year' || options.circadianShortEventScope === 'day') {
       if (typeof window !== 'undefined' && typeof window.setCircadianShortEventScope === 'function') {
@@ -520,6 +522,10 @@ class CircaevumGL {
       console.warn(`[CircaevumGL] ingestEvents: layer missing after add: ${layerId}`);
       return;
     }
+    if (typeof window !== 'undefined' && window.CircaevumPerf && typeof window.CircaevumPerf.mark === 'function') {
+      const n = Array.isArray(events) ? events.length : 1;
+      try { window.CircaevumPerf.mark('ingest', 'ingest ' + layerId + ' n=' + n, { layerId: layerId, events: n }); } catch (e) { /* HUD optional */ }
+    }
     if (options.sessionId) {
       layer.sessionId = options.sessionId;
     }
@@ -529,8 +535,80 @@ class CircaevumGL {
       layer.visible = true;
     }
     if (!layer.plotType) layer.plotType = 'polygon3d';
-    this.updateEvents(layerId, Array.isArray(events) ? events : [events]);
-    this._emit('eventsIngested', { layerId, count: (Array.isArray(events) ? events : [events]).length, sessionId: options.sessionId });
+    let incoming = Array.isArray(events) ? events : [events];
+    if (!options.merge && !options.fullSet) {
+      incoming = this._filterEventsToSelectedContextArc(incoming);
+    }
+    if (options.merge) {
+      if (typeof EventRenderer !== 'undefined' && EventRenderer.setEventMeshWindowOnionUnion) {
+        EventRenderer.setEventMeshWindowOnionUnion(true);
+      }
+      this.mergeEvents(layerId, incoming);
+    } else {
+      if (options.arcFirst && typeof EventRenderer !== 'undefined' && EventRenderer.setEventMeshWindowOnionUnion) {
+        EventRenderer.setEventMeshWindowOnionUnion(false);
+      }
+      this.updateEvents(layerId, incoming);
+    }
+    this._emit('eventsIngested', { layerId, count: incoming.length, sessionId: options.sessionId, merge: !!options.merge });
+  }
+
+  _filterEventsToSelectedContextArc(events) {
+    const list = Array.isArray(events) ? events : [];
+    const z = typeof currentZoom === 'number' && !isNaN(currentZoom) ? currentZoom : 4;
+    let b = null;
+    if (typeof window !== 'undefined' && typeof window.getSelectedContextArcTimeBoundsMs === 'function') {
+      try {
+        b = window.getSelectedContextArcTimeBoundsMs(z);
+      } catch (e) { b = null; }
+    }
+    if (!b || !isFinite(b.t0) || !isFinite(b.t1)) return list;
+    const getStart = (typeof EventRenderer !== 'undefined' && EventRenderer.getEventStart)
+      ? EventRenderer.getEventStart
+      : function (e) { return e && e.dtstart ? new Date(e.dtstart.dateTime || e.dtstart.date) : null; };
+    const getEnd = (typeof EventRenderer !== 'undefined' && EventRenderer.getEventEnd)
+      ? EventRenderer.getEventEnd
+      : function (e) { return e && e.dtend ? new Date(e.dtend.dateTime || e.dtend.date) : null; };
+    return list.filter((ev) => {
+      const start = getStart(ev);
+      if (!start || isNaN(start.getTime())) return false;
+      const end = getEnd(ev);
+      const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+      return evEnd.getTime() > b.t0 && start.getTime() < b.t1;
+    });
+  }
+
+  /**
+   * Add events without tearing down existing meshes (idle onion expand).
+   */
+  mergeEvents(layerId, events) {
+    if (!this.layers.has(layerId)) {
+      this.addLayer(layerId);
+    }
+    const incoming = Array.isArray(events) ? events : [events];
+    const vevents = incoming.map((e) => {
+      if (typeof VEvent !== 'undefined') {
+        if (e instanceof VEvent) return e;
+        if (e.uid && e.dtstart) return VEvent.fromJSON(e);
+        if (e.id && (e.start || e.startTime)) return VEvent.fromGoogleEvent(e);
+      }
+      return e;
+    });
+    const existing = this.events.get(layerId) || [];
+    const have = new Set(
+      existing.map((e) => String((e && (e.uid || e.key)) || ''))
+    );
+    const added = [];
+    for (let i = 0; i < vevents.length; i++) {
+      const ev = vevents[i];
+      const id = String((ev && (ev.uid || ev.key)) || '');
+      if (!id || have.has(id)) continue;
+      have.add(id);
+      added.push(ev);
+    }
+    if (added.length === 0) return;
+    this.events.set(layerId, existing.concat(added));
+    this._appendLayerMeshes(layerId, added);
   }
 
   /**
@@ -928,12 +1006,16 @@ class CircaevumGL {
   }
 
   _renderLayer(layerId) {
+    const __perfLayer = (typeof window !== 'undefined' && window.CircaevumPerf && typeof window.CircaevumPerf.begin === 'function')
+      ? window.CircaevumPerf.begin('layer', String(layerId))
+      : null;
     this._syncSceneGroupsFromHost();
 
     const layer = this.layers.get(layerId);
     if (!layer || !layer.visible) {
       this._removeLayerObjects(layerId);
       this._reapplyStoredEventFocus();
+      if (__perfLayer) __perfLayer.end({ skip: true, layerId: layerId });
       return;
     }
 
@@ -1015,6 +1097,59 @@ class CircaevumGL {
       } catch (e) { /* clip optional */ }
     }
     if (!this._helixFlattenBatch) this._applyLiveHelixFlatten();
+    if (__perfLayer) {
+      __perfLayer.end({
+        layerId: layerId,
+        name: layer && layer.name ? layer.name : layerId,
+        events: filteredEvents.length,
+        meshes: allObjects.length
+      });
+    }
+  }
+
+  /**
+   * Mesh only `addedEvents` and keep existing layer roots (no year remesh).
+   */
+  _appendLayerMeshes(layerId, addedEvents) {
+    const layer = this.layers.get(layerId);
+    if (!layer || !layer.visible || !addedEvents || !addedEvents.length) return;
+    this._syncSceneGroupsFromHost();
+    let filtered = addedEvents;
+    if (layer.filter) filtered = this._applyFilter(addedEvents, layer.filter);
+    filtered = this._applyTimelineScopeFilter(filtered);
+    if (!filtered.length) return;
+    const targetGroup =
+      this.flattenableGroup ||
+      (typeof flattenableGroup !== 'undefined' ? flattenableGroup : null) ||
+      this.sceneContentGroup ||
+      (typeof sceneContentGroup !== 'undefined' ? sceneContentGroup : null);
+    const worldSpaceGroup =
+      this.sceneContentGroup ||
+      (typeof sceneContentGroup !== 'undefined' ? sceneContentGroup : null);
+    const layerConfigWithStyles = {
+      ...layer,
+      layerStylesByCategory: this._getCategoryStylesForLayer(layerId, layer)
+    };
+    const extra = [];
+    if (typeof EventRenderer !== 'undefined' && EventRenderer.createEventObjects) {
+      const objects = EventRenderer.createEventObjects(
+        filtered,
+        layerConfigWithStyles,
+        targetGroup,
+        this.scene,
+        worldSpaceGroup
+      );
+      extra.push(...objects);
+    }
+    if (!this._layerObjects) this._layerObjects = new Map();
+    const prev = this._layerObjects.get(layerId) || [];
+    this._layerObjects.set(layerId, prev.concat(extra));
+    if (typeof window !== 'undefined' && typeof window.noteEventLayersRebuilt === 'function') {
+      try { window.noteEventLayersRebuilt(); } catch (e) { /* key optional */ }
+    }
+    if (typeof refreshContextSphereVisualClip === 'function') {
+      try { refreshContextSphereVisualClip(); } catch (e) { /* clip optional */ }
+    }
   }
 
   /**

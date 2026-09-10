@@ -1,5 +1,21 @@
 (function() {
   var USER_EVENTS_LAYER = 'user-events';
+
+  function getEmbedContextArcPayload() {
+    var z = typeof window.currentZoom === 'number' && !isNaN(window.currentZoom) ? window.currentZoom : 4;
+    var sel = typeof window.getSelectedDateTime === 'function' ? window.getSelectedDateTime() : new Date();
+    var b = null;
+    if (typeof window.getSelectedContextArcTimeBoundsMs === 'function') {
+      try {
+        b = window.getSelectedContextArcTimeBoundsMs(z, sel);
+      } catch (e) { b = null; }
+    }
+    return {
+      zoom: z,
+      focus: sel && !isNaN(sel.getTime()) ? sel.toISOString() : null,
+      contextArc: b && isFinite(b.t0) && isFinite(b.t1) ? { t0: b.t0, t1: b.t1 } : null
+    };
+  }
   window.addEventListener('message', function(event) {
     var data = event.data;
     if (!data || typeof data !== 'object' || !data.type) return;
@@ -74,9 +90,6 @@
       if (typeof TimeseriesRenderer !== 'undefined' && typeof TimeseriesRenderer.resetRefreshCache === 'function') {
         TimeseriesRenderer.resetRefreshCache();
       }
-      if (typeof gl.refreshAllEventLayers === 'function') {
-        try { gl.refreshAllEventLayers(); } catch (e2) {}
-      }
       if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
       if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
       // Do not auto fitToLayer here – it would jump selected time to earliest event (e.g. May 2025). Caller may send CIRCAEVUM_FIT_VIEW when focusing on a layer.
@@ -127,7 +140,7 @@
       if (typeof sceneContentGroup === 'undefined' || !sceneContentGroup) return;
       readySent = true;
       try {
-        window.parent.postMessage({ type: 'CIRCAEVUM_READY' }, '*');
+        window.parent.postMessage(Object.assign({ type: 'CIRCAEVUM_READY' }, getEmbedContextArcPayload()), '*');
       } catch (e) {}
     }
     var t0 = setInterval(function() {
@@ -145,7 +158,10 @@
         try {
           var d = date instanceof Date ? date : new Date(date);
           if (!isNaN(d.getTime())) {
-            window.parent.postMessage({ type: 'CIRCAEVUM_VIEW_FOCUS', focus: d.toISOString() }, '*');
+            window.parent.postMessage(
+              Object.assign({ type: 'CIRCAEVUM_VIEW_FOCUS', focus: d.toISOString() }, getEmbedContextArcPayload()),
+              '*'
+            );
           }
         } catch (e) {}
       };
@@ -158,7 +174,10 @@
     window.setZoomLevel = function(level) {
       originalSetZoomLevel(level);
       try {
-        window.parent.postMessage({ type: 'CIRCAEVUM_ZOOM', level: level }, '*');
+        window.parent.postMessage(
+        Object.assign({ type: 'CIRCAEVUM_ZOOM', level: level }, getEmbedContextArcPayload()),
+        '*'
+      );
       } catch (e) {}
     };
   }

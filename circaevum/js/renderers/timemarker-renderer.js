@@ -2521,15 +2521,18 @@ const TimeMarkers = (function() {
         } else if (zr <= 2) {
             rInner = classic.quarter.label;
             rOuter = classic.quarter.outer;
-        } else if (z === 3 || z === 4) {
-            rInner = classic.quarter.outer;
-            rOuter = classic.month.outer;
-        } else if (z === 5 || z === 6) {
+        } else if (z === 3) {
+            rInner = classic.quarter.label;
+            rOuter = classic.quarter.outer;
+        } else if (z === 4) {
             rInner = classic.month.inner;
             rOuter = classic.month.outer;
-        } else if (z === 7) {
+        } else if (z === 5 || z === 6) {
             rInner = classic.week.inner;
             rOuter = classic.week.outer;
+        } else if (z === 7) {
+            rInner = classic.day.inner;
+            rOuter = classic.day.outer;
         } else {
             rInner = classic.day.inner;
             rOuter = classic.day.outer;
@@ -2568,15 +2571,18 @@ const TimeMarkers = (function() {
         } else if (zr <= 2) {
             rInner = zones.quarter.label;
             rOuter = zones.quarter.outer;
-        } else if (z === 3 || z === 4) {
-            rInner = zones.quarter.outer;
-            rOuter = zones.month.outer;
-        } else if (z === 5 || z === 6) {
+        } else if (z === 3) {
+            rInner = zones.quarter.label;
+            rOuter = zones.quarter.outer;
+        } else if (z === 4) {
             rInner = zones.month.inner;
             rOuter = zones.month.outer;
-        } else if (z === 7) {
+        } else if (z === 5 || z === 6) {
             rInner = zones.week.inner;
             rOuter = zones.week.outer;
+        } else if (z === 7) {
+            rInner = zones.day.inner;
+            rOuter = zones.day.outer;
         } else {
             rInner = zones.day.inner;
             rOuter = zones.day.outer;

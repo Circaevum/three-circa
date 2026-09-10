@@ -881,8 +881,11 @@
     }
 
     var contextArcFinerZoom = [];
-    if (!drawAll && typeof window.getListContextDiscArcTimeBoundsMs === 'function') {
-      var arcBounds = window.getListContextDiscArcTimeBoundsMs(z, ref);
+    if (!drawAll && (typeof window.getSelectedContextArcTimeBoundsMs === 'function' ||
+        typeof window.getListContextDiscArcTimeBoundsMs === 'function')) {
+      var arcBounds = typeof window.getSelectedContextArcTimeBoundsMs === 'function'
+        ? window.getSelectedContextArcTimeBoundsMs(z, ref)
+        : window.getListContextDiscArcTimeBoundsMs(z, ref);
       if (arcBounds && arcBounds.t0 != null && arcBounds.t1 != null) {
         contextArcFinerZoom = afterTimeFilter.filter(function(item) {
           var days = eventDurationDaysForListItem(item.ev);
