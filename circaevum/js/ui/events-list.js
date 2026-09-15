@@ -37,13 +37,107 @@
   }
 
   /** Smallest zoom where this span is in the focused list/label band (see EventRenderer). */
+  /** Events panel calendar never goes past weekly frame (Z7). Scene may be 8/9/0. */
+  var EVENTS_PANEL_MAX_CALENDAR_ZOOM = 7;
+
+  function eventsPanelCalendarZoom(sceneZ) {
+    var zl = typeof sceneZ === 'number' && !isNaN(sceneZ) ? Math.floor(sceneZ) : 5;
+    if (zl >= EVENTS_PANEL_MAX_CALENDAR_ZOOM || zl === 0) return EVENTS_PANEL_MAX_CALENDAR_ZOOM;
+    return zl;
+  }
+
+  /**
+   * Base Event-panel frame from scene zoom — one zoom → one frame.
+   * Highlight / scroll come after; this only picks the calendar skeleton.
+   *
+   *  Z  | name    | frame id   | layout
+   * ----|---------|------------|------------------
+   *  1  | Century | century    | list
+   *  2  | Decade  | decade     | year
+   *  3  | Year    | year       | year
+   *  4  | Quarter | quarter    | quarter
+   *  5  | Month   | month      | month
+   *  6  | Lunar   | lunar      | month
+   *  7  | Week    | week       | month + week-stretch (cyan = week)
+   * 8/9/0 | Day+  | week-day   | same week-stretch; cyan = selected day only
+   */
+  function getEventsPanelBaseFrame(sceneZ) {
+    var z = typeof sceneZ === 'number' && !isNaN(sceneZ) ? Math.floor(sceneZ) : 4;
+    if (z === 0 || z >= 8) {
+      return {
+        id: 'week-day',
+        layout: 'month',
+        variant: 'week-stretch-day',
+        calendarZoom: 7,
+        stretchWeek: true,
+        daySelectOnly: true
+      };
+    }
+    if (z === 7) {
+      return { id: 'week', layout: 'month', variant: 'week-stretch', calendarZoom: 7, stretchWeek: true, daySelectOnly: false };
+    }
+    if (z === 6) {
+      return { id: 'lunar', layout: 'month', variant: 'month', calendarZoom: 6, stretchWeek: false, daySelectOnly: false };
+    }
+    if (z === 5) {
+      return { id: 'month', layout: 'month', variant: 'month', calendarZoom: 5, stretchWeek: false, daySelectOnly: false };
+    }
+    if (z === 4) {
+      return { id: 'quarter', layout: 'quarter', variant: 'quarter', calendarZoom: 4, stretchWeek: false, daySelectOnly: false };
+    }
+    if (z === 3) {
+      return { id: 'year', layout: 'year', variant: 'year', calendarZoom: 3, stretchWeek: false, daySelectOnly: false };
+    }
+    if (z === 2) {
+      return { id: 'decade', layout: 'year', variant: 'decade', calendarZoom: 2, stretchWeek: false, daySelectOnly: false };
+    }
+    return { id: 'century', layout: 'list', variant: 'list', calendarZoom: 1, stretchWeek: false, daySelectOnly: false };
+  }
+
+  function capNavigateZoomForEventsPanel(z) {
+    var zl = typeof z === 'number' && !isNaN(z) ? Math.floor(z) : EVENTS_PANEL_MAX_CALENDAR_ZOOM;
+    if (zl > EVENTS_PANEL_MAX_CALENDAR_ZOOM || zl === 0) return EVENTS_PANEL_MAX_CALENDAR_ZOOM;
+    return zl;
+  }
+
   function preferredZoomForEventSpan(start, end) {
     var s = start instanceof Date ? start : new Date(start);
     var e = end instanceof Date ? end : new Date(end);
     if (!s || isNaN(s.getTime())) return typeof currentZoom !== 'undefined' ? currentZoom : 5;
     if (!e || isNaN(e.getTime()) || e <= s) e = oneDayLater(s) || s;
     var days = durationDaysBetweenLocal(s, e);
-    return eventTextLabelsMinZoomForDurationDaysLocal(days);
+    return capNavigateZoomForEventsPanel(eventTextLabelsMinZoomForDurationDaysLocal(days));
+  }
+
+  /**
+   * Day-block click: Selected time → that day, scene → Weekly (Z7) stretched panel.
+   * Never hops to Day/Clock (8/9/0) from the Events calendar.
+   */
+  function navigateToCalendarDay(dayStart, dayEnd) {
+    var s = dayStart instanceof Date ? dayStart : new Date(dayStart);
+    var e = dayEnd instanceof Date ? dayEnd : new Date(dayEnd);
+    if (!s || isNaN(s.getTime())) return;
+    if (!e || isNaN(e.getTime()) || e <= s) e = endOfLocalDay(s);
+    var mid = new Date((s.getTime() + e.getTime()) / 2);
+    try {
+      var zNow = resolveEventsPanelZoom(
+        typeof window.currentZoom === 'number' ? window.currentZoom : 5
+      );
+      if (zNow !== EVENTS_PANEL_MAX_CALENDAR_ZOOM) {
+        if (typeof window.setZoomLevel === 'function') {
+          window.setZoomLevel(EVENTS_PANEL_MAX_CALENDAR_ZOOM, mid);
+        } else if (typeof window.setSelectedDateTime === 'function') {
+          window.setSelectedDateTime(mid);
+        }
+      } else if (typeof window.smoothNavigateToTime === 'function') {
+        window.smoothNavigateToTime(mid, 880);
+      } else if (typeof window.setSelectedDateTime === 'function') {
+        window.setSelectedDateTime(mid);
+      }
+      if (typeof window.refreshEventsList === 'function') {
+        window.refreshEventsList(false, { zoom: EVENTS_PANEL_MAX_CALENDAR_ZOOM });
+      }
+    } catch (err) { /* ignore */ }
   }
 
   function navigateToEvent(start, end) {
@@ -53,10 +147,12 @@
     if (!e || isNaN(e.getTime()) || e <= s) e = oneDayLater(s) || s;
     var mid = new Date((s.getTime() + e.getTime()) / 2);
     var days = durationDaysBetweenLocal(s, e);
-    var zNow = typeof currentZoom !== 'undefined' ? currentZoom : 2;
-    var zTarget = eventTextLabelsMinZoomForDurationDaysLocal(days);
+    var zNow = resolveEventsPanelZoom(
+      typeof window.currentZoom === 'number' ? window.currentZoom : 2
+    );
+    var zTarget = capNavigateZoomForEventsPanel(eventTextLabelsMinZoomForDurationDaysLocal(days));
     try {
-      if (!eventDurationEligible(days, zNow)) {
+      if (zNow !== zTarget && !eventDurationEligible(days, zNow)) {
         if (typeof window.setZoomLevel === 'function') {
           window.setZoomLevel(zTarget, mid);
         } else {
@@ -67,7 +163,7 @@
           }
         }
         if (typeof window.refreshEventsList === 'function') {
-          window.refreshEventsList(false);
+          window.refreshEventsList(false, { zoom: zTarget });
         }
         return;
       }
@@ -87,8 +183,11 @@
     } catch (e2) {}
   }
   window.navigateToEvent = navigateToEvent;
+  window.navigateToCalendarDay = navigateToCalendarDay;
   window.preferredZoomForEventSpan = preferredZoomForEventSpan;
   window.zoomDisplayName = zoomDisplayName;
+  window.eventsPanelCalendarZoom = eventsPanelCalendarZoom;
+  window.getEventsPanelBaseFrame = getEventsPanelBaseFrame;
 
   function categoryStyleVisible(gl, layerId, category) {
     var layer = gl.getLayer(layerId);
@@ -131,13 +230,57 @@
     gl._calendarLayersUiHooked = true;
     var r = function() {
       refreshCalendarLayersList();
-      refreshEventsList(false);
+      scheduleEventsPanelRefresh(0);
+      scheduleEventsPanelRefresh(120);
     };
     gl.on('layerAdded', r);
     gl.on('layerRemoved', r);
     gl.on('layerVisibilityChanged', r);
     gl.on('categoryVisibilityChanged', r);
     gl.on('eventsIngested', r);
+  }
+
+  var _eventsPanelRefreshTimers = [];
+  /** Last zoom forced by setZoomLevel — beats stale DOM / GL options.zoomLevel. */
+  var _eventsPanelLiveZoom = null;
+
+  function setEventsPanelLiveZoom(z) {
+    if (typeof z === 'number' && !isNaN(z)) {
+      _eventsPanelLiveZoom = Math.floor(z);
+    }
+  }
+
+  function cancelScheduledEventsPanelRefresh() {
+    for (var i = 0; i < _eventsPanelRefreshTimers.length; i++) {
+      try { clearTimeout(_eventsPanelRefreshTimers[i]); } catch (eC) { /* ignore */ }
+    }
+    _eventsPanelRefreshTimers.length = 0;
+  }
+
+  /** Coalesce + delayed passes so calendar sees events after merge/mesh settle. */
+  function scheduleEventsPanelRefresh(delayMs) {
+    var delay = typeof delayMs === 'number' && delayMs > 0 ? delayMs : 0;
+    var t = setTimeout(function() {
+      var ix = _eventsPanelRefreshTimers.indexOf(t);
+      if (ix >= 0) _eventsPanelRefreshTimers.splice(ix, 1);
+      try {
+        // Always re-resolve from live scene so Z7→Z5 cannot keep a stretched week.
+        var zLive = resolveEventsPanelZoom(
+          typeof window.currentZoom === 'number' ? window.currentZoom : 4
+        );
+        refreshEventsList(false, { zoom: zLive, keepScheduled: true });
+      } catch (e) { /* panel optional */ }
+    }, delay);
+    _eventsPanelRefreshTimers.push(t);
+  }
+
+  function hookGlListenersWhenReady() {
+    var gl = window.circaevumGL || (window.getGL && window.getGL());
+    if (gl && typeof gl.on === 'function') {
+      ensureCalendarLayersGLListeners(gl);
+      return true;
+    }
+    return false;
   }
 
   function refreshAtcLegend() {
@@ -153,7 +296,15 @@
     if (typeof AtcBand !== 'undefined' && typeof AtcBand.renderLegendHtml === 'function') {
       parts.push(AtcBand.renderLegendHtml());
     }
-    host.innerHTML = parts.length ? parts.join('') : '';
+    if (!parts.length) {
+      host.innerHTML = '';
+    } else {
+      host.innerHTML =
+        '<details class="calendar-shells-details">' +
+        '<summary class="calendar-shells-summary">Shells &amp; bands</summary>' +
+        '<div class="calendar-shells-body">' + parts.join('') + '</div>' +
+        '</details>';
+    }
     if (typeof window.syncGeophysicalShellsIcon === 'function') window.syncGeophysicalShellsIcon();
   }
 
@@ -163,13 +314,13 @@
     listEl.innerHTML = '';
     var gl = window.circaevumGL || (window.getGL && window.getGL());
     if (!gl || typeof gl.getLayerIds !== 'function') {
-      listEl.innerHTML = '<p class="calendar-layers-empty">Circaevum GL not available yet. Open this tab after the scene loads.</p>';
+      listEl.innerHTML = '<p class="calendar-layers-empty">Scene not ready.</p>';
       return;
     }
     ensureCalendarLayersGLListeners(gl);
     var ids = gl.getLayerIds();
     if (!ids.length) {
-      listEl.innerHTML = '<p class="calendar-layers-empty">No calendar layers yet. Layers appear when calendars or events are added.</p>';
+      listEl.innerHTML = '<p class="calendar-layers-empty">No layers yet.</p>';
       refreshAtcLegend();
       return;
     }
@@ -180,46 +331,6 @@
       var hex = layerSwatchColor(layer);
       var nEv = (gl.getEventObjects && gl.getEventObjects(layerId)) ? gl.getEventObjects(layerId).length : 0;
 
-      var det = document.createElement('details');
-      det.className = 'calendar-layer-details';
-      det.open = true;
-      var sum = document.createElement('summary');
-      sum.className = 'calendar-layer-summary';
-      var sw = document.createElement('span');
-      sw.className = 'calendar-layer-swatch';
-      if (hex) sw.style.background = hex;
-      else sw.classList.add('calendar-layer-swatch-default');
-
-      var titleEl = document.createElement('span');
-      titleEl.className = 'calendar-layer-title';
-      titleEl.textContent = displayName;
-      titleEl.style.cursor = 'pointer';
-      titleEl.title = 'Select this layer';
-      titleEl.onmousedown = function(e) { e.stopPropagation(); };
-      titleEl.onclick = function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        setCircaevumSelectedLayerId(layerId);
-      };
-
-      var visBtn = document.createElement('button');
-      visBtn.type = 'button';
-      visBtn.className = 'calendar-layer-visibility-btn' + (visible ? ' is-on' : ' is-off');
-      visBtn.setAttribute('aria-label', visible ? 'Hide calendar layer' : 'Show calendar layer');
-      visBtn.innerHTML = calendarVisibilitySvg(visible);
-      visBtn.onclick = function(e) { calendarLayerVisibilityToggle(e, gl, layerId); };
-
-      sum.appendChild(sw);
-      sum.appendChild(titleEl);
-      sum.appendChild(visBtn);
-
-      var body = document.createElement('div');
-      body.className = 'calendar-layer-body';
-      var meta = document.createElement('div');
-      meta.className = 'calendar-layer-meta';
-      meta.textContent = layerId + (nEv ? ' · ' + nEv + ' event' + (nEv !== 1 ? 's' : '') : '');
-      body.appendChild(meta);
-
       var catSet = {};
       if (gl.getEventObjects) {
         (gl.getEventObjects(layerId) || []).forEach(function (ev) {
@@ -229,7 +340,61 @@
         });
       }
       var catNames = Object.keys(catSet).sort();
-      if (catNames.length > 1) {
+      var hasCats = catNames.length > 1;
+
+      var rowRoot;
+      var sum;
+      if (hasCats) {
+        rowRoot = document.createElement('details');
+        rowRoot.className = 'calendar-layer-details calendar-layer-details--has-cats';
+        rowRoot.open = false;
+        sum = document.createElement('summary');
+        sum.className = 'calendar-layer-summary';
+      } else {
+        rowRoot = document.createElement('div');
+        rowRoot.className = 'calendar-layer-row';
+        sum = document.createElement('div');
+        sum.className = 'calendar-layer-summary';
+      }
+
+      var sw = document.createElement('span');
+      sw.className = 'calendar-layer-swatch';
+      if (hex) sw.style.background = hex;
+      else sw.classList.add('calendar-layer-swatch-default');
+
+      var titleEl = document.createElement('span');
+      titleEl.className = 'calendar-layer-title';
+      titleEl.textContent = displayName;
+      titleEl.title = 'Select layer';
+      titleEl.onmousedown = function(e) { e.stopPropagation(); };
+      titleEl.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        setCircaevumSelectedLayerId(layerId);
+      };
+
+      sum.appendChild(sw);
+      sum.appendChild(titleEl);
+      if (nEv > 0) {
+        var countEl = document.createElement('span');
+        countEl.className = 'calendar-layer-count';
+        countEl.textContent = String(nEv);
+        countEl.title = nEv + ' event' + (nEv !== 1 ? 's' : '');
+        sum.appendChild(countEl);
+      }
+
+      var visBtn = document.createElement('button');
+      visBtn.type = 'button';
+      visBtn.className = 'calendar-layer-visibility-btn' + (visible ? ' is-on' : ' is-off');
+      visBtn.setAttribute('aria-label', visible ? 'Hide layer' : 'Show layer');
+      visBtn.innerHTML = calendarVisibilitySvg(visible);
+      visBtn.onclick = function(e) { calendarLayerVisibilityToggle(e, gl, layerId); };
+      sum.appendChild(visBtn);
+      rowRoot.appendChild(sum);
+
+      if (hasCats) {
+        var body = document.createElement('div');
+        body.className = 'calendar-layer-body';
         var catList = document.createElement('div');
         catList.className = 'calendar-layer-categories';
         catNames.forEach(function (cat) {
@@ -239,7 +404,7 @@
           row.className = 'calendar-layer-category-row' + (layerOn ? '' : ' calendar-layer-category-row-muted');
           var catLabel = document.createElement('span');
           catLabel.className = 'calendar-layer-category-label';
-          catLabel.textContent = cat + (catSet[cat] ? ' (' + catSet[cat] + ')' : '');
+          catLabel.textContent = cat + (catSet[cat] ? ' · ' + catSet[cat] : '');
           var catBtn = document.createElement('button');
           catBtn.type = 'button';
           catBtn.className = 'calendar-layer-visibility-btn calendar-layer-category-visibility-btn' + (catVis ? ' is-on' : ' is-off');
@@ -251,11 +416,10 @@
           catList.appendChild(row);
         });
         body.appendChild(catList);
+        rowRoot.appendChild(body);
       }
 
-      det.appendChild(sum);
-      det.appendChild(body);
-      listEl.appendChild(det);
+      listEl.appendChild(rowRoot);
     });
     refreshAtcLegend();
   }
@@ -346,21 +510,46 @@
     if (typeof EventRenderer !== 'undefined' && typeof EventRenderer.eventDurationEligibleForFullListAtZoom === 'function') {
       return EventRenderer.eventDurationEligibleForFullListAtZoom(days, z);
     }
+    return eventDurationMatchesSelectedZoom(days, z);
+  }
+
+  /**
+   * One duration class per viewer zoom (not the onion-union `d > 1` scene rule).
+   * Year → quarters; Quarter → months; Month → weeks; Week → days–lunation; Day → ≤1d.
+   */
+  function eventDurationMatchesSelectedZoom(days, z) {
     var Y = 365.25;
-    if (z <= 0 || z >= 9) return days >= 0 && days < 1;
-    if (z === 1) return days > 10 * Y && days <= 100 * Y;
-    if (z === 2) return days > Y;
-    if (z === 3) return days > 92 && days < Y;
-    if (z === 4) return days > 31 && days <= 92;
-    if (z === 5 || z === 6) return days > 7 && days <= 31;
-    if (z === 7) {
+    var zz = typeof z === 'number' && !isNaN(z) ? Math.floor(z) : 2;
+    var d = typeof days === 'number' && !isNaN(days) ? days : 0;
+    if (zz <= 0 || zz >= 9) return d >= 0 && d < 1;
+    if (zz === 1) return d > 10 * Y && d <= 100 * Y;
+    if (zz === 2) return d > Y;
+    if (zz === 3) return d > 92 && d < Y;
+    if (zz === 4) return d > 31 && d <= 92;
+    if (zz === 5 || zz === 6) return d > 7 && d <= 31;
+    if (zz === 7) {
       var synDays = (typeof MoonMechanics !== 'undefined' && MoonMechanics.SYNODIC_MONTH_DAYS)
         ? MoonMechanics.SYNODIC_MONTH_DAYS
         : 29.530588861;
-      return days > 1 && days <= synDays;
+      return d > 1 && d <= synDays;
     }
-    if (z === 8) return days > 0 && days <= 1;
+    if (zz === 8) return d > 0 && d <= 1;
     return true;
+  }
+
+  function filterEventsBySelectedZoom(events, z) {
+    return events.filter(function(item) {
+      return eventDurationMatchesSelectedZoom(eventDurationDaysForListItem(item.ev), z);
+    });
+  }
+
+  function filterLinesBySelectedZoom(lines, z) {
+    return lines.filter(function(line) {
+      var s = line.start;
+      if (!s || !(s instanceof Date) || isNaN(s.getTime())) return false;
+      var e = line.end && line.end > s ? line.end : oneDayLater(s);
+      return eventDurationMatchesSelectedZoom(durationDaysBetweenLocal(s, e), z);
+    });
   }
 
   function rangesOverlap(a0, a1, b0, b1) {
@@ -389,11 +578,102 @@
 
   var EVENT_LIST_RING_TRACK_R = 15.915;
 
-  function updateEventListHorizonRing(drawAll, z, halfMs, ref) {
+  function monthShort(d) {
+    return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()];
+  }
+
+  function formatContextWindowRange(t0, t1) {
+    var a = new Date(t0);
+    var b = new Date(t1);
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) return '';
+    var sameDay = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    if (sameDay) {
+      var pad = function(n) { return n < 10 ? '0' + n : String(n); };
+      return monthShort(a) + ' ' + a.getDate() + '  ' + pad(a.getHours()) + ':' + pad(a.getMinutes()) + '–' + pad(b.getHours()) + ':' + pad(b.getMinutes());
+    }
+    var sameMonth = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+    if (sameMonth) return monthShort(a) + ' ' + a.getDate() + '–' + b.getDate();
+    if (a.getFullYear() === b.getFullYear()) return monthShort(a) + ' ' + a.getDate() + ' – ' + monthShort(b) + ' ' + b.getDate();
+    return monthShort(a) + ' ' + a.getDate() + ' ' + a.getFullYear() + ' – ' + monthShort(b) + ' ' + b.getDate() + ' ' + b.getFullYear();
+  }
+
+  function getSelectedContextWindowBounds(z, ref) {
+    if (typeof window.getSelectedContextArcTimeBoundsMs === 'function') {
+      var b = window.getSelectedContextArcTimeBoundsMs(z, ref);
+      if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
+    }
+    if (typeof window.getListContextDiscArcTimeBoundsMs === 'function') {
+      var d = window.getListContextDiscArcTimeBoundsMs(z, ref);
+      if (d && isFinite(d.t0) && isFinite(d.t1) && d.t1 >= d.t0) return d;
+    }
+    return null;
+  }
+
+  function resolveEventsPanelZoom(fallbackZ, forcedZoom) {
+    // Explicit hop wins, then live scene — never let a stale stamp stick past Z7→Z5.
+    if (typeof forcedZoom === 'number' && !isNaN(forcedZoom)) {
+      _eventsPanelLiveZoom = Math.floor(forcedZoom);
+      return _eventsPanelLiveZoom;
+    }
+    if (typeof window.getCurrentZoomLevel === 'function') {
+      try {
+        var cz = window.getCurrentZoomLevel();
+        if (typeof cz === 'number' && !isNaN(cz)) {
+          _eventsPanelLiveZoom = Math.floor(cz);
+          return _eventsPanelLiveZoom;
+        }
+      } catch (eC) { /* ignore */ }
+    }
+    if (typeof window.currentZoom === 'number' && !isNaN(window.currentZoom)) {
+      _eventsPanelLiveZoom = Math.floor(window.currentZoom);
+      return _eventsPanelLiveZoom;
+    }
+    if (typeof _eventsPanelLiveZoom === 'number' && !isNaN(_eventsPanelLiveZoom)) {
+      return Math.floor(_eventsPanelLiveZoom);
+    }
+    var glZ = window.circaevumGL || (window.getGL && window.getGL());
+    if (glZ && glZ.options && typeof glZ.options.zoomLevel === 'number' && !isNaN(glZ.options.zoomLevel)) {
+      return Math.floor(glZ.options.zoomLevel);
+    }
+    var active = document.querySelector('.zoom-option.active[data-zoom]');
+    if (active) {
+      var dz = parseInt(active.getAttribute('data-zoom'), 10);
+      if (!isNaN(dz)) return dz;
+    }
+    if (typeof fallbackZ === 'number' && !isNaN(fallbackZ)) return Math.floor(fallbackZ);
+    return 4;
+  }
+
+  /**
+   * Grain label follows scene zoom. Panel layout may still show a week/month grid
+   * at Z8+ without the stretched “whole week selected” frame.
+   */
+  function grainNameForContextWindow(z, bounds) {
+    var zl = typeof z === 'number' && !isNaN(z) ? Math.floor(z) : 4;
+    if (zl === 7) return 'Week';
+    if (zl === 8) return 'Day';
+    if (zl === 0 || zl >= 9) return 'Day';
+    if (zl === 5 || zl === 6) return 'Month';
+    if (zl === 4) return 'Quarter';
+    if (zl === 3) return 'Year';
+    var paintZ = bounds && typeof bounds.paintZoom === 'number' ? bounds.paintZoom : null;
+    if (paintZ == null && typeof window.getSelectedContextArcPaintZoom === 'function') {
+      try { paintZ = window.getSelectedContextArcPaintZoom(z); } catch (eP) { paintZ = null; }
+    }
+    if (paintZ === 4) return 'Year';
+    if (paintZ === 5) return 'Quarter';
+    if (paintZ === 6 || paintZ === 7) return 'Month';
+    if (paintZ === 8) return 'Week';
+    return zoomDisplayName(zl);
+  }
+
+  function updateEventListHorizonRing(drawAll, z, ref, bounds) {
     var row = document.getElementById('event-list-horizon-ring-row');
     var arc = document.getElementById('event-list-horizon-arc');
     var arcInner = document.getElementById('event-list-horizon-arc-inner');
+    var fill = document.getElementById('event-list-horizon-fill');
     var cap = document.getElementById('event-list-horizon-ring-caption');
+    var grainEl = document.getElementById('event-list-horizon-ring-grain');
     if (!row || !arc || !cap) return;
     if (drawAll) {
       row.style.display = 'none';
@@ -406,27 +686,28 @@
     var innerFrac = radii && radii.innerFrac > 0 ? radii.innerFrac : 0.42;
     if (arcInner) {
       arcInner.setAttribute('r', String((EVENT_LIST_RING_TRACK_R * innerFrac).toFixed(3)));
-      arcInner.setAttribute('stroke-dasharray', EVENT_LIST_RING_C + ' 0');
     }
-    var dayMs = 86400000;
     var panelArc = (typeof window.getListContextDiscArcForPanel === 'function')
       ? window.getListContextDiscArcForPanel(z)
       : null;
-    var spanHint = ' Dashed inner ring = spans not in the list at this zoom (context disc optional).';
-    if (z === 0) {
-      cap.textContent = 'Outer arc ≈ selected hour (' + ref.getHours() + ':00–' + ((ref.getHours() + 1) % 24) + ':00).' + spanHint;
-    } else {
-      cap.textContent = 'Outer arc ≈ list time window near selected time (±' + Math.max(1, Math.round(halfMs / dayMs)) + 'd).' + spanHint;
-    }
-    var len = panelArc ? panelArc.arcLen : Math.max(1.5, Math.min(100, (2 * halfMs) / (365 * dayMs) * EVENT_LIST_RING_C));
+    var spanMs = bounds ? Math.max(0, bounds.t1 - bounds.t0) : 0;
+    var len = panelArc ? panelArc.arcLen : Math.max(1.5, Math.min(100, (spanMs / (365 * 86400000)) * EVENT_LIST_RING_C));
     var gap = panelArc ? panelArc.arcGap : EVENT_LIST_RING_C - len;
     var offset = panelArc && !panelArc.fullCircle ? panelArc.arcOffset : 0;
-    arc.setAttribute('stroke-dasharray', len + ' ' + gap);
-    arc.setAttribute('stroke-dashoffset', String(-offset));
-    if (arcInner) {
-      arcInner.setAttribute('stroke-dasharray', len + ' ' + gap);
-      arcInner.setAttribute('stroke-dashoffset', String(-offset));
+    var dash = len + ' ' + gap;
+    var dashOff = String(-offset);
+    arc.setAttribute('stroke-dasharray', dash);
+    arc.setAttribute('stroke-dashoffset', dashOff);
+    if (fill) {
+      fill.setAttribute('stroke-dasharray', dash);
+      fill.setAttribute('stroke-dashoffset', dashOff);
     }
+    if (arcInner) {
+      arcInner.setAttribute('stroke-dasharray', dash);
+      arcInner.setAttribute('stroke-dashoffset', dashOff);
+    }
+    if (grainEl) grainEl.textContent = grainNameForContextWindow(z, bounds);
+    cap.textContent = bounds ? formatContextWindowRange(bounds.t0, bounds.t1) : '';
   }
 
   function eventColorToRgbaPanelBackground(color, layerHex, alphaStrong, alphaWeak, inList) {
@@ -594,9 +875,10 @@
     if (!s || isNaN(s.getTime())) return false;
     var e = ev.end && ev.end > s ? ev.end : oneDayLater(s);
     if (!e || isNaN(e.getTime())) e = s;
-    var bounds = listTimeBoundsMs(z, ref);
+    var bounds = getSelectedContextWindowBounds(z, ref);
+    if (!bounds) return false;
     if (!rangesOverlap(s.getTime(), e.getTime(), bounds.t0, bounds.t1)) return false;
-    return eventDurationEligible(eventDurationDaysForListItem(ev), z);
+    return eventDurationMatchesSelectedZoom(eventDurationDaysForListItem(ev), z);
   }
 
   function createEventListRow(gl, item, opts) {
@@ -720,14 +1002,14 @@
     }
     updateEventListHorizonRing(true, z, 0, ref);
     if (!matches.length) {
-      listEl.innerHTML = '<p class="event-horizon-empty">No matches. Check spelling or use <strong>All events</strong>.</p>';
+      listEl.innerHTML = '<p class="event-horizon-empty">No matches. Check spelling or clear the search.</p>';
       updateEventFocusClearButton();
       return;
     }
     var evFocus = (typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null);
     matches.forEach(function(item) {
       var inWindow = eventIncludedInDefaultList(item, z, ref);
-      var metaExtra = inWindow ? '' : ' · outside current list window';
+      var metaExtra = '';
       var row = createEventListRow(gl, item, {
         z: z,
         drawAll: false,
@@ -743,10 +1025,641 @@
     });
   }
 
-  function refreshEventsList(drawAll) {
+  function getContextCalendarPaintZoom(z) {
+    if (typeof window.getSelectedContextArcPaintZoom === 'function') {
+      return window.getSelectedContextArcPaintZoom(z);
+    }
+    return typeof z === 'number' && !isNaN(z) ? Math.floor(z) : 5;
+  }
+
+  /** @deprecated Prefer getEventsPanelBaseFrame(sceneZ).layout */
+  function getContextCalendarKind(z) {
+    return getEventsPanelBaseFrame(z).layout;
+  }
+
+  function startOfLocalDay(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+  }
+
+  function endOfLocalDay(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+  }
+
+  function dayKeyLocal(d) {
+    var m = d.getMonth() + 1;
+    var day = d.getDate();
+    return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+  }
+
+  function monthKeyLocal(d) {
+    var m = d.getMonth() + 1;
+    return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m;
+  }
+
+  function eventSpanMs(item) {
+    var s = item.ev && item.ev.start;
+    if (!s || !(s instanceof Date) || isNaN(s.getTime())) return null;
+    var e = item.ev.end && item.ev.end > s ? item.ev.end : oneDayLater(s);
+    if (!e || !(e instanceof Date) || isNaN(e.getTime())) e = s;
+    return { t0: s.getTime(), t1: e.getTime(), start: s, end: e };
+  }
+
+  /** Nest DUR_SUPER_MONTH — long spans become calendar outlines, not daily chips. */
+  var CTX_CAL_SUPER_MONTH_DAYS = 31;
+
+  function eventDurationDaysLocal(item) {
+    var span = eventSpanMs(item);
+    if (!span) return 0;
+    return Math.max(0, (span.t1 - span.t0) / 86400000);
+  }
+
+  function isSuperMonthCalendarItem(item) {
+    return eventDurationDaysLocal(item) > CTX_CAL_SUPER_MONTH_DAYS;
+  }
+
+  function partitionCalendarEvents(events) {
+    var dayItems = [];
+    var spanItems = [];
+    (events || []).forEach(function(item) {
+      if (isSuperMonthCalendarItem(item)) spanItems.push(item);
+      else dayItems.push(item);
+    });
+    return { dayItems: dayItems, spanItems: spanItems };
+  }
+
+  function formatSpanRangeLabel(span) {
+    if (!span) return '';
+    var a = new Date(span.t0);
+    var b = new Date(span.t1);
+    return monthShort(a) + ' ' + a.getDate() + ' – ' + monthShort(b) + ' ' + b.getDate();
+  }
+
+  /** One outline row per super-month event (no daily chip spam). */
+  function appendSuperMonthSpanOutlines(host, gl, spanItems, monthStartMs, monthEndMs, evFocus) {
+    if (!spanItems || !spanItems.length) return;
+    var box = document.createElement('div');
+    box.className = 'ctx-cal-spans';
+    spanItems.forEach(function(item) {
+      var span = eventSpanMs(item);
+      if (!span) return;
+      if (span.t1 < monthStartMs || span.t0 > monthEndMs) return;
+      var clip0 = Math.max(span.t0, monthStartMs);
+      var clip1 = Math.min(span.t1, monthEndMs);
+      var monthLen = Math.max(1, monthEndMs - monthStartMs);
+      var leftPct = ((clip0 - monthStartMs) / monthLen) * 100;
+      var widthPct = Math.max(2.5, ((clip1 - clip0) / monthLen) * 100);
+      var name = (item.ev && (item.ev.summary || item.ev.uid)) || 'Event';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ctx-cal-span-bar';
+      var uid = String((item.ev && (item.ev.uid || item.ev.id)) || '');
+      if (evFocus && evFocus.uid && String(evFocus.uid) === uid && evFocus.layerId === item.layerId) {
+        btn.classList.add('ctx-cal-span-bar--focus');
+      }
+      btn.style.borderLeftColor = eventChipColor(gl, item);
+      btn.style.setProperty('--span-left', leftPct.toFixed(2) + '%');
+      btn.style.setProperty('--span-width', widthPct.toFixed(2) + '%');
+      btn.title = name + ' · ' + formatSpanRangeLabel(span);
+      btn.innerHTML =
+        '<span class="ctx-cal-span-bar-track" aria-hidden="true"></span>' +
+        '<span class="ctx-cal-span-bar-label">' + escapeHtml(name.length > 36 ? name.slice(0, 34) + '…' : name) + '</span>' +
+        '<span class="ctx-cal-span-bar-meta">' + escapeHtml(formatSpanRangeLabel({ t0: clip0, t1: clip1 })) + '</span>';
+      btn.onclick = function(e) {
+        e.stopPropagation();
+        focusCalendarEvent(gl, item);
+      };
+      box.appendChild(btn);
+    });
+    if (box.childNodes.length) host.appendChild(box);
+  }
+
+  function markCellsUnderSuperMonthSpans(grid, year, month, startPad, daysInMonth, spanItems) {
+    if (!grid || !spanItems || !spanItems.length) return;
+    var monthStart = new Date(year, month, 1, 0, 0, 0, 0).getTime();
+    var monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999).getTime();
+    var cells = grid.querySelectorAll ? grid.querySelectorAll('.ctx-cal-cell') : grid.children;
+    for (var i = 0; i < cells.length; i++) {
+      var dayNum = i - startPad + 1;
+      if (dayNum < 1 || dayNum > daysInMonth) continue;
+      var dayStart = new Date(year, month, dayNum, 0, 0, 0, 0).getTime();
+      var dayEnd = new Date(year, month, dayNum, 23, 59, 59, 999).getTime();
+      for (var s = 0; s < spanItems.length; s++) {
+        var span = eventSpanMs(spanItems[s]);
+        if (!span) continue;
+        if (span.t1 < monthStart || span.t0 > monthEnd) continue;
+        if (rangesOverlap(span.t0, span.t1, dayStart, dayEnd)) {
+          cells[i].classList.add('ctx-cal-cell--span-wash');
+          break;
+        }
+      }
+    }
+  }
+
+  function eventsOverlappingRange(events, t0, t1) {
+    return events.filter(function(item) {
+      var span = eventSpanMs(item);
+      if (!span) return false;
+      return rangesOverlap(span.t0, span.t1, t0, t1);
+    });
+  }
+
+  function focusCalendarEvent(gl, item) {
+    if (!item || !item.ev) return;
+    var ev = item.ev;
+    var start = ev.start;
+    if (!start || !(start instanceof Date) || isNaN(start.getTime())) return;
+    var end = ev.end && ev.end > start ? ev.end : oneDayLater(start);
+    var lid = item.layerId || USER_EVENTS_LAYER;
+    var rowUidStr = String(ev.uid || ev.id || '');
+    setCircaevumSelectedLayerId(lid);
+    var curFocus = typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
+    if (
+      rowUidStr &&
+      typeof gl.setEventHighlight === 'function' &&
+      curFocus &&
+      curFocus.uid &&
+      curFocus.layerId === lid &&
+      String(curFocus.uid) === rowUidStr
+    ) {
+      gl.setEventHighlight(lid, null);
+      updateEventFocusClearButton();
+      return;
+    }
+    if (rowUidStr && typeof gl.setEventHighlight === 'function') {
+      gl.setEventHighlight(lid, rowUidStr);
+    }
+    updateEventFocusClearButton();
+    navigateToEvent(start, end);
+  }
+
+  function eventChipColor(gl, item) {
+    var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
+    return item.ev.color || item.ev.colorId || layerSwatchColor(layer) || '#22d3ee';
+  }
+
+  function appendEventChips(host, gl, items, evFocus, maxChips) {
+    var max = maxChips != null ? maxChips : 3;
+    var shown = items.slice(0, max);
+    shown.forEach(function(item) {
+      var name = (item.ev && (item.ev.summary || item.ev.uid)) || 'Event';
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'ctx-cal-chip';
+      var uid = String((item.ev && (item.ev.uid || item.ev.id)) || '');
+      if (evFocus && evFocus.uid && String(evFocus.uid) === uid && evFocus.layerId === item.layerId) {
+        chip.classList.add('ctx-cal-chip--focus');
+      }
+      chip.style.borderLeftColor = eventChipColor(gl, item);
+      chip.textContent = name.length > 28 ? name.slice(0, 26) + '…' : name;
+      chip.title = name;
+      chip.onclick = function(e) {
+        e.stopPropagation();
+        focusCalendarEvent(gl, item);
+      };
+      host.appendChild(chip);
+    });
+    if (items.length > max) {
+      var more = document.createElement('div');
+      more.className = 'ctx-cal-chip-more';
+      more.textContent = '+' + (items.length - max);
+      host.appendChild(more);
+    }
+  }
+
+  function makeCalTitle(text) {
+    var el = document.createElement('div');
+    el.className = 'ctx-cal-title';
+    el.textContent = text;
+    return el;
+  }
+
+  function weekdayHeaderRow() {
+    var row = document.createElement('div');
+    row.className = 'ctx-cal-weekdays';
+    ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(function(lab) {
+      var c = document.createElement('div');
+      c.className = 'ctx-cal-weekday';
+      c.textContent = lab;
+      row.appendChild(c);
+    });
+    return row;
+  }
+
+  function isSameLocalDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function buildMonthDayGrid(gl, year, month, events, ref, windowBounds, evFocus, opts) {
+    var options = opts || {};
+    var connectMultiDay = !!options.connectMultiDay;
+    var stretchSelectedWeek = !!options.stretchSelectedWeek;
+    // Z8+/0: keep vertical week stretch; cyan chrome on Selected day only (not whole week).
+    var daySelectOnly = !!options.daySelectOnly;
+    var wrap = document.createElement('div');
+    wrap.className = 'ctx-cal-month' + (connectMultiDay ? ' ctx-cal-month--span-days' : '');
+    if (stretchSelectedWeek) wrap.classList.add('ctx-cal-month--week-focus');
+    if (daySelectOnly) wrap.classList.add('ctx-cal-month--day-select');
+    wrap.setAttribute('data-ctx-cal-ym', year + '-' + month);
+    if (ref && ref.getFullYear() === year && ref.getMonth() === month) {
+      wrap.classList.add('ctx-cal-month--selected-time');
+    }
+    wrap.appendChild(makeCalTitle(monthShort(new Date(year, month, 1)) + ' ' + year));
+    var parts = partitionCalendarEvents(events);
+    var monthStartMs = new Date(year, month, 1, 0, 0, 0, 0).getTime();
+    var monthEndMs = new Date(year, month + 1, 0, 23, 59, 59, 999).getTime();
+    appendSuperMonthSpanOutlines(wrap, gl, parts.spanItems, monthStartMs, monthEndMs, evFocus);
+
+    var multiDayItems = [];
+    var singleDayItems = [];
+    if (connectMultiDay) {
+      (parts.dayItems || []).forEach(function(item) {
+        if (eventDurationDaysLocal(item) > 1) multiDayItems.push(item);
+        else singleDayItems.push(item);
+      });
+    } else {
+      singleDayItems = parts.dayItems || [];
+    }
+
+    wrap.appendChild(weekdayHeaderRow());
+    var first = new Date(year, month, 1);
+    var startPad = first.getDay();
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var totalCells = Math.ceil((startPad + daysInMonth) / 7) * 7;
+    var weekCount = totalCells / 7;
+    var w0 = windowBounds ? windowBounds.t0 : -Infinity;
+    var w1 = windowBounds ? windowBounds.t1 : Infinity;
+    // Stretch + day-select: chips for whole month. Else clip to cyan window.
+    var chipW0 = (stretchSelectedWeek || daySelectOnly) ? monthStartMs : w0;
+    var chipW1 = (stretchSelectedWeek || daySelectOnly) ? monthEndMs : w1;
+    var selectedWeekIdx = -1;
+    if (ref && (stretchSelectedWeek || daySelectOnly)) {
+      selectedWeekIdx = Math.floor((startPad + (ref.getDate() - 1)) / 7);
+      if (ref.getFullYear() !== year || ref.getMonth() !== month) {
+        selectedWeekIdx = -1;
+        var refDay = startOfLocalDay(ref).getTime();
+        for (var wi = 0; wi < weekCount; wi++) {
+          var ws = new Date(year, month, 1 - startPad + wi * 7, 0, 0, 0, 0).getTime();
+          var we = ws + 7 * 86400000 - 1;
+          if (refDay >= ws && refDay <= we) {
+            selectedWeekIdx = wi;
+            break;
+          }
+        }
+      }
+    }
+    var weeksHost = document.createElement('div');
+    weeksHost.className = 'ctx-cal-month-weeks';
+    var selectedWeekEl = null;
+
+    for (var week = 0; week < weekCount; week++) {
+      var weekBlock = document.createElement('div');
+      weekBlock.className = 'ctx-cal-month-week';
+      var stretchThisWeek = stretchSelectedWeek && week === selectedWeekIdx;
+      // Week cyan outline only at Z7; Z8 keeps --selected-context for stretch layout.
+      var weekCyanChrome = stretchThisWeek && !daySelectOnly;
+      if (stretchThisWeek) {
+        weekBlock.classList.add('ctx-cal-month-week--selected-context');
+        selectedWeekEl = weekBlock;
+      }
+      if (daySelectOnly && week === selectedWeekIdx) {
+        weekBlock.classList.add('ctx-cal-month-week--has-selected-day');
+        if (!selectedWeekEl) selectedWeekEl = weekBlock;
+      }
+      var daysRow = document.createElement('div');
+      daysRow.className = 'ctx-cal-grid ctx-cal-grid--month';
+      for (var dow = 0; dow < 7; dow++) {
+        var i = week * 7 + dow;
+        var dayNum = i - startPad + 1;
+        var cellDate = new Date(year, month, dayNum);
+        var inMonth = dayNum >= 1 && dayNum <= daysInMonth;
+        var cell = document.createElement('div');
+        cell.className = 'ctx-cal-cell';
+        if (!inMonth) cell.classList.add('ctx-cal-cell--outside');
+        var dayStart = startOfLocalDay(cellDate);
+        var dayEnd = endOfLocalDay(cellDate);
+        var inChipWindow = dayEnd.getTime() >= chipW0 && dayStart.getTime() <= chipW1;
+        var inCyanWeek = dayEnd.getTime() >= w0 && dayStart.getTime() <= w1;
+        if (inMonth && !inChipWindow) cell.classList.add('ctx-cal-cell--outside-window');
+        // Dim outside cyan week only when the week itself is the selection (Z7).
+        if (inMonth && weekCyanChrome && !inCyanWeek) cell.classList.add('ctx-cal-cell--outside-week-context');
+        if (inMonth && isSameLocalDay(cellDate, ref)) cell.classList.add('ctx-cal-cell--selected');
+        if (weekCyanChrome && inMonth) cell.classList.add('ctx-cal-cell--in-selected-week');
+        var head = document.createElement('div');
+        head.className = 'ctx-cal-cell-num';
+        head.textContent = String(cellDate.getDate());
+        cell.appendChild(head);
+        if (inMonth && inChipWindow) {
+          var dayEvents = eventsOverlappingRange(singleDayItems, dayStart.getTime(), dayEnd.getTime());
+          var chips = document.createElement('div');
+          chips.className = 'ctx-cal-cell-chips';
+          appendEventChips(chips, gl, dayEvents, evFocus, stretchThisWeek ? 6 : (connectMultiDay ? 2 : 3));
+          cell.appendChild(chips);
+          cell.onclick = (function(d0, d1) {
+            return function() { navigateToCalendarDay(d0, d1); };
+          })(dayStart, dayEnd);
+        }
+        daysRow.appendChild(cell);
+      }
+      weekBlock.appendChild(daysRow);
+      if (connectMultiDay && multiDayItems.length) {
+        appendWeekMultiDayBarsInDayGrid(
+          daysRow, gl, multiDayItems, year, month, week, startPad, daysInMonth, evFocus, monthStartMs, monthEndMs
+        );
+      }
+      weeksHost.appendChild(weekBlock);
+    }
+    markCellsUnderSuperMonthSpans(weeksHost, year, month, startPad, daysInMonth, parts.spanItems);
+    wrap.appendChild(weeksHost);
+    if (selectedWeekEl) wrap._ctxCalSelectedWeekEl = selectedWeekEl;
+    return wrap;
+  }
+
+  /**
+   * Multi-day bars live inside the day-cell grid (bottom of the week row),
+   * not on a between-week lane — so they clearly belong to those days.
+   */
+  function appendWeekMultiDayBarsInDayGrid(daysRow, gl, items, year, month, week, startPad, daysInMonth, evFocus, monthStartMs, monthEndMs) {
+    if (!daysRow) return;
+    daysRow.classList.add('ctx-cal-grid--with-multiday');
+    var weekStartIdx = week * 7;
+    var weekEndIdx = weekStartIdx + 6;
+    var lane = 0;
+    items.forEach(function(item) {
+      var span = eventSpanMs(item);
+      if (!span) return;
+      if (span.t1 < monthStartMs || span.t0 > monthEndMs) return;
+      var clip0 = Math.max(span.t0, monthStartMs);
+      var clip1 = Math.min(span.t1, monthEndMs);
+      var d0 = new Date(clip0);
+      var d1 = new Date(clip1);
+      var dayStart = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate(), 0, 0, 0, 0);
+      var dayEnd = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate(), 0, 0, 0, 0);
+      if (d1.getHours() === 0 && d1.getMinutes() === 0 && d1.getSeconds() === 0 && d1.getMilliseconds() === 0 && clip1 > clip0) {
+        dayEnd = new Date(dayEnd.getTime() - 86400000);
+      }
+      if (dayEnd < dayStart) dayEnd = dayStart;
+
+      var segLo = null;
+      var segHi = null;
+      for (var t = new Date(dayStart.getTime()); t <= dayEnd; t = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1)) {
+        if (t.getMonth() !== month || t.getFullYear() !== year) continue;
+        var dayNum = t.getDate();
+        if (dayNum < 1 || dayNum > daysInMonth) continue;
+        var cellIdx = startPad + (dayNum - 1);
+        if (cellIdx < weekStartIdx || cellIdx > weekEndIdx) continue;
+        var dow = cellIdx % 7;
+        if (segLo == null) segLo = dow;
+        segHi = dow;
+      }
+      if (segLo == null) return;
+      var name = (item.ev && (item.ev.summary || item.ev.uid)) || 'Event';
+      var uid = String((item.ev && (item.ev.uid || item.ev.id)) || '');
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ctx-cal-multiday-bar ctx-cal-multiday-bar--in-cells';
+      if (evFocus && evFocus.uid && String(evFocus.uid) === uid && evFocus.layerId === item.layerId) {
+        btn.classList.add('ctx-cal-multiday-bar--focus');
+      }
+      btn.style.borderLeftColor = eventChipColor(gl, item);
+      var leftPct = (segLo / 7) * 100;
+      var widthPct = ((segHi - segLo + 1) / 7) * 100;
+      btn.style.left = 'calc(' + leftPct.toFixed(3) + '% + 2px)';
+      btn.style.width = 'calc(' + widthPct.toFixed(3) + '% - 4px)';
+      btn.style.bottom = (4 + lane * 15) + 'px';
+      btn.title = name + ' · ' + formatSpanRangeLabel(span);
+      btn.textContent = name.length > 32 ? name.slice(0, 30) + '…' : name;
+      btn.onclick = (function(it) {
+        return function(e) {
+          e.stopPropagation();
+          focusCalendarEvent(gl, it);
+        };
+      })(item);
+      daysRow.appendChild(btn);
+      lane = Math.min(lane + 1, 2);
+    });
+    if (lane > 0) {
+      daysRow.style.setProperty('--ctx-multiday-lanes', String(lane));
+    }
+  }
+
+  function buildYearMonthGrid(gl, year, events, ref, windowBounds, evFocus) {
+    var wrap = document.createElement('div');
+    wrap.className = 'ctx-cal-year';
+    wrap.appendChild(makeCalTitle(String(year)));
+    var parts = partitionCalendarEvents(events);
+    var yearStartMs = new Date(year, 0, 1, 0, 0, 0, 0).getTime();
+    var yearEndMs = new Date(year, 11, 31, 23, 59, 59, 999).getTime();
+    appendSuperMonthSpanOutlines(wrap, gl, parts.spanItems, yearStartMs, yearEndMs, evFocus);
+    var grid = document.createElement('div');
+    grid.className = 'ctx-cal-grid ctx-cal-grid--year';
+    for (var m = 0; m < 12; m++) {
+      var mStart = new Date(year, m, 1, 0, 0, 0, 0);
+      var mEnd = new Date(year, m + 1, 0, 23, 59, 59, 999);
+      var cell = document.createElement('div');
+      cell.className = 'ctx-cal-cell ctx-cal-cell--month-tile';
+      if (ref.getFullYear() === year && ref.getMonth() === m) cell.classList.add('ctx-cal-cell--selected');
+      var w0 = windowBounds ? windowBounds.t0 : -Infinity;
+      var w1 = windowBounds ? windowBounds.t1 : Infinity;
+      if (mEnd.getTime() < w0 || mStart.getTime() > w1) cell.classList.add('ctx-cal-cell--outside-window');
+      var head = document.createElement('div');
+      head.className = 'ctx-cal-cell-num';
+      head.textContent = monthShort(mStart);
+      cell.appendChild(head);
+      var monthEvents = eventsOverlappingRange(parts.dayItems, mStart.getTime(), mEnd.getTime());
+      var chips = document.createElement('div');
+      chips.className = 'ctx-cal-cell-chips';
+      appendEventChips(chips, gl, monthEvents, evFocus, 2);
+      cell.appendChild(chips);
+      cell.onclick = (function(a, b) {
+        return function() { navigateToEvent(a, b); };
+      })(mStart, mEnd);
+      grid.appendChild(cell);
+    }
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
+  function buildWeekGrid(gl, weekStart, events, ref, windowBounds, evFocus) {
+    var wrap = document.createElement('div');
+    wrap.className = 'ctx-cal-week';
+    var weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
+    wrap.appendChild(makeCalTitle(
+      monthShort(weekStart) + ' ' + weekStart.getDate() + ' – ' + monthShort(weekEnd) + ' ' + weekEnd.getDate()
+    ));
+    var parts = partitionCalendarEvents(events);
+    var weekStartMs = startOfLocalDay(weekStart).getTime();
+    var weekEndMs = endOfLocalDay(weekEnd).getTime();
+    appendSuperMonthSpanOutlines(wrap, gl, parts.spanItems, weekStartMs, weekEndMs, evFocus);
+    var grid = document.createElement('div');
+    grid.className = 'ctx-cal-grid ctx-cal-grid--week';
+    for (var i = 0; i < 7; i++) {
+      var day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i);
+      var dayStart = startOfLocalDay(day);
+      var dayEnd = endOfLocalDay(day);
+      var cell = document.createElement('div');
+      cell.className = 'ctx-cal-cell ctx-cal-cell--week-day';
+      if (isSameLocalDay(day, ref)) cell.classList.add('ctx-cal-cell--selected');
+      var head = document.createElement('div');
+      head.className = 'ctx-cal-cell-num';
+      head.textContent = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day.getDay()] + ' ' + day.getDate();
+      cell.appendChild(head);
+      var dayEvents = eventsOverlappingRange(parts.dayItems, dayStart.getTime(), dayEnd.getTime());
+      var chips = document.createElement('div');
+      chips.className = 'ctx-cal-cell-chips';
+      appendEventChips(chips, gl, dayEvents, evFocus, 8);
+      cell.appendChild(chips);
+      cell.onclick = (function(a, b) {
+        return function() { navigateToEvent(a, b); };
+      })(dayStart, dayEnd);
+      grid.appendChild(cell);
+    }
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
+  function buildDayHourGrid(gl, day, events, ref, evFocus) {
+    var wrap = document.createElement('div');
+    wrap.className = 'ctx-cal-day';
+    wrap.appendChild(makeCalTitle(monthShort(day) + ' ' + day.getDate() + ', ' + day.getFullYear()));
+    var parts = partitionCalendarEvents(events);
+    var dayStartMs = startOfLocalDay(day).getTime();
+    var dayEndMs = endOfLocalDay(day).getTime();
+    appendSuperMonthSpanOutlines(wrap, gl, parts.spanItems, dayStartMs, dayEndMs, evFocus);
+    var grid = document.createElement('div');
+    grid.className = 'ctx-cal-grid ctx-cal-grid--day';
+    for (var h = 0; h < 24; h++) {
+      var h0 = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, 0, 0, 0);
+      var h1 = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, 59, 59, 999);
+      var cell = document.createElement('div');
+      cell.className = 'ctx-cal-cell ctx-cal-cell--hour';
+      if (isSameLocalDay(day, ref) && ref.getHours() === h) cell.classList.add('ctx-cal-cell--selected');
+      var head = document.createElement('div');
+      head.className = 'ctx-cal-cell-num';
+      head.textContent = (h < 10 ? '0' : '') + h + ':00';
+      cell.appendChild(head);
+      var hourEvents = eventsOverlappingRange(parts.dayItems, h0.getTime(), h1.getTime());
+      var chips = document.createElement('div');
+      chips.className = 'ctx-cal-cell-chips';
+      appendEventChips(chips, gl, hourEvents, evFocus, 4);
+      cell.appendChild(chips);
+      cell.onclick = (function(a, b) {
+        return function() { navigateToEvent(a, b); };
+      })(h0, h1);
+      grid.appendChild(cell);
+    }
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
+  function renderContextCalendarView(listEl, gl, events, zScene, ref, windowBounds, evFocus) {
+    var frame = getEventsPanelBaseFrame(zScene);
+    var kind = frame.layout;
+    if (kind === 'list') return false;
+
+    var stretchWeek = !!frame.stretchWeek;
+    var daySelectOnly = !!frame.daySelectOnly;
+    var root = document.createElement('div');
+    root.className = 'ctx-cal ctx-cal--' + kind + ' ctx-cal-frame--' + frame.id;
+    if (stretchWeek) root.classList.add('ctx-cal--week-in-month');
+    if (daySelectOnly) root.classList.add('ctx-cal--week-day-select');
+    root.setAttribute('data-ctx-cal-zoom', String(frame.calendarZoom));
+    root.setAttribute('data-ctx-scene-zoom', String(Math.floor(zScene)));
+    root.setAttribute('data-panel-frame', frame.id);
+    root.setAttribute('data-panel-variant', frame.variant);
+
+    var bounds = windowBounds || { t0: ref.getTime(), t1: ref.getTime() };
+    var anchor = new Date(Math.min(Math.max(ref.getTime(), bounds.t0), bounds.t1));
+    if (isNaN(anchor.getTime())) anchor = ref;
+
+    if (kind === 'year') {
+      root.appendChild(buildYearMonthGrid(gl, anchor.getFullYear(), events, ref, windowBounds, evFocus));
+    } else if (kind === 'quarter') {
+      var q = Math.floor(anchor.getMonth() / 3);
+      var qWrap = document.createElement('div');
+      qWrap.className = 'ctx-cal-quarter';
+      qWrap.appendChild(makeCalTitle('Q' + (q + 1) + ' ' + anchor.getFullYear()));
+      var partsQ = partitionCalendarEvents(events);
+      var qStartMs = new Date(anchor.getFullYear(), q * 3, 1, 0, 0, 0, 0).getTime();
+      var qEndMs = new Date(anchor.getFullYear(), q * 3 + 3, 0, 23, 59, 59, 999).getTime();
+      appendSuperMonthSpanOutlines(qWrap, gl, partsQ.spanItems, qStartMs, qEndMs, evFocus);
+      var monthsRow = document.createElement('div');
+      monthsRow.className = 'ctx-cal-quarter-months';
+      for (var m = q * 3; m < q * 3 + 3; m++) {
+        monthsRow.appendChild(buildMonthDayGrid(gl, anchor.getFullYear(), m, partsQ.dayItems, ref, windowBounds, evFocus, {
+          connectMultiDay: true
+        }));
+      }
+      qWrap.appendChild(monthsRow);
+      root.appendChild(qWrap);
+    } else if (kind === 'month') {
+      root.appendChild(buildMonthDayGrid(gl, anchor.getFullYear(), anchor.getMonth(), events, ref, windowBounds, evFocus, {
+        connectMultiDay: true,
+        stretchSelectedWeek: stretchWeek,
+        daySelectOnly: daySelectOnly
+      }));
+    } else if (kind === 'week') {
+      var wk = startOfLocalDay(anchor);
+      wk.setDate(wk.getDate() - wk.getDay());
+      root.appendChild(buildWeekGrid(gl, wk, events, ref, windowBounds, evFocus));
+    } else if (kind === 'day') {
+      root.appendChild(buildDayHourGrid(gl, startOfLocalDay(anchor), events, ref, evFocus));
+    } else {
+      return false;
+    }
+    listEl.appendChild(root);
+    if (kind === 'quarter' || kind === 'year' || kind === 'month') {
+      scrollContextCalendarToSelectedTime(listEl, root, ref, zScene, stretchWeek);
+    }
+    return true;
+  }
+
+  /** Keep selected month / week / day in view inside the Events panel scroller. */
+  function scrollContextCalendarToSelectedTime(listEl, root, ref, zScene, stretchWeek) {
+    if (!listEl || !root || !ref) return;
+    var weekStretch = !!stretchWeek;
+    var z = Math.floor(zScene);
+    var preferDay = !weekStretch && (z >= 8 || z === 0 || root.getAttribute('data-panel-frame') === 'week-day');
+    var run = function() {
+      var weekEl = root.querySelector('.ctx-cal-month-week--selected-context')
+        || root.querySelector('.ctx-cal-month-week--has-selected-day');
+      var dayCell = root.querySelector('.ctx-cal-cell--selected');
+      var monthEl = root.querySelector('.ctx-cal-month--selected-time');
+      var target = preferDay ? (dayCell || weekEl || monthEl) : (weekEl || dayCell || monthEl);
+      if (!target || typeof target.scrollIntoView !== 'function') return;
+      try {
+        target.scrollIntoView({
+          block: weekStretch ? 'center' : 'nearest',
+          inline: 'nearest',
+          behavior: 'auto'
+        });
+      } catch (eScroll) {
+        target.scrollIntoView(true);
+      }
+      var focusEl = weekStretch ? (weekEl || monthEl) : (dayCell || weekEl || monthEl);
+      if (focusEl && listEl.contains(focusEl)) {
+        var listRect = listEl.getBoundingClientRect();
+        var focusRect = focusEl.getBoundingClientRect();
+        var delta =
+          (focusRect.top - listRect.top) -
+          Math.max(0, (listRect.height - focusRect.height) * (weekStretch ? 0.08 : 0.2));
+        if (Math.abs(delta) > 4) {
+          listEl.scrollTop = Math.max(0, listEl.scrollTop + delta);
+        }
+      }
+    };
+    requestAnimationFrame(function() { requestAnimationFrame(run); });
+  }
+
+  function refreshEventsList(drawAll, opts) {
     var listEl = document.getElementById('events-panel-list');
     var ctxEl = document.getElementById('events-panel-context');
     if (!listEl) return;
+    var options = opts && typeof opts === 'object' ? opts : null;
+    if (options && typeof options.zoom === 'number' && !isNaN(options.zoom)) {
+      setEventsPanelLiveZoom(options.zoom);
+      // Keep sibling delayed passes (0ms + 80ms) unless this is a hard hop cancel.
+      if (!options.keepScheduled) cancelScheduledEventsPanelRefresh();
+    }
     window.eventsListHorizonRingActive = !drawAll;
     // Set context immediately so something is always visible even if an error occurs below.
     if (ctxEl) ctxEl.textContent = drawAll ? 'Showing all loaded events.' : 'Loading event list…';
@@ -766,36 +1679,53 @@
 
     var ref = (typeof getSelectedDateTime === 'function') ? getSelectedDateTime() : new Date();
     if (!ref || !(ref instanceof Date) || isNaN(ref.getTime())) ref = new Date();
-    var z = typeof currentZoom !== 'undefined' ? currentZoom : 2;
+    var forcedZ = options && typeof options.zoom === 'number' && !isNaN(options.zoom)
+      ? options.zoom
+      : null;
+    var zScene = resolveEventsPanelZoom(
+      typeof window.currentZoom === 'number' ? window.currentZoom : 4,
+      forcedZ
+    );
+    var frame = getEventsPanelBaseFrame(zScene);
+    var z = frame.calendarZoom;
     var searchQ = (eventListSearchQuery || '').trim().toLowerCase();
     if (searchQ) {
-      renderEventListSearchResults(listEl, ctxEl, gl, searchQ, ref, z);
+      renderEventListSearchResults(listEl, ctxEl, gl, searchQ, ref, zScene);
       return;
     }
 
-    var halfMs = nearbyHalfSpanMs(z, ref);
-    var yearBounds = getSelectedCalendarYearLocalBounds(ref);
+    // Cyan caption/ring follows scene Selected Context Arc; calendar skeleton follows frame.
+    var windowBounds = drawAll ? null : getSelectedContextWindowBounds(zScene, ref);
+    if (!drawAll && !windowBounds && typeof window.getParentUnitTimeBoundsMs === 'function') {
+      try {
+        var syn = window.getParentUnitTimeBoundsMs(zScene, ref);
+        if (syn && isFinite(syn.t0) && isFinite(syn.t1)) {
+          windowBounds = { t0: syn.t0, t1: syn.t1, ref: syn.ref || ref, unit: syn.unit || 'synthesized' };
+        }
+      } catch (eSyn) { /* optional */ }
+    }
+    // Month body chips: need full month when week / week-day frame is shown.
+    var filterBounds = windowBounds;
+    if (!drawAll && ref && (frame.id === 'week' || frame.id === 'week-day')) {
+      filterBounds = {
+        t0: new Date(ref.getFullYear(), ref.getMonth(), 1, 0, 0, 0, 0).getTime(),
+        t1: new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999).getTime(),
+        ref: ref,
+        unit: 'month-for-week-panel',
+        paintZoom: windowBounds && windowBounds.paintZoom
+      };
+    }
     if (ctxEl) {
-      if (drawAll) {
-        ctxEl.textContent = 'Showing all loaded events and lines.';
-      } else if (z === 0) {
-        var hourCtx = getSelectedHourLocalBounds(ref);
-        ctxEl.textContent = 'Hour zoom: ' + hourCtx.start.getHours() + ':00–' + hourCtx.end.getHours() + ':00 on '
-          + formatDate(ref) + '. List shows sub-day spans in that hour only.';
-      } else if (z === 3 || z === 4) {
-        ctxEl.textContent = z === 3
-          ? ('Year zoom: calendar ' + ref.getFullYear() + '. List only includes spans longer than 31 days; shorter events stay gray in-scene. Use All events to see everything.')
-          : ('Quarter zoom: calendar ' + ref.getFullYear() + '. List includes spans longer than 7 days; shorter events stay gray in-scene. Use All events to see everything.');
-      } else if (z >= 5) {
-        ctxEl.textContent = 'Calendar ' + ref.getFullYear() + ' only at month zoom and finer — ±'
-          + Math.max(1, Math.round(halfMs / 86400000)) + 'd near selected time. Span band matches zoom (no longer-scale items).';
-      } else {
-        ctxEl.textContent = 'Near selected time ' + formatDate(ref) + ' — ±' + Math.max(1, Math.round(halfMs / 86400000)) + 'd at zoom ' + z + '. List matches this zoom\'s span band only.';
-      }
+      ctxEl.textContent = drawAll
+        ? 'Showing all loaded events.'
+        : (windowBounds
+          ? ('Events in selected context window ' + formatContextWindowRange(windowBounds.t0, windowBounds.t1) + '.')
+          : 'Events in selected context window.');
     }
 
     var events = [];
     var lines = [];
+    // gather events below — filter sub-day at Year (Z3)
     if (typeof gl.getLayerIds === 'function') {
       gl.getLayerIds().forEach(function(lid) {
         (gl.getEventObjects(lid) || []).forEach(function(o) { events.push({ layerId: lid, ev: o }); });
@@ -808,105 +1738,54 @@
 
     var totalEv = events.length;
     var totalLn = lines.length;
-    if (totalEv === 0 && totalLn === 0) {
+    if (totalEv === 0 && totalLn === 0 && (drawAll || frame.layout === 'list')) {
       listEl.innerHTML = '<p class="event-horizon-empty">No events or lines yet. Add calendars from the Layers panel to see events here.</p>';
+      updateEventListHorizonRing(drawAll, zScene, ref, windowBounds);
       return;
     }
 
     if (!drawAll) {
-      if (z === 0) {
-        var hourBounds = getSelectedHourLocalBounds(ref);
-        var h0 = hourBounds.start.getTime();
-        var h1 = hourBounds.end.getTime();
-        events = events.filter(function(item) {
-          var s = item.ev.start;
-          if (!s || isNaN(s.getTime())) return false;
-          var e = item.ev.end && item.ev.end > s ? item.ev.end : oneDayLater(s);
-          if (!e || isNaN(e.getTime())) e = s;
-          return rangesOverlap(s.getTime(), e.getTime(), h0, h1);
-        });
-        lines = lines.filter(function(line) {
-          var s = line.start instanceof Date ? line.start.getTime() : NaN;
-          var e = line.end instanceof Date ? line.end.getTime() : NaN;
-          if (isNaN(s)) return false;
-          if (isNaN(e)) e = s + 3600000;
-          return rangesOverlap(s, e, h0, h1);
-        });
-      } else if (z === 3 || z === 4) {
-        events = events.filter(function(item) {
-          var s = item.ev.start;
-          if (!s || isNaN(s.getTime())) return false;
-          var e = item.ev.end && item.ev.end > s ? item.ev.end : oneDayLater(s);
-          if (!e || isNaN(e.getTime())) e = s;
-          return rangesOverlap(s.getTime(), e.getTime(), yearBounds.start.getTime(), yearBounds.end.getTime());
-        });
-        lines = lines.filter(function(line) {
-          var s = line.start instanceof Date ? line.start.getTime() : NaN;
-          var e = line.end instanceof Date ? line.end.getTime() : NaN;
-          if (isNaN(s)) return false;
-          if (isNaN(e)) e = s + 86400000;
-          return rangesOverlap(s, e, yearBounds.start.getTime(), yearBounds.end.getTime());
-        });
-      } else {
-        var t0;
-        var t1;
-        if (z === 7 && typeof MoonMechanics !== 'undefined' && typeof MoonMechanics.fullMoonBoundsAroundRef === 'function') {
-          var moonBounds = MoonMechanics.fullMoonBoundsAroundRef(ref);
-          t0 = moonBounds.t0;
-          t1 = moonBounds.t1;
-        } else {
-          t0 = ref.getTime() - halfMs;
-          t1 = ref.getTime() + halfMs;
-        }
-        if (z >= 5) {
-          var y0 = yearBounds.start.getTime();
-          var y1 = yearBounds.end.getTime();
-          t0 = Math.max(t0, y0);
-          t1 = Math.min(t1, y1);
-        }
-        events = filterEventsByTimeRange(events, t0, t1);
-        lines = filterLinesByTimeRange(lines, t0, t1, 86400000);
+      if (filterBounds) {
+        events = filterEventsByTimeRange(events, filterBounds.t0, filterBounds.t1);
+        lines = filterLinesByTimeRange(lines, filterBounds.t0, filterBounds.t1, 86400000);
       }
+      // Year / century / decade (Z≤3): no daily chips — super-day+ only.
+      if (zScene <= 3) {
+        events = events.filter(function(item) {
+          return eventDurationDaysLocal(item) > 1;
+        });
+      }
+    } else {
+      /* All events: keep full loaded set */
     }
-    var afterTimeFilter = events.slice();
-    if (!drawAll) {
-      events = events.filter(function(item) { return eventDurationEligible(eventDurationDaysForListItem(item.ev), z); });
-      lines = lines.filter(function(line) {
-        var s = line.start;
-        var e = line.end;
-        if (!s || !(s instanceof Date) || isNaN(s.getTime())) return false;
-        if (!e || !(e instanceof Date) || isNaN(e.getTime()) || e <= s) e = new Date(s.getTime() + 86400000);
-        return eventDurationEligible(durationDaysBetweenLocal(s, e), z);
+
+    updateEventListHorizonRing(drawAll, zScene, ref, windowBounds);
+
+    var evFocus = (typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null);
+
+    // Always paint calendar skeleton for this zoom frame — even with zero chips.
+    if (!drawAll && frame.layout !== 'list') {
+      events.sort(function(a, b) {
+        var as = a.ev && a.ev.start instanceof Date ? a.ev.start.getTime() : 0;
+        var bs = b.ev && b.ev.start instanceof Date ? b.ev.start.getTime() : 0;
+        return as - bs;
       });
-    }
-
-    var contextArcFinerZoom = [];
-    if (!drawAll && (typeof window.getSelectedContextArcTimeBoundsMs === 'function' ||
-        typeof window.getListContextDiscArcTimeBoundsMs === 'function')) {
-      var arcBounds = typeof window.getSelectedContextArcTimeBoundsMs === 'function'
-        ? window.getSelectedContextArcTimeBoundsMs(z, ref)
-        : window.getListContextDiscArcTimeBoundsMs(z, ref);
-      if (arcBounds && arcBounds.t0 != null && arcBounds.t1 != null) {
-        contextArcFinerZoom = afterTimeFilter.filter(function(item) {
-          var days = eventDurationDaysForListItem(item.ev);
-          if (eventDurationEligible(days, z)) return false;
-          var s = item.ev.start;
-          if (!s || isNaN(s.getTime())) return false;
-          var e = item.ev.end && item.ev.end > s ? item.ev.end : oneDayLater(s);
-          if (!e || isNaN(e.getTime())) e = s;
-          return rangesOverlap(s.getTime(), e.getTime(), arcBounds.t0, arcBounds.t1);
-        });
+      var calBounds = windowBounds || filterBounds || {
+        t0: ref.getTime(),
+        t1: ref.getTime(),
+        ref: ref,
+        unit: 'point'
+      };
+      if (renderContextCalendarView(listEl, gl, events, zScene, ref, calBounds, evFocus)) {
+        updateEventFocusClearButton();
+        return;
       }
     }
-    if (ctxEl && !drawAll && contextArcFinerZoom.length > 0) {
-      ctxEl.textContent += ' ' + contextArcFinerZoom.length + ' on context arc need finer zoom (section below). Click one to jump.';
-    }
 
-    updateEventListHorizonRing(drawAll, z, halfMs, ref);
-    if (events.length === 0 && lines.length === 0 && contextArcFinerZoom.length === 0) {
+    if (events.length === 0 && lines.length === 0) {
       if (!drawAll && totalEv > 0) {
-        // Auto-expand: nothing in the zoom window but events exist — show all so the list isn't blank.
-        refreshEventsList(true);
+        listEl.innerHTML = '<p class="event-horizon-empty event-horizon-empty--window" aria-hidden="true"></p>';
+        updateEventFocusClearButton();
         return;
       }
       listEl.innerHTML = '<p class="event-horizon-empty">No events or lines yet. Add calendars from the Layers panel to see events here.</p>';
@@ -924,100 +1803,14 @@
       return as - bs;
     });
 
-    var evFocus = (typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null);
-
     events.forEach(function(item) {
       var row = createEventListRow(gl, item, { z: z, drawAll: drawAll, evFocus: evFocus });
       if (row) listEl.appendChild(row);
     });
 
-    if (contextArcFinerZoom.length > 0) {
-      contextArcFinerZoom.sort(function(a, b) {
-        var as = a.ev && a.ev.start instanceof Date ? a.ev.start.getTime() : 0;
-        var bs = b.ev && b.ev.start instanceof Date ? b.ev.start.getTime() : 0;
-        return as - bs;
-      });
-      var arcHdr = document.createElement('div');
-      arcHdr.className = 'events-nearby-lines-header';
-      arcHdr.textContent = 'In context arc — click to open at finer zoom';
-      arcHdr.style.margin = '16px 0 10px';
-      arcHdr.style.borderTop = '1px solid rgba(0,180,216,0.2)';
-      arcHdr.style.paddingTop = '10px';
-      listEl.appendChild(arcHdr);
-      contextArcFinerZoom.forEach(function(item) {
-        var ev = item.ev;
-        var start = ev.start;
-        if (!start || !(start instanceof Date) || isNaN(start.getTime())) return;
-        var end = ev.end;
-        var endForLine = end && end > start ? end : oneDayLater(start);
-        var endForNav = end && end > start ? end : endForLine;
-        var name = ev.summary || ev.uid || 'Event';
-        var days = eventDurationDaysForListItem(ev);
-        var targetZ = eventTextLabelsMinZoomForDurationDaysLocal(days);
-        var row = document.createElement('div');
-        var rowUidStr = String(ev.uid || ev.id || '');
-        row.className = 'event-row event-row--outside-list event-row--context-arc-finer';
-        row.setAttribute('data-event-layer', item.layerId || '');
-        row.setAttribute('data-event-uid', rowUidStr);
-        if (evFocus && evFocus.uid) {
-          var matchFocus = evFocus.layerId === item.layerId && String(evFocus.uid) === rowUidStr;
-          if (matchFocus) row.classList.add('event-row--focus-selected');
-          else row.classList.add('event-row--focus-dim');
-        }
-        var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
-        var borderColor = ev.color || ev.colorId || layerSwatchColor(layer) || 'rgba(0, 180, 216, 0.5)';
-        row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:8px;cursor:pointer;border-left:3px solid ' + borderColor + ';background:' + eventColorToRgbaPanelBackground(ev.color || ev.colorId, layerSwatchColor(layer), 0.16, 0.08, false) + ';opacity:0.82;';
-        row.title = 'Shown in context arc at ' + zoomDisplayName(z) + '. Click to jump to ' + zoomDisplayName(targetZ) + ' and focus this span.';
-        var details = [];
-        if (ev.location) details.push('<div class="event-detail event-location">' + linkifyText(ev.location) + '</div>');
-        if (ev.description) {
-          var rawDescArc = ev.description;
-          var shortDescArc = rawDescArc.length > 120 ? rawDescArc.slice(0, 120).trimEnd() + '…' : rawDescArc;
-          details.push('<div class="event-detail event-description">' + linkifyText(shortDescArc) + '</div>');
-        }
-        row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + formatDate(start) + (end ? ' → ' + formatDate(end) : '') + ' · opens at ' + zoomDisplayName(targetZ) + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
-        row.onclick = function() {
-          setCircaevumSelectedLayerId(item.layerId || USER_EVENTS_LAYER);
-          var lid = item.layerId || USER_EVENTS_LAYER;
-          if (rowUidStr && typeof gl.setEventHighlight === 'function') {
-            gl.setEventHighlight(lid, rowUidStr);
-          }
-          updateEventFocusClearButton();
-          navigateToEvent(start, endForNav);
-          requestAnimationFrame(function() { scrollEventListToFocusedEvent(); });
-        };
-        row.querySelectorAll('a').forEach(function(a) { a.onclick = function(e) { e.stopPropagation(); }; });
-        var editBtn = row.querySelector('.events-panel-edit-btn');
-        if (editBtn && window.self !== window.top && window.parent.postMessage) {
-          editBtn.onclick = function(e) {
-            e.stopPropagation();
-            window.parent.postMessage({
-              type: 'CIRCAEVUM_EDIT_EVENT',
-              event: {
-                uid: ev.uid || ev.id,
-                key: ev.key,
-                summary: ev.summary || name,
-                description: ev.description || null,
-                location: ev.location || null,
-                url: ev.url || null,
-                color: ev.color || ev.colorId || null,
-                layerId: item.layerId || USER_EVENTS_LAYER,
-                dtstart: ev.dtstart || { dateTime: start.toISOString() },
-                dtend: ev.dtend || (end && end > start ? { dateTime: end.toISOString() } : { dateTime: new Date(start.getTime() + 86400000).toISOString() })
-              }
-            }, '*');
-          };
-        } else if (editBtn) editBtn.style.display = 'none';
-        listEl.appendChild(row);
-      });
-    }
-
     var selectedTimeDivider = document.createElement('div');
-    selectedTimeDivider.className = 'events-nearby-lines-header';
-    selectedTimeDivider.textContent = 'Selected time — ' + formatDate(ref);
-    selectedTimeDivider.style.margin = '8px 0 12px';
-    selectedTimeDivider.style.borderTop = '1px solid rgba(0,180,216,0.25)';
-    selectedTimeDivider.style.paddingTop = '8px';
+    selectedTimeDivider.className = 'events-selected-time-mark';
+    selectedTimeDivider.setAttribute('aria-hidden', 'true');
     listEl.appendChild(selectedTimeDivider);
 
     lines.forEach(function(item) {
@@ -1046,13 +1839,14 @@
     }
   }
   window.refreshEventsList = refreshEventsList;
+  window.setEventsPanelLiveZoom = setEventsPanelLiveZoom;
 
   document.addEventListener('DOMContentLoaded', function() {
     var clearFocusBtn = document.getElementById('events-focus-clear-btn');
-    if (clearFocusBtn) clearFocusBtn.onclick = function() { clearEventFocus(); };
-
-    var showAllBtn = document.getElementById('events-show-all-btn');
-    if (showAllBtn) showAllBtn.onclick = function() { refreshEventsList(true); };
+    if (clearFocusBtn) clearFocusBtn.onclick = function() {
+      clearEventFocus();
+      refreshEventsList(false);
+    };
 
     var searchInput = document.getElementById('event-list-search');
     var searchClear = document.getElementById('event-list-search-clear');
@@ -1087,6 +1881,14 @@
     }
     syncEventListSearchClearBtn();
 
+    if (!hookGlListenersWhenReady()) {
+      var tries = 0;
+      var poll = setInterval(function() {
+        tries++;
+        if (hookGlListenersWhenReady() || tries > 80) clearInterval(poll);
+      }, 100);
+    }
+
     var _circaevumUIRefreshRaf = 0;
     window.circaevumOnSelectedTimeOrViewChanged = function() {
       if (typeof window.isSmoothNavigateToTimeActive === 'function' && window.isSmoothNavigateToTimeActive()) return;
@@ -1094,8 +1896,13 @@
       _circaevumUIRefreshRaf = requestAnimationFrame(function() {
         _circaevumUIRefreshRaf = 0;
         var ep = document.getElementById('event-list-panel');
-        if (ep && ep.classList.contains('open')) refreshEventsList(false);
+        if (ep && ep.classList.contains('open')) {
+          refreshEventsList(false);
+          scheduleEventsPanelRefresh(160);
+        }
       });
     };
+
+    window.scheduleEventsPanelRefresh = scheduleEventsPanelRefresh;
   });
 })();

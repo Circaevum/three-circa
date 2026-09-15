@@ -284,16 +284,22 @@
   }
 
   /**
-   * Nesting resolver candidate: sub-day + single all-day (<2 calendar days).
+   * Nesting resolver candidate: sub-day + single calendar day (d ≤ 1).
    * Same VEVENT may resolve as STE (Frame B / day-pitch) or LTE (Frame A manifold) by
    * viewer scale + Selected Time Frame — coords stay (theta1, theta2, z). See COORDINATES.md.
-   * Multi-day stays LTE. Differs from {@link isLongTermEventSpanForPlotType} so 24h all-day
-   * can still use STE geometry inside the Context Arc window.
+   * Super-day (d > 1) stays LTE week corridor — not day-frame STE.
    */
   function isSteStyleDailySpan(start, end) {
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    return durationDaysBetween(start, evEnd) < 2;
+    return durationDaysBetween(start, evEnd) <= 1;
+  }
+
+  /** Zoom 3 (Year) and coarser: no daily / STE geometry in the scene. */
+  function shouldHideDailyEventsAtCoarseZoom(start, end) {
+    const zl = getZoomLevelForEvents();
+    if (zl > 3) return false;
+    return isSteStyleDailySpan(start, end);
   }
 
   function isEventInSelectedYear(start, end) {
@@ -1002,13 +1008,20 @@
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (isLongTermSpanForDailySky(start, evEnd)) {
+      // Shift: super-day LTE across selected year (dailies stay quarter-gated in peek helper).
+      if (isCircadianShortEventsShiftPreview()) {
+        return eventAllowedUnderShiftPeek(start, evEnd);
+      }
       // Day zoom: LTE only inside the context arc (week).
       if (zl === 8) return eventTouchesSelectedContextArcWindow(start, evEnd);
       // Clock zoom: same-day all-day events only (multi-day already blocked above).
       if (zl === 9) return eventTouchesSelectedCalendarDay(start, evEnd);
       return false;
     }
-    if (isCircadianShortEventsShiftPreview()) return true;
+    // Shift: dailies ghost across selected quarter (super-day year peek uses LTE path).
+    if (isCircadianShortEventsShiftPreview()) {
+      return eventAllowedUnderShiftPeek(start, evEnd);
+    }
     // Day zoom in year scope, Clock zoom, Moment zoom: use the slider-controlled month-range window.
     if (zl === 8 && isCircadianShortEventScopeYear()) return eventTouchesSelectedMonthRangeWindow(start, evEnd);
     if (zl === 9 || zl === 0) return eventTouchesSelectedMonthRangeWindow(start, evEnd);
@@ -1037,7 +1050,7 @@
       !!global.getCircadianShortEventsShiftPreview();
   }
 
-  /** 1 on selected calendar day; falls off with |day delta| for Shift peek. */
+  /** 1 on selected calendar day; falls off with |day delta| for Shift peek (quarter-wide). */
   function getShiftPreviewDayProximity(start, end) {
     const selFn = getSelectedDateTimeFn();
     const sel = selFn ? selFn() : null;
@@ -1047,20 +1060,21 @@
     const ua = Date.UTC(mid.getFullYear(), mid.getMonth(), mid.getDate());
     const ub = Date.UTC(sel.getFullYear(), sel.getMonth(), sel.getDate());
     const diffDays = Math.abs(Math.round((ua - ub) / 86400000));
-    return Math.exp(-diffDays / 3.5);
+    return Math.exp(-diffDays / 14);
   }
 
   /** Opacity multiplier for off-day STE geometry while Shift is held (day-sky zooms). */
   function getShiftPreviewSteVisibilityMul(start, end) {
     if (!isCircadianShortEventsShiftPreview() || !start || isNaN(start.getTime())) return 1;
     if (eventTouchesSelectedCalendarDay(start, end)) return 1;
+    if (!eventTouchesSelectedQuarterWindow(start, end)) return 0;
     const prox = getShiftPreviewDayProximity(start, end);
-    return Math.max(0.5, Math.min(0.92, 0.52 + 0.4 * prox));
+    return Math.max(0.16, Math.min(0.68, 0.18 + 0.5 * prox));
   }
 
   function getShiftPreviewSteOutlineMul(start, end) {
     if (!isCircadianShortEventsShiftPreview() || eventTouchesSelectedCalendarDay(start, end)) return 1;
-    return 1.28;
+    return 1.18;
   }
 
   function isCircadianShortEventScopeYear() {
@@ -1517,11 +1531,11 @@
     return d >= WEEKISH_PLATEAU_MIN_DAYS && d <= WEEKISH_PLATEAU_MAX_DAYS;
   }
 
-  /** True when {@link getEventBandRadii} uses the week-corridor annulus (not the >7 d month sweep). */
+  /** True when {@link getEventBandRadii} uses the week-corridor annulus (not the >8 d month sweep). */
   function eventBandUsesWeekCorridor(durationDays) {
     const d = Math.max(typeof durationDays === 'number' && !isNaN(durationDays) ? durationDays : 0, 1e-4);
     const dBand = isWeekishDurationDays(d) ? 7 : d;
-    return dBand <= 7;
+    return dBand > 1 && dBand <= 8;
   }
 
   /**
@@ -1579,7 +1593,7 @@
   }
 
   /** Push overlapping long-term ribbons to slightly different radii when lane packing cannot split them on the disk. */
-  function applyOverlapLaneRadialNudge(earthDist, rInner, rOuter, overlapLane, peakLanes) {
+  function applyOverlapLaneRadialNudge(earthDist, rInner, rOuter, overlapLane, peakLanes, maxOuterCap) {
     const lane = typeof overlapLane === 'number' && overlapLane > 0 ? overlapLane : 0;
     const peak = Math.max(1, peakLanes || 1);
     if (lane <= 0 || peak <= 1) return { rInner, rOuter };
@@ -1588,7 +1602,10 @@
     const step = Math.min(W * 0.013, band * 0.38);
     const nudge = step * lane;
     const { dayName: rDnm } = getDayNumberNameBand(W);
-    const outerCap = rDnm - W * 0.0025;
+    let outerCap = rDnm - W * 0.0025;
+    if (maxOuterCap != null && isFinite(maxOuterCap)) {
+      outerCap = Math.min(outerCap, maxOuterCap);
+    }
     let ri = rInner + nudge * 0.5;
     let ro = rOuter + nudge;
     if (ro > outerCap) {
@@ -1742,6 +1759,61 @@
   /** Read user-controlled STE month-range setting (default 2 = current + next month). */
   function getSteWindowMonths() {
     return typeof global.getSteWindowMonths === 'function' ? Math.max(1, global.getSteWindowMonths()) : 2;
+  }
+
+  /** Zoom 5 parent = selected calendar quarter (3 months). */
+  function eventTouchesSelectedQuarterWindow(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    if (typeof global.getParentUnitTimeBoundsMs === 'function') {
+      try {
+        const q = global.getParentUnitTimeBoundsMs(5);
+        if (q && isFinite(q.t0) && isFinite(q.t1) && q.t1 >= q.t0) {
+          return evEnd.getTime() > q.t0 && start.getTime() < q.t1;
+        }
+      } catch (e) { /* fall through */ }
+    }
+    const fn = getSelectedDateTimeFn();
+    if (!fn) return false;
+    const sel = fn();
+    const qi = Math.floor(sel.getMonth() / 3);
+    const winStart = new Date(sel.getFullYear(), qi * 3, 1, 0, 0, 0, 0);
+    const winEnd = new Date(sel.getFullYear(), qi * 3 + 3, 0, 23, 59, 59, 999);
+    return evEnd > winStart && start < winEnd;
+  }
+
+  /** Zoom 4 parent = selected calendar year. */
+  function eventTouchesSelectedYearWindow(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    if (typeof global.getParentUnitTimeBoundsMs === 'function') {
+      try {
+        const y = global.getParentUnitTimeBoundsMs(4);
+        if (y && isFinite(y.t0) && isFinite(y.t1) && y.t1 >= y.t0) {
+          return evEnd.getTime() > y.t0 && start.getTime() < y.t1;
+        }
+      } catch (e) { /* fall through */ }
+    }
+    const fn = getSelectedDateTimeFn();
+    if (!fn) return false;
+    const sel = fn();
+    const winStart = new Date(sel.getFullYear(), 0, 1, 0, 0, 0, 0);
+    const winEnd = new Date(sel.getFullYear(), 11, 31, 23, 59, 59, 999);
+    return evEnd > winStart && start < winEnd;
+  }
+
+  /**
+   * Shift peek rule:
+   *   · daily / sub-day (≤ 1d) → current quarter only
+   *   · super-day (> 1d) → rest of selected year (whole year window)
+   * Nest-frame events stay via {@link eventInSelectedNestZonesForVividColor}, not this.
+   */
+  function eventAllowedUnderShiftPeek(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    const days = durationDaysBetween(start, evEnd);
+    if (days <= 1) return eventTouchesSelectedQuarterWindow(start, evEnd);
+    return eventTouchesSelectedYearWindow(start, evEnd);
   }
 
   /** STEs visible from the start of the selected month through N months ahead (slider-controlled). */
@@ -1972,9 +2044,21 @@
   }
 
   /**
-   * Create-time mesh window = onion union at zooms 3–7, else cyan hoop.
+   * Create-time mesh window. Shift expands to selected year so both
+   * quarter dailies and year super-days can remesh; duration filter is
+   * {@link eventAllowedUnderShiftPeek} / {@link shouldShowEventRelativeToSelectedContext}.
    */
   function getPersistentEventMeshBounds() {
+    const zl = getZoomLevelForEvents();
+    if (
+      isCircadianShortEventsShiftPreview() &&
+      typeof global.getEventDisplayTimeBoundsMs === 'function'
+    ) {
+      try {
+        const b = global.getEventDisplayTimeBoundsMs(zl);
+        if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 >= b.t0) return b;
+      } catch (e) { /* fall through */ }
+    }
     return getContextArcFrameBounds();
   }
 
@@ -1996,9 +2080,25 @@
     return eventTouchesSelectedContextArcWindow(start, end);
   }
 
-  /** Hard-cull at create: onion union (3–7) or painted cyan hoop. */
+  /**
+   * Full Selected Context Frame = nest duration bands (same as vivid color).
+   * Outside nest → Shift peek only, with duration geography:
+   *   daily ≤1d in quarter · super-day >1d across selected year.
+   */
+  function shouldShowEventRelativeToSelectedContext(start, end) {
+    if (!start || isNaN(start.getTime())) return false;
+    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
+    const zl = getZoomLevelForEvents();
+    if (zl === 1 || zl === 2) return true;
+    if (!eventTouchesPersistentMeshWindow(start, evEnd)) return false;
+    if (eventInSelectedNestZonesForVividColor(start, evEnd)) return true;
+    if (!isCircadianShortEventsShiftPreview()) return false;
+    return eventAllowedUnderShiftPeek(start, evEnd);
+  }
+
+  /** Hard-cull at create: nest frame always; outside-nest (white) only while Shift. */
   function shouldHideOutsideParentUnitWindow(start, end) {
-    return !eventTouchesPersistentMeshWindow(start, end);
+    return !shouldShowEventRelativeToSelectedContext(start, end);
   }
 
   function syncEventVisibilityToContextArc(gl) {
@@ -2010,9 +2110,7 @@
       if (!start || isNaN(start.getTime())) {
         return;
       }
-      const inside = eventTouchesSelectedContextArcWindow(start, end);
-      if (!inside) root.visible = false;
-      else root.visible = true;
+      root.visible = shouldShowEventRelativeToSelectedContext(start, end);
     };
     if (gl && typeof gl.forEachLayerObjectRoot === 'function') {
       gl.forEachLayerObjectRoot(visit);
@@ -2838,15 +2936,39 @@
 
   /** Annual helix day-frame: only dailies that overlap the current context-arc frame. */
   function shouldDrawAnnualDayFrameSteGeometry(start, end) {
+    if (shouldHideDailyEventsAtCoarseZoom(start, end)) return false;
     if (!shouldRenderDayFrameSubDayOnAnnualHelix()) return false;
     if (!isAnnualDayFrameSteSpan(start, end)) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if (shouldHideLongTermOnDailySkySte(start, evEnd)) return false;
+    const zl = getZoomLevelForEvents();
+    // Year–week: day-marker zone = current week only (not full quarter/month cyan pie).
+    if (zl >= 3 && zl <= 7) {
+      if (typeof global.getParentUnitTimeBoundsMs === 'function') {
+        try {
+          const selFn = getSelectedDateTimeFn();
+          const sel = selFn ? selFn() : new Date();
+          const week = global.getParentUnitTimeBoundsMs(8, sel);
+          if (week && isFinite(week.t0) && isFinite(week.t1)) {
+            return evEnd.getTime() > week.t0 && start.getTime() < week.t1;
+          }
+        } catch (e) { /* fall through */ }
+      }
+      // Fallback: selected local week (Sun→Sat).
+      const selFn = getSelectedDateTimeFn();
+      const sel = selFn ? selFn() : new Date();
+      const d0 = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
+      d0.setDate(d0.getDate() - d0.getDay());
+      const t0 = d0.getTime();
+      const t1 = t0 + 7 * 86400000 - 1;
+      return evEnd.getTime() > t0 && start.getTime() < t1;
+    }
     return eventTouchesSelectedContextArcWindow(start, evEnd);
   }
 
   /** Circadian disk-stack STEs — selected day at close zooms; Zoom 5 keeps the month on the nest. */
   function shouldDrawCircadianSteGeometry(start, end) {
+    if (shouldHideDailyEventsAtCoarseZoom(start, end)) return false;
     if (!shouldDrawDailySkySteGeometry(start, end)) return false;
     if (shouldHideCircadianShortEventForDayScope(start, end)) return false;
     const zl = getZoomLevelForEvents();
@@ -2916,11 +3038,12 @@
   /**
    * Inner/outer radii for duration-event bands.
    * Long-term events remain strictly within their respective radial sections:
-   * - Multi-Year (> 365d): Core area [0.04W, 0.125W]
-   * - Sub-Annual Super-Month (30d to 365d): Quarterly area [0.125W, 0.25W]
-   * - Sub-Month Super-Week (7d to 30d): Month area [0.25W, 0.50W]
-   * - Sub-Week Super-Day (1d to 7d): Week area [0.50W, 0.625W]
-   * - Sub-Day / Instant (<= 1d): Day realm [0.625W, 0.75W]
+   * - Multi-Year (> 365d): Core area
+   * - Sub-Annual Super-Month (30d to 365d): Quarterly / month fringe
+   * - Sub-Month Super-Week (8d to 30d): Month area
+   * - Sub-Week Super-Day (1d to 8d): Week area — short near day-frame (outer),
+   *   longer near month edge (inner). Lockstep nest DUR_SUPER_WEEK = 8.
+   * - Sub-Day / Instant (<= 1d): Day realm
    */
   function getEventBandRadii(earthDist, durationDays) {
     const W = earthDist;
@@ -2936,6 +3059,8 @@
     const rWeekOuter    = zones ? zones.week.outer    : W * 0.625;
 
     const d = Math.max(durationDays, 1e-4);
+    /** Nest weekly band upper bound (events_index DUR_SUPER_WEEK). */
+    const SUPER_WEEK_DAYS = 8;
 
     let rInner, rOuter;
 
@@ -2944,21 +3069,32 @@
       rInner = W * 0.04;
       rOuter = rQuarterInner;
     } else if (d > 30) {
-      // Sub-annual super-month events (30 days to 1 year, e.g. 8 months):
-      // Positioned away from the Sun, extending gracefully into the Month realm (up to ~0.45W)
+      // Sub-annual super-month events (30 days to 1 year)
       const t = Math.min(1, (d - 30) / (365 - 30));
       rInner = rQuarterOuter * 0.88;
       rOuter = rQuarterOuter + (rMonthOuter - rQuarterOuter) * (0.35 + 0.65 * t);
-    } else if (d > 7) {
-      // Sub-month super-week events (7 days to 30 days): Month area
-      const t = Math.min(1, (d - 7) / (30 - 7));
+    } else if (d > SUPER_WEEK_DAYS) {
+      // Sub-month super-week events (8 days to 30 days): Month area
+      const t = Math.min(1, (d - SUPER_WEEK_DAYS) / (30 - SUPER_WEEK_DAYS));
       rInner = rMonthInner;
       rOuter = rMonthInner + (rMonthOuter - rMonthInner) * Math.max(0.6, t);
     } else if (d > 1) {
-      // Sub-week super-day events (1 day to 7 days): Week area
-      const t = Math.min(1, (d - 1) / (7 - 1));
-      rInner = rWeekInner;
-      rOuter = rWeekInner + (rWeekOuter - rWeekInner) * Math.max(0.6, t);
+      // Sub-week super-day (1 < d ≤ 8): Week zone only — never spill into day realm (≥ rWeekOuter).
+      const dayKeepOut = Math.max(W * 0.014, (rWeekOuter - rWeekInner) * 0.08);
+      const weekOuterCap = rWeekOuter - dayKeepOut;
+      const t = Math.min(1, Math.max(0, (d - 1) / (SUPER_WEEK_DAYS - 1)));
+      const band = Math.max(weekOuterCap - rWeekInner, W * 0.02);
+      const ribbonW = Math.max(band * 0.32, W * 0.014);
+      const travel = Math.max(0, band - ribbonW);
+      // t=0 → against week outer cap; t=1 → against week inner
+      rOuter = weekOuterCap - t * travel;
+      rInner = rOuter - ribbonW;
+      if (rInner < rWeekInner) {
+        rInner = rWeekInner;
+        rOuter = Math.min(weekOuterCap, rInner + ribbonW);
+      }
+      if (rOuter > weekOuterCap) rOuter = weekOuterCap;
+      if (rInner >= rOuter) rInner = Math.max(rWeekInner, rOuter - ribbonW);
     } else {
       // Sub-day / instant events (<= 1 day): Day realm
       rInner = rWeekOuter;
@@ -2966,6 +3102,34 @@
     }
 
     return { rInner, rOuter };
+  }
+
+  /** Outer edge of week corridor (inside day-zone keep-out). */
+  function getWeekZoneOuterCap(earthDist) {
+    const W = earthDist;
+    const zones = (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getCanonicalRadialZones === 'function')
+      ? TimeMarkers.getCanonicalRadialZones(W)
+      : null;
+    const rWeekInner = zones ? zones.week.inner : W * 0.50;
+    const rWeekOuter = zones ? zones.week.outer : W * 0.625;
+    const dayKeepOut = Math.max(W * 0.014, (rWeekOuter - rWeekInner) * 0.08);
+    return rWeekOuter - dayKeepOut;
+  }
+
+  /** Keep week-corridor ribbons from being nudged into the day time zone. */
+  function clampRadiiToWeekZoneIfNeeded(earthDist, durationDays, rInner, rOuter) {
+    if (!eventBandUsesWeekCorridor(durationDays)) return { rInner, rOuter };
+    const cap = getWeekZoneOuterCap(earthDist);
+    const W = earthDist;
+    let ro = rOuter;
+    let ri = rInner;
+    if (ro > cap) {
+      const spill = ro - cap;
+      ro = cap;
+      ri = Math.max(ri - spill * 0.45, cap - Math.max(ro - ri, W * 0.012));
+    }
+    if (ro < ri + W * 0.012) ro = Math.min(cap, ri + W * 0.012);
+    return { rInner: ri, rOuter: ro };
   }
 
   /**
@@ -4736,9 +4900,20 @@
     return lerpHexColor(hex, luminanceToGrayHex(hex), 0.9);
   }
 
-  /** Return full vibrant event color without temporal fading or grayscale degradation. */
-  function applyEventDisplayColor(hex) {
-    return hex;
+  /** Outside Selected Context Frame: ~3% hue left (mostly white / idle slate). */
+  const CONTEXT_OUTSIDE_BLEACH = 0.97;
+
+  function bleachHexOutsideSelectedContext(hex) {
+    if (hex == null || hex !== hex) return hex;
+    return lerpHexColor(hex, contextFarWhiteHex(), CONTEXT_OUTSIDE_BLEACH);
+  }
+
+  /** Keep hue inside full Selected Context Frame (nest); bleach outside (Shift peek only). */
+  function applyEventDisplayColor(hex, _anchorMs, spanStart, spanEnd) {
+    if (hex == null || hex !== hex) return hex;
+    if (spanStart && eventInSelectedCyanForVividColor(spanStart, spanEnd)) return hex;
+    if (!spanStart) return hex;
+    return bleachHexOutsideSelectedContext(hex);
   }
 
   /**
@@ -6048,12 +6223,12 @@
    * @param {Date|null} spanStart - event (or line) interval start; drives peripheral window test
    * @param {Date|null} spanEnd - interval end; omit or same as start for instant events
    */
-  function applyTemporalVividnessToHex(hex) {
-    return hex;
+  function applyTemporalVividnessToHex(hex, _anchorMs, spanStart, spanEnd) {
+    return applyEventDisplayColor(hex, _anchorMs, spanStart, spanEnd);
   }
 
   function applyLongTermContextColorToHex(hex, anchorMs, spanStart, spanEnd, durationDays) {
-    if (durationDays >= 1 && getLongEventContextFadeMode() === 'alpha') return hex;
+    // Always gate LTE hue on Selected Context Frame (no alpha-mode bypass that kept full color outside).
     return applyTemporalVividnessToHex(hex, anchorMs, spanStart, spanEnd);
   }
 
@@ -6077,11 +6252,106 @@
     return { innerScale, outerScale };
   }
 
+  /** Idle hoop white (dark) / slate (light) — same as unselected onion context. */
+  function contextFarWhiteHex() {
+    try {
+      if (typeof global.getContextArcIdleColorHex === 'function') {
+        return global.getContextArcIdleColorHex();
+      }
+    } catch (e) { /* fall through */ }
+    try {
+      if (typeof document !== 'undefined' && document.body && document.body.classList.contains('light-mode')) {
+        return 0x94a3b8;
+      }
+    } catch (e2) { /* fall through */ }
+    return 0xffffff;
+  }
+
+  /** Time-gradient hue only inside / just beside the selected cyan context pie. */
+  function timeGradientNearSelectedCyan(spanStart, spanEnd) {
+    return eventInSelectedCyanForVividColor(spanStart, spanEnd);
+  }
+
+  /**
+   * Vivid color = full nest Selected Time stack only (live getSelectedDateTime).
+   *   d > 31  → selected year
+   *   8 < d ≤ 31 → selected quarter
+   *   1 < d ≤ 8  → selected month
+   *   d ≤ 1      → selected week
+   * Cyan pie = current zoom UI frame; color follows nest selection whenever Selected time moves.
+   * (main.js rebuild key includes nest week so Z5 A/D remeshes — colors not baked on old week.)
+   */
+  function eventInSelectedCyanForVividColor(spanStart, spanEnd) {
+    return eventInSelectedNestZonesForVividColor(spanStart, spanEnd);
+  }
+
+  function eventInSelectedNestZonesForVividColor(spanStart, spanEnd) {
+    const zl = getZoomLevelForEvents();
+    if (zl === 1 || zl === 2) return true;
+    if (!spanStart || isNaN(spanStart.getTime())) return false;
+    const evEnd = spanEnd && spanEnd > spanStart ? spanEnd : new Date(spanStart.getTime() + 3600000);
+    const days = durationDaysBetween(spanStart, evEnd);
+    const fn = getSelectedDateTimeFn();
+    const ref = fn ? fn() : new Date();
+    const nest = getSelectedNestWindowsForColor(ref);
+    if (!nest) {
+      return eventTouchesSelectedContextArcWindow(spanStart, evEnd);
+    }
+    const NEST_SUPER_MONTH = 31;
+    const NEST_SUPER_WEEK = 8;
+    const NEST_SUPER_DAY = 1;
+    let band = nest.week;
+    if (days > NEST_SUPER_MONTH) band = nest.year;
+    else if (days > NEST_SUPER_WEEK) band = nest.quarter;
+    else if (days > NEST_SUPER_DAY) band = nest.month;
+    return eventOverlapsNestBand(spanStart, evEnd, band);
+  }
+
+  function getSelectedNestWindowsForColor(refDate) {
+    const ref =
+      refDate instanceof Date && !isNaN(refDate.getTime())
+        ? refDate
+        : new Date();
+    if (typeof global.getSelectedNestWindows === 'function') {
+      try {
+        const w = global.getSelectedNestWindows(ref);
+        if (w && w.year && w.quarter && w.month && w.week) return w;
+      } catch (e) { /* fall through */ }
+    }
+    if (typeof global.getParentUnitTimeBoundsMs !== 'function') return null;
+    try {
+      return {
+        year: global.getParentUnitTimeBoundsMs(4, ref),
+        quarter: global.getParentUnitTimeBoundsMs(5, ref),
+        month: global.getParentUnitTimeBoundsMs(7, ref),
+        week: global.getParentUnitTimeBoundsMs(8, ref)
+      };
+    } catch (e2) {
+      return null;
+    }
+  }
+
+  function eventOverlapsNestBand(spanStart, evEnd, band) {
+    if (!band || !isFinite(band.t0) || !isFinite(band.t1) || band.t1 < band.t0) return false;
+    const pad = Math.max(3 * 3600000, (band.t1 - band.t0) * 0.01);
+    return evEnd.getTime() > (band.t0 - pad) && spanStart.getTime() < (band.t1 + pad);
+  }
+
+  /** @deprecated Use eventInSelectedCyanForVividColor */
+  function eventTouchesSelectedCyanForColor(spanStart, spanEnd) {
+    return eventInSelectedCyanForVividColor(spanStart, spanEnd);
+  }
+
   // Earlier events -> warmer red, later events -> cooler blue.
-  function getTimeGradientHex(normalizedTime) {
+  // Outside the selected cyan context zone → mostly white, tiny residual hue.
+  function getTimeGradientHex(normalizedTime, spanStart, spanEnd) {
     const EARLY_RED = 0xef4444;
     const LATE_BLUE = 0x3b82f6;
-    return lerpHexColor(EARLY_RED, LATE_BLUE, normalizedTime);
+    const hex = lerpHexColor(EARLY_RED, LATE_BLUE, normalizedTime);
+    if (spanStart != null && !eventInSelectedCyanForVividColor(spanStart, spanEnd)) {
+      return bleachHexOutsideSelectedContext(hex);
+    }
+    return hex;
   }
 
   function hasExplicitEventColor(eventOrLine) {
@@ -6367,6 +6637,7 @@
     if (!start || isNaN(start.getTime())) return null;
     let spanEnd = getEventEnd(event);
     if (!spanEnd || spanEnd <= start) spanEnd = start;
+    if (shouldHideDailyEventsAtCoarseZoom(start, spanEnd)) return null;
     if (shouldHideLongTermOnDailySkySte(start, spanEnd)) return null;
     if (getZoomLevelForEvents() === 8 && isLongTermSpanForDailySky(start, spanEnd)) return null;
     if (shouldHideCircadianShortEventForDayScope(start, spanEnd)) return null;
@@ -6422,10 +6693,10 @@
     }
 
     const explicitColor = hasExplicitEventColor(event);
-    const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
-    const colorBase = parseColor(explicitColor ? (event.color ?? event.colorId) : fallbackGradient);
     let colorEnd = getEventEnd(event);
     if (!colorEnd || colorEnd <= start) colorEnd = start;
+    const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange), start, colorEnd);
+    const colorBase = parseColor(explicitColor ? (event.color ?? event.colorId) : fallbackGradient);
     const color = applyEventDisplayColor(colorBase, start.getTime(), start, colorEnd);
     const markerR = shouldUseDayBandDotPlacement() ? 0.28 : 0.55;
     const opMul = getDailyCircadianEventOpacityMul(start, spanEnd);
@@ -6498,6 +6769,7 @@
     let start = getEventStart(event);
     let end = getEventEnd(event);
     if (!start || isNaN(start.getTime())) return null;
+    if (shouldHideDailyEventsAtCoarseZoom(start, end)) return null;
     if (!end || end <= start) {
       const evEnd = end && end > start ? end : start;
       if (shouldHideOutsideParentUnitWindow(start, evEnd)) return null;
@@ -6554,7 +6826,7 @@
 
       const eventColorRaw = event.color ?? event.colorId ?? null;
       const explicitEventColor = hasExplicitEventColor(event);
-      const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
+      const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange), start, end);
       let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
       eventHex = applyEventDisplayColor(eventHex, anchorMsShort, start, end);
       const layerHex = parseColor(layerConfig.color || '#00b4d8');
@@ -6831,7 +7103,7 @@
       const anchorMsDay = getEventTemporalAnchorMs(start, end);
       const eventColorRawDay = event.color ?? event.colorId ?? null;
       const explicitDay = hasExplicitEventColor(event);
-      const fallbackDay = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
+      const fallbackDay = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange), start, end);
       let eventHexDay = parseColor(explicitDay ? eventColorRawDay : fallbackDay);
       eventHexDay = applyEventDisplayColor(eventHexDay, anchorMsDay, start, end);
       const dayFrameLte = tryCreateDayFrameSubDayRibbon({
@@ -6880,11 +7152,15 @@
         rInner,
         rOuter,
         layerConfig._overlapLane,
-        layerConfig._overlapPeak
+        layerConfig._overlapPeak,
+        eventBandUsesWeekCorridor(durationDays) ? getWeekZoneOuterCap(earthDist) : null
       );
       rInner = nudged.rInner;
       rOuter = nudged.rOuter;
     }
+    const weekClamp = clampRadiiToWeekZoneIfNeeded(earthDist, durationDays, rInner, rOuter);
+    rInner = weekClamp.rInner;
+    rOuter = weekClamp.rOuter;
 
     const segments = 32;
     const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, refWorldline, segments);
@@ -6909,7 +7185,7 @@
     const anchorMsLong = getEventTemporalAnchorMs(start, end);
     const eventColorRaw = event.color ?? event.colorId ?? null;
     const explicitEventColor = hasExplicitEventColor(event);
-    const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange));
+    const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange), start, end);
     let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
     eventHex = applyEventDisplayColor(eventHex, anchorMsLong, start, end, durationDays);
     const layerHex = parseColor(layerConfig.color || '#00b4d8');
@@ -7137,6 +7413,7 @@
       let start = line.start instanceof Date ? line.start : new Date(line.start);
       let end = line.end instanceof Date ? line.end : new Date(line.end);
       if (!start || isNaN(start.getTime()) || !end || isNaN(end.getTime()) || end <= start) continue;
+      if (shouldHideDailyEventsAtCoarseZoom(start, end)) continue;
       if (shouldHideOutsideParentUnitWindow(start, end)) continue;
       let contextSphereClipped = false;
       const clampedLine = clampEventSpanToContextSphere(start, end);
@@ -7167,7 +7444,7 @@
       const rShort = getRadiusForDailyEventDot(earthDist, midDate, lineOverlapLayout.byIndex.get(i) || 0);
 
       const lineHasExplicitColor = hasExplicitEventColor(line);
-      const lineGradient = getTimeGradientHex(getNormalizedTimeForDate(start, lineTimeRange));
+      const lineGradient = getTimeGradientHex(getNormalizedTimeForDate(start, lineTimeRange), start, end);
       let colorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
       colorHex = applyEventDisplayColor(colorHex, anchorMs, start, end, durationDays);
       const midHeight = (startHeight + endHeight) / 2;
@@ -7661,11 +7938,15 @@
           rInner,
           rOuter,
           lineOverlapLayout.byIndex.get(i),
-          lineOverlapLayout.peakAll
+          lineOverlapLayout.peakAll,
+          eventBandUsesWeekCorridor(durationDays) ? getWeekZoneOuterCap(earthDist) : null
         );
         rInner = nudged.rInner;
         rOuter = nudged.rOuter;
       }
+      const weekClampLine = clampRadiiToWeekZoneIfNeeded(earthDist, durationDays, rInner, rOuter);
+      rInner = weekClampLine.rInner;
+      rOuter = weekClampLine.rOuter;
 
       const plotType = resolveEventPlotType(start, end, lineStyle, layerConfig, firstStyle);
       const fillColorFromStyle = lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;

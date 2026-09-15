@@ -13,29 +13,6 @@
 
     if (typeof window.circaevumSelectedLayerId === 'undefined') window.circaevumSelectedLayerId = getUserEventsLayerId();
 
-    var eeAllBtn = document.getElementById('edge-esmeralda-all-btn');
-    if (eeAllBtn) {
-      eeAllBtn.onclick = function() {
-        if (typeof window.getGL === 'function') window.getGL();
-        var total = 0;
-        var loaders = [
-          window.loadEdgeEsmeraldaWeek1Samples,
-          window.loadEdgeEsmeraldaWeek2Samples,
-          window.loadEdgeEsmeraldaWeek3Samples,
-          window.loadEdgeEsmeraldaWeek4Samples
-        ];
-        var fallback = typeof window.loadEdgeEsmeraldaWeek === 'function';
-        for (var w = 1; w <= 4; w++) {
-          var fn = loaders[w - 1] || (fallback ? (function(wk) { return function(opts) { return window.loadEdgeEsmeraldaWeek(wk, opts); }; })(w) : null);
-          if (fn) total += (fn({}) || 0);
-        }
-        if (!total) { console.warn('edge-esmeralda-2026.js not loaded'); }
-        eeAllBtn.textContent = total ? ('+' + total) : '…';
-        if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
-        setTimeout(function() { eeAllBtn.textContent = 'Load all'; }, 3500);
-      };
-    }
-
     function syncPullTabExpanded(tabId, open) {
       var tab = document.getElementById(tabId);
       if (!tab) return;
@@ -76,6 +53,10 @@
       document.body.classList.add('event-list-panel-open');
       syncPullTabExpanded('event-list-pull-tab', true);
       if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
+      if (typeof window.scheduleEventsPanelRefresh === 'function') {
+        window.scheduleEventsPanelRefresh(80);
+        window.scheduleEventsPanelRefresh(280);
+      }
       var searchInput = document.getElementById('event-list-search');
       if (searchInput) {
         setTimeout(function() { searchInput.focus(); }, 0);
@@ -289,6 +270,13 @@
           applyOrbitalDataMode('expanded');
         });
       }
+    }
+
+    // Desktop default: Events + (standalone) Layers open. Embedded portal opens Layers itself.
+    var isDesktop = !(window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+    if (isDesktop) {
+      openEventListPanel();
+      if (window.self === window.top) openCalendarsLeftPanel();
     }
 
   });

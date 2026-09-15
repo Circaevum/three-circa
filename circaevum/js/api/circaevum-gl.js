@@ -539,10 +539,12 @@ class CircaevumGL {
     if (!options.merge && !options.fullSet) {
       incoming = this._filterEventsToSelectedContextArc(incoming);
     }
-    if (options.merge) {
+    if (options.merge || options.fullSet) {
       if (typeof EventRenderer !== 'undefined' && EventRenderer.setEventMeshWindowOnionUnion) {
         EventRenderer.setEventMeshWindowOnionUnion(true);
       }
+    }
+    if (options.merge) {
       this.mergeEvents(layerId, incoming);
     } else {
       if (options.arcFirst && typeof EventRenderer !== 'undefined' && EventRenderer.setEventMeshWindowOnionUnion) {

@@ -204,6 +204,13 @@ const Worldlines = (function() {
         return isLightMode ? 0x0891b2 : 0x22d3ee;
     }
 
+    /** Month moon path: cyan only when that month is the selected context (zoom 5/6). Else white. */
+    function moonIncludedPathOutlineColorHex(zoomLevel) {
+        const z = Math.floor(typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : -1);
+        if (z === 5 || z === 6) return contextArcOutlineColorHex();
+        return isLightMode ? 0xe2e8f0 : 0xffffff;
+    }
+
     function sampleMoonSynodicFlat(t0, t1, nSeg, refH, selH, selDate, earth, moonSep, moonXZFn, mm) {
         if (!(t1 > t0) || !moonXZFn || !selDate) return null;
         const n = Math.max(8, nSeg | 0);
@@ -224,8 +231,8 @@ const Worldlines = (function() {
         return out;
     }
 
-    /** Cyan inner/outer + end caps — same language as Context Arc outline, on the included moon path. */
-    function addMoonIncludedPathOutline(root, centerFlat, halfWidth) {
+    /** Cyan when month is selected context; white idle outline otherwise. */
+    function addMoonIncludedPathOutline(root, centerFlat, halfWidth, zoomLevel) {
         const THREE = typeof global !== 'undefined' && global.THREE
             ? global.THREE
             : typeof window !== 'undefined' ? window.THREE : null;
@@ -273,7 +280,7 @@ const Worldlines = (function() {
         const geom = new THREE.BufferGeometry();
         geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
         const mat = new THREE.LineBasicMaterial({
-            color: contextArcOutlineColorHex(),
+            color: moonIncludedPathOutlineColorHex(zoomLevel),
             transparent: true,
             opacity: isLightMode ? 0.9 : 1,
             depthTest: true,
@@ -721,7 +728,7 @@ const Worldlines = (function() {
         if (Math.floor(zoomLevel) === 4) {
             const monthRoot = new THREE.Group();
             monthRoot.userData = { type: 'MoonWorldlineRoot' };
-            if (monthFlat) addMoonIncludedPathOutline(monthRoot, monthFlat, halfWidth);
+            if (monthFlat) addMoonIncludedPathOutline(monthRoot, monthFlat, halfWidth, zoomLevel);
             return monthRoot.children.length ? monthRoot : null;
         }
 
@@ -896,7 +903,7 @@ const Worldlines = (function() {
                 }
             }
 
-            if (monthFlat) addMoonIncludedPathOutline(root, monthFlat, halfWidth);
+            if (monthFlat) addMoonIncludedPathOutline(root, monthFlat, halfWidth, zoomLevel);
             return root;
         }
 
@@ -913,7 +920,7 @@ const Worldlines = (function() {
             const lineRoot = new THREE.Group();
             lineRoot.userData = { type: 'MoonWorldlineRoot' };
             lineRoot.add(fallbackLine);
-            addMoonIncludedPathOutline(lineRoot, monthFlat, halfWidth);
+            addMoonIncludedPathOutline(lineRoot, monthFlat, halfWidth, zoomLevel);
             return lineRoot;
         }
         return fallbackLine;

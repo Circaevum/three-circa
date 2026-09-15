@@ -32,9 +32,19 @@
       rInner = rMonthInner;
       rOuter = rMonthInner + (rMonthOuter - rMonthInner) * Math.max(0.6, t);
     } else if (d > 1) {
+      // Sub-week super-day: week zone only — keep clear of day realm (≥ rWeekOuter).
+      const dayKeepOut = Math.max(W * 0.014, (rWeekOuter - rWeekInner) * 0.08);
+      const weekOuterCap = rWeekOuter - dayKeepOut;
       const t = Math.min(1, (d - 1) / (7 - 1));
-      rInner = rWeekInner;
-      rOuter = rWeekInner + (rWeekOuter - rWeekInner) * Math.max(0.6, t);
+      const band = Math.max(weekOuterCap - rWeekInner, W * 0.02);
+      const ribbonW = Math.max(band * 0.32, W * 0.014);
+      const travel = Math.max(0, band - ribbonW);
+      rOuter = weekOuterCap - t * travel;
+      rInner = rOuter - ribbonW;
+      if (rInner < rWeekInner) {
+        rInner = rWeekInner;
+        rOuter = Math.min(weekOuterCap, rInner + ribbonW);
+      }
     } else {
       rInner = rWeekOuter;
       rOuter = zones ? zones.day.outer : W * 0.75;

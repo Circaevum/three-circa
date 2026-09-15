@@ -528,7 +528,9 @@ const TimeMarkers = (function() {
         return {
             quarter: {
                 outer: qOuter,
-                inner: null,
+                // Expose inner so Context Arc onion matches quarter marker band
+                // (classic uses label as sunward edge when inner is null).
+                inner: qInner,
                 label: (qInner + qOuter) * 0.5
             },
             month: {
@@ -2558,21 +2560,20 @@ const TimeMarkers = (function() {
         const zr = z === 0 ? 9 : z;
         const zones = getCanonicalRadialZones(W);
         const singular = isSingularBandModeActive();
+        // Prefer marker-band inner when present (singular stack); else classic quarter.label.
+        function quarterRi() {
+            return typeof zones.quarter.inner === 'number' ? zones.quarter.inner : zones.quarter.label;
+        }
         let rInner;
         let rOuter;
-        if (singular) {
-            // LTE day-spine sky: midnight (inner) → end of day (outer).
-            const day = getEarthOrbitL1L2DayFrameRadii(W);
-            rInner = day.inner;
-            rOuter = day.outer;
-        } else if (zr <= 0) {
+        if (zr <= 0) {
             rInner = zones.day.inner;
             rOuter = zones.day.inner;
         } else if (zr <= 2) {
-            rInner = zones.quarter.label;
+            rInner = quarterRi();
             rOuter = zones.quarter.outer;
         } else if (z === 3) {
-            rInner = zones.quarter.label;
+            rInner = quarterRi();
             rOuter = zones.quarter.outer;
         } else if (z === 4) {
             rInner = zones.month.inner;
@@ -2584,6 +2585,7 @@ const TimeMarkers = (function() {
             rInner = zones.day.inner;
             rOuter = zones.day.outer;
         } else {
+            // Day/clock: singular LTE day spine or classic day annulus.
             rInner = zones.day.inner;
             rOuter = zones.day.outer;
         }

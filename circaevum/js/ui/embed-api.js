@@ -16,6 +16,25 @@
       contextArc: b && isFinite(b.t0) && isFinite(b.t1) ? { t0: b.t0, t1: b.t1 } : null
     };
   }
+  window.getEmbedContextArcPayload = getEmbedContextArcPayload;
+
+  var _viewFocusNotifyTimer = null;
+  var _viewFocusNotifyKey = '';
+  /** Debounced: scrub + navigate both call setSelectedDateTime — portal needs new cyan pie. */
+  window.notifyParentViewFocus = function () {
+    if (window.self === window.top || !window.parent || !window.parent.postMessage) return;
+    if (_viewFocusNotifyTimer) clearTimeout(_viewFocusNotifyTimer);
+    _viewFocusNotifyTimer = setTimeout(function () {
+      _viewFocusNotifyTimer = null;
+      try {
+        var payload = Object.assign({ type: 'CIRCAEVUM_VIEW_FOCUS' }, getEmbedContextArcPayload());
+        var key = (payload.focus || '') + '|' + (payload.contextArc ? payload.contextArc.t0 + ':' + payload.contextArc.t1 : '') + '|' + payload.zoom;
+        if (key === _viewFocusNotifyKey) return;
+        _viewFocusNotifyKey = key;
+        window.parent.postMessage(payload, '*');
+      } catch (e) {}
+    }, 90);
+  };
   window.addEventListener('message', function(event) {
     var data = event.data;
     if (!data || typeof data !== 'object' || !data.type) return;
@@ -92,6 +111,10 @@
       }
       if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
       if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
+      if (typeof window.scheduleEventsPanelRefresh === 'function') {
+        window.scheduleEventsPanelRefresh(60);
+        window.scheduleEventsPanelRefresh(220);
+      }
       // Do not auto fitToLayer here – it would jump selected time to earliest event (e.g. May 2025). Caller may send CIRCAEVUM_FIT_VIEW when focusing on a layer.
     } else if (data.type === 'CIRCAEVUM_FIT_VIEW' && data.focus != null && typeof data.zoom === 'number') {
       if (typeof gl.setZoomLevel === 'function') gl.setZoomLevel(data.zoom);
@@ -118,6 +141,16 @@
       gl.setEventHighlight(data.layerId || USER_EVENTS_LAYER, data.uid != null ? data.uid : null);
     } else if (data.type === 'CIRCAEVUM_DRAW_ALL_EVENTS' && typeof window.refreshEventsList === 'function') {
       window.refreshEventsList(true);
+    } else if (data.type === 'CIRCAEVUM_REFRESH_EVENT_LAYERS') {
+      if (typeof window.refreshEventLayersIfNeeded === 'function') {
+        try { window.refreshEventLayersIfNeeded(true); } catch (e) {}
+      } else if (gl && typeof gl.refreshAllEventLayers === 'function') {
+        try { gl.refreshAllEventLayers(); } catch (e) {}
+      }
+      if (typeof window.syncEventMeshesToContextArc === 'function') {
+        try { window.syncEventMeshesToContextArc(); } catch (e) {}
+      }
+      if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
     }
   });
 
@@ -149,23 +182,7 @@
     }, 100);
     setTimeout(function() { clearInterval(t0); }, 8000);
 
-    // Notify parent when selected time changes (wrapper loads Garmin history on demand).
-    var glForNav = window.circaevumGL || (window.getGL && window.getGL());
-    if (window.self !== window.top && window.parent.postMessage && glForNav && typeof glForNav.navigateToTime === 'function') {
-      var origNavigate = glForNav.navigateToTime.bind(glForNav);
-      glForNav.navigateToTime = function(date) {
-        origNavigate(date);
-        try {
-          var d = date instanceof Date ? date : new Date(date);
-          if (!isNaN(d.getTime())) {
-            window.parent.postMessage(
-              Object.assign({ type: 'CIRCAEVUM_VIEW_FOCUS', focus: d.toISOString() }, getEmbedContextArcPayload()),
-              '*'
-            );
-          }
-        } catch (e) {}
-      };
-    }
+    // Selected-time notify lives on setSelectedDateTime (covers scrub + navigateToTime).
   }
 
   // Monkey-patch setZoomLevel to notify parent wrapper about zoom changes.
