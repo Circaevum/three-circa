@@ -1,5 +1,5 @@
 /**
- * Mobile bottom sheet for event details (≤50vh). Desktop keeps the side Event List panel.
+ * Event detail card. Rises from the bottom and sits in the gap between open side panels.
  */
 (function() {
   var UI = window.CircaevumUI || {};
@@ -134,7 +134,7 @@
   }
 
   function showMobileEventDetailSheet(payload) {
-    if (!isMobileEventSheetViewport() || !payload || !payload.vevent) return false;
+    if (!payload || !payload.vevent) return false;
     ensureSheetDom();
     if (!sheetEl || !titleEl || !bodyEl) return false;
 

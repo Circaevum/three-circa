@@ -12,10 +12,19 @@
  */
 (function (global) {
   const Flatten = {
-    /** yScaleLocal = 1 - amount*0.95, floored at 0.05 — see main.js:11591 */
+    /** yScaleLocal = 1 - amount*0.95, floored at 0.05 — see main.js flattenAllYScale */
     yScaleFor: function (amount) {
       var a = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
       return Math.max(0.05, 1 - a * 0.95);
+    },
+    /**
+     * Date-label Y. Full flatten (amount 1) is 0 so every date sits on the pivot.
+     * yScaleFor stops at 0.05, which left non-current dates visibly raised.
+     */
+    labelYScaleFor: function (amount) {
+      var a = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
+      if (a <= 0) return 1;
+      return Math.max(0, 1 - a);
     },
     /** pivot for group.position.y = pivot*(1-yScale) — sticky world origin */
     focusY: function () {
@@ -89,7 +98,7 @@
      */
     applyPositionFlattenToSprites: function (group, amount) {
       if (!group || typeof group.traverse !== 'function') return;
-      var yScaleLocal = Flatten.yScaleFor(amount);
+      var yScaleLocal = Flatten.labelYScaleFor(amount);
       var pivotY = Flatten.focusY();
       var curDist = typeof global.currentCameraDistance === 'number' ? global.currentCameraDistance : 0;
       group.traverse(function (obj) {

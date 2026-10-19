@@ -1258,13 +1258,32 @@ class CircaevumGL {
    * @private
    */
   _eventOverlapsYear(event, year) {
-    const { start, end } = this._getEventDateBounds(event);
-    if (!start) return false;
     const rangeStart = new Date(year, 0, 1, 0, 0, 0, 0).getTime();
     const rangeEnd = new Date(year, 11, 31, 23, 59, 59, 999).getTime();
+    return this._eventOverlapsRange(event, rangeStart, rangeEnd);
+  }
+
+  _eventOverlapsRange(event, t0, t1) {
+    const { start, end } = this._getEventDateBounds(event);
+    if (!start) return false;
     const s = start.getTime();
     const e = (end && !isNaN(end.getTime())) ? end.getTime() : s;
-    return s <= rangeEnd && e >= rangeStart;
+    return s <= t1 && e >= t0;
+  }
+
+  /**
+   * Century / Decade: keep events on the drawn helix, not only the selected calendar year.
+   * @private
+   */
+  _coarseHelixOverlapBounds() {
+    const z = typeof currentZoom === 'number' && !isNaN(currentZoom) ? Math.floor(currentZoom) : 4;
+    if (z !== 1 && z !== 2) return null;
+    if (typeof window === 'undefined' || typeof window.getCoarseHelixYearBoundsMs !== 'function') return null;
+    try {
+      const b = window.getCoarseHelixYearBoundsMs(z);
+      if (b && isFinite(b.t0) && isFinite(b.t1) && b.t1 > b.t0) return b;
+    } catch (e) { /* fall through */ }
+    return null;
   }
 
   _lineOverlapsYear(line, year) {
@@ -1287,16 +1306,36 @@ class CircaevumGL {
     return this.timelineEventFilter === 'year' || this._timelineYearScopeForcedByZoom();
   }
 
+  _isSuperYearEvent(event) {
+    const { start, end } = this._getEventDateBounds(event);
+    if (!start || isNaN(start.getTime())) return false;
+    const e = end && !isNaN(end.getTime()) && end > start ? end.getTime() : start.getTime();
+    return (e - start.getTime()) / 86400000 > 365.25;
+  }
+
   _applyTimelineScopeFilter(events) {
-    if (!this._shouldApplyTimelineYearScope()) return events;
+    const list = Array.isArray(events) ? events : [];
+    if (!this._shouldApplyTimelineYearScope()) return list;
+    const coarse = this._coarseHelixOverlapBounds();
     const y = this._getTimelineFilterYear();
-    return events.filter(e => this._eventOverlapsYear(e, y));
+    return list.filter((e) => {
+      if (this._isSuperYearEvent(e)) return true;
+      if (coarse) return this._eventOverlapsRange(e, coarse.t0, coarse.t1);
+      return this._eventOverlapsYear(e, y);
+    });
   }
 
   _filterEventLinesForTimeline(lines) {
     if (!this._shouldApplyTimelineYearScope()) return lines;
+    const coarse = this._coarseHelixOverlapBounds();
     const y = this._getTimelineFilterYear();
-    return lines.filter(ln => this._lineOverlapsYear(ln, y));
+    return lines.filter((ln) => {
+      if (!ln || !ln.start || !ln.end) return false;
+      const days = (ln.end.getTime() - ln.start.getTime()) / 86400000;
+      if (days > 365.25) return true;
+      if (coarse) return ln.end.getTime() >= coarse.t0 && ln.start.getTime() <= coarse.t1;
+      return this._lineOverlapsYear(ln, y);
+    });
   }
 
   /**

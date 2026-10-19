@@ -522,8 +522,7 @@
     var zz = typeof z === 'number' && !isNaN(z) ? Math.floor(z) : 2;
     var d = typeof days === 'number' && !isNaN(days) ? days : 0;
     if (zz <= 0 || zz >= 9) return d >= 0 && d < 1;
-    if (zz === 1) return d > 10 * Y && d <= 100 * Y;
-    if (zz === 2) return d > Y;
+    if (zz === 1 || zz === 2) return d > Y;
     if (zz === 3) return d > 92 && d < Y;
     if (zz === 4) return d > 31 && d <= 92;
     if (zz === 5 || zz === 6) return d > 7 && d <= 31;
@@ -895,8 +894,6 @@
     var start = ev.start;
     if (!start || !(start instanceof Date) || isNaN(start.getTime())) return null;
     var end = ev.end;
-    var endForLine = end && end > start ? end : oneDayLater(start);
-    var endForNav = end && end > start ? end : endForLine;
     var name = ev.summary || ev.uid || 'Event';
     var inList = forceInList != null
       ? !!forceInList
@@ -928,37 +925,7 @@
     var metaLine = formatDate(start) + (end ? ' → ' + formatDate(end) : '') + metaExtra;
     row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + metaLine + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
     row.onclick = function() {
-      setCircaevumSelectedLayerId(item.layerId || USER_EVENTS_LAYER);
-      var lid = item.layerId || USER_EVENTS_LAYER;
-      var curFocus = typeof gl.getEventFocus === 'function' ? gl.getEventFocus() : null;
-      if (
-        rowUidStr &&
-        typeof gl.setEventHighlight === 'function' &&
-        curFocus &&
-        curFocus.uid &&
-        curFocus.layerId === lid &&
-        String(curFocus.uid) === rowUidStr
-      ) {
-        gl.setEventHighlight(lid, null);
-        updateEventFocusClearButton();
-        return;
-      }
-      if (rowUidStr && typeof gl.setEventHighlight === 'function') {
-        gl.setEventHighlight(lid, rowUidStr);
-      }
-      updateEventFocusClearButton();
-      navigateToEvent(start, endForNav);
-      if (typeof window.isMobileEventSheetViewport === 'function' && window.isMobileEventSheetViewport() &&
-          typeof window.showMobileEventDetailSheet === 'function') {
-        window.showMobileEventDetailSheet({
-          vevent: ev,
-          layerId: item.layerId || USER_EVENTS_LAYER,
-          start: start,
-          end: endForNav
-        });
-      } else {
-        requestAnimationFrame(function() { scrollEventListToFocusedEvent(); });
-      }
+      focusCalendarEvent(gl, item);
     };
     row.querySelectorAll('a').forEach(function(a) { a.onclick = function(e) { e.stopPropagation(); }; });
     var editBtn = row.querySelector('.events-panel-edit-btn');
@@ -1183,6 +1150,9 @@
     ) {
       gl.setEventHighlight(lid, null);
       updateEventFocusClearButton();
+      if (typeof window.closeMobileEventDetailSheet === 'function') {
+        window.closeMobileEventDetailSheet();
+      }
       return;
     }
     if (rowUidStr && typeof gl.setEventHighlight === 'function') {
@@ -1190,6 +1160,14 @@
     }
     updateEventFocusClearButton();
     navigateToEvent(start, end);
+    if (typeof window.showMobileEventDetailSheet === 'function') {
+      window.showMobileEventDetailSheet({
+        vevent: ev,
+        layerId: lid,
+        start: start,
+        end: end
+      });
+    }
   }
 
   function eventChipColor(gl, item) {
