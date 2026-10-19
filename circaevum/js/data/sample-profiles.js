@@ -1,9 +1,10 @@
 /**
- * Hypothetical lives for a first open. One event per zoom grain.
- * Not a real person. Not a calendar import.
+ * Hypothetical lives for a first open.
+ * Each person has a different schedule inside each duration band.
+ * Spans stay off the band cuts (1 day, 8 days, 31 days, 365 days).
+ * No daily repeat. Not a real person. Not a calendar import.
  *
- * Scales (duration):
- *   hour · day · week · month · quarter · year · years · decade · century
+ * Bands: hour · week · month · quarter · year · years · decade · century
  */
 (function (global) {
   'use strict';
@@ -48,8 +49,8 @@
     return new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m || 0, 0, 0);
   }
 
-  function ev(profileId, scale, summary, start, end, place, allDay) {
-    var uid = 'sample-' + profileId + '-' + scale;
+  function ev(profileId, scale, summary, start, end, place, allDay, key) {
+    var uid = 'sample-' + profileId + '-' + scale + (key ? '-' + key : '');
     var base = {
       uid: uid,
       summary: summary,
@@ -70,26 +71,45 @@
     return base;
   }
 
+  function on(year, month, day) {
+    return new Date(year, month - 1, day);
+  }
+
   /**
-   * Build spans around `now` so hour/day sit on the open day
-   * and long chapters still bracket the present.
+   * Hours are well under a day. Week spans are 3–4 days.
+   * Month spans are 14–21 days. Quarter spans are 48–88 days.
+   * The year chapter runs past both New Years so it is longer than 365 days.
    */
   function buildEvents(profile, now) {
     var today = dayStart(now || new Date());
     var place = profile.place;
     var id = profile.id;
     var n = profile.names;
-    return [
-      ev(id, 'hour', n.hour, atTime(today, 9, 0), atTime(today, 10, 30), place, false),
-      ev(id, 'day', n.day, today, addDays(today, 1), place, true),
-      ev(id, 'week', n.week, addDays(today, -1), addDays(today, 6), place, true),
-      ev(id, 'month', n.month, addDays(today, -3), addDays(today, 24), place, true),
-      ev(id, 'quarter', n.quarter, addDays(today, -10), addDays(today, 70), place, true),
-      ev(id, 'year', n.year, addDays(today, -40), addDays(today, 160), place, true),
-      ev(id, 'years', n.years, addYears(today, -3), addYears(today, 3), place, true),
-      ev(id, 'decade', n.decade, addYears(today, -8), addYears(today, 8), place, true),
-      ev(id, 'century', n.century, addYears(today, -70), addYears(today, 40), place, true)
-    ];
+    var year = today.getFullYear();
+    var out = [];
+    var i;
+    var beat;
+    var start;
+    var clock;
+
+    for (i = 0; i < profile.hours.length; i++) {
+      beat = profile.hours[i];
+      start = on(year, beat[0], beat[1]);
+      clock = atTime(start, beat[2], beat[3]);
+      out.push(ev(id, 'hour', beat[5], clock, new Date(clock.getTime() + beat[4] * 60000), place, false, ymd(start)));
+    }
+
+    for (i = 0; i < profile.spans.length; i++) {
+      beat = profile.spans[i];
+      start = on(year, beat[1], beat[2]);
+      out.push(ev(id, beat[0], beat[4], start, addDays(start, beat[3]), place, true, beat[0] + '-' + ymd(start)));
+    }
+
+    out.push(ev(id, 'year', n.year, on(year - 1, 11, 20), on(year + 1, 2, 10), place, true, 'year'));
+    out.push(ev(id, 'years', n.years, addYears(today, -3), addYears(today, 3), place, true, 'span'));
+    out.push(ev(id, 'decade', n.decade, addYears(today, -8), addYears(today, 8), place, true, 'span'));
+    out.push(ev(id, 'century', n.century, addYears(today, -70), addYears(today, 40), place, true, 'span'));
+    return out;
   }
 
   var PROFILES = [
@@ -100,16 +120,41 @@
       place: 'Tera Nou',
       color: '#2dd4bf',
       names: {
-        hour: 'Hour · Feeder walk',
-        day: 'Day · Market cutoff drill',
-        week: 'Week · Pole patrol',
-        month: 'Month · Meter swap',
-        quarter: 'Quarter · Rain tariff',
-        year: 'Year · Apprentice cohort',
-        years: 'Years · Concession',
-        decade: 'Decade · Keeper post',
-        century: 'Century · Well record'
-      }
+        year: 'Apprentice cohort',
+        years: 'Concession',
+        decade: 'Keeper post',
+        century: 'Well record'
+      },
+      hours: [
+        [1, 9, 6, 20, 80, 'Dawn feeder walk, north spur'],
+        [1, 28, 16, 10, 70, 'Kiosk lamp test before market'],
+        [2, 17, 9, 40, 100, 'Meter dispute at the east kiosk'],
+        [3, 6, 5, 50, 75, 'Inverter reboot after dust'],
+        [4, 11, 18, 5, 60, 'Storm cutoff with the night guard'],
+        [5, 16, 10, 30, 120, 'Tariff board under the neem'],
+        [6, 7, 7, 10, 85, 'Well-pump prime'],
+        [7, 19, 15, 40, 110, 'Rain gauge on the shed roof'],
+        [9, 9, 8, 5, 95, 'School line reconnect'],
+        [10, 21, 17, 25, 80, 'Harvest-night load plan'],
+        [11, 12, 9, 15, 70, 'Battery-room sweep'],
+        [12, 19, 19, 0, 90, 'Year-end lamp count']
+      ],
+      spans: [
+        ['week', 1, 15, 3, 'Pole patrol, north spur'],
+        ['week', 3, 2, 4, 'Clinic feeder splice'],
+        ['week', 4, 21, 3, 'Market-week generator loan'],
+        ['week', 6, 16, 4, 'River-crossing cable'],
+        ['week', 8, 4, 3, 'Grain-mill motor rewind'],
+        ['week', 10, 8, 4, 'Mosque feeder outage'],
+        ['week', 12, 3, 3, 'Dry-season pull, west run'],
+        ['month', 2, 3, 16, 'Meter swap, east spur'],
+        ['month', 5, 5, 18, 'Rain-tariff trial'],
+        ['month', 8, 18, 14, 'Shed reroof'],
+        ['month', 11, 4, 21, 'Wet-season ledger close'],
+        ['quarter', 1, 18, 52, 'Harmattan dust on the insulators'],
+        ['quarter', 4, 15, 68, 'First-rains build'],
+        ['quarter', 9, 6, 74, 'Harvest load on the night feeder']
+      ]
     },
     {
       id: 'ellis',
@@ -118,16 +163,40 @@
       place: 'Gray Harbor',
       color: '#f59e0b',
       names: {
-        hour: 'Hour · Keel fairing',
-        day: 'Day · Haul-out',
-        week: 'Week · Passage to the yard',
-        month: 'Month · Deck recaulk',
-        quarter: 'Quarter · Winter layup',
-        year: 'Year · Apprentice loft',
-        years: 'Years · Yard lease',
-        decade: 'Decade · Family ways',
-        century: 'Century · Harbor chart'
-      }
+        year: 'Apprentice loft',
+        years: 'Yard lease',
+        decade: 'Family ways',
+        century: 'Harbor chart'
+      },
+      hours: [
+        [1, 11, 8, 0, 120, 'Keel fairing, port garboard'],
+        [2, 6, 13, 30, 90, 'Steam box for the new rib'],
+        [3, 14, 7, 40, 60, 'Tide check before the haul'],
+        [4, 8, 15, 10, 100, 'Caulking the sheer strake'],
+        [5, 19, 9, 20, 80, 'Bronze fastener sort'],
+        [6, 23, 16, 45, 70, 'Boot stripe in the paint booth'],
+        [7, 9, 6, 15, 90, 'Dawn row out to the mooring'],
+        [8, 27, 11, 0, 110, 'Mast step dry-fit'],
+        [9, 15, 14, 20, 75, 'Buyer walk-through in the shed'],
+        [10, 4, 8, 50, 95, 'Spar varnish, second coat'],
+        [11, 18, 10, 10, 85, 'Winter cover cut'],
+        [12, 9, 15, 40, 60, 'Stove lit in the loft']
+      ],
+      spans: [
+        ['week', 1, 22, 4, 'Haul-out on the spring tide'],
+        ['week', 3, 9, 3, 'Passage down to the yard'],
+        ['week', 5, 4, 4, 'Deck recaulk, cabin top'],
+        ['week', 7, 14, 3, 'Guest berth fit-out'],
+        ['week', 9, 2, 4, 'Sea trial inside the harbor'],
+        ['week', 11, 3, 3, 'Lay the boat up on the ways'],
+        ['month', 2, 10, 20, 'Rib replacement, frames 6–9'],
+        ['month', 4, 20, 15, 'Deck recaulk after the thaw'],
+        ['month', 8, 2, 17, 'Spars and standing rig'],
+        ['month', 10, 12, 19, 'Winter layup of the hull'],
+        ['quarter', 1, 6, 60, 'Yard ice and the slow fairing'],
+        ['quarter', 5, 28, 72, 'Summer commission'],
+        ['quarter', 9, 20, 55, 'Fall haul and cover']
+      ]
     },
     {
       id: 'noor',
@@ -136,16 +205,40 @@
       place: 'Wadi Station',
       color: '#a78bfa',
       names: {
-        hour: 'Hour · Dawn transect',
-        day: 'Day · Plot census',
-        week: 'Week · Field course',
-        month: 'Month · Sensor service',
-        quarter: 'Quarter · Dry-season watch',
-        year: 'Year · Grant year',
-        years: 'Years · Station posting',
-        decade: 'Decade · Phenology series',
-        century: 'Century · Rain ledger'
-      }
+        year: 'Grant year',
+        years: 'Station posting',
+        decade: 'Phenology series',
+        century: 'Rain ledger'
+      },
+      hours: [
+        [1, 7, 5, 40, 80, 'Dawn transect, wash plot'],
+        [2, 19, 6, 10, 70, 'First bud count on the acacia'],
+        [3, 11, 9, 30, 100, 'Soil cores after the flood'],
+        [4, 2, 17, 50, 50, 'Dusk insect sweep'],
+        [5, 21, 4, 55, 90, 'Pre-dawn bird point'],
+        [6, 13, 11, 15, 85, 'Shade-house watering'],
+        [7, 28, 8, 40, 110, 'Camera-trap cards'],
+        [8, 8, 15, 5, 65, 'Field-course lecture'],
+        [9, 24, 6, 35, 95, 'Seed-set transect'],
+        [10, 11, 10, 25, 75, 'Rain-gauge calibration'],
+        [11, 26, 7, 20, 80, 'Cold-front plant check'],
+        [12, 14, 16, 0, 60, 'Archive the plot photos']
+      ],
+      spans: [
+        ['week', 1, 19, 4, 'Sensor swap on the ridge'],
+        ['week', 3, 23, 3, 'Flood-plot rescue'],
+        ['week', 5, 11, 4, 'Field course, first week'],
+        ['week', 7, 6, 3, 'Night-bloom watch'],
+        ['week', 9, 14, 4, 'Seed harvest on the plots'],
+        ['week', 11, 9, 3, 'Station shutters before wind'],
+        ['month', 2, 4, 18, 'Phenology camera service'],
+        ['month', 4, 16, 14, 'Dry-season species list'],
+        ['month', 8, 11, 21, 'Guest researchers in residence'],
+        ['month', 10, 20, 16, 'Grant figures from the plots'],
+        ['quarter', 1, 12, 64, 'Winter rain ledger'],
+        ['quarter', 5, 2, 80, 'Dry-season watch'],
+        ['quarter', 9, 1, 70, 'Seed and fruit season']
+      ]
     }
   ];
 

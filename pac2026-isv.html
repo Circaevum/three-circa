@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PAC 2026 · ISV</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000814; color: #e8eef7; font: 14px/1.4 system-ui, sans-serif; }
+    .app { display: flex; height: 100%; }
+    aside { width: 292px; flex: none; overflow: auto; padding: 14px 14px 28px; border-right: 1px solid #163044; box-sizing: border-box; }
+    h1 { font-size: 16px; font-weight: 650; margin: 0 0 4px; }
+    .meta, .hint, .status { color: #93a4b8; font-size: 12px; }
+    .hint { margin: 8px 0 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
+    button { background: #0c2233; color: #e8eef7; border: 1px solid #24506a; border-radius: 6px; padding: 5px 8px; cursor: pointer; font: inherit; }
+    button[aria-pressed="true"] { background: #14506a; border-color: #7dd3fc; }
+    label.layer { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
+    .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+    iframe { flex: 1; border: 0; background: #000814; min-width: 0; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <h1>PAC 2026 · ISV</h1>
+      <p class="meta">Safari Park / Lymack · Nairobi · EAT = UTC+3</p>
+      <p class="hint">File times are UTC. Noon in Nairobi is 09:00Z. Yellow workshop, green ISV track, blue papers.</p>
+      <div class="row" id="zooms"></div>
+      <div class="row" id="days"></div>
+      <div id="layers"></div>
+      <p class="status" id="status">Loading schedule…</p>
+    </aside>
+    <iframe id="gl" title="Circaevum" src="index.html?skipIntro=1"></iframe>
+  </div>
+  <script>
+    (function () {
+      var FILES = [
+        { file: 'circaevum/js/data/pac2026-tech-comm-workshop.csv', id: 'tech-comm', name: 'Tech Comm workshop', color: '#EAB308' },
+        { file: 'circaevum/js/data/pac2026-isv-track.csv', id: 'isv-track', name: 'ISV track', color: '#22C55E' },
+        { file: 'circaevum/js/data/pac2026-paper-sessions-2026-09-22.csv', id: 'papers', name: 'Paper sessions', color: '#3B82F6' },
+        { file: 'circaevum/js/data/pac2026-paper-sessions-2026-09-23.csv', id: 'papers', name: 'Paper sessions', color: '#3B82F6' },
+        { file: 'circaevum/js/data/pac2026-paper-sessions-2026-09-24.csv', id: 'papers', name: 'Paper sessions', color: '#3B82F6' }
+      ];
+      var DAYS = [
+        { label: 'Sun 20', focus: '2026-09-20T09:00:00Z' },
+        { label: 'Mon 21', focus: '2026-09-21T09:00:00Z' },
+        { label: 'Tue 22', focus: '2026-09-22T09:00:00Z' },
+        { label: 'Wed 23', focus: '2026-09-23T09:00:00Z' },
+        { label: 'Thu 24', focus: '2026-09-24T09:00:00Z' }
+      ];
+      var frame = document.getElementById('gl');
+      var layers = [];
+      var zoom = 8;
+      var focus = DAYS[2].focus;
+      var ready = false;
+      var zooms = [
+        { level: 9, label: 'Clock' },
+        { level: 8, label: 'Day' },
+        { level: 7, label: 'Week' }
+      ];
+
+      function parseCsv(text) {
+        var rows = [];
+        var row = [];
+        var cell = '';
+        var q = false;
+        for (var i = 0; i < text.length; i++) {
+          var c = text[i];
+          if (q) {
+            if (c === '"') {
+              if (text[i + 1] === '"') { cell += '"'; i++; }
+              else q = false;
+            } else cell += c;
+          } else if (c === '"') q = true;
+          else if (c === ',') { row.push(cell); cell = ''; }
+          else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+          else if (c !== '\r') cell += c;
+        }
+        if (cell.length || row.length) { row.push(cell); rows.push(row); }
+        if (!rows.length) return [];
+        var head = rows[0];
+        var out = [];
+        for (var r = 1; r < rows.length; r++) {
+          if (rows[r].length === 1 && rows[r][0] === '') continue;
+          var obj = {};
+          for (var h = 0; h < head.length; h++) obj[head[h]] = rows[r][h] || '';
+          if (obj.uid && obj.start) out.push(obj);
+        }
+        return out;
+      }
+
+      function toEvent(row) {
+        return {
+          uid: row.uid,
+          summary: row.title,
+          description: row.description || '',
+          location: row.location || '',
+          color: row.color || '#22C55E',
+          category: row.categories || 'isv',
+          categories: [row.categories || 'isv'],
+          dtstart: { dateTime: row.start },
+          dtend: { dateTime: row.end || row.start }
+        };
+      }
+
+      function gl() {
+        try { return frame.contentWindow.circaevumGL; } catch (e) { return null; }
+      }
+
+      function fit() {
+        var api = gl();
+        if (!api) return;
+        api.setZoomLevel(zoom);
+        api.navigateToTime(focus);
+      }
+
+      function syncLayers() {
+        var api = gl();
+        if (!api) return;
+        layers.forEach(function (layer) {
+          if (layer.on) {
+            api.ingestEvents(layer.id, layer.events, { fullSet: true, visible: true });
+          } else if (typeof api.updateEvents === 'function') {
+            api.updateEvents(layer.id, []);
+          }
+        });
+      }
+
+      function boot() {
+        if (ready || !layers.length || !gl()) return;
+        ready = true;
+        fit();
+        syncLayers();
+        var n = layers.reduce(function (sum, layer) { return sum + layer.events.length; }, 0);
+        document.getElementById('status').textContent = n + ' arcs';
+      }
+
+      function paintZoom() {
+        var box = document.getElementById('zooms');
+        box.textContent = '';
+        zooms.forEach(function (z) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = z.label;
+          b.setAttribute('aria-pressed', String(zoom === z.level));
+          b.addEventListener('click', function () {
+            zoom = z.level;
+            paintZoom();
+            fit();
+          });
+          box.appendChild(b);
+        });
+      }
+
+      function paint() {
+        paintZoom();
+        var days = document.getElementById('days');
+        DAYS.forEach(function (day) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = day.label;
+          b.addEventListener('click', function () {
+            focus = day.focus;
+            fit();
+          });
+          days.appendChild(b);
+        });
+        var box = document.getElementById('layers');
+        layers.forEach(function (layer) {
+          var label = document.createElement('label');
+          label.className = 'layer';
+          var input = document.createElement('input');
+          input.type = 'checkbox';
+          input.checked = true;
+          input.addEventListener('change', function () {
+            layer.on = input.checked;
+            if (ready) syncLayers();
+          });
+          var sw = document.createElement('span');
+          sw.className = 'swatch';
+          sw.style.background = layer.color;
+          var name = document.createElement('span');
+          name.textContent = layer.name + ' · ' + layer.events.length;
+          label.appendChild(input);
+          label.appendChild(sw);
+          label.appendChild(name);
+          box.appendChild(label);
+        });
+        boot();
+      }
+
+      window.addEventListener('message', function (event) {
+        if (!event.data || event.data.type !== 'CIRCAEVUM_READY') return;
+        boot();
+      });
+
+      Promise.all(FILES.map(function (spec) {
+        return fetch(spec.file).then(function (res) {
+          if (!res.ok) throw new Error(spec.file + ' ' + res.status);
+          return res.text();
+        }).then(function (text) {
+          return { spec: spec, rows: parseCsv(text) };
+        });
+      })).then(function (parts) {
+        var byId = {};
+        parts.forEach(function (part) {
+          var id = part.spec.id;
+          if (!byId[id]) {
+            byId[id] = { id: id, name: part.spec.name, color: part.spec.color, on: true, events: [] };
+          }
+          part.rows.forEach(function (row) { byId[id].events.push(toEvent(row)); });
+        });
+        layers = ['tech-comm', 'isv-track', 'papers'].map(function (id) { return byId[id]; }).filter(Boolean);
+        paint();
+      }).catch(function (err) {
+        document.getElementById('status').textContent = 'Schedule failed to load. ' + err.message;
+      });
+    })();
+  </script>
+</body>
+</html>
