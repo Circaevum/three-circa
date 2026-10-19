@@ -23,12 +23,12 @@
     if (d > 365) {
       rInner = W * 0.04;
       rOuter = rQuarterInner;
-    } else if (d > 30) {
-      const t = Math.min(1, (d - 30) / (365 - 30));
+    } else if (d > 31) {
+      const t = Math.min(1, (d - 31) / (365 - 31));
       rInner = rQuarterOuter * 0.88;
       rOuter = rQuarterOuter + (rMonthOuter - rQuarterOuter) * (0.35 + 0.65 * t);
     } else if (d > 7) {
-      const t = Math.min(1, (d - 7) / (30 - 7));
+      const t = Math.min(1, (d - 7) / (31 - 7));
       rInner = rMonthInner;
       rOuter = rMonthInner + (rMonthOuter - rMonthInner) * Math.max(0.6, t);
     } else if (d > 1) {

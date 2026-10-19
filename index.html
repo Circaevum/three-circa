@@ -64,6 +64,12 @@
             <button type="button" id="calendars-left-close" class="account-panel-close-btn" aria-label="Close Layers">×</button>
         </div>
         <div class="left-panel-body">
+            <div id="sample-profiles" class="sample-profiles">
+                <p class="sample-profiles-kicker">Hypothetical lives</p>
+                <label class="sr-only" for="sample-profile-select">Sample profile</label>
+                <select id="sample-profile-select" class="sample-profile-select"></select>
+                <button type="button" id="sample-profile-load" class="sample-profile-load">Show on the helix</button>
+            </div>
             <div id="calendar-layers-list" class="calendar-layers-list"></div>
             <div id="atc-legend-host" class="atc-legend-host" aria-label="Shell and band toggles"></div>
         </div>
@@ -673,11 +679,11 @@
     <script src="circaevum/js/renderers/planet-renderer.js"></script>
     <script src="circaevum/js/renderers/event-label-renderer.js"></script>
     <script src="circaevum/js/events/lod.js?v=density-budget-v1"></script>
-    <script src="circaevum/js/events/bands.js?v=week-no-day-spill-v1"></script>
+    <script src="circaevum/js/events/bands.js?v=submonth-out-of-quarter-v1"></script>
     <script src="circaevum/js/events/geometry.js?v=1"></script>
     <script src="circaevum/js/events/labels.js?v=1"></script>
-    <script src="circaevum/js/renderers/event-renderer.js?v=shift-quarter-year-v1"></script>
-    <script src="circaevum/js/renderers/circadian-renderer.js?v=circ-moon-outside-day-v2"></script>
+    <script src="circaevum/js/renderers/event-renderer.js?v=flatten-day-disk-y-v1"></script>
+    <script src="circaevum/js/renderers/circadian-renderer.js?v=flatten-day-disk-y-v1"></script>
     <script src="circaevum/js/atc/atc-band.js"></script>
     <script src="circaevum/js/renderers/garmin-renderer.js?v=hr-ribbon-v1"></script>
     
@@ -702,7 +708,7 @@
     <script src="circaevum/js/main.js?v=outline-shift-release-v1"></script>
     
     <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
-    <script src="circaevum/js/api/circaevum-gl.js?v=nest-fullset-v1"></script>
+    <script src="circaevum/js/api/circaevum-gl.js?v=super-year-any-year-v1"></script>
     
     <!-- Circaevum GL API helpers: use from console or scripts -->
     <script src="circaevum/js/ui/gl-api-bridge.js"></script>
@@ -710,6 +716,7 @@
     <script src="circaevum/js/ui/events-list.js?v=week-stretch-day-v1"></script>
     <script src="circaevum/js/ui/event-detail-sheet.js"></script>
     <script src="circaevum/js/ui/panels.js?v=no-edge-demo-v1"></script>
+    <script src="circaevum/js/data/sample-profiles.js?v=sample-lives-v3"></script>
     <!-- Share state: get/apply for "Open full app" (Option B – same-tab navigate with state in URL) -->
     <script src="circaevum/js/ui/share-state.js"></script>
     <!-- Intro tour config (layers + timing defaults) -->

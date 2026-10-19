@@ -135,10 +135,19 @@
       gl.updateEvents(data.layerId, []);
       if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
       if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
+    } else if (data.type === 'CIRCAEVUM_HOST_CHROME') {
+      var hostLeft = typeof data.left === 'number' && data.left > 0 ? data.left : 0;
+      var hostRight = typeof data.right === 'number' && data.right > 0 ? data.right : 0;
+      document.documentElement.style.setProperty('--host-chrome-left', hostLeft + 'px');
+      document.documentElement.style.setProperty('--host-chrome-right', hostRight + 'px');
     } else if (data.type === 'CIRCAEVUM_OPEN_EVENT_LIST' && typeof window.openEventListPanel === 'function') {
       window.openEventListPanel();
     } else if (data.type === 'CIRCAEVUM_HIGHLIGHT_EVENT' && typeof gl.setEventHighlight === 'function') {
-      gl.setEventHighlight(data.layerId || USER_EVENTS_LAYER, data.uid != null ? data.uid : null);
+      var highlightUid = data.uid != null ? data.uid : null;
+      gl.setEventHighlight(data.layerId || USER_EVENTS_LAYER, highlightUid);
+      if (highlightUid == null && typeof window.closeMobileEventDetailSheet === 'function') {
+        window.closeMobileEventDetailSheet();
+      }
     } else if (data.type === 'CIRCAEVUM_DRAW_ALL_EVENTS' && typeof window.refreshEventsList === 'function') {
       window.refreshEventsList(true);
     } else if (data.type === 'CIRCAEVUM_REFRESH_EVENT_LAYERS') {

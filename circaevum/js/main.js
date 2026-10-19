@@ -2368,6 +2368,53 @@ function getEventDisplayTimeBoundsMs(zoomLevel, refDate) {
 }
 
 /**
+ * Year span the Earth helix actually draws at Century (1) / Decade (2).
+ * Matches worldline-renderer flattenOrbitSpanMul (×10 while time is flat).
+ * @returns {{ t0: number, t1: number, ref: Date, unit: string }}
+ */
+function getCoarseHelixYearBoundsMs(zoomLevel) {
+    const z = Math.floor(typeof zoomLevel === 'number' && !isNaN(zoomLevel) ? zoomLevel : currentZoom);
+    const y = typeof currentYear === 'number' && !isNaN(currentYear)
+        ? currentYear
+        : new Date().getFullYear();
+    let mul = 1;
+    if (typeof isFlattenTimeStraightenActive === 'function' && isFlattenTimeStraightenActive() && z !== 7 && z !== 8) {
+        mul = 10;
+    }
+    let y0;
+    let y1;
+    let unit;
+    if (z <= 1) {
+        const centuryStart = Math.floor(y / 100) * 100;
+        const span = 100 * mul;
+        const mid = mul > 1 ? y : (centuryStart + 50);
+        y0 = Math.round(mid - span / 2);
+        y1 = Math.round(mid + span / 2);
+        unit = 'century';
+    } else {
+        const decadeStart = typeof getDecadeStartYear === 'function'
+            ? getDecadeStartYear(y)
+            : Math.floor(y / 10) * 10;
+        const span = 10 * mul;
+        const mid = mul > 1 ? y : (decadeStart + 5);
+        y0 = Math.round(mid - span / 2);
+        y1 = Math.round(mid + span / 2);
+        if (typeof clampYearSpanToBirth === 'function') {
+            const c = clampYearSpanToBirth(y0, y1);
+            y0 = c.y0;
+            y1 = c.y1;
+        }
+        unit = 'decade';
+    }
+    return {
+        t0: new Date(y0, 0, 1, 0, 0, 0, 0).getTime(),
+        t1: new Date(y1, 0, 1, 0, 0, 0, 0).getTime() - 1,
+        ref: new Date(y, 0, 1),
+        unit: unit
+    };
+}
+
+/**
  * Density / visibility parent of the current zoom unit (legacy wider nest).
  * Prefer {@link getContextSphereTimeBoundsMs} for the event-horizon shell.
  *
@@ -2425,14 +2472,8 @@ function getParentUnitTimeBoundsMs(zoomLevel, refDate) {
             unit: 'decade'
         };
     }
-    if (z === 2) {
-        const y0 = ref.getFullYear() - (ref.getFullYear() % 100);
-        return {
-            t0: new Date(y0, 0, 1, 0, 0, 0, 0).getTime(),
-            t1: new Date(y0 + 100, 0, 1, 0, 0, 0, 0).getTime() - 1,
-            ref,
-            unit: 'century'
-        };
+    if (z === 2 || z === 1) {
+        return getCoarseHelixYearBoundsMs(z);
     }
     const half = typeof getEventListHalfSpanMs === 'function' ? getEventListHalfSpanMs(z, ref) : 50 * 365 * dayMs;
     return { t0: ref.getTime() - half, t1: ref.getTime() + half, ref, unit: 'span' };
@@ -7664,6 +7705,7 @@ if (typeof window !== 'undefined') {
     window.getUserBirthYear = getUserBirthYear;
     window.clampYearSpanToBirth = clampYearSpanToBirth;
     window.getDecadeStartYear = getDecadeStartYear;
+    window.getCoarseHelixYearBoundsMs = getCoarseHelixYearBoundsMs;
     window.applyUserBirthdayView = applyUserBirthdayView;
 }
 
@@ -9046,9 +9088,9 @@ function createBatchedTextLabels(placements) {
     if (geo.attributes.uvOffset) geo.attributes.uvOffset.needsUpdate = true;
 
     mesh.userData.syncFlatten = function (amount) {
-        const yScaleLocal = typeof window.AppFlatten !== 'undefined' && window.AppFlatten.yScaleFor
-            ? window.AppFlatten.yScaleFor(amount)
-            : Math.max(0.05, 1 - (amount || 0) * 0.95);
+        const yScaleLocal = typeof window.AppFlatten !== 'undefined' && window.AppFlatten.labelYScaleFor
+            ? window.AppFlatten.labelYScaleFor(amount)
+            : Math.max(0, 1 - (amount || 0));
         const pivotY = typeof window.AppFlatten !== 'undefined' && window.AppFlatten.focusY
             ? window.AppFlatten.focusY()
             : 0;
@@ -9408,14 +9450,12 @@ function initControls() {
             window.setCircaevumSelectedLayerId(layerId);
         }
         const glPick = typeof window !== 'undefined' ? (window.circaevumGL || (window.getGL && window.getGL())) : null;
-        const useMobileSheet = typeof window.isMobileEventSheetViewport === 'function' &&
-            window.isMobileEventSheetViewport();
         if (glPick && typeof glPick.setEventHighlight === 'function' && pickUidStr && layerId) {
             const cur = typeof glPick.getEventFocus === 'function' ? glPick.getEventFocus() : null;
             if (cur && cur.uid && cur.layerId === layerId && String(cur.uid) === pickUidStr) {
                 glPick.setEventHighlight(layerId, null);
                 if (typeof window.updateEventFocusClearButton === 'function') window.updateEventFocusClearButton();
-                if (useMobileSheet && typeof window.closeMobileEventDetailSheet === 'function') {
+                if (typeof window.closeMobileEventDetailSheet === 'function') {
                     window.closeMobileEventDetailSheet();
                 }
                 return true;
@@ -9427,40 +9467,17 @@ function initControls() {
         } else if (typeof window.navigateToEvent === 'function') {
             window.navigateToEvent(start, end);
         }
-        if (useMobileSheet && typeof window.showMobileEventDetailSheet === 'function') {
+        if (typeof window.showMobileEventDetailSheet === 'function') {
             window.showMobileEventDetailSheet({
                 vevent: ve,
                 layerId: layerId,
                 start: start,
                 end: end
             });
-        } else {
-            if (window.self !== window.top && window.parent && window.parent.postMessage) {
-                const buildPayload = typeof window.buildCircaevumEditPayload === 'function'
-                    ? window.buildCircaevumEditPayload
-                    : null;
-                if (buildPayload) {
-                    window.parent.postMessage({
-                        type: 'CIRCAEVUM_EDIT_EVENT',
-                        event: buildPayload(ve, layerId, start, end)
-                    }, '*');
-                }
-            }
-            if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
-            if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
-            const scrollToRow = function () {
-                if (typeof window.scrollEventListToFocusedEvent !== 'function') return;
-                if (window.scrollEventListToFocusedEvent()) return;
-                if (typeof window.refreshEventsList === 'function') {
-                    window.refreshEventsList(true);
-                    requestAnimationFrame(function () {
-                        if (typeof window.scrollEventListToFocusedEvent === 'function') {
-                            window.scrollEventListToFocusedEvent();
-                        }
-                    });
-                }
-            };
-            requestAnimationFrame(scrollToRow);
+        }
+        if (document.body.classList.contains('event-list-panel-open') &&
+            typeof window.refreshEventsList === 'function') {
+            window.refreshEventsList(false);
         }
         return true;
     }
@@ -9475,67 +9492,88 @@ function initControls() {
         if (!rect.width || !rect.height) return false;
         pickPointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
         pickPointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+        syncEventPickThresholds();
         pickRaycaster.setFromCamera(pickPointer, camera);
         const hits = pickRaycaster.intersectObjects(sceneContentGroup.children, true);
-        const tsHit = hits.find((hit) => {
-            let cur = hit.object;
-            while (cur) {
-                if (cur.userData && cur.userData.type === 'TimeseriesObject' && cur.userData.vevent) return true;
-                cur = cur.parent;
-            }
-            return false;
-        });
-        if (tsHit) {
-            let target = tsHit.object;
-            while (target && !(target.userData && target.userData.type === 'TimeseriesObject' && target.userData.vevent)) {
-                target = target.parent;
-            }
-            if (target && target.userData && target.userData.vevent) {
-                return finishEventPickFromVevent(
-                    target.userData.vevent,
-                    target.userData.layerId,
-                    {
-                        skipShortEventPickCheck: true,
-                        preferSleepStartNav: target.userData.timeseriesMetric === 'sleepStage'
-                    }
-                );
-            }
-        }
-        const eventHit = hits.find((hit) => {
-            let cur = hit.object;
-            // Wide transparent label/text quads must never steal a click from the
-            // event the user is actually pointing at — skip them so the colored
-            // ribbon/marker geometry behind resolves instead.
-            if (cur && cur.userData && typeof cur.userData.type === 'string' && /Label$/.test(cur.userData.type)) {
-                return false;
-            }
-            while (cur) {
-                if (cur.userData && cur.userData.shortEventPickable === false) return false;
-                if (cur.userData && cur.userData.vevent &&
-                    (cur.userData.type === 'EventObject' || cur.userData.type === 'EventLine')) return true;
-                cur = cur.parent;
-            }
-            return false;
-        });
-        if (!eventHit) return false;
-        let target = eventHit.object;
-        while (target && !(target.userData && target.userData.vevent &&
-            (target.userData.type === 'EventObject' || target.userData.type === 'EventLine'))) {
-            target = target.parent;
-        }
-        if (!target || !target.userData || !target.userData.vevent) return false;
-        if (target.userData.shortEventPickable === false) return false;
-        let ve = target.userData.vevent;
-        if (!ve.uid && !ve.id && target.userData.type === 'EventLine' && target.userData.start) {
-            ve = Object.assign({}, ve, {
-                uid: ve.uid || ve.id || `line-${target.userData.index != null ? target.userData.index : 0}`,
-                dtstart: ve.dtstart || { dateTime: target.userData.start.toISOString() },
-                dtend: ve.dtend || (target.userData.end
-                    ? { dateTime: target.userData.end.toISOString() }
-                    : null)
+        const byKey = new Map();
+        for (let hi = 0; hi < hits.length; hi++) {
+            const hit = hits[hi];
+            const picked = eventPickTargetFromObject(hit.object);
+            if (!picked || !picked.userData || !picked.userData.vevent) continue;
+            const ud = picked.userData;
+            const uid = ud.vevent.uid != null ? ud.vevent.uid : ud.vevent.id;
+            const key = String(ud.layerId || '') + '|' + String(uid != null ? uid : picked.uuid) + '|' + String(ud.type || '');
+            const prev = byKey.get(key);
+            if (prev && prev.distance <= hit.distance) continue;
+            byKey.set(key, {
+                target: picked,
+                distance: hit.distance,
+                radius: eventPickRadius(hit.object)
             });
         }
-        return finishEventPickFromVevent(ve, target.userData.layerId);
+        const cands = Array.from(byKey.values());
+        if (!cands.length) return false;
+        cands.sort(function (a, b) { return a.distance - b.distance; });
+        const nearest = cands[0].distance;
+        const band = cands.filter(function (c) { return c.distance <= nearest * 1.04 + 1.5; });
+        band.sort(function (a, b) { return a.radius - b.radius || a.distance - b.distance; });
+        const target = band[0].target;
+        const ud = target.userData;
+        if (ud.type === 'TimeseriesObject') {
+            return finishEventPickFromVevent(ud.vevent, ud.layerId, {
+                skipShortEventPickCheck: true,
+                preferSleepStartNav: ud.timeseriesMetric === 'sleepStage'
+            });
+        }
+        let ve = ud.vevent;
+        if (!ve.uid && !ve.id && ud.type === 'EventLine' && ud.start) {
+            ve = Object.assign({}, ve, {
+                uid: ve.uid || ve.id || `line-${ud.index != null ? ud.index : 0}`,
+                dtstart: ve.dtstart || { dateTime: ud.start.toISOString() },
+                dtend: ve.dtend || (ud.end ? { dateTime: ud.end.toISOString() } : null)
+            });
+        }
+        return finishEventPickFromVevent(ve, ud.layerId);
+    }
+
+    function syncEventPickThresholds() {
+        if (!camera || !renderer || !pickRaycaster.params) return;
+        const dist = (typeof currentCameraDistance === 'number' && currentCameraDistance > 0)
+            ? currentCameraDistance
+            : Math.max(1, camera.position.length());
+        const fov = ((camera.fov || 50) * Math.PI) / 180;
+        const viewH = renderer.domElement.clientHeight || 800;
+        const worldPerPx = (2 * Math.tan(fov / 2) * dist) / Math.max(1, viewH);
+        const t = Math.max(0.35, worldPerPx * 18);
+        pickRaycaster.params.Line = { threshold: t };
+        pickRaycaster.params.LineSegments = { threshold: t };
+        pickRaycaster.params.Points = { threshold: t * 0.8 };
+    }
+
+    function eventPickTargetFromObject(startObj) {
+        if (!startObj) return null;
+        const startType = startObj.userData && startObj.userData.type;
+        if (typeof startType === 'string' && /Label$/.test(startType)) return null;
+        let cur = startObj;
+        while (cur) {
+            const node = cur.userData;
+            if (node && node.vevent &&
+                (node.type === 'EventObject' || node.type === 'EventLine' || node.type === 'TimeseriesObject')) {
+                if (node.shortEventPickable === false) return null;
+                return cur;
+            }
+            cur = cur.parent;
+        }
+        return null;
+    }
+
+    function eventPickRadius(obj) {
+        const geo = obj && obj.geometry;
+        if (!geo) return 1e6;
+        if (!geo.boundingSphere && typeof geo.computeBoundingSphere === 'function') {
+            geo.computeBoundingSphere();
+        }
+        return geo.boundingSphere ? geo.boundingSphere.radius : 1e6;
     }
 
     // Mouse events for desktop
@@ -9600,7 +9638,7 @@ function initControls() {
         if (dist <= l1MaxDrag && tryPickLagrangeL1DayNavigate(e.clientX, e.clientY)) {
             return;
         }
-        if (dist > 6) return;
+        if (dist > 16) return;
         if (!trySelectEventObjectAtClientPoint(e.clientX, e.clientY, { skipLagrangeL1: true })) {
             if (typeof window.clearEventFocus === 'function') window.clearEventFocus();
         }
@@ -9710,7 +9748,7 @@ function initControls() {
         if (e.touches.length === 1) {
             const dx = e.touches[0].clientX - touchStartX;
             const dy = e.touches[0].clientY - touchStartY;
-            if (Math.hypot(dx, dy) > 10) touchPickMoved = true;
+            if (Math.hypot(dx, dy) > 18) touchPickMoved = true;
         }
         e.preventDefault();
     }, { passive: false });
@@ -9721,7 +9759,7 @@ function initControls() {
             const dt = Date.now() - touchStartTime;
             const dx = t.clientX - touchStartX;
             const dy = t.clientY - touchStartY;
-            if (dt < 700 && Math.hypot(dx, dy) < 14) {
+            if (dt < 700 && Math.hypot(dx, dy) < 22) {
                 if (!trySelectEventObjectAtClientPoint(t.clientX, t.clientY)) {
                     if (typeof window.clearEventFocus === 'function') window.clearEventFocus();
                 }
@@ -12645,6 +12683,13 @@ function eventLayersSelectedTimeframeKey(zoomLevel, sel) {
     const zl = zoomLevel != null ? zoomLevel : currentZoom;
     const d = sel instanceof Date && !isNaN(sel.getTime()) ? sel : new Date();
     const family = eventLayersMeshFamily(zl);
+    if (family === 'coarse') {
+        try {
+            const b = getCoarseHelixYearBoundsMs(zl);
+            if (b && isFinite(b.t0) && isFinite(b.t1)) return 'coarse:' + b.t0 + ':' + b.t1;
+        } catch (e) { /* fall through */ }
+        return 'coarse:' + (typeof currentYear === 'number' ? currentYear : d.getFullYear());
+    }
     if (family === 'onion') {
         if (typeof window !== 'undefined' && typeof window.getSelectedNestWindows === 'function') {
             try {

@@ -41,8 +41,9 @@ class VEvent {
     this.layerId = data.layerId || null;
     // Render-kind descriptor. Lets one VEVENT carry a non-default visual (e.g. a timeseries arc)
     // while staying a normal, layer-toggleable calendar object. See TimeseriesEvent below.
-    //   { kind: 'timeseries', metric: 'hr'|'sleepStage', arc: false,
-    //     summary: [{ tOff, v }], dense: { collection, key, id } }
+    //   { kind: 'timeseries', metric: 'hr'|'sleepStage'|'scalar', arc: false,
+    //     summary: [{ tOff, v }], dense: { collection, key, id },
+    //     vMin, vMax, unit, lane }
     this.render = data.render || null;
     this.circaevumSource = data.circaevumSource || null;
     this.circaevumEdited = data.circaevumEdited === true;
@@ -422,7 +423,11 @@ class TimeseriesEvent extends VEvent {
       metric: r.metric || 'hr',
       arc: r.arc === true, // default false: draw the timeseries, not the default arc/ribbon
       summary: Array.isArray(r.summary) ? r.summary : [],
-      dense: r.dense || null
+      dense: r.dense || null,
+      vMin: typeof r.vMin === 'number' && isFinite(r.vMin) ? r.vMin : null,
+      vMax: typeof r.vMax === 'number' && isFinite(r.vMax) ? r.vMax : null,
+      unit: r.unit || null,
+      lane: typeof r.lane === 'number' && isFinite(r.lane) ? r.lane : null
     };
   }
 

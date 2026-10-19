@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reef Futures 2026 · Circadian</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000814; color: #e8eef7; font: 14px/1.4 system-ui, sans-serif; }
+    .app { display: flex; height: 100%; }
+    aside { width: 292px; flex: none; overflow: auto; padding: 14px 14px 28px; border-right: 1px solid #163044; box-sizing: border-box; }
+    h1 { font-size: 16px; font-weight: 650; margin: 0 0 4px; }
+    .meta, .hint, .status { color: #93a4b8; font-size: 12px; }
+    .hint { margin: 8px 0 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
+    button { background: #0c2233; color: #e8eef7; border: 1px solid #24506a; border-radius: 6px; padding: 5px 8px; cursor: pointer; font: inherit; }
+    button[aria-pressed="true"] { background: #14506a; border-color: #7dd3fc; }
+    label.layer { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
+    .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+    .notes { margin: 14px 0 0; padding: 0; list-style: none; }
+    .notes li { margin: 0 0 8px; color: #b7c4d4; font-size: 12px; }
+    iframe { flex: 1; border: 0; background: #000814; min-width: 0; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <h1>Reef Futures 2026</h1>
+      <p class="meta">Iberostar Playa Paraíso · America/Cancun</p>
+      <p class="hint">Clock zoom. Hour on the ring is venue time. Parallel arcs are rooms at the same hour. Workshops are optional and drawn with the week.</p>
+      <div class="row" id="zooms"></div>
+      <div class="row" id="days"></div>
+      <div id="layers"></div>
+      <p class="status" id="status">Loading schedule…</p>
+      <ul class="notes" id="notes"></ul>
+    </aside>
+    <iframe id="gl" title="Circaevum circadian view" src="index.html?skipIntro=1"></iframe>
+  </div>
+  <script>
+    (function () {
+      var frame = document.getElementById('gl');
+      var pack = null;
+      var zoom = 9;
+      var focus = null;
+      var ready = false;
+
+      var zooms = [
+        { level: 9, label: 'Clock' },
+        { level: 8, label: 'Day' }
+      ];
+
+      function gl() {
+        try { return frame.contentWindow.circaevumGL; } catch (e) { return null; }
+      }
+
+      function fit() {
+        var api = gl();
+        if (!api || !focus) return;
+        api.setZoomLevel(zoom);
+        api.navigateToTime(focus);
+      }
+
+      function syncLayers() {
+        var api = gl();
+        if (!api || !pack) return;
+        pack.layers.forEach(function (layer) {
+          if (layer.on) {
+            api.ingestEvents(layer.id, layer.events, {
+              fullSet: true,
+              visible: true,
+              circadianShortEventScope: 'day'
+            });
+          } else if (typeof api.updateEvents === 'function') {
+            api.updateEvents(layer.id, []);
+          }
+        });
+      }
+
+      function boot() {
+        if (ready || !pack || !gl()) return;
+        ready = true;
+        fit();
+        syncLayers();
+        document.getElementById('status').textContent = pack.layers.reduce(function (n, layer) {
+          return n + layer.events.length;
+        }, 0) + ' arcs · included program plus optional workshops';
+      }
+
+      function paintZoom() {
+        var box = document.getElementById('zooms');
+        box.textContent = '';
+        zooms.forEach(function (z) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = z.label;
+          b.setAttribute('aria-pressed', String(zoom === z.level));
+          b.addEventListener('click', function () {
+            zoom = z.level;
+            paintZoom();
+            fit();
+          });
+          box.appendChild(b);
+        });
+      }
+
+      function paint() {
+        focus = pack.focus;
+        zoom = pack.zoom;
+        paintZoom();
+        var days = document.getElementById('days');
+        pack.days.forEach(function (day) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = day.label;
+          b.addEventListener('click', function () {
+            focus = day.focus;
+            fit();
+          });
+          days.appendChild(b);
+        });
+        var layers = document.getElementById('layers');
+        pack.layers.forEach(function (layer) {
+          var label = document.createElement('label');
+          label.className = 'layer';
+          var box = document.createElement('input');
+          box.type = 'checkbox';
+          box.checked = !!layer.on;
+          box.addEventListener('change', function () {
+            layer.on = box.checked;
+            if (ready) syncLayers();
+          });
+          var sw = document.createElement('span');
+          sw.className = 'swatch';
+          sw.style.background = layer.color;
+          var name = document.createElement('span');
+          name.textContent = layer.name + ' · ' + layer.events.length;
+          label.appendChild(box);
+          label.appendChild(sw);
+          label.appendChild(name);
+          layers.appendChild(label);
+        });
+        var notes = document.getElementById('notes');
+        pack.notes.forEach(function (text) {
+          var li = document.createElement('li');
+          li.textContent = text;
+          notes.appendChild(li);
+        });
+        boot();
+      }
+
+      window.addEventListener('message', function (event) {
+        if (!event.data || event.data.type !== 'CIRCAEVUM_READY') return;
+        boot();
+      });
+
+      fetch('circaevum/js/data/reef-futures-2026.json')
+        .then(function (res) { if (!res.ok) throw new Error(String(res.status)); return res.json(); })
+        .then(function (data) { pack = data; paint(); })
+        .catch(function () {
+          document.getElementById('status').textContent = 'Schedule file failed to load. Open this page from the GL server (port 8080).';
+        });
+    })();
+  </script>
+</body>
+</html>

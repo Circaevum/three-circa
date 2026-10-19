@@ -650,6 +650,21 @@
   }
 
   /**
+   * Day disks live in sceneContentGroup (not the flatten group). Earth uses this same map,
+   * so a selected day stays on the globe when flatten is on.
+   */
+  function sceneYForLogicalHeight(logicalY) {
+    if (typeof logicalY !== 'number' || !isFinite(logicalY)) return logicalY;
+    if (typeof global.getFlattenedSceneY === 'function') {
+      try {
+        const y = global.getFlattenedSceneY(logicalY);
+        if (typeof y === 'number' && isFinite(y)) return y;
+      } catch (e) { /* keep logical */ }
+    }
+    return logicalY;
+  }
+
+  /**
    * One point on a flat day ring in the vertical stack anchored at selected Earth (not helix Y per day).
    */
   function diskPointOnSelectedTimeStack(date, r, currentHeight, calculateDateHeightFn) {
@@ -662,7 +677,7 @@
     const selMidnight = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
     const dayMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
     const k = Math.round((dayMidnight.getTime() - selMidnight.getTime()) / MS_PER_DAY);
-    const yPos = timelineRef + k * getCircadianDayStackSpacing();
+    const yPos = sceneYForLogicalHeight(timelineRef + k * getCircadianDayStackSpacing());
     let earthX = ctx.earthX;
     let earthZ = ctx.earthZ;
     if (!Number.isFinite(earthX) || !Number.isFinite(earthZ)) {
@@ -878,7 +893,7 @@
       const ring = group.children[childIdx];
       childIdx++;
       if (!ring) continue;
-      ring.position.set(earthX, timelineRef + k * daySpacing, earthZ);
+      ring.position.set(earthX, sceneYForLogicalHeight(timelineRef + k * daySpacing), earthZ);
       // Geometry is built in local XZ (ecliptic); do not apply torus-era rotation.x = π/2.
       ring.rotation.set(0, 0, 0);
       let opRing = stOp.helixOpacity != null ? stOp.helixOpacity * 0.92 : 0.72;

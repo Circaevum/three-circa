@@ -1,0 +1,2142 @@
+{
+  "title": "Reef Futures 2026",
+  "place": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+  "tz": "America/Cancun",
+  "offset": "-05:00",
+  "zoom": 9,
+  "focus": "2026-12-06T12:00:00-05:00",
+  "sources": [
+    "At-a-glance grid, reeffutures.com/program (generalization, image dated 2026-09-23).",
+    "Concurrent oral sessions, RF26 PDF linked from that page.",
+    "Workshops, reeffutures.com/workshops-2026. Public list had no per-seat sold-out flag."
+  ],
+  "days": [
+    {
+      "id": "sun",
+      "label": "Sun 6",
+      "focus": "2026-12-06T12:00:00-05:00"
+    },
+    {
+      "id": "mon",
+      "label": "Mon 7",
+      "focus": "2026-12-07T12:00:00-05:00"
+    },
+    {
+      "id": "tue",
+      "label": "Tue 8",
+      "focus": "2026-12-08T12:00:00-05:00"
+    },
+    {
+      "id": "wed",
+      "label": "Wed 9",
+      "focus": "2026-12-09T12:00:00-05:00"
+    },
+    {
+      "id": "thu",
+      "label": "Thu 10",
+      "focus": "2026-12-10T12:00:00-05:00"
+    },
+    {
+      "id": "fri",
+      "label": "Fri 11",
+      "focus": "2026-12-11T12:00:00-05:00"
+    }
+  ],
+  "notes": [
+    "Hotel breakfast each morning. Hour not on the grid.",
+    "Sunday opening reception. Evening. Hour not on the grid.",
+    "Wednesday Reefs to Reels film festival. Evening. Hour not on the grid.",
+    "Friday closing reception. Evening. Hour not on the grid.",
+    "Karaoke party is included in registration. Hour not published.",
+    "Field trips are a separate signup. No public schedule.",
+    "Wednesday, Thursday, and Friday afternoons put talks and workshops on the same hours."
+  ],
+  "layers": [
+    {
+      "id": "rf26-plenary",
+      "name": "Plenary",
+      "color": "#E8B84A",
+      "optional": false,
+      "on": true,
+      "events": [
+        {
+          "uid": "rf26-17719c66334f",
+          "summary": "Plenary",
+          "description": "Included. At-a-glance program. Speaker list not published on the grid.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#E8B84A",
+          "category": "plenary",
+          "categories": [
+            "plenary"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-07T09:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-07T12:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-be2694938b97",
+          "summary": "Plenary",
+          "description": "Included. At-a-glance program. Speaker list not published on the grid.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#E8B84A",
+          "category": "plenary",
+          "categories": [
+            "plenary"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-07T13:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-07T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-1aa4a44b8b76",
+          "summary": "Plenary",
+          "description": "Included. At-a-glance program. Speaker list not published on the grid.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#E8B84A",
+          "category": "plenary",
+          "categories": [
+            "plenary"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-07T15:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-07T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-1024442631ce",
+          "summary": "Plenary",
+          "description": "Included. At-a-glance program. Speaker list not published on the grid.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#E8B84A",
+          "category": "plenary",
+          "categories": [
+            "plenary"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T11:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-c55e33881adc",
+          "summary": "Plenary",
+          "description": "Included. At-a-glance program. Speaker list not published on the grid.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#E8B84A",
+          "category": "plenary",
+          "categories": [
+            "plenary"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T11:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T13:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rf26-talks",
+      "name": "Talks",
+      "color": "#3B82F6",
+      "optional": false,
+      "on": true,
+      "events": [
+        {
+          "uid": "rf26-38d83983450a",
+          "summary": "Community engagement through capacity building",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-08T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-08T11:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-4445a2f47e8d",
+          "summary": "Environmental Drivers",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-08T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-08T11:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-97627dde8dae",
+          "summary": "Learning, Adapting, and Advancing Restoration",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-08T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-08T11:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-cd7a00080660",
+          "summary": "Optimizing Land Based Restoration",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-08T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-08T11:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-c6af0a562135",
+          "summary": "Policy, Frameworks, and Scaling Restoration",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-08T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-08T11:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-ab6a68af2772",
+          "summary": "Assessing Coral and Reef Health & Resilience: Biological Indicators and Environmental Context",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-ea3aa5badd00",
+          "summary": "Community engagement for strengthened reef stewardship 1",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-7a3425155aec",
+          "summary": "From Gametes to Recruitment: Understanding Coral Reproduction and Early Life Success",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-b82d75c39783",
+          "summary": "Functional Biomaterials for Coral Restoration",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-e730ddf94a41",
+          "summary": "Gene Banking",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-2262213f2b30",
+          "summary": "Genetics, Biotechnology & Coral Health Technologies",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-74feea23e95e",
+          "summary": "More than corals: Reef-Associated Species Propagation and Intervention",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-55c920951ff6",
+          "summary": "Outplanting Success: Site Selection, Predation & Ecosystem Value",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-a0534b19a50a",
+          "summary": "Approaches and data pipelines for benthic tracking",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T11:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-abf90df6cca9",
+          "summary": "Advancing genetic and demographic management of coral populations in human care",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-a0540b674e38",
+          "summary": "Beyond Projects: Planning Sustainable Restoration Programs",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-d1d25d2b3c87",
+          "summary": "Community engagement for strengthened reef stewardship 2",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-7e256f289e28",
+          "summary": "Community engagement through the tourism sector",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-7641923b0212",
+          "summary": "Ecosystem processes on restored reefs",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-51dc56b14777",
+          "summary": "Engineering the Ambient Reef Environment",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-7bc586afedb7",
+          "summary": "Interventions in Land-based Propagation",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-7f5e71e06a87",
+          "summary": "Monitoring Coral Responses & Resilience in a Changing Climate",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-d8c71426bf68",
+          "summary": "Optimising Coral Propagation: From Larval Rearing to Settlement and Grow-out",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-5c40960d1652",
+          "summary": "Advancing Reef Monitoring: New Technologies, Methods & Long-Term Insights",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-49c581d441e3",
+          "summary": "Community engagement through science-based decision-making",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-0f992bee8d3c",
+          "summary": "Coral Host Interventions",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-13b7bc3be617",
+          "summary": "Exploring New Paths to Sustainable Financing",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T18:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-dccd22337447",
+          "summary": "In-Water Propagation: Nursery Design, Scaling & Genetics",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T18:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-9c71393dfd94",
+          "summary": "Informing Reef Management",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T18:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-9fb3499ec87c",
+          "summary": "Demographic and genetic management of populations: from biorepositories to reefs",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-ee414841a2b3",
+          "summary": "Evaluating Coral Restoration Performance: Survival, Growth, & Recovery",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-dda9f809bef1",
+          "summary": "Integrating Communities for Effective Reef Restoration",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-2c12a422b2d3",
+          "summary": "Management Systems: Strategic Planning and Site Selection",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-2032599876bf",
+          "summary": "Microbes and Endosymbionts 1",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-521a0c3d6888",
+          "summary": "Monitoring Reef Communities & Ecological Function",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-05b252b447b7",
+          "summary": "Physiological Plasticity",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-6b6672c9bf87",
+          "summary": "Scaling Sexual Coral Restoration: From Propagation Systems to Reef Deployment",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-963a0683979f",
+          "summary": "Exploring techniques and innovative approaches",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T08:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-7c15fa08a1e2",
+          "summary": "Charting Regional Pathways for Restoration",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-56624610b041",
+          "summary": "Ecosystem Dynamics, Ecology and Species Selection",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-1fb8657afac7",
+          "summary": "Evaluating Reef Restoration: Ecosystem Recovery & Services",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-7260eb87b818",
+          "summary": "Microbes and Endosymbionts 2",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-485b5b668c3c",
+          "summary": "Monitoring to Inform Management, Prioritization, & Adaptive Restoration",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-0940eb6f35f1",
+          "summary": "Next-Generation Coral Restoration: Technology, Resilience and Global Program Development",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-caca415b7def",
+          "summary": "Sensing, Monitoring & Decision Support",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-1717449131d4",
+          "summary": "Supporting genetic and demographic management of wild coral populations",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-d28f60da48dd",
+          "summary": "Digital, Robotic & Operational Tools for Restoration",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T15:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-d61821a2abb3",
+          "summary": "Modeling reef architecture and environments",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T15:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-ad59e9abf1a8",
+          "summary": "Engineered Substrates & Reef Structures",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-ec9db60955f7",
+          "summary": "Quantifying coral outcomes",
+          "description": "Included. Concurrent oral session. Rooms run in parallel. Source: RF26 concurrent-session PDF.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#3B82F6",
+          "category": "talk",
+          "categories": [
+            "talk"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T15:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rf26-expo",
+      "name": "Expo and posters",
+      "color": "#C084FC",
+      "optional": false,
+      "on": true,
+      "events": [
+        {
+          "uid": "rf26-51927c9c1dd6",
+          "summary": "Solutions Expo and Poster Session",
+          "description": "Included. One pavilion: showcase stations, posters, Reef Tank judging. Winning pitches go to the final-day main stage; that pitch hour is not on the grid.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#C084FC",
+          "category": "expo",
+          "categories": [
+            "expo"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-08T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-08T19:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rf26-logistics",
+      "name": "Coffee and lunch",
+      "color": "#94A3B8",
+      "optional": false,
+      "on": true,
+      "events": [
+        {
+          "uid": "rf26-cfcc41134917",
+          "summary": "Coffee, tea, and snacks",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-06T10:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-06T12:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-5d4f1b324021",
+          "summary": "Welcome coffee and tea · Convention Center",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-07T08:15:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-07T09:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-1b77e22e2309",
+          "summary": "Lunch buffet at hotels",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-07T12:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-07T13:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-7314001a0c0b",
+          "summary": "Coffee and tea",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-07T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-07T15:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-c6dcbc3360bf",
+          "summary": "Networking and lunch buffet at hotels",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-08T11:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-08T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-440a3c9dbd84",
+          "summary": "Coffee and tea",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-71acf667356a",
+          "summary": "Lunch buffet at hotels",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-b89f6cbf205d",
+          "summary": "Coffee and tea",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T15:15:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T15:45:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-35c0ab874fdc",
+          "summary": "Coffee and tea",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T11:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T11:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-ff14c7347789",
+          "summary": "Lunch buffet at hotels",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T13:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-f808adbbebf6",
+          "summary": "Coffee and tea",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T16:15:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T16:45:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-50806d688644",
+          "summary": "Coffee and tea",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T10:15:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T10:45:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-ca656196f824",
+          "summary": "Lunch buffet at hotels",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-501b53ab3d80",
+          "summary": "Coffee and tea",
+          "description": "Included. At-a-glance program.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#94A3B8",
+          "category": "logistics",
+          "categories": [
+            "logistics"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T15:15:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T15:45:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rf26-workshops",
+      "name": "Workshops (optional)",
+      "color": "#F97316",
+      "optional": true,
+      "on": true,
+      "events": [
+        {
+          "uid": "rf26-f872a43bcd2c",
+          "summary": "A Future for Genetically Modified Corals",
+          "description": "Optional. Separate signup, cap two workshops. Host: Nikki Fogerty and Nathan Crowe.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-06T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-06T16:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-8f9ca4b282fe",
+          "summary": "Bridging Policy and Practice in Coral Restoration",
+          "description": "Optional. Separate signup, cap two workshops. Host: UNEP-WCMC.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-06T10:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-06T13:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-be6dd39cce48",
+          "summary": "Enabling assisted gene flow in the Caribbean",
+          "description": "Optional. Separate signup, cap two workshops. Host: University of Miami.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-06T13:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-06T16:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-0e3cf8464b44",
+          "summary": "Hands-on AI tools for coral reef science",
+          "description": "Optional. Separate signup, cap two workshops. Host: ICRS SECC.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-06T10:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-06T12:30:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-0f006a257830",
+          "summary": "Creative Communications 2.0",
+          "description": "Optional. Separate signup, cap two workshops. Host: KAUST.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-06T10:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-06T13:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-1a42e1b8c2b0",
+          "summary": "Decision-making support for Caribbean resilience interventions",
+          "description": "Optional. Separate signup, cap two workshops. Host: University of Delaware. Invitation only. shackero@udel.edu.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop",
+            "invitation-only"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-06T10:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-06T16:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-c3f17cf8e3e5",
+          "summary": "Bridging Borders for Gulf of Mexico Corals",
+          "description": "Optional. Separate signup, cap two workshops. Host: Cresta Coastal Network.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-06T10:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-06T16:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-bc57a1843c4b",
+          "summary": "Land-based coral nurseries: sharing lessons",
+          "description": "Optional. Separate signup, cap two workshops. Host: TNC, TRI, Fundación Punta Cana, Fundemar.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-06T10:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-06T16:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-d81deb9d0f07",
+          "summary": "Robotics × AI × Reef Ecology",
+          "description": "Optional. Separate signup, cap two workshops. Host: Woods Hole Oceanographic Institution.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-06T13:30:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-06T16:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-b1f784b9a458",
+          "summary": "Microfragmentation techniques",
+          "description": "Optional. Separate signup, cap two workshops. Host: Division of Aquatic Resources.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T15:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-4fec21338a2a",
+          "summary": "Design and finance reef and mangrove restoration",
+          "description": "Optional. Separate signup, cap two workshops. Host: University of California Santa Cruz.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-e60964e89df3",
+          "summary": "Aligning monitoring tools to global recovery frameworks",
+          "description": "Optional. Separate signup, cap two workshops. Host: CRC Monitoring Working Group.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-8960db043df6",
+          "summary": "Eastern Tropical Pacific regional workshop",
+          "description": "Optional. Separate signup, cap two workshops. Host: ETP Regional Group.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-1c842a2e9c1b",
+          "summary": "Creative Communications 2.0",
+          "description": "Optional. Separate signup, cap two workshops. Host: KAUST.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-604a87927ce3",
+          "summary": "From cofactors to refugia",
+          "description": "Optional. Separate signup, cap two workshops. Host: ASU · Bermuda Institute of Ocean Sciences.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-e5edc56b5f11",
+          "summary": "Ridge-to-reef: watershed and coral restoration",
+          "description": "Optional. Separate signup, cap two workshops. Host: NOAA Restoration Center.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-1bf8b602b870",
+          "summary": "Microfragmentation techniques",
+          "description": "Optional. Separate signup, cap two workshops. Host: Division of Aquatic Resources.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-09T15:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-09T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-5f07f5751dea",
+          "summary": "Advancing integrated resilient coral reef restoration",
+          "description": "Optional. Separate signup, cap two workshops. Host: Mars Sustainable Solutions.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-41d982dd4007",
+          "summary": "Caribbean Coral Emergency Response Plan",
+          "description": "Optional. Separate signup, cap two workshops. Host: Coral Restoration Consortium.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T18:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-e9e9e2fc95e2",
+          "summary": "Modest success beats spectacular failure",
+          "description": "Optional. Separate signup, cap two workshops. Host: Pew Marine Fellows.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T18:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-2ab61f5dbda1",
+          "summary": "Integrating evolutionary adaptation into rehabilitation",
+          "description": "Optional. Separate signup, cap two workshops. Host: Coralassist Lab.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T18:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-0631e742115a",
+          "summary": "The Coral Studio: watercolor toolkit",
+          "description": "Optional. Separate signup, cap two workshops. Host: Healing Forest Guide.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T18:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-32a99109a742",
+          "summary": "Inclusive leadership pathways",
+          "description": "Optional. Separate signup, cap two workshops. Host: Coral Catch.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T18:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-675aad995cf7",
+          "summary": "Microfragmentation techniques",
+          "description": "Optional. Separate signup, cap two workshops. Host: Division of Aquatic Resources.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T16:15:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-bede00308c86",
+          "summary": "Microfragmentation techniques",
+          "description": "Optional. Separate signup, cap two workshops. Host: Division of Aquatic Resources.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T16:45:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T18:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-a98db3cb1b64",
+          "summary": "Mapping community-led reef restoration",
+          "description": "Optional. Separate signup, cap two workshops. Host: University of Technology Sydney.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-10T15:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-10T18:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-5c7d4ec87582",
+          "summary": "Climate-smart reef restoration",
+          "description": "Optional. Separate signup, cap two workshops. Host: The Nature Conservancy · Reef Resilience Network.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-df6a9869398e",
+          "summary": "Better nursery designs for coral recruits",
+          "description": "Optional. Separate signup, cap two workshops. Host: Universidad Nacional Autónoma de México.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-908088024eb1",
+          "summary": "Scaling restoration through equivalency analysis",
+          "description": "Optional. Separate signup, cap two workshops. Host: NOAA.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-b7b7ac7dafa8",
+          "summary": "Puerto Rico and USVI Acropora palmata population management",
+          "description": "Optional. Separate signup, cap two workshops. Host: Coral Restoration Foundation.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-365f018d1e43",
+          "summary": "Designing meaningful community engagement",
+          "description": "Optional. Separate signup, cap two workshops. Host: NOAA Restoration Center / Entarian.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        },
+        {
+          "uid": "rf26-f69a1f3891f9",
+          "summary": "Coral biorepositories: living biobanks and cryopreservation",
+          "description": "Optional. Separate signup, cap two workshops. Host: The Reef Institute.",
+          "location": "Iberostar Playa Paraíso, Riviera Maya, Quintana Roo",
+          "color": "#F97316",
+          "category": "workshop",
+          "categories": [
+            "workshop"
+          ],
+          "timeZone": "America/Cancun",
+          "dtstart": {
+            "dateTime": "2026-12-11T14:00:00-05:00",
+            "timeZone": "America/Cancun"
+          },
+          "dtend": {
+            "dateTime": "2026-12-11T17:00:00-05:00",
+            "timeZone": "America/Cancun"
+          }
+        }
+      ]
+    }
+  ]
+}

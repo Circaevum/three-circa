@@ -24,6 +24,26 @@
       }
     }
 
+    function postGlChrome() {
+      if (window.parent === window || !window.parent || typeof window.parent.postMessage !== 'function') return;
+      var left = 0;
+      var right = 0;
+      if (document.body.classList.contains('calendars-left-panel-open')) {
+        var lp = document.getElementById('calendars-left-panel');
+        if (lp) left = Math.round(lp.getBoundingClientRect().width);
+      }
+      var rightEl = null;
+      if (document.body.classList.contains('event-list-panel-open')) {
+        rightEl = document.getElementById('event-list-panel');
+      } else if (document.body.classList.contains('keyboard-panel-open')) {
+        rightEl = document.getElementById('keyboard-controls-panel');
+      }
+      if (rightEl) right = Math.round(rightEl.getBoundingClientRect().width);
+      try {
+        window.parent.postMessage({ type: 'CIRCAEVUM_GL_CHROME', left: left, right: right }, '*');
+      } catch (err) {}
+    }
+
     function openCalendarsLeftPanel() {
       if (window.self !== window.top && window.parent && typeof window.parent.postMessage === 'function') {
         try { window.parent.postMessage({ type: 'CIRCAEVUM_OPEN_ACCOUNT' }, '*'); } catch (err) {}
@@ -35,6 +55,7 @@
       document.body.classList.add('calendars-left-panel-open');
       syncPullTabExpanded('calendar-layers-pull-tab', true);
       if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
+      postGlChrome();
     }
 
     function closeCalendarsLeftPanel() {
@@ -44,6 +65,7 @@
       leftPanel.setAttribute('aria-hidden', 'true');
       document.body.classList.remove('calendars-left-panel-open');
       syncPullTabExpanded('calendar-layers-pull-tab', false);
+      postGlChrome();
     }
 
     function openEventListPanel() {
@@ -61,6 +83,7 @@
       if (searchInput) {
         setTimeout(function() { searchInput.focus(); }, 0);
       }
+      postGlChrome();
     }
 
     function closeEventListPanel() {
@@ -69,6 +92,7 @@
       panel.setAttribute('aria-hidden', 'true');
       document.body.classList.remove('event-list-panel-open');
       syncPullTabExpanded('event-list-pull-tab', false);
+      postGlChrome();
     }
 
     function openKeyboardControlsPanel() {
@@ -78,6 +102,7 @@
       document.body.classList.add('keyboard-panel-open');
       keyboardPanel.classList.add('open');
       keyboardPanel.setAttribute('aria-hidden', 'false');
+      postGlChrome();
       var keysBtn = document.getElementById('nav-keys-btn');
       if (keysBtn) {
         keysBtn.setAttribute('aria-expanded', 'true');
@@ -90,6 +115,7 @@
       document.body.classList.remove('keyboard-panel-open');
       keyboardPanel.classList.remove('open');
       keyboardPanel.setAttribute('aria-hidden', 'true');
+      postGlChrome();
       var keysBtn = document.getElementById('nav-keys-btn');
       if (keysBtn) {
         keysBtn.setAttribute('aria-expanded', 'false');

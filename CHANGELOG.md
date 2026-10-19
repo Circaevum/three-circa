@@ -8,6 +8,24 @@ This changelog tracks all changes across Yin (backend), Yang (frontend), and Zho
 
 ---
 
+## [Q4 2026] - October 2026 (Garmin connect, sleep window, flat dates)
+
+### Yang (Frontend) — `yang-web`
+
+**✅ Completed**:
+- **Privacy page**: `privacy/index.html` at `https://circaevum.com/privacy/` so Garmin can accept the app.
+- **Flat dates**: full flatten puts every date label on the pivot plane. Non-current dates no longer stay 5% raised.
+- **Shift sleep**: holding Shift draws about 180 days of sleep arcs. Heart-rate arcs stay about 30 days.
+
+### Yin (Backend) — `yin-rest` / `yin-nakama` / portal
+
+**✅ Completed**:
+- **Garmin OAuth 2**: consent returns to `https://app.circaevum.com/` (`GARMIN_OAUTH_RETURN_URL`), not the public viewer.
+- **Activities stored**: Garmin `activities` write to Nakama `garmin_activity`. Allow-list updated in `garmin_ingest.lua` and `integration_ingest.lua`. Live Nakama still needs that Lua loaded before workout writes succeed.
+- **Workouts on the timeline**: the portal loads `garmin_activity` and draws each workout as a duration arc on the Garmin Workout layer. Sleep and daily heart rate keep their existing arcs.
+
+---
+
 ## [Q1 2025] - March 2025 (Zhong Architecture & Token Structure)
 
 ### Zhong (Administration) - The Center Contract
@@ -173,6 +191,6 @@ This changelog tracks all changes across Yin (backend), Yang (frontend), and Zho
 
 ---
 
-**Last Updated**: March 2026 (Q1 2025 section; recent yang-web GL updates added)
+**Last Updated**: 19 October 2026 (Q4 2026 Garmin, flatten, Shift sleep)
 **Maintained By**: Circaevum Zhong (中) - The Center Contract
 

@@ -488,6 +488,13 @@
     return logicalY * yScale + offset;
   }
 
+  /** Same Y squash as the Earth helix (floor 0.05) so a cylinder stays a column. */
+  function flattenSuperYearLogicalY(logicalY, focusY, amount) {
+    const yScale = worldlineMatchFlattenYScale(amount);
+    const pivot = typeof focusY === 'number' && !isNaN(focusY) ? focusY : 0;
+    return logicalY * yScale + pivot * (1 - yScale);
+  }
+
   /** Stagger only (helix verts carry flattened world Y; root stays at 0). */
   function getTimelineHelixStaggerOffsetY(staggerLogical, amount) {
     if (typeof staggerLogical !== 'number' || isNaN(staggerLogical) || staggerLogical === 0) return 0;
@@ -611,21 +618,28 @@
       return;
     }
     const currentRefHeight = getWorldlineOrbitReferenceHeight();
+    const superYearBand = ref.kind === 'superYearBand';
     if (!ref._cachedPair || ref._cachedRefHeight !== currentRefHeight) {
       ref._cachedRefHeight = currentRefHeight;
-      ref._cachedPair = buildHelixPair(
-        ref.startHeight,
-        ref.endHeight,
-        ref.rInner,
-        ref.rOuter,
-        currentRefHeight,
-        ref.segments
-      );
+      ref._cachedPair = superYearBand
+        ? buildSuperYearBandPair(ref.startHeight, ref.endHeight, ref.rInner, ref.rOuter, currentRefHeight, ref.segments)
+        : buildHelixPair(
+          ref.startHeight,
+          ref.endHeight,
+          ref.rInner,
+          ref.rOuter,
+          currentRefHeight,
+          ref.segments
+        );
     }
     const pair = ref._cachedPair;
     if (!pair.innerFlat || !pair.outerFlat || pair.innerFlat.length < 6) return;
-    const innerFlat = flattenTimelineFlatArray(pair.innerFlat, focusY, amount);
-    const outerFlat = flattenTimelineFlatArray(pair.outerFlat, focusY, amount);
+    const innerFlat = superYearBand
+      ? flattenSuperYearBandFlatArray(pair.innerFlat, focusY, amount)
+      : flattenTimelineFlatArray(pair.innerFlat, focusY, amount);
+    const outerFlat = superYearBand
+      ? flattenSuperYearBandFlatArray(pair.outerFlat, focusY, amount)
+      : flattenTimelineFlatArray(pair.outerFlat, focusY, amount);
     const staggerY =
       root.userData.eventStaggerRoot && typeof root.userData.staggerLogical === 'number'
         ? getTimelineHelixStaggerOffsetY(root.userData.staggerLogical, amount)
@@ -696,17 +710,85 @@
     updateEventRibbonBandEndConnectors(root, innerFlat, outerFlat);
   }
 
+  /** Radial half-width of the flat super-year ring. Far zooms need a thicker band. */
+  function superYearFlatRadialHalf(radius, zl) {
+    const r = radius > 0 ? radius : EARTH_RADIUS;
+    const z = typeof zl === 'number' && !isNaN(zl) ? zl : 3;
+    let frac = 0.045;
+    let minW = 1.2;
+    if (z <= 1) {
+      frac = 0.18;
+      minW = 6;
+    } else if (z === 2) {
+      frac = 0.1;
+      minW = 3;
+    } else if (z === 3) {
+      frac = 0.06;
+      minW = 1.6;
+    }
+    return Math.max(r * frac, minW);
+  }
+
+  /**
+   * Full flatten kills an open Y-cylinder (height → 0, no caps).
+   * Leave a glass annulus in the orbital plane — the sleeve’s footprint.
+   */
+  function ensureSuperYearFlatDisc(root, radius, colorHex, opacity, zl) {
+    const THREE = global.THREE;
+    if (!THREE || typeof THREE.RingGeometry !== 'function') return null;
+    let disc = null;
+    const kids = root.children || [];
+    for (let i = 0; i < kids.length; i++) {
+      if (kids[i].userData && kids[i].userData.superYearFlatDisc) {
+        disc = kids[i];
+        break;
+      }
+    }
+    const z = typeof zl === 'number' && !isNaN(zl) ? zl : 3;
+    const half = superYearFlatRadialHalf(radius, z);
+    const inner = Math.max(0.25, radius - half);
+    const outer = radius + half;
+    const stale = !disc ||
+      disc.userData.bandZoom !== z ||
+      Math.abs((disc.userData.bandRadius || 0) - radius) > 0.05;
+    if (stale) {
+      if (disc) {
+        root.remove(disc);
+        if (disc.geometry && disc.geometry.dispose) disc.geometry.dispose();
+        if (disc.material && disc.material.dispose) disc.material.dispose();
+      }
+      const geo = new THREE.RingGeometry(inner, outer, 72);
+      const mat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: opacity,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1
+      });
+      disc = new THREE.Mesh(geo, mat);
+      disc.rotation.x = -Math.PI / 2;
+      disc.renderOrder = -3;
+      disc.userData = { superYearFlatDisc: true, bandZoom: z, bandRadius: radius };
+      root.add(disc);
+    }
+    return disc;
+  }
+
   /**
    * Super-year life columns: squash Y toward flatten focus the same way helical ribbons do.
    * Cylinder mesh scales about its midpoint; top/bottom rings and labels follow flattened heights.
+   * When the column collapses, a flat annulus stays so the span is still visible.
    */
   function applyFlattenedSuperYearCylinderToRoot(root, focusY, amount) {
     if (!root || !root.userData || !root.userData.timelineHelixRef) return;
     const ref = root.userData.timelineHelixRef;
     const radius = ref.radius != null && isFinite(ref.radius) ? ref.radius : (ref.rOuter + ref.rInner) * 0.5;
     if (!(radius > 0)) return;
-    const y0 = flattenTimelineLogicalY(ref.startHeight, focusY, amount);
-    const y1 = flattenTimelineLogicalY(ref.endHeight, focusY, amount);
+    const y0 = flattenSuperYearLogicalY(ref.startHeight, focusY, amount);
+    const y1 = flattenSuperYearLogicalY(ref.endHeight, focusY, amount);
     const staggerY =
       root.userData.eventStaggerRoot && typeof root.userData.staggerLogical === 'number'
         ? getTimelineHelixStaggerOffsetY(root.userData.staggerLogical, amount)
@@ -717,11 +799,15 @@
       ? ref.logicalHeight
       : Math.abs(ref.endHeight - ref.startHeight);
     const yScale = logicalH > 1e-6 ? h / logicalH : 1;
+    const flat = h < 1e-2;
     root.position.y = 0;
+    let cylMesh = null;
     root.traverse((child) => {
       if (child.isMesh && child.userData && child.userData.superYearCylinder) {
+        cylMesh = child;
         child.position.y = mid;
-        child.scale.y = yScale;
+        child.scale.y = Math.max(yScale, 1e-4);
+        child.visible = !flat;
       } else if (child.userData && child.userData.type === 'SuperYearCylinderRing') {
         const yRing = (child.userData.ring === 'end' ? y1 : y0) + staggerY;
         const pos = child.geometry && child.geometry.attributes && child.geometry.attributes.position;
@@ -732,6 +818,28 @@
         }
       }
     });
+    const disc = flat
+      ? ensureSuperYearFlatDisc(
+          root,
+          radius,
+          cylMesh && cylMesh.material && cylMesh.material.color
+            ? cylMesh.material.color.getHex()
+            : 0x00b4d8,
+          cylMesh && cylMesh.material
+            ? Math.min(0.62, Math.max(0.22, cylMesh.material.opacity * 1.8))
+            : 0.35,
+          getZoomLevelForEvents()
+        )
+      : null;
+    if (disc) {
+      disc.position.y = mid;
+      disc.visible = true;
+    } else if (!flat) {
+      const kids = root.children || [];
+      for (let i = 0; i < kids.length; i++) {
+        if (kids[i].userData && kids[i].userData.superYearFlatDisc) kids[i].visible = false;
+      }
+    }
     const pair = buildVerticalCylinderLabelFlats(y0 + staggerY, y1 + staggerY, radius, 8);
     updateEventRibbonLabelsForFlatten(root, pair.innerFlat, pair.outerFlat, amount);
   }
@@ -802,7 +910,7 @@
       if (!fr) return;
 
       let labelY = fr.position.y;
-      if (flatAmount > 0.001) {
+      if (!ud.circadianShortRibbonLabel && flatAmount > 0.001) {
         const focusY = typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
         labelY = flattenTimelineLogicalY(labelY, focusY, flatAmount);
       }
@@ -1540,16 +1648,15 @@
 
   /**
    * Each zoom’s “focused” spans are one step **smaller** than the view unit (sub outer / super inner).
-   * Moment (0) / Clock (9): sub-day [0, 1). Century (1): (decade, century]. Decade (2): all super-year (d > 1 y).
-   * Year (3): (quarter, year). Quarter (4): (month, quarter]. Month (5) / Lunar (6): (week, month].
-   * Week (7): (day, synodic month] — window is prev full moon → next full moon. Day (8): (0, 1d].
-   * Keep in sync with `yang/web/index.html` list filter.
+   * Moment (0) / Clock (9): sub-day [0, 1). Century (1): super-annual (d > 1 y).
+   * Decade (2) through Week (7): super-day (d > 1). Day (8): all spans.
+   * Keep in sync with `events-list.js` `eventDurationMatchesSelectedZoom` for century.
    */
   function eventDurationEligibleForFullListAtZoom(durationDays, zl) {
     const z = typeof zl === 'number' && !isNaN(zl) ? Math.floor(zl) : 5;
     const d = typeof durationDays === 'number' && !isNaN(durationDays) ? durationDays : 0;
     if (z <= 0 || z >= 9) return d >= 0;
-    if (z === 1) return d > CONTEXT_DECADE_DAYS;
+    if (z === 1) return d > CONTEXT_YEAR_DAYS;
     if (z === 2) return d > 1;
     // Zooms 3-7 (Year, Quarter, Month, Lunar Month, Week): all sub-year to super-day events (d > 1 day) show up
     if (z >= 3 && z <= 7) return d > 1;
@@ -2090,6 +2197,7 @@
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     const zl = getZoomLevelForEvents();
     if (zl === 1 || zl === 2) return true;
+    if (isSuperYearDurationDays(durationDaysBetween(start, evEnd))) return true;
     if (!eventTouchesPersistentMeshWindow(start, evEnd)) return false;
     if (eventInSelectedNestZonesForVividColor(start, evEnd)) return true;
     if (!isCircadianShortEventsShiftPreview()) return false;
@@ -3039,8 +3147,8 @@
    * Inner/outer radii for duration-event bands.
    * Long-term events remain strictly within their respective radial sections:
    * - Multi-Year (> 365d): Core area
-   * - Sub-Annual Super-Month (30d to 365d): Quarterly / month fringe
-   * - Sub-Month Super-Week (8d to 30d): Month area
+   * - Sub-Annual Super-Month (> 31d to 365d): Quarterly / month fringe
+   * - Sub-Month Super-Week (8d to 31d): Month area — never sunward of month.inner
    * - Sub-Week Super-Day (1d to 8d): Week area — short near day-frame (outer),
    *   longer near month edge (inner). Lockstep nest DUR_SUPER_WEEK = 8.
    * - Sub-Day / Instant (<= 1d): Day realm
@@ -3065,17 +3173,19 @@
     let rInner, rOuter;
 
     if (d > 365) {
-      // Super-annual / Multi-year events (> 1 year): Core area
-      rInner = W * 0.04;
-      rOuter = rQuarterInner;
-    } else if (d > 30) {
-      // Sub-annual super-month events (30 days to 1 year)
-      const t = Math.min(1, (d - 30) / (365 - 30));
+      // Super-annual: core band, sunward of the quarter lane.
+      // Century/decade cameras sit far back, so that band is scaled up.
+      const band = superYearBandRadii(W, d);
+      rInner = band.rInner;
+      rOuter = band.rOuter;
+    } else if (d > CONTEXT_MONTH_DAYS) {
+      // Longer than a calendar month: quarter fringe. A full month (≤ 31d) stays in the month zone.
+      const t = Math.min(1, (d - CONTEXT_MONTH_DAYS) / (365 - CONTEXT_MONTH_DAYS));
       rInner = rQuarterOuter * 0.88;
       rOuter = rQuarterOuter + (rMonthOuter - rQuarterOuter) * (0.35 + 0.65 * t);
     } else if (d > SUPER_WEEK_DAYS) {
-      // Sub-month super-week events (8 days to 30 days): Month area
-      const t = Math.min(1, (d - SUPER_WEEK_DAYS) / (30 - SUPER_WEEK_DAYS));
+      // Sub-month (8 days to 31 days): Month area. Inner edge is the quarter/month boundary.
+      const t = Math.min(1, (d - SUPER_WEEK_DAYS) / (CONTEXT_MONTH_DAYS - SUPER_WEEK_DAYS));
       rInner = rMonthInner;
       rOuter = rMonthInner + (rMonthOuter - rMonthInner) * Math.max(0.6, t);
     } else if (d > 1) {
@@ -3133,6 +3243,23 @@
   }
 
   /**
+   * Sub-month ribbons belong in the month annulus. Width scale can push the inner
+   * edge sunward of month.inner (= quarter outer) into the Quarter zone — shift back out.
+   */
+  function clampSubMonthRadiiOutOfQuarterZone(earthDist, durationDays, rInner, rOuter) {
+    const d = typeof durationDays === 'number' && !isNaN(durationDays) ? durationDays : 0;
+    if (d > CONTEXT_MONTH_DAYS || d <= 1 || eventBandUsesWeekCorridor(d)) return { rInner, rOuter };
+    const W = earthDist;
+    const zones = (typeof TimeMarkers !== 'undefined' && typeof TimeMarkers.getCanonicalRadialZones === 'function')
+      ? TimeMarkers.getCanonicalRadialZones(W)
+      : null;
+    const floor = zones ? zones.month.inner : W * 0.25;
+    if (!(floor > 0) || !(rInner < floor)) return { rInner, rOuter };
+    const shift = floor - rInner;
+    return { rInner: rInner + shift, rOuter: rOuter + shift };
+  }
+
+  /**
    * Shortest span (days) still eligible for the Event List “focus band” at this zoom.
    * Matches {@link eventDurationEligibleForFullListAtZoom} lower bounds.
    */
@@ -3144,8 +3271,8 @@
     if (z === 5 || z === 6) return 7 + 1e-4;
     if (z === 4) return 31 + 1e-4;
     if (z === 3) return 92 + 1e-4;
-    if (z === 2) return CONTEXT_YEAR_DAYS + 1e-4;
-    if (z === 1) return CONTEXT_DECADE_DAYS + 1e-4;
+    if (z === 2) return 1 + 1e-4;
+    if (z === 1) return CONTEXT_YEAR_DAYS + 1e-4;
     return 8;
   }
 
@@ -3324,7 +3451,6 @@
     const straightenBlend = getCircadianStraightenBlendForEvents();
     const midDate = new Date((start.getTime() + end.getTime()) / 2);
     const amt = typeof global.currentFlattenAmount === 'number' ? global.currentFlattenAmount : 0;
-    const focusY = typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
 
     if (root.userData.circadianShortRibbon && CR && typeof CR.buildDiskRibbonBetween === 'function') {
       const earthDist = getEarthDistance();
@@ -3356,12 +3482,10 @@
         straightenBlend
       );
       if (ribbonPair && ribbonPair.innerFlat && ribbonPair.outerFlat) {
-        let innerFlat = ribbonPair.innerFlat;
-        let outerFlat = ribbonPair.outerFlat;
-        if (amt > 0.001) {
-          innerFlat = flattenTimelineFlatArray(innerFlat, focusY, amt);
-          outerFlat = flattenTimelineFlatArray(outerFlat, focusY, amt);
-        }
+        // Disk points are already scene Y (sceneYForLogicalHeight). A second flatten
+        // pulls the arc off the day ring onto the flatten pivot.
+        const innerFlat = ribbonPair.innerFlat;
+        const outerFlat = ribbonPair.outerFlat;
         const fillMeshes = [];
         let connectorAnchor = null;
         root.traverse((child) => {
@@ -3750,7 +3874,7 @@
       );
     }
 
-    if (!wantFill && !farDayFrame) {
+    if (!farDayFrame) {
       addEventRibbonPickProxy(group, innerFlat, outerFlat);
     }
     markCircadianShortScrubRoot(group, layerConfig._diskRibbon, false);
@@ -4032,6 +4156,169 @@
     return { innerFlat, outerFlat };
   }
 
+  /**
+   * Same Y squash as the Earth worldline (floor 0.05). Event ribbons
+   * otherwise drop to a plane and vanish beside the still-tall helix.
+   */
+  function worldlineMatchFlattenYScale(amount) {
+    const a = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
+    return Math.max(0.05, 1 - a * 0.95);
+  }
+
+  function flattenSuperYearBandFlatArray(logicalFlat, focusY, amount) {
+    if (!logicalFlat || logicalFlat.length < 3) return logicalFlat;
+    const yScale = worldlineMatchFlattenYScale(amount);
+    const pivot = typeof focusY === 'number' && !isNaN(focusY) ? focusY : 0;
+    const offset = pivot * (1 - yScale);
+    const out = new Float32Array(logicalFlat.length);
+    for (let i = 0; i < logicalFlat.length; i += 3) {
+      out[i] = logicalFlat[i];
+      out[i + 1] = logicalFlat[i + 1] * yScale + offset;
+      out[i + 2] = logicalFlat[i + 2];
+    }
+    return out;
+  }
+
+  /**
+   * Partial cylinder in the duration lane. Angle sweeps once, not once per year,
+   * so a multi-year span stays a band on the helix instead of a second coil.
+   */
+  function buildSuperYearBandPair(startHeight, endHeight, rInner, rOuter, refHeight, segments) {
+    const n = Math.max(8, segments || 48);
+    const innerFlat = new Float32Array(n * 3);
+    const outerFlat = new Float32Array(n * 3);
+    const y0 = Math.min(startHeight, endHeight);
+    const y1 = Math.max(startHeight, endHeight);
+    const midH = (y0 + y1) / 2;
+    let angleMid = 0;
+    if (typeof SceneGeometry !== 'undefined' && SceneGeometry.getAngle) {
+      const ref = typeof refHeight === 'number' && !isNaN(refHeight) ? refHeight : midH;
+      angleMid = SceneGeometry.getAngle(midH, ref);
+    }
+    const sweep = Math.PI * 1.15;
+    const rIn = rInner > 0 ? rInner : 1;
+    const rOut = rOuter > rIn ? rOuter : rIn + 1;
+    for (let i = 0; i < n; i++) {
+      const t = n > 1 ? i / (n - 1) : 0;
+      const y = y0 + (y1 - y0) * t;
+      const a = angleMid + (t - 0.5) * sweep;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      const ii = i * 3;
+      innerFlat[ii] = c * rIn;
+      innerFlat[ii + 1] = y;
+      innerFlat[ii + 2] = s * rIn;
+      outerFlat[ii] = c * rOut;
+      outerFlat[ii + 1] = y;
+      outerFlat[ii + 2] = s * rOut;
+    }
+    return { innerFlat: innerFlat, outerFlat: outerFlat };
+  }
+
+  /** Height window the Earth helix actually draws at Century / Decade. */
+  function coarseHelixHeightWindow() {
+    const z = Math.floor(getZoomLevelForEvents());
+    const hpy = typeof HEIGHT_PER_YEAR === 'number' && HEIGHT_PER_YEAR > 0 ? HEIGHT_PER_YEAR : 100;
+    let mul = 1;
+    try {
+      if (typeof global.isFlattenTimeStraightenActive === 'function' && global.isFlattenTimeStraightenActive()) {
+        mul = 10;
+      }
+    } catch (e) { /* native span */ }
+    const selFn = getSelectedDateTimeFn();
+    let y = new Date().getFullYear();
+    if (selFn) {
+      try {
+        const sel = selFn();
+        if (sel && !isNaN(sel.getTime())) y = sel.getFullYear();
+      } catch (e2) { /* keep y */ }
+    }
+    const unitYears = z <= 1 ? 100 : 10;
+    const spanYears = unitYears * mul;
+    let mid = y;
+    if (mul <= 1) {
+      mid = z <= 1 ? Math.floor(y / 100) * 100 + 50 : Math.floor(y / 10) * 10 + 5;
+    }
+    const y0 = mid - spanYears / 2;
+    const y1 = mid + spanYears / 2;
+    const hOf = (yr) => (
+      typeof global.getHeightForYear === 'function'
+        ? global.getHeightForYear(yr, 1)
+        : (yr - 2000) * hpy
+    );
+    return { h0: hOf(y0), h1: hOf(y1) };
+  }
+
+  /**
+   * Lane on the Earth helix. Century/Decade thicken with the camera so the
+   * band is a readable slab on that column, not a speck at r ≈ W.
+   */
+  function superYearBandRadii(earthDist, durationDays) {
+    const W = earthDist > 0 ? earthDist : EARTH_RADIUS;
+    const z = Math.floor(getZoomLevelForEvents());
+    const d = typeof durationDays === 'number' && !isNaN(durationDays) ? durationDays : 366;
+    let lane = 0;
+    if (d > CONTEXT_YEAR_DAYS * 40) lane = 2;
+    else if (d > CONTEXT_YEAR_DAYS * 8) lane = 1;
+    if (z > 2) {
+      const lanes = [[0.18, 0.55], [0.58, 0.95], [1.02, 1.45]];
+      const pair = lanes[lane];
+      return { rInner: W * pair[0], rOuter: W * pair[1] };
+    }
+    const dist = z <= 1 ? 10000 : 800;
+    const halfView = dist * Math.tan((75 * Math.PI) / 360);
+    const thick = halfView * (z <= 1 ? 0.09 : 0.16);
+    const rInner = W * 0.55 + lane * thick * 0.22;
+    const rOuter = rInner + thick * 0.55;
+    return { rInner: rInner, rOuter: rOuter };
+  }
+
+  /**
+   * Place the span on the same height range as the Earth helix.
+   * A one-year turn is a hairline on that column.
+   * Returns null off coarse zoom so normal helix heights are used.
+   */
+  function superYearBandDrawHeights(start, end) {
+    const z = Math.floor(getZoomLevelForEvents());
+    if (z > 2 || !start || isNaN(start.getTime())) return null;
+    const win = coarseHelixHeightWindow();
+    const span = win.h1 - win.h0;
+    if (!(span > 1)) return null;
+    const endDate = end && !isNaN(end.getTime()) ? end : start;
+    const hOfDate = (d) => (
+      typeof calculateDateHeight === 'function'
+        ? calculateDateHeight(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours() + d.getMinutes() / 60)
+        : win.h0
+    );
+    let a = hOfDate(start);
+    let b = hOfDate(endDate);
+    if (b < a) {
+      const tmp = a;
+      a = b;
+      b = tmp;
+    }
+    a = Math.max(win.h0, Math.min(win.h1, a));
+    b = Math.max(win.h0, Math.min(win.h1, b));
+    const minSlab = span * 0.12;
+    if (b - a < minSlab) {
+      const mid = (a + b) / 2;
+      a = mid - minSlab / 2;
+      b = mid + minSlab / 2;
+      if (a < win.h0) {
+        b += win.h0 - a;
+        a = win.h0;
+      }
+      if (b > win.h1) {
+        a -= b - win.h1;
+        b = win.h1;
+      }
+      a = Math.max(win.h0, a);
+      b = Math.min(win.h1, b);
+    }
+    if (!(b > a)) return null;
+    return { startHeight: a, endHeight: b };
+  }
+
   /** Spans longer than one tropical year (school, jobs, other life chapters). */
   function isSuperYearDurationDays(durationDays) {
     return typeof durationDays === 'number' && !isNaN(durationDays) && durationDays > CONTEXT_YEAR_DAYS;
@@ -4041,11 +4328,16 @@
    * Sleeve just outside Earth helix so the worldline sits inside the column.
    * Longer / overlapping chapters step slightly outward to avoid z-fight.
    */
-  function getSuperYearCylinderRadius(earthDist, rank01, overlapLane) {
+  function getSuperYearCylinderRadius(earthDist, rank01, overlapLane, durationDays) {
     const W = earthDist > 0 ? earthDist : EARTH_RADIUS;
+    const d = typeof durationDays === 'number' && !isNaN(durationDays) ? durationDays : 366;
+    let lane = 0;
+    if (d > CONTEXT_YEAR_DAYS * 40) lane = 2;
+    else if (d > CONTEXT_YEAR_DAYS * 8) lane = 1;
+    const sleeve = lane === 2 ? 1.72 : lane === 1 ? 1.42 : 1.16;
     const u = rank01 != null && isFinite(rank01) ? Math.max(0, Math.min(1, rank01)) : 0;
-    const lane = typeof overlapLane === 'number' && overlapLane > 0 ? overlapLane : 0;
-    return W * (1.04 + 0.055 * u + 0.028 * lane);
+    const overlap = typeof overlapLane === 'number' && overlapLane > 0 ? overlapLane : 0;
+    return W * (sleeve + 0.03 * u + 0.02 * overlap);
   }
 
   /** Thin vertical strip on the +X seam — label sprites / flatten reuse ribbon helpers. */
@@ -4114,8 +4406,8 @@
     const overlapLane = layerConfig._overlapLane != null
       ? layerConfig._overlapLane
       : (opts.overlapLane || 0);
-    const radius = getSuperYearCylinderRadius(opts.earthDist, rank01, overlapLane);
-    const fillOp = Math.min(0.38, Math.max(0.08, (opts.fillOpacity != null ? opts.fillOpacity : 0.28) * 0.52));
+    const radius = getSuperYearCylinderRadius(opts.earthDist, rank01, overlapLane, opts.durationDays);
+    const fillOp = Math.min(0.55, Math.max(0.28, opts.fillOpacity != null ? opts.fillOpacity : 0.42));
     const geom = new THREE.CylinderGeometry(radius, radius, h, 48, 1, true);
     const mat = new THREE.MeshBasicMaterial({
       color: opts.fillHex != null ? opts.fillHex : 0x00b4d8,
@@ -4123,11 +4415,13 @@
       opacity: fillOp,
       side: THREE.DoubleSide,
       depthWrite: false,
+      depthTest: false,
       polygonOffset: true,
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1
     });
     const mesh = new THREE.Mesh(geom, mat);
+    mesh.frustumCulled = false;
     mesh.position.set(0, (startHeight + endHeight) * 0.5, 0);
     mesh.renderOrder = opts.roFill != null ? opts.roFill : -4;
     mesh.userData = {
@@ -4153,6 +4447,7 @@
     });
 
     const group = new THREE.Group();
+    group.frustumCulled = false;
     group.userData = userData;
     group.add(mesh);
     // Rings match sleeve fill — skip provenance outline (native #9333ea reads as purple rims).
@@ -4638,7 +4933,8 @@
     if (!mesh || !frame) return;
     let py = frame.position.y;
     const amt = typeof global.currentFlattenAmount === 'number' ? global.currentFlattenAmount : 0;
-    if (amt > 0.001) {
+    const alreadySceneY = mesh.userData && mesh.userData.circadianShortRibbonLabel;
+    if (!alreadySceneY && amt > 0.001) {
       const focusY = typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
       py = flattenTimelineLogicalY(py, focusY, amt);
     }
@@ -5028,7 +5324,7 @@
     const THREE = global.THREE;
     const root = new THREE.Group();
     const amt = typeof global.currentFlattenAmount === 'number' ? global.currentFlattenAmount : 0;
-    if (amt > 0.001) {
+    if (!diskFrame && amt > 0.001) {
       const focusY = typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
       y = flattenTimelineLogicalY(y, focusY, amt);
     }
@@ -6045,7 +6341,7 @@
   function getTemporalContextFactors(anchorMs, spanStart, spanEnd) {
     if (
       spanStart &&
-      getZoomLevelForEvents() === 2 &&
+      getZoomLevelForEvents() <= 2 &&
       isSuperYearDurationDays(durationDaysBetween(spanStart, spanEnd))
     ) {
       return { vt: 1, vp: 1, v: 1 };
@@ -6147,7 +6443,7 @@
     if (!selFn) return 1;
     if (!spanStart || isNaN(spanStart.getTime())) return 1;
     const spanEndEff = spanEnd && spanEnd > spanStart ? spanEnd : new Date(spanStart.getTime() + MS_PER_DAY);
-    if (zl === 2 && isSuperYearDurationDays(durationDaysBetween(spanStart, spanEndEff))) return 1;
+    if (zl <= 2 && isSuperYearDurationDays(durationDaysBetween(spanStart, spanEndEff))) return 1;
     const ref = selFn();
     const textOk = areEventTextLabelsVisibleAtCurrentZoom(spanStart, spanEndEff) ||
       areEventNameLabelsVisibleAtCurrentZoom(spanStart, spanEndEff);
@@ -6275,8 +6571,7 @@
   /**
    * Vivid color = full nest Selected Time stack only (live getSelectedDateTime).
    *   d > 31  → selected year
-   *   8 < d ≤ 31 → selected quarter
-   *   1 < d ≤ 8  → selected month
+   *   1 < d ≤ 31 → selected month (sub-month stays out of the quarter nest)
    *   d ≤ 1      → selected week
    * Cyan pie = current zoom UI frame; color follows nest selection whenever Selected time moves.
    * (main.js rebuild key includes nest week so Z5 A/D remeshes — colors not baked on old week.)
@@ -6298,11 +6593,9 @@
       return eventTouchesSelectedContextArcWindow(spanStart, evEnd);
     }
     const NEST_SUPER_MONTH = 31;
-    const NEST_SUPER_WEEK = 8;
     const NEST_SUPER_DAY = 1;
     let band = nest.week;
     if (days > NEST_SUPER_MONTH) band = nest.year;
-    else if (days > NEST_SUPER_WEEK) band = nest.quarter;
     else if (days > NEST_SUPER_DAY) band = nest.month;
     return eventOverlapsNestBand(spanStart, evEnd, band);
   }
@@ -6721,7 +7014,7 @@
     }
     const markerRoot = new THREE.Group();
     const amt = typeof global.currentFlattenAmount === 'number' ? global.currentFlattenAmount : 0;
-    if (amt > 0.001) {
+    if (!diskFrame && amt > 0.001) {
       const focusY = typeof global.flattenTimelineFocusY === 'function' ? global.flattenTimelineFocusY() : 0;
       pos = new THREE.Vector3(pos.x, flattenTimelineLogicalY(pos.y, focusY, amt), pos.z);
     }
@@ -7161,27 +7454,43 @@
     const weekClamp = clampRadiiToWeekZoneIfNeeded(earthDist, durationDays, rInner, rOuter);
     rInner = weekClamp.rInner;
     rOuter = weekClamp.rOuter;
+    const monthClamp = clampSubMonthRadiiOutOfQuarterZone(earthDist, durationDays, rInner, rOuter);
+    rInner = monthClamp.rInner;
+    rOuter = monthClamp.rOuter;
+    const superYearDraw = isSuperYearDurationDays(durationDays);
+    if (superYearDraw) {
+      const band = superYearBandRadii(earthDist, durationDays);
+      rInner = band.rInner;
+      rOuter = band.rOuter;
+    }
+    const bandHeights = superYearDraw ? superYearBandDrawHeights(start, end, refWorldline) : null;
+    const drawStartHeight = bandHeights ? bandHeights.startHeight : startHeight;
+    const drawEndHeight = bandHeights ? bandHeights.endHeight : endHeight;
 
-    const segments = 32;
-    const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, refWorldline, segments);
+    const segments = bandHeights ? 48 : 32;
+    const { innerFlat, outerFlat } = bandHeights
+      ? buildSuperYearBandPair(drawStartHeight, drawEndHeight, rInner, rOuter, refWorldline, segments)
+      : buildHelixPair(drawStartHeight, drawEndHeight, rInner, rOuter, refWorldline, segments);
     const staggerLogical = getEventBandVerticalStagger(durationDays);
     const hasRibbon = innerFlat.length >= 6 && innerFlat.length === outerFlat.length;
     const helixRef = {
-      startHeight,
-      endHeight,
+      startHeight: drawStartHeight,
+      endHeight: drawEndHeight,
       rInner,
       rOuter,
       refWorldline,
-      segments
+      segments,
+      kind: bandHeights ? 'superYearBand' : undefined
     };
 
     const plotType = resolveEventPlotType(start, end, layerConfig);
     const opacity = Math.min(1,
       (layerConfig.opacity != null ? layerConfig.opacity : 0.7) * getDurationOpacityScale(durationDays));
     const roBoost = getDurationRibbonRenderOrderBoost(durationDays);
-    const roFill = -4 + roBoost;
-    const roLine = -2 + roBoost;
-    const fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
+    const roFill = superYearDraw ? 10 : -4 + roBoost;
+    const roLine = superYearDraw ? 12 : -2 + roBoost;
+    let fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
+    if (superYearDraw) fillOpacity = Math.max(fillOpacity, 0.88);
     const anchorMsLong = getEventTemporalAnchorMs(start, end);
     const eventColorRaw = event.color ?? event.colorId ?? null;
     const explicitEventColor = hasExplicitEventColor(event);
@@ -7208,31 +7517,31 @@
       contextSphereClipped: !!contextSphereClipped
     };
     markWorldSpaceIfNeeded(userData, start, end);
-    storeTimelineHelixRef(userData, helixRef);
-
-    if (isSuperYearDurationDays(durationDays)) {
-      return createSuperYearCylinderRoot({
-        durationDays,
-        start,
-        end,
-        startHeight,
-        endHeight,
-        earthDist,
-        layerConfig,
-        event,
-        userData,
-        eventHex,
-        fillHex,
-        fillOpacity,
-        outlineColorHex,
-        outlineOp,
-        borderStyle,
-        roFill,
-        roLine,
-        midTitleAlong01,
-        refWorldline
+    if (bandHeights) {
+      const cyl = createSuperYearCylinderRoot({
+        durationDays: durationDays,
+        startHeight: drawStartHeight,
+        endHeight: drawEndHeight,
+        earthDist: earthDist,
+        layerConfig: layerConfig,
+        fillOpacity: 0.45,
+        fillHex: fillHex,
+        eventHex: eventHex,
+        borderStyle: borderStyle,
+        outlineOp: outlineOp,
+        roFill: roFill,
+        roLine: roLine,
+        refWorldline: refWorldline,
+        userData: userData,
+        labelEvent: event,
+        event: event,
+        start: start,
+        end: end,
+        midTitleAlong01: midTitleAlong01
       });
+      if (cyl) return cyl;
     }
+    storeTimelineHelixRef(userData, helixRef);
 
     function lineFromFlat(flat, hex, op, renderOrder, lineWidth, arcEdge) {
       const lw = lineWidth != null ? lineWidth : 1;
@@ -7257,7 +7566,7 @@
       group.add(lineFromFlat(outerFlat, eventHex, opacity, roLine, 1, 'outer'));
       addBandEndConnectors(group, innerFlat, outerFlat, eventHex, opacity, roLine);
       return attachEventStaggerRoot(
-        wrapWorldlineWithLabels(group, userData, event, start, end, startHeight, endHeight, rInner, rOuter, eventHex, refWorldline, 0, innerFlat, outerFlat, midTitleAlong01),
+        wrapWorldlineWithLabels(group, userData, event, start, end, drawStartHeight, drawEndHeight, rInner, rOuter, eventHex, refWorldline, 0, innerFlat, outerFlat, midTitleAlong01),
         staggerLogical);
     }
 
@@ -7266,7 +7575,13 @@
       if (ribbonGeo) {
         const group = new global.THREE.Group();
         group.userData = userData;
-        const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays, fillFade);
+        if (superYearDraw) group.frustumCulled = false;
+        const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays, fillFade, superYearDraw);
+        if (superYearDraw && fillMesh && fillMesh.material) {
+          fillMesh.material.depthTest = false;
+          fillMesh.material.depthWrite = false;
+          fillMesh.frustumCulled = false;
+        }
         group.add(fillMesh);
         if (borderStyle !== 'none' && outlineColorHex != null) {
           const tubeR = getRibbonOutlineTubeRadius(earthDist, layerConfig);
@@ -7293,7 +7608,7 @@
           };
         }
         return attachEventStaggerRoot(
-          wrapWorldlineWithLabels(group, userData, event, start, end, startHeight, endHeight, rInner, rOuter, eventHex, refWorldline, 0, innerFlat, outerFlat, midTitleAlong01),
+          wrapWorldlineWithLabels(group, userData, event, start, end, drawStartHeight, drawEndHeight, rInner, rOuter, eventHex, refWorldline, 0, innerFlat, outerFlat, midTitleAlong01),
           staggerLogical);
       }
     }
@@ -7352,7 +7667,7 @@
     }
     strokeObj.userData = userData;
     return attachEventStaggerRoot(
-      wrapWorldlineWithLabels(strokeObj, userData, event, start, end, startHeight, endHeight, rInner, rOuter, eventHex, refWorldline, 0, null, null, midTitleAlong01),
+      wrapWorldlineWithLabels(strokeObj, userData, event, start, end, drawStartHeight, drawEndHeight, rInner, rOuter, eventHex, refWorldline, 0, null, null, midTitleAlong01),
       staggerLogical);
   }
 
@@ -7947,6 +8262,18 @@
       const weekClampLine = clampRadiiToWeekZoneIfNeeded(earthDist, durationDays, rInner, rOuter);
       rInner = weekClampLine.rInner;
       rOuter = weekClampLine.rOuter;
+      const monthClampLine = clampSubMonthRadiiOutOfQuarterZone(earthDist, durationDays, rInner, rOuter);
+      rInner = monthClampLine.rInner;
+      rOuter = monthClampLine.rOuter;
+      const superYearLine = isSuperYearDurationDays(durationDays);
+      if (superYearLine) {
+        const band = superYearBandRadii(earthDist, durationDays);
+        rInner = band.rInner;
+        rOuter = band.rOuter;
+      }
+      const lineBandHeights = superYearLine ? superYearBandDrawHeights(start, end, refWorldline) : null;
+      const lineDrawStart = lineBandHeights ? lineBandHeights.startHeight : startHeight;
+      const lineDrawEnd = lineBandHeights ? lineBandHeights.endHeight : endHeight;
 
       const plotType = resolveEventPlotType(start, end, lineStyle, layerConfig, firstStyle);
       const fillColorFromStyle = lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
@@ -7960,70 +8287,64 @@
       const opacity = Math.min(1,
         ((lineStyle.opacity != null ? lineStyle.opacity : layerConfig.opacity) ?? 0.7) * getDurationOpacityScale(durationDays));
       const roBoost = getDurationRibbonRenderOrderBoost(durationDays);
-      const roFill = -4 + roBoost;
-      const roLine = -2 + roBoost;
-      const fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
+      const roFill = superYearLine ? 12 : -4 + roBoost;
+      const roLine = superYearLine ? 14 : -2 + roBoost;
+      let fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
+      if (superYearLine) fillOpacity = Math.max(fillOpacity, 0.88);
       let outlineColorHexEvt = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
       if (outlineColorHexEvt != null) outlineColorHexEvt = applyLongTermContextColorToHex(outlineColorHexEvt, anchorMs, start, end, durationDays);
       const outlineOpEvt = getRibbonOutlineOpacity(opacity, borderStyle, outlineLayerCfg);
       const fillFade = getLongTermContextFillFadeScales(anchorMs, start, end, durationDays);
 
-      if (isSuperYearDurationDays(durationDays)) {
-        const lineUserDataCyl = {
+      if (lineBandHeights) {
+        const lineUserData = {
           layerId: layerConfig.id,
-          type: 'EventLine',
-          start,
-          end,
-          label: line.label || null,
-          index: i,
-          useWorldSpaceGroup: true,
-          immuneToFlatten: true,
-          contextSphereClipped: !!contextSphereClipped
+          type: 'EventObject',
+          eventUid: line.uid || line.id || null,
+          vevent: line
         };
-        markWorldSpaceIfNeeded(lineUserDataCyl, start, end);
-        const cylRoot = createSuperYearCylinderRoot({
-          durationDays,
-          start,
-          end,
-          startHeight,
-          endHeight,
-          earthDist,
+        markWorldSpaceIfNeeded(lineUserData, start, end);
+        const cyl = createSuperYearCylinderRoot({
+          durationDays: durationDays,
+          startHeight: lineDrawStart,
+          endHeight: lineDrawEnd,
+          earthDist: earthDist,
           layerConfig: outlineLayerCfg,
-          rank01: lineDurationRanks.has(i) ? lineDurationRanks.get(i) : null,
-          event: line,
-          userData: lineUserDataCyl,
-          labelEvent: {
-            summary: (line.label && String(line.label).trim()) || null,
-            title: (line.label && String(line.label).trim()) || null
-          },
+          fillOpacity: 0.45,
+          fillHex: fillHex,
           eventHex: eventColorHex,
-          fillHex,
-          fillOpacity,
-          outlineColorHex: outlineColorHexEvt,
+          borderStyle: borderStyle,
           outlineOp: outlineOpEvt,
-          borderStyle,
-          roFill,
-          roLine,
-          midTitleAlong01: titleAlongByLineIdx.get(i) ?? 0.5,
-          refWorldline
+          roFill: roFill,
+          roLine: roLine,
+          refWorldline: refWorldline,
+          userData: lineUserData,
+          labelEvent: line,
+          event: line,
+          start: start,
+          end: end
         });
-        if (cylRoot) {
-          addToFlattenOrWorld(cylRoot);
-          objects.push(cylRoot);
+        if (cyl) {
+          addToFlattenOrWorld(cyl);
+          objects.push(cyl);
           continue;
         }
       }
 
-      const { innerFlat, outerFlat } = buildHelixPair(startHeight, endHeight, rInner, rOuter, refWorldline, 32);
+      const lineSegments = lineBandHeights ? 48 : 32;
+      const { innerFlat, outerFlat } = lineBandHeights
+        ? buildSuperYearBandPair(lineDrawStart, lineDrawEnd, rInner, rOuter, refWorldline, lineSegments)
+        : buildHelixPair(lineDrawStart, lineDrawEnd, rInner, rOuter, refWorldline, lineSegments);
       const staggerLogical = getEventBandVerticalStagger(durationDays);
       const hasRibbon = innerFlat.length >= 6 && innerFlat.length === outerFlat.length;
       const helixRef = {
-        startHeight,
-        endHeight,
+        startHeight: lineDrawStart,
+        endHeight: lineDrawEnd,
         rInner,
         rOuter,
         refWorldline,
-        segments: 32
+        segments: lineSegments,
+        kind: lineBandHeights ? 'superYearBand' : undefined
       };
 
       const lineUserData = {
@@ -8072,7 +8393,13 @@
         if (ribbonGeo) {
           const bandGroup = new global.THREE.Group();
           bandGroup.userData = { ...lineUserData };
-          const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays, fillFade);
+          const fillMesh = createRibbonFillMesh(ribbonGeo, fillHex, fillOpacity, plotType, roFill, durationDays, fillFade, superYearLine);
+          if (superYearLine && fillMesh && fillMesh.material) {
+            fillMesh.material.depthTest = false;
+            fillMesh.material.depthWrite = false;
+            fillMesh.frustumCulled = false;
+          }
+          if (superYearLine) bandGroup.frustumCulled = false;
           fillMesh.userData = { ...lineUserData, longTermFill: true };
           bandGroup.add(fillMesh);
           if (borderStyle !== 'none' && outlineColorHexEvt != null) {
@@ -8656,7 +8983,7 @@
     const end = getEventEnd(event);
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    if (zl === 2 && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) return true;
+    if ((zl === 1 || zl === 2) && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) return true;
     if (!eventTouchesSelectedContextArcWindow(start, evEnd)) return false;
 
     if (!isEarthDailySkyEventZoom(zl)) return true;
@@ -8683,7 +9010,7 @@
       const start = getEventStart(e);
       const end = getEventEnd(e);
       const evEnd = end && end > start ? end : (start ? new Date(start.getTime() + 3600000) : null);
-      if (zl === 2 && start && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) {
+      if ((zl === 1 || zl === 2) && start && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) {
         alwaysShow.push(e);
         continue;
       }

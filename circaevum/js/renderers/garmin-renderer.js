@@ -2,12 +2,15 @@
  * Timeseries event renderer — varying-radius arcs on the circadian day disks.
  *
  * Renders VEVENTs that carry a timeseries render descriptor (see VEvent / TimeseriesEvent):
- *   render = { kind: 'timeseries', metric: 'hr' | 'sleepStage', arc: false,
- *              summary: [...], dense: { collection, key, id } }
+ *   render = { kind: 'timeseries', metric: 'hr' | 'sleepStage' | 'scalar', arc: false,
+ *              summary: [...], dense: { collection, key, id }, vMin, vMax, unit, lane }
  *
  *   - metric 'hr': a polyline per day where RADIUS from Earth encodes bpm (low hugs the
  *     surface, high reaches toward the hour ticks), flat ribbon strip (no TubeGeometry).
  *     summary = [{ tOff, v }]  (tOff = ms from dtstart, v = bpm)
+ *   - metric 'scalar': same ribbon as HR, but radius maps vMin..vMax (not bpm).
+ *     Any finite v, including negative. lane stacks series a hair apart on the disk normal.
+ *     A gap longer than 15s breaks the stroke. summary = [{ tOff, v }]
  *   - metric 'sleepStage': arcs at ATC band radii (deep = recovery band 1, REM = band 6)
  *     as flat ribbon strokes (extra disk-normal aft replaces former tube volume).
  *     summary = [{ tOff, dur, stage }]  (tOff/dur in ms from dtstart)
@@ -116,6 +119,51 @@
       const dt = b.tOff - a.tOff;
       if (dt <= 0) continue;
       const steps = Math.max(2, Math.min(16, Math.ceil(dt / (2 * 60 * 1000))));
+      for (let k = 0; k < steps; k++) {
+        const u = k / steps;
+        out.push({ tOff: a.tOff + dt * u, v: a.v + (b.v - a.v) * u });
+      }
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  }
+
+  function cssColorHex(color) {
+    if (typeof color !== 'string') return 0x8ab4f8;
+    const m = color.trim().match(/^#([0-9a-fA-F]{6})$/);
+    if (!m) return 0x8ab4f8;
+    return parseInt(m[1], 16);
+  }
+
+  const SCALAR_GAP_MS = 15000;
+
+  function scalarRuns(summary) {
+    const pts = (summary || [])
+      .map((s) => ({ tOff: Number(s.tOff || 0), v: Number(s.v) }))
+      .filter((s) => isFinite(s.v) && isFinite(s.tOff))
+      .sort((a, b) => a.tOff - b.tOff);
+    const runs = [];
+    let run = [];
+    for (const p of pts) {
+      if (run.length && p.tOff - run[run.length - 1].tOff > SCALAR_GAP_MS) {
+        if (run.length >= 2) runs.push(run);
+        run = [];
+      }
+      run.push(p);
+    }
+    if (run.length >= 2) runs.push(run);
+    return runs;
+  }
+
+  function densifyScalar(pts) {
+    if (pts.length < 2) return pts;
+    const out = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const dt = b.tOff - a.tOff;
+      if (dt <= 0) continue;
+      const steps = Math.max(1, Math.min(8, Math.ceil(dt / (2 * 60 * 1000))));
       for (let k = 0; k < steps; k++) {
         const u = k / steps;
         out.push({ tOff: a.tOff + dt * u, v: a.v + (b.v - a.v) * u });
@@ -457,7 +505,7 @@
    * HR: at most one arc per calendar day (best daily plot wins).
    */
   function filterVisibleTimeseries(items, opts) {
-    const { selDayStart, selDayEnd, showOtherDays, winStart, winEnd, zl } = opts;
+    const { selDayStart, selDayEnd, showOtherDays, winStart, winEnd, sleepWinStart, sleepWinEnd, zl } = opts;
     const out = [];
     const hrByDay = new Map();
 
@@ -470,7 +518,10 @@
       const sMs = eventStartMs(ev);
       if (!isFinite(sMs)) continue;
       const dayStart = timeseriesDayStartMs(ev, sMs);
-      if (!isFinite(dayStart) || dayStart < winStart || dayStart > winEnd) continue;
+      const isSleep = render && render.metric === 'sleepStage';
+      const lo = isSleep && sleepWinStart != null ? sleepWinStart : winStart;
+      const hi = isSleep && sleepWinEnd != null ? sleepWinEnd : winEnd;
+      if (!isFinite(dayStart) || dayStart < lo || dayStart > hi) continue;
 
       if (!showOtherDays && (dayStart < selDayStart || dayStart >= selDayEnd)) continue;
 
@@ -479,6 +530,11 @@
         if (!prev || scoreHrEvent(ev) > scoreHrEvent(prev.ev)) {
           hrByDay.set(dayStart, { ev, layerId });
         }
+        continue;
+      }
+
+      if (render && render.metric === 'scalar') {
+        out.push({ ev, layerId });
         continue;
       }
 
@@ -666,6 +722,35 @@
           }
         }
       }
+      return;
+    }
+
+    if (render.metric === 'scalar') {
+      const lo = Number(render.vMin);
+      const hi = Number(render.vMax);
+      const vLo = isFinite(lo) ? lo : 0;
+      const vHi = isFinite(hi) && hi > vLo ? hi : vLo + 1;
+      const hex = cssColorHex(event && event.color);
+      const lane = Number(render.lane);
+      const laneN = isFinite(lane) ? lane : 0;
+      const fore = HR_FORE_OFFSET + HR_LINE_EXTRA_FORE + laneN * 0.004;
+      const halfWidth = hand() * HR_TUBE_RADIUS * HR_RIBBON_WIDTH_MUL;
+      for (const run of scalarRuns(summary)) {
+        const points = [];
+        for (const s of densifyScalar(run)) {
+          const v = Number(s.v);
+          if (!isFinite(v)) continue;
+          const ms = startMs + Number(s.tOff || 0);
+          const t = Math.max(0, Math.min(1, (v - vLo) / (vHi - vLo)));
+          const r = hand() * (HR_R_MIN + (HR_R_MAX - HR_R_MIN) * t);
+          const p = point(ms, r, fore);
+          if (!p) continue;
+          points.push(new THREE.Vector3(p.x, p.y, p.z));
+        }
+        if (points.length < 2) continue;
+        const stroke = makeHrStroke(THREE, points, hex, halfWidth, HR_LINE_OPACITY);
+        addTimeseriesMesh(group, stroke, event, layerId, { timeseriesMetric: 'scalar' });
+      }
     }
   }
 
@@ -717,12 +802,22 @@
 
     const sel = selectedDate instanceof Date ? selectedDate : new Date();
     const span = spanDays != null ? spanDays : 2;
-    // Shift preview: expand window so nearby days show even when navigated to a past date.
-    const effectiveSpan = shiftActive() ? Math.max(span, 30) : span;
-    const pad = Math.ceil(effectiveSpan / 2) + 1;
+    // Shift: HR stays a month. Sleep covers the backfill span (about half a year).
+    const shiftOn = shiftActive();
+    const hrSpan = shiftOn ? Math.max(span, 30) : span;
+    const sleepSpan = shiftOn ? Math.max(span, 180) : span;
     const selMid = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0).getTime();
-    const winStart = selMid - pad * MS_PER_DAY;
-    const winEnd = selMid + (pad + 1) * MS_PER_DAY;
+    function dayWindow(spanN) {
+      const padN = Math.ceil(spanN / 2) + 1;
+      return {
+        start: selMid - padN * MS_PER_DAY,
+        end: selMid + (padN + 1) * MS_PER_DAY,
+      };
+    }
+    const hrWin = dayWindow(hrSpan);
+    const sleepWin = dayWindow(sleepSpan);
+    const winStart = hrWin.start;
+    const winEnd = hrWin.end;
     // Selected day when layer on; Shift additionally reveals other days (one HR arc per day).
     const selDayStart = selMid;
     const selDayEnd = selMid + MS_PER_DAY;
@@ -743,6 +838,8 @@
       showOtherDays,
       winStart,
       winEnd,
+      sleepWinStart: sleepWin.start,
+      sleepWinEnd: sleepWin.end,
       zl
     });
 
