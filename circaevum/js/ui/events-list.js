@@ -824,7 +824,11 @@
         events.push({ layerId: USER_EVENTS_LAYER, ev: o });
       });
     }
-    return events;
+    return events.filter(function(item) {
+      var cat = item.ev && item.ev.category != null ? String(item.ev.category).trim() : '';
+      if (!cat) cat = 'Default';
+      return categoryVisibleInLayer(gl, item.layerId, cat);
+    });
   }
 
   function eventMatchesSearchQuery(ev, q) {
@@ -1701,16 +1705,8 @@
           : 'Events in selected context window.');
     }
 
-    var events = [];
+    var events = gatherAllLoadedEvents(gl);
     var lines = [];
-    // gather events below — filter sub-day at Year (Z3)
-    if (typeof gl.getLayerIds === 'function') {
-      gl.getLayerIds().forEach(function(lid) {
-        (gl.getEventObjects(lid) || []).forEach(function(o) { events.push({ layerId: lid, ev: o }); });
-      });
-    } else {
-      (gl.getEventObjects(USER_EVENTS_LAYER) || []).forEach(function(o) { events.push({ layerId: USER_EVENTS_LAYER, ev: o }); });
-    }
     if (typeof gl.removeEventLines === 'function') gl.removeEventLines('event-lines');
     (gl.getEventLines('event-lines') || []).forEach(function(ln) { lines.push({ start: ln.start, end: ln.end, label: ln.label }); });
 
