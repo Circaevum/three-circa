@@ -17,8 +17,10 @@
     if (event.work?.kind === 'milestone') end = start;
     if (end < start) return null;
     const w = event.work || {};
+    const laneAlias = { Alignment: 'Research', 'Data & interoperability': 'Development', 'Data & Interoperability': 'Development' };
+    const rawLane = String(event.category || event.categories?.[0] || w.lane || 'General');
     return { event, id: event.workRef || event.uid || event.id, start, end,
-      project: String(w.project || 'Work'), lane: String(event.category || event.categories?.[0] || w.lane || 'General'),
+      project: String(w.project || 'Work'), lane: laneAlias[rawLane] || rawLane,
       workflow: workflows[w.workflow] ? w.workflow : 'communication',
       access: event.workAccess || { label: 'Loaded', canWrite: false },
       assignee: String(w.assignee || ''), followUpAt: time(w.followUpAt),
@@ -44,10 +46,10 @@
   }
   function seed() {
     const rows = [
-      ['kickoff', 'OpenAMI / ISV kickoff', 'Alignment', 'meeting', 'done', '2026-11-02T17:00:00Z', '2026-11-02T18:00:00Z', []],
-      ['scope', 'Agree pilot scope', 'Alignment', 'task', 'done', '2026-11-03T17:00:00Z', '2026-11-05T18:00:00Z', ['kickoff']],
-      ['data', 'Map sample meter data', 'Data & interoperability', 'task', 'in-progress', '2026-11-05T17:00:00Z', '2026-11-12T18:00:00Z', ['scope']],
-      ['review', 'Interoperability review', 'Data & interoperability', 'meeting', 'planned', '2026-11-12T19:00:00Z', '2026-11-12T20:00:00Z', ['data']],
+      ['kickoff', 'OpenAMI / ISV kickoff', 'Research', 'meeting', 'done', '2026-11-02T17:00:00Z', '2026-11-02T18:00:00Z', []],
+      ['scope', 'Agree pilot scope', 'Research', 'task', 'done', '2026-11-03T17:00:00Z', '2026-11-05T18:00:00Z', ['kickoff']],
+      ['data', 'Map sample meter data', 'Development', 'task', 'in-progress', '2026-11-05T17:00:00Z', '2026-11-12T18:00:00Z', ['scope']],
+      ['review', 'Interoperability review', 'Development', 'meeting', 'planned', '2026-11-12T19:00:00Z', '2026-11-12T20:00:00Z', ['data']],
       ['prototype', 'Build pilot walkthrough', 'Delivery', 'task', 'blocked', '2026-11-10T17:00:00Z', '2026-11-18T18:00:00Z', ['data']],
       ['feedback', 'ISV feedback session', 'Delivery', 'meeting', 'planned', '2026-11-19T17:00:00Z', '2026-11-19T18:00:00Z', ['prototype']],
       ['ready', 'Pilot ready', 'Delivery', 'milestone', 'planned', '2026-11-23T17:00:00Z', '2026-11-23T17:00:00Z', ['review', 'feedback']],
@@ -56,7 +58,7 @@
       uid: 'openami-example-' + id, summary, isWorkEvent: true, category: lane,
       description: 'Illustrative planning example, not a confirmed commitment or report of project progress.',
       dtstart: { dateTime: start }, ...(kind === 'milestone' ? {} : { dtend: { dateTime: end } }),
-      work: { project: 'OpenAMI / ISV', lane, kind, status, workflow: lane === 'Alignment' ? 'communication' : lane === 'Delivery' ? 'ai-code' : 'cloud', assignee: lane === 'Data & interoperability' ? 'Data team' : 'Project team', dependencies: dependencies.map(x => 'openami-example-' + x) }
+      work: { project: 'OpenAMI / ISV', lane, kind, status, workflow: lane === 'Research' ? 'communication' : lane === 'Delivery' ? 'ai-code' : 'cloud', assignee: lane === 'Development' ? 'Data team' : 'Project team', dependencies: dependencies.map(x => 'openami-example-' + x) }
     }));
   }
   function semantic(item, now = Date.now()) {

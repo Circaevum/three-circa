@@ -1,4 +1,4 @@
-/* Expanded Work Mode and the bottom task dock. One task list, two views. Does not move the camera. */
+/* Explicitly opened Research / Development / Delivery workspace. Does not move the camera. */
 (function () {
   const M = window.WorkMode;
   if (!M) return;
@@ -8,20 +8,17 @@
   let project = '';
   let budget = null;
   let expanded = false;
-  let dockCollapsed = false;
   let editing = null;
   let applyingRemote = false;
-  let dockProject = '';
 
   function load() {
     try {
       const board = JSON.parse(localStorage.getItem(KEY));
-      if (board && Array.isArray(board.tasks) && board.tasks.length) {
+      if (board && Array.isArray(board.tasks)) {
         tasks = board.tasks.map(M.normalize).filter(Boolean);
         savedAt = board.savedAt || '';
         project = board.project || '';
         budget = board.budget === 15 || board.budget === 30 || board.budget === 60 ? board.budget : null;
-        dockCollapsed = board.dockCollapsed === true;
         return;
       }
     } catch (_) {}
@@ -29,8 +26,9 @@
     savedAt = '';
     project = 'OpenAMI / ISV';
   }
+  // Legacy dock preferences never reopen UI; retain compatible fields on future saves.
   function board() {
-    return { tasks, savedAt, project, budget, dockCollapsed, fallback: 'local' };
+    return { tasks, savedAt, project, budget, dockCollapsed: true, dockLayout: 2, fallback: 'local' };
   }
   function persist() {
     savedAt = new Date().toISOString();
@@ -47,58 +45,17 @@
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
   overlay.setAttribute('aria-label', 'Work Mode');
-  const dock = document.createElement('section');
-  dock.id = 'work-dock';
-  dock.setAttribute('aria-label', 'Work dock');
-  document.body.append(overlay, dock);
+  document.body.append(overlay);
 
   function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function scoped() { return project ? tasks.filter(t => t.project === project) : tasks; }
   function projects() { return [...new Set(tasks.map(t => t.project))]; }
-
-  function placeDock() {
-    const swim = document.getElementById('swim-lanes');
-    const swimOpen = document.body.classList.contains('swim-lanes-open') && swim && !swim.hidden;
-    dock.style.bottom = swimOpen ? (swim.offsetHeight + 8) + 'px' : '12px';
-  }
 
   function taskPatch(id, patch) {
     const at = new Date().toISOString();
     tasks = tasks.map(t => t.id === id ? M.normalize({ ...t, ...patch, id: t.id, updatedAt: at }) : t).filter(Boolean);
     persist();
     render();
-  }
-
-  function renderDock() {
-    dock.hidden = expanded;
-    dock.classList.toggle('is-collapsed', dockCollapsed);
-    if (expanded) return;
-    const rows = M.CATEGORIES.map(c => {
-      const next = M.nextTask(scoped(), c.id, budget);
-      const label = next ? esc(next.title) : 'Nothing fits';
-      const buttons = next
-        ? `<button type="button" data-act="done" data-id="${esc(next.id)}">Done</button><button type="button" data-act="open" data-id="${esc(next.id)}">Open</button>`
-        : '';
-      return `<div class="wm-dock-lane"><span>${c.label}</span><strong title="${esc(next ? M.why(next, tasks) : '')}">${label}</strong>${buttons}</div>`;
-    }).join('');
-    const options = projects().map(name => `<option ${name === (dockProject || project) ? 'selected' : ''}>${esc(name)}</option>`).join('');
-    dock.innerHTML = dockCollapsed
-      ? `<button type="button" data-act="expand-dock">Work</button>`
-      : `<div class="wm-dock-rows">${rows}</div>
-        <form class="wm-quick" data-quick="dock">
-          <label class="sr-only" for="wm-dock-title">New task</label>
-          <input id="wm-dock-title" name="title" placeholder="Add a task" autocomplete="off" required>
-          <label class="sr-only" for="wm-dock-cat">Category</label>
-          <select id="wm-dock-cat" name="category">${M.CATEGORIES.map(c => `<option value="${c.id}">${c.label}</option>`).join('')}</select>
-          <label class="sr-only" for="wm-dock-project">Project</label>
-          <select id="wm-dock-project" name="project">${options}</select>
-          <button type="submit">Add</button>
-        </form>
-        <div class="wm-dock-actions">
-          <button type="button" data-act="open-mode">Work Mode</button>
-          <button type="button" data-act="collapse-dock" aria-label="Collapse work dock">Hide</button>
-        </div>`;
-    placeDock();
   }
 
   function editor(task) {
@@ -175,7 +132,7 @@
     overlay.querySelector('h1')?.focus?.();
   }
 
-  function render() { renderOverlay(); renderDock(); }
+  function render() { renderOverlay(); }
 
   function addTask(title, category, projectName) {
     const at = new Date().toISOString();
@@ -198,8 +155,6 @@
     const id = button.dataset.id;
     if (act === 'open-mode' || act === 'open') { editing = act === 'open' ? id : editing; expanded = true; render(); return; }
     if (act === 'close') { expanded = false; editing = null; render(); return; }
-    if (act === 'collapse-dock') { dockCollapsed = true; persist(); render(); return; }
-    if (act === 'expand-dock') { dockCollapsed = false; persist(); render(); return; }
     if (act === 'budget') { budget = button.dataset.budget === 'all' ? null : Number(button.dataset.budget); persist(); render(); return; }
     if (act === 'edit') { editing = id; expanded = true; render(); return; }
     if (act === 'cancel-edit') { editing = null; render(); return; }
@@ -213,8 +168,8 @@
     if (form.dataset.quick) {
       event.preventDefault();
       const title = new FormData(form).get('title');
-      const category = form.dataset.quick === 'dock' ? new FormData(form).get('category') : form.dataset.quick;
-      const projectName = form.dataset.quick === 'dock' ? new FormData(form).get('project') : project;
+      const category = form.dataset.quick;
+      const projectName = project;
       if (String(title || '').trim()) addTask(String(title).trim(), category, projectName || '');
       return;
     }
@@ -235,20 +190,16 @@
   }
   function onChange(event) {
     if (event.target.dataset.act === 'project') { project = event.target.value; persist(); render(); }
-    if (event.target.id === 'wm-dock-project') dockProject = event.target.value;
   }
 
   overlay.addEventListener('click', onClick);
-  dock.addEventListener('click', onClick);
   overlay.addEventListener('submit', onSubmit);
-  dock.addEventListener('submit', onSubmit);
   overlay.addEventListener('change', onChange);
-  dock.addEventListener('change', onChange);
   document.addEventListener('keydown', event => {
+    if(window.isSceneKeyboardEditing?.(event))return;
     if (event.key === 'Escape' && expanded) { expanded = false; editing = null; render(); }
   });
   document.querySelector('[data-open-work-mode]')?.addEventListener('click', () => { expanded = true; render(); });
-  window.addEventListener('resize', placeDock);
   window.addEventListener('message', event => {
     const data = event.data;
     if (!data || typeof data !== 'object') return;
@@ -256,12 +207,10 @@
     if (data.type === 'CIRCAEVUM_WORK_BOARD' && data.board && Array.isArray(data.board.tasks)) {
       if (savedAt && String(data.board.savedAt || '') <= savedAt) return;
       const incoming = data.board.tasks.map(M.normalize).filter(Boolean);
-      if (!incoming.length) return;
       applyingRemote = true;
       tasks = incoming;
       project = data.board.project || project;
       budget = data.board.budget === 15 || data.board.budget === 30 || data.board.budget === 60 ? data.board.budget : null;
-      dockCollapsed = data.board.dockCollapsed === true;
       savedAt = data.board.savedAt || savedAt;
       try { localStorage.setItem(KEY, JSON.stringify(board())); } catch (_) {}
       applyingRemote = false;

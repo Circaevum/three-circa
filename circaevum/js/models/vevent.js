@@ -36,6 +36,7 @@ class VEvent {
     this.category = data.category != null ? String(data.category) : null;
     this.isTrip = data.isTrip === true;
     this.isWorkEvent = data.isWorkEvent === true;
+    this.work = data.work && typeof data.work === 'object' ? data.work : null;
     this.color = data.color || null;
     this.class = data.class || 'PUBLIC';
     this.layerId = data.layerId || null;
@@ -129,6 +130,7 @@ class VEvent {
       categories: this.categories,
       isTrip: this.isTrip,
       isWorkEvent: this.isWorkEvent,
+      work: this.work,
       color: this.color,
       class: this.class,
       layerId: this.layerId,

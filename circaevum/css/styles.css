@@ -971,6 +971,35 @@ body.viewer-no-nav .left-panel.calendars-left-panel {
     flex-direction: column;
     gap: 1px;
 }
+.calendar-collection {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    margin: 8px 0 2px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--cal, #9aa3ad) 65%, transparent);
+    background: color-mix(in srgb, var(--cal, #9aa3ad) 16%, transparent);
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    font: 600 13px/1.2 inherit;
+}
+.calendar-collection.is-selected { box-shadow: inset 3px 0 0 var(--cal, #9aa3ad); }
+.calendar-collection-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--cal, #9aa3ad);
+    flex: none;
+}
+.calendar-collection-count {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 500;
+    opacity: 0.7;
+}
 
 .atc-legend-host {
     margin-top: 8px;
@@ -1820,6 +1849,11 @@ body.viewer-no-nav .landing-page {
 }
 body.viewer-no-nav .loading {
     top: 0;
+}
+body.viewer-no-nav #zoom-controls,
+body.viewer-no-nav #mobile-controls-stack {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    bottom: auto;
 }
 .event-list-pull-tab {
     display: block;
@@ -3910,11 +3944,12 @@ h1 {
 }
 
 /* ============================================
-   CONTROLS (Bottom Zoom Slider)
+   CONTROLS (Top Zoom Slider)
    ============================================ */
 .controls {
     position: fixed;
-    bottom: 30px;
+    top: calc(var(--nav-height, 56px) + 12px);
+    bottom: auto;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -3982,11 +4017,12 @@ h1 {
    ============================================ */
 .mobile-controls-stack {
     display: none;
-    position: absolute;
-    bottom: 30px;
+    position: fixed;
+    top: calc(var(--nav-height, 56px) + 8px);
+    bottom: auto;
     left: 50%;
     transform: translateX(-50%);
-    flex-direction: column;
+    flex-direction: column-reverse;
     align-items: center;
     gap: 10px;
     z-index: 200;
@@ -4911,7 +4947,7 @@ body.zoom-level-0 .info-panel {
 
     .circaevum-attribution {
         left: 10px;
-        bottom: calc(168px + env(safe-area-inset-bottom, 0px));
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px));
         font-size: 10px;
         padding: 5px 8px;
     }
@@ -4937,7 +4973,8 @@ body.zoom-level-0 .info-panel {
     
     /* Mobile bottom controls - smaller on very small screens */
     .mobile-controls-stack {
-        bottom: 15px;
+        top: calc(var(--nav-height, 56px) + 6px);
+        bottom: auto;
         gap: 8px;
     }
 
@@ -5001,7 +5038,8 @@ body.zoom-level-0 .info-panel {
     
     /* Very compact zoom slider */
     .controls {
-        bottom: 10px;
+        top: calc(var(--nav-height, 56px) + 6px);
+        bottom: auto;
         padding: 3px 5px;
         border-radius: 30px;
         max-width: calc(100vw - 16px);
@@ -5158,7 +5196,8 @@ body.zoom-level-0 .info-panel {
     }
     
     .controls {
-        bottom: 8px;
+        top: calc(var(--nav-height, 56px) + 4px);
+        bottom: auto;
         padding: 3px 6px;
     }
     
@@ -5191,9 +5230,8 @@ body.zoom-level-0 .info-panel {
     bottom: 0;
     display: flex;
     justify-content: center;
-    /* Clear fixed bottom zoom controls (.controls ~88px + bottom offset) */
     padding: 16px;
-    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     pointer-events: none;
     opacity: 0;
     transform: translateY(12px);
@@ -6185,3 +6223,4 @@ body.light-mode .circa-perf-close {
 @media (max-width: 640px) {
     .circa-perf-cols { grid-template-columns: 1fr; }
 }
+

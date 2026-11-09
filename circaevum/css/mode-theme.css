@@ -1,0 +1,28 @@
+/* Shared portal/viewer mode palette. Semantic calendar colors stay on their own rows. */
+body{--mode-accent:#9ca3af;--mode-rgb:156,163,175;--mode-bg:#111214;--mode-panel:#1a1c1f;--mode-card:#222529}
+body[data-mode=work]{--mode-accent:#4aa8e0;--mode-rgb:74,168,224;--mode-bg:#08121d;--mode-panel:#101e2b;--mode-card:#172a3b}
+body[data-mode=health]{--mode-accent:#ee6474;--mode-rgb:238,100,116;--mode-bg:#1b0e11;--mode-panel:#2b171c;--mode-card:#382128}
+body[data-mode=financial]{--mode-accent:#4fc28b;--mode-rgb:79,194,139;--mode-bg:#0b1711;--mode-panel:#14271d;--mode-card:#1d3327}
+body,body.light-mode{--cosmic-cyan:var(--mode-accent);--deep-space:var(--mode-bg);--star-field:var(--mode-bg);--nebula-blue:var(--mode-panel);--ui-surface-nav:var(--mode-bg);--ui-surface-panel:var(--mode-panel);--ui-surface-panel-wash:var(--mode-panel);--ui-surface-dropdown:var(--mode-panel);--ui-surface-card:var(--mode-card);--ui-surface-card-head:var(--mode-card);--ui-surface-tile:var(--mode-card);--ui-border:rgba(var(--mode-rgb),.3);--ui-border-soft:rgba(var(--mode-rgb),.2);--ui-border-strong:rgba(var(--mode-rgb),.6);--ui-divider:rgba(var(--mode-rgb),.15);--ui-fill-selected:rgba(var(--mode-rgb),.2);--ui-fill-hover:rgba(var(--mode-rgb),.12);--ui-fill-input:rgba(var(--mode-rgb),.08);--ui-fill-tab:rgba(var(--mode-rgb),.08);--ui-scrollbar-thumb:rgba(var(--mode-rgb),.3);--ui-shadow-focus:0 0 0 2px rgba(var(--mode-rgb),.4);accent-color:var(--mode-accent)}
+body.light-mode{--mode-bg:#f3f4f5;--mode-panel:#fff;--mode-card:#e9ebee;--mode-accent:#626b77}
+body.light-mode[data-mode=work]{--mode-bg:#edf4fa;--mode-card:#e1edf7;--mode-accent:#237bb1}
+body.light-mode[data-mode=health]{--mode-bg:#fbf0f2;--mode-card:#f7e4e8;--mode-accent:#bf374e}
+body.light-mode[data-mode=financial]{--mode-bg:#edf7f1;--mode-card:#dff0e6;--mode-accent:#238357}
+body .nav-wrap,body .nav-dropdown,body #calendar-layers-slideout.panel,body .calendars-left-panel,body #event-list-panel{background:var(--mode-panel);border-color:var(--ui-border);box-shadow:0 4px 20px #0002}
+body button.primary,body .hub-primary,body .hub-auth-tabs button.is-active,body .zoom-option.active{background:var(--mode-accent);border-color:var(--mode-accent);color:var(--mode-bg);box-shadow:none}
+body .nav-keys-btn,body .nav-hamburger,body .nav-wasd-keys span,body .scene-icon,body #orbital-data-restore,body .calendar-layers-rail-tab,body #event-list-pull-tab,body #calendar-layers-pull-tab,body .swim-lanes-menu button{background:var(--mode-card);border-color:var(--ui-border);color:var(--mode-accent);box-shadow:none}
+body .zoom-slider,body .zoom-controls,body #zoom-controls{border-color:var(--mode-accent);box-shadow:0 0 12px rgba(var(--mode-rgb),.12)}
+body #swim-lanes,body #sl-side{--paper:var(--mode-card);--bg:var(--mode-panel);--ink:var(--ui-text-bright,#d9e5ec);--line:var(--ui-border);--muted:var(--ui-text-muted,#91a4b0)}
+body #swim-lanes .sl-bar{border-top-color:var(--mode-accent)}
+body .work-preview-controls button,body .account-settings-link{background:var(--mode-card);color:var(--mode-accent);border:1px solid var(--ui-border);border-radius:5px;padding:6px 9px;font:12px/1.4 system-ui;text-decoration:none}
+body .hub-root,body .hub-auth-card,body .hub-account-card,body .hub-bucket,body .panel{background:var(--ui-surface-panel)}
+body .hub-hint,body .account-modes p{color:var(--ui-text-muted)}
+body input,body select,body textarea{accent-color:var(--mode-accent)}
+body :focus-visible{outline-color:var(--mode-accent)}
+
+/* Mode colors also cover compact icon controls and keyboard hints. */
+body .nav-wasd-keys kbd,body .scene-icon-btn,body #scene-icon-toggle,body #flatten-slider-wrap{background:var(--mode-panel);border-color:var(--ui-border);color:var(--mode-accent);box-shadow:none}
+body .scene-icon-btn.active,body .scene-icon-btn[aria-pressed=true],body .work-preview-controls button[aria-pressed=true]{background:rgba(var(--mode-rgb),.25);border-color:var(--mode-accent);color:var(--mode-accent);box-shadow:none}
+body input[type=range]{accent-color:var(--mode-accent)}
+
+body[data-mode] #swim-lanes,body[data-mode] #sl-side{--paper:var(--mode-card);--bg:var(--mode-panel);--line:var(--ui-border);}

@@ -87,6 +87,7 @@
       dtstart: ve.dtstart || (start ? { dateTime: start.toISOString() } : null),
       dtend: ve.dtend || (endUse ? { dateTime: endUse.toISOString() } : null),
       isTrip: ve.isTrip === true,
+      work: ve.work || null,
       isWorkEvent: ve.isWorkEvent === true
     };
   }

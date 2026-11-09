@@ -223,7 +223,7 @@ const TimeMarkers = (function() {
 
     /** Selected-time marker lines: cyan/blue (pairs with getSelectedTimeColor + red current-time). */
     function getSelectedMarkerLineColor() {
-        return isLightMode ? 0x0891b2 : 0x22d3ee;
+        return window.getModeSelectedTimeColor?.(isLightMode) ?? (isLightMode ? 0x0891b2 : 0x22d3ee);
     }
 
     function getColor(isCurrent, isSelected, hasOffset) {

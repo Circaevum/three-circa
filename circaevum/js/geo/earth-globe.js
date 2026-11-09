@@ -452,12 +452,13 @@ const EarthGlobe = (function () {
                         );
                         return;
                     }
-                    requestGeo();
+                    // Startup must never reopen a permission prompt. The browser's
+                    // current permission is authoritative, including after revocation.
+                    if (status.state === 'granted') requestGeo();
                 })
-                .catch(() => requestGeo());
-        } else {
-            requestGeo();
+                .catch(() => { /* Unknown permission: keep the timezone fallback. */ });
         }
+        // Without the Permissions API, do not assume a request will be silent.
     }
 
     function refreshObserverForSelectedTime(selectedDate, zoomLevel) {

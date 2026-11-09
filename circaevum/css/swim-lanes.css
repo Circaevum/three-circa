@@ -55,7 +55,6 @@ body.viewer-no-nav #swim-lanes{top:auto}
 #swim-lanes .sl-detail li button{border:0;background:transparent;text-align:left;padding:2px 0;min-height:22px;text-decoration:underline;font-size:11px}
 #sl-editor{display:grid;gap:8px}#sl-editor label{display:grid;gap:3px;font-size:11px}#sl-editor input,#sl-editor select{width:100%}
 .sl-attention{border-left:2px solid #c1a550;padding-left:8px}.sl-empty{padding:24px;text-align:center;color:var(--muted)}
-.sl-report{margin-top:14px;border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--paper)}.sl-table-scroll{overflow:auto}.sl-report table{border-collapse:collapse;width:100%;font-size:11px;text-align:left}.sl-report td,.sl-report th{padding:7px;border-bottom:1px solid var(--line)}.sl-note{font-size:10px;color:var(--muted)}
 @media(max-width:850px){.sl-layout.sl-has-detail{grid-template-columns:minmax(0,1fr)}#swim-lanes{padding:12px 10px 16px}.sl-detail{max-width:none}.sl-caption>span:last-child{display:none}}
 @media(prefers-reduced-motion:reduce){#swim-lanes *{scroll-behavior:auto}}
 
@@ -150,7 +149,7 @@ body.swim-lanes-open #calendars-left-panel.sl-sheet .left-panel-body{padding:0;o
 #sl-side small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted,#91a4b0);font-size:9px}
 #sl-side .sl-label.sl-hot,#swim-lanes .sl-lane.sl-hot .sl-track{box-shadow:inset 0 0 0 999px rgba(87,183,206,.14)}
 #swim-lanes .sl-lane,#sl-side .sl-label{transition:box-shadow .12s ease}
-#swim-lanes.sl-docked .sl-head,#swim-lanes.sl-docked .sl-tools,#swim-lanes.sl-docked .sl-legend,#swim-lanes.sl-docked .sl-workflow-legend,#swim-lanes.sl-docked .sl-caption,#swim-lanes.sl-docked .sl-notice,#swim-lanes.sl-docked .sl-report{margin-left:0;margin-right:0}
+#swim-lanes.sl-docked .sl-head,#swim-lanes.sl-docked .sl-tools,#swim-lanes.sl-docked .sl-legend,#swim-lanes.sl-docked .sl-workflow-legend,#swim-lanes.sl-docked .sl-caption,#swim-lanes.sl-docked .sl-notice{margin-left:0;margin-right:0}
 body.swim-lanes-open .work-entry{display:none}
 #sl-side{--paper:#fff;--bg:#f4f7f9;--ink:#253b4b;--line:#dce4e9;--muted:#627483;--tint:.065;flex:0 0 auto;max-height:none;overflow:hidden;padding:0;border:0;background:transparent;color:var(--ink);font:12px/1.4 system-ui,sans-serif}
 #sl-side[hidden]{display:none}
@@ -173,6 +172,9 @@ body:not(.light-mode) #sl-side{--paper:#15232e;--bg:#101a23;--ink:#d9e5ec;--line
 #sl-side .sl-minimize{width:26px;height:26px;padding:0;font-size:18px;line-height:1}
 #sl-side .sl-lane-title{display:block;width:100%;border:0;border-radius:0;background:transparent;color:var(--ink);text-align:left;font:600 12px/1.3 system-ui,sans-serif;letter-spacing:0;text-transform:none;padding:0;min-height:0;box-shadow:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 #swim-lanes.sl-docked .sl-axis,#swim-lanes.sl-docked .sl-lane{grid-template-columns:1fr}
+#swim-lanes.sl-docked.sl-named .sl-axis,#swim-lanes.sl-docked.sl-named .sl-lane{grid-template-columns:175px 1fr}
+#swim-lanes.sl-docked.sl-named .sl-links{left:175px;width:calc(100% - 175px)}
+.sl-lane-title[aria-pressed=true]{box-shadow:inset 3px 0 0 #57b7ce}
 #swim-lanes.sl-docked .sl-board-scroll{border-left:0;border-radius:0 8px 8px 0}
 #swim-lanes.sl-docked .sl-links{left:0;width:100%}
 body.swim-lanes-open.calendars-left-panel-open .calendars-left-footer{display:none}
@@ -186,3 +188,67 @@ body:not(.light-mode) #sl-title-rail{--paper:#15232e;--bg:#101a23;--ink:#d9e5ec;
 #sl-title-rail .sl-lane-title:hover{color:#2f7f9a}
 #sl-title-rail small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:9px}
 body.swim-lanes-open.calendars-left-panel-open #calendars-left-panel{box-shadow:none}
+
+/* Resize only the renderer surface; keep drawers in the full iframe coordinate space. */
+body.fit-calendar-viewport #canvas-container{position:absolute;left:var(--calendar-fit-left,0px);right:var(--calendar-fit-right,0px);top:0;bottom:var(--calendar-fit-bottom,0px);width:auto;height:auto;min-width:0;min-height:0}
+body.fit-calendar-viewport #canvas-container canvas{display:block}
+
+/* In the app, its Layers panel owns the left column; lane names stay with their tracks. */
+body.portal-calendar-layout #swim-lanes{left:var(--host-chrome-left,0px);right:var(--host-chrome-right,0px);height:38vh;min-height:250px;max-height:60vh;border-radius:10px 10px 0 0;padding:0;overflow:auto}
+body.portal-calendar-layout #swim-lanes.sl-named .sl-axis,body.portal-calendar-layout #swim-lanes.sl-named .sl-lane{grid-template-columns:175px 1fr}
+body.portal-calendar-layout #swim-lanes .sl-links{left:175px;width:calc(100% - 175px)}
+body.portal-calendar-layout #swim-lanes .sl-bar{border-top:2px solid #2563eb}
+
+body.portal-calendar-layout #swim-lanes{left:0!important;right:0!important;z-index:13000;}
+body.portal-calendar-layout #event-list-panel{top:0;bottom:var(--viewer-lanes-height,0px);z-index:12000;}
+body.portal-calendar-layout #event-list-pull-tab{z-index:12001;}
+body.portal-calendar-layout #zoom-controls{top:68px;left:calc(var(--calendar-fit-left,0px) + (100% - var(--calendar-fit-left,0px) - var(--viewer-panel-right,0px))/2);max-width:calc(100% - var(--calendar-fit-left,0px) - var(--viewer-panel-right,0px) - 16px);}
+body.portal-calendar-layout #zoom-controls .zoom-slider{max-width:100%;}
+body.portal-calendar-layout #zoom-controls .zoom-option{min-width:0;flex:1;padding-left:4px;padding-right:4px;}
+body.portal-calendar-layout #hud{top:68px;right:calc(var(--viewer-panel-right,0px) + 12px);}
+
+body.portal-calendar-layout #zoom-controls{width:680px;box-sizing:border-box;padding:8px;}
+body.portal-calendar-layout #zoom-controls .zoom-slider{width:100%;}
+body.portal-calendar-layout #zoom-controls .zoom-label{overflow:hidden;text-overflow:ellipsis;}
+
+/* Lane titles align with the host Layers column, including its outer border. */
+body.portal-calendar-layout #swim-lanes{--lane-label-width:min(45vw,var(--host-lane-label-width,352px))}
+body.portal-calendar-layout #swim-lanes.sl-named .sl-axis,body.portal-calendar-layout #swim-lanes.sl-named .sl-lane{grid-template-columns:var(--lane-label-width) 1fr}
+body.portal-calendar-layout #swim-lanes .sl-links{left:var(--lane-label-width);width:calc(100% - var(--lane-label-width))}
+body.portal-calendar-layout #swim-lanes .sl-card[draggable=true]{cursor:grab}
+
+/* App chrome owns the top 56px; embedded standalone defaults start too high. */
+body.portal-calendar-layout #orbital-data-restore,
+body.portal-calendar-layout #orbital-data-panel{top:68px;right:calc(var(--viewer-panel-right,0px) + 12px)}
+body.portal-calendar-layout #orbital-data-panel{max-height:calc(100vh - 84px - var(--viewer-lanes-height,0px));overflow:auto}
+
+/* Complete viewport-sized pages share one projection, differing only in depth. */
+body.portal-calendar-layout.interface-depth{background:radial-gradient(ellipse at 50% 35%,var(--mode-card,#24303b),#050910 85%)}
+body.portal-calendar-layout .interface-depth-page{
+  position:fixed;inset:0;width:100vw;height:100vh;box-sizing:border-box;
+  transform-origin:50% 50%;
+  transform:perspective(1800px) scale(.68) rotateX(var(--depth-pitch,8deg)) rotateY(var(--depth-yaw,-28deg)) translateZ(var(--page-depth));
+  border:1px solid var(--ui-border);border-radius:12px;
+  background:color-mix(in srgb,var(--mode-card,#14202c) 20%,transparent);
+  box-shadow:6px 8px 0 #14202c88,24px 32px 40px #0008;
+  pointer-events:none!important;overflow:hidden;
+}
+body.portal-calendar-layout .interface-depth-page[hidden]{display:none}
+body.portal-calendar-layout .interface-depth-page[data-page=scene]{z-index:1}
+body.portal-calendar-layout .interface-depth-page[data-page=events]{z-index:2}
+body.portal-calendar-layout .interface-depth-page[data-page=lanes]{z-index:3}
+body.portal-calendar-layout.interface-depth #canvas-container{inset:68px 0 0;width:auto;height:auto;transform:none}
+/* Controls retain their normal positions within their page, with no individual tilt. */
+body.portal-calendar-layout.interface-depth #event-list-panel.open{transform:translateX(0)}
+
+.depth-page-placeholder{position:absolute;inset:68px 0 auto;padding:24px;font:600 22px system-ui;color:var(--mode-accent);pointer-events:none!important}.depth-page-placeholder[hidden]{display:none}
+
+/* All three panels can coexist; keep close controls below app navigation. */
+body.portal-calendar-layout #event-list-panel{top:56px}
+body.portal-calendar-layout .swim-lanes-menu{display:none}
+body.portal-calendar-layout #event-list-panel .event-list-panel-header{position:sticky;top:0;z-index:2;background:var(--mode-card)}
+
+/* The app header owns the Icons menu; no floating expand or replay controls. */
+body.portal-calendar-layout #scene-icon-toggle,
+body.portal-calendar-layout .scene-icon-overlay.collapsed,
+.circaevum-intro-replay-btn{display:none!important}

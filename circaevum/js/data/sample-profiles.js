@@ -275,18 +275,16 @@
     if (g.getLayer && g.getLayer(layerId) && typeof g.removeLayer === 'function') {
       try { g.removeLayer(layerId); } catch (e2) { /* ignore */ }
     }
-    g.ingestEvents(layerId, buildEvents(profile, new Date()), {
-      fullSet: true,
-      visible: true,
-      sessionId: 'sample-' + profile.id
-    });
-    var layer = g.getLayer && g.getLayer(layerId);
-    if (layer) {
-      layer.name = profile.name;
-      layer.color = profile.color;
-      layer.visible = true;
+    if (typeof global.ingestSampleCollections === 'function') {
+      global.ingestSampleCollections(profile, g, buildEvents(profile, new Date()));
+    } else {
+      g.ingestEvents(layerId, buildEvents(profile, new Date()), {
+        fullSet: true,
+        visible: true,
+        sessionId: 'sample-' + profile.id
+      });
     }
-    if (typeof g.setLayerVisibility === 'function') g.setLayerVisibility(layerId, true);
+    var layer = g.getLayer && g.getLayer(layerId);
     try { global.localStorage && global.localStorage.setItem(STORE_KEY, profile.id); } catch (e3) { /* ignore */ }
     if (typeof global.refreshCalendarLayersList === 'function') {
       try { global.refreshCalendarLayersList(); } catch (e4) { /* ignore */ }
