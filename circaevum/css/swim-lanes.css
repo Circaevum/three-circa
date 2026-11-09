@@ -1,0 +1,297 @@
+.work-entry{display:grid;gap:8px;padding:14px 0;border-bottom:1px solid #8495a433;margin-bottom:12px}
+.work-entry button,.swim-lanes-menu button{font:inherit;cursor:pointer;border:1px solid #8796a855;border-radius:7px;padding:7px 10px;color:inherit;background:transparent}
+.swim-lanes-menu{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:12000;display:flex;gap:4px;background:#eaf0f4;color:#243b4d;border:1px solid #bdcbd5;padding:4px;border-radius:10px;font:11px system-ui;box-shadow:0 2px 12px #0002}
+.swim-lanes-menu button[aria-pressed=true]{background:#244f61;color:white}
+body:not(.swim-lanes-open) .swim-lanes-menu{bottom:12px}
+#swim-lanes{--paper:#fff;--bg:#f4f7f9;--ink:#253b4b;--line:#dce4e9;--muted:#627483;--tint:.065;position:fixed;inset:auto 0 0;height:56vh;min-height:330px;max-height:calc(100vh - 148px);border-radius:16px 16px 0 0;box-shadow:0 -8px 30px #0003;animation:sl-rise .24s ease-out;z-index:11000;padding:16px 20px 20px;background:var(--bg);color:var(--ink);overflow:auto;font:12px/1.4 system-ui,sans-serif;overscroll-behavior:contain}
+#swim-lanes[hidden]{display:none}
+body:not(.light-mode) #swim-lanes{--paper:#15232e;--bg:#101a23;--ink:#d9e5ec;--line:#2d3d49;--muted:#91a4b0;--tint:.11}
+body.viewer-no-nav #swim-lanes{top:auto}
+#swim-lanes *{box-sizing:border-box}
+#swim-lanes h1{font:600 23px/1.2 system-ui!important;letter-spacing:-.6px;margin:0;color:var(--ink);text-shadow:none}
+#swim-lanes h2{font:600 16px/1.35 system-ui;letter-spacing:0;margin:10px 0;color:var(--ink);text-shadow:none;overflow-wrap:anywhere}
+#swim-lanes h3{font:600 12px system-ui;margin:15px 0 5px;color:var(--ink);text-shadow:none}
+#swim-lanes p{margin:6px 0 10px}
+#swim-lanes button,#swim-lanes select,#swim-lanes input{font:inherit;border:1px solid var(--line);border-radius:5px;padding:5px 8px;color:var(--ink);background:var(--paper);min-height:28px;box-shadow:none;text-shadow:none;letter-spacing:normal;text-transform:none}
+#swim-lanes button{cursor:pointer}
+#swim-lanes button:hover{border-color:#7198ae}
+#swim-lanes button[aria-pressed=true]{background:#27708a26;border-color:#538ba4}
+#swim-lanes :focus-visible{outline:2px solid #459dbd;outline-offset:2px}
+.sl-kicker{font-size:9px;letter-spacing:1.7px;text-transform:uppercase;color:var(--muted)}
+.sl-head,.sl-actions,.sl-tools,.sl-caption{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sl-head,.sl-caption{justify-content:space-between}.sl-head{margin-bottom:10px}.sl-tools{margin-bottom:8px}
+.sl-sr{font-size:0} .sl-sr select,.sl-sr input{font-size:12px!important}
+.sl-legend{display:flex;flex-wrap:wrap;gap:7px 14px;align-items:center;color:var(--muted);font-size:10px;border-block:1px solid var(--line);padding:7px 0}
+.sl-legend span{display:flex;align-items:center;gap:5px}.sl-legend i{width:7px;height:7px;display:inline-block;border-radius:2px}
+#swim-lanes .sl-legend button{font-size:10px;padding:2px 6px;min-height:22px;margin-left:auto}
+.sl-workflow-legend{display:flex;flex-wrap:wrap;gap:6px;padding:9px 0}.sl-workflow-legend span{padding:5px 8px;border-left:3px solid rgb(var(--workflow));background:rgba(var(--workflow),var(--tint));border-radius:4px;font-size:10px}.sl-workflow-legend p{width:100%;color:var(--muted);font-size:10px}
+.sl-caption{margin-top:9px;font-size:11px}.sl-caption>span:last-child{color:var(--muted);font-size:10px}
+.sl-notice{font-size:10px;color:var(--muted);min-height:14px}
+.sl-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}.sl-layout.sl-has-detail{grid-template-columns:minmax(0,1fr) 275px}
+.sl-board-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--paper);align-self:start;touch-action:pan-y;overscroll-behavior-x:contain}
+.sl-board{min-width:790px;position:relative}.sl-axis,.sl-lane{display:grid;grid-template-columns:175px 1fr;border-bottom:1px solid var(--line)}
+.sl-axis{height:30px;background:var(--paper);position:relative;z-index:4}.sl-label{padding:6px 9px;border-right:1px solid var(--line);background:linear-gradient(rgba(var(--workflow,100,120,140),var(--tint)),rgba(var(--workflow,100,120,140),var(--tint))),var(--paper);position:relative;z-index:2;min-width:0}
+.sl-label small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:9px}
+#swim-lanes .sl-lane-title{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;border:0;padding:0;min-height:0;background:transparent;text-align:left;font-size:11px;font-weight:600}
+.sl-track{position:relative;min-width:0;background:rgba(var(--workflow,100,120,140),var(--tint))}
+#swim-lanes .sl-tick{position:absolute;top:4px;border:0;background:transparent;font-size:10px;white-space:nowrap;padding:3px 4px;min-height:20px}
+#swim-lanes .sl-gridline,#swim-lanes .sl-context,#swim-lanes .sl-now,#swim-lanes .sl-duration{pointer-events:none}
+.sl-gridline{position:absolute;top:0;bottom:0;border-left:1px solid var(--line)}
+.sl-context{position:absolute;top:0;bottom:0;background:#2fc1d512;border-inline:1px solid #3eafbd88}
+.sl-now{position:absolute;top:0;bottom:0;border-left:1px solid #d86666;z-index:3}
+.sl-object{position:absolute;z-index:3;min-width:6px}
+#swim-lanes .sl-card{width:100%;height:100%;min-height:0;display:block;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid color-mix(in srgb,var(--object) 48%,var(--line));border-left:3px solid var(--object);border-radius:3px;padding:0 4px;font-size:10px;line-height:17px;background:color-mix(in srgb,var(--object) 12%,var(--paper));color:var(--ink)}
+#swim-lanes .sl-card.sl-selected{outline:2px solid #57b7ce;outline-offset:1px}
+.sl-duration{position:absolute;bottom:-2px;left:0;height:2px;background:var(--object);min-width:2px}
+#swim-lanes .sl-port{position:absolute;top:50%;width:7px;height:7px;min-height:0;padding:0;border:1px solid var(--paper);border-radius:50%;background:var(--object);z-index:6;transform:translateY(-50%);touch-action:none}
+.sl-port-in{left:-4px}.sl-port-out{right:-4px}
+.sl-links{position:absolute;top:30px;left:175px;width:calc(100% - 175px);z-index:5;overflow:visible}
+#swim-lanes .sl-links,#swim-lanes .sl-links *{pointer-events:none}
+.sl-link{fill:none;stroke:#7e929d;stroke-width:1;opacity:.65}
+#swim-lanes .sl-link-hit{pointer-events:stroke;fill:none;stroke:transparent;stroke-width:6;cursor:pointer}
+#swim-lanes .sl-route-handle{pointer-events:auto;cursor:ew-resize;fill:var(--paper);stroke:#80a5b8;stroke-width:1;touch-action:none}
+#sl-draft{fill:none;stroke:#4bb8d0;stroke-width:1.5;stroke-dasharray:4 3}
+.sl-detail{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:13px;overflow-wrap:anywhere}.sl-detail p,.sl-detail li{font-size:11px}.sl-detail ul{padding-left:14px;margin:6px 0}.sl-detail .sl-actions{justify-content:space-between}
+#swim-lanes .sl-detail li button{border:0;background:transparent;text-align:left;padding:2px 0;min-height:22px;text-decoration:underline;font-size:11px}
+#sl-editor{display:grid;gap:8px}#sl-editor label{display:grid;gap:3px;font-size:11px}#sl-editor input,#sl-editor select{width:100%}
+.sl-attention{border-left:2px solid #c1a550;padding-left:8px}.sl-empty{padding:24px;text-align:center;color:var(--muted)}
+@media(max-width:850px){.sl-layout.sl-has-detail{grid-template-columns:minmax(0,1fr)}#swim-lanes{padding:12px 10px 16px}.sl-detail{max-width:none}.sl-caption>span:last-child{display:none}}
+@media(prefers-reduced-motion:reduce){#swim-lanes *{scroll-behavior:auto}}
+
+#swim-lanes .sl-weekend{position:absolute;top:0;bottom:0;background:rgba(0,0,0,.055);pointer-events:none}
+body:not(.light-mode) #swim-lanes .sl-weekend{background:rgba(0,0,0,.16)}
+
+@keyframes sl-rise{from{transform:translateY(100%)}to{transform:translateY(0)}}
+#swim-lanes.sl-expanded{height:min(85vh,calc(100vh - 148px))}
+#swim-lanes .sl-drawer-grip{display:block;margin:-12px auto 6px;padding:4px 24px;min-height:16px;border:0;background:transparent}
+.sl-drawer-grip span{display:block;width:40px;height:4px;border-radius:4px;background:var(--muted);opacity:.5}
+.sl-inspector{min-width:0;background:var(--paper);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.sl-panel-tabs{display:flex;gap:5px;padding:6px;border-bottom:1px solid var(--line)}
+#swim-lanes .sl-panel-tabs [aria-selected=true]{background:#27708a26;border-color:#538ba4}
+@media(prefers-reduced-motion:reduce){#swim-lanes{animation:none}}
+
+#sl-event-mode h2{font:600 16px/1.35 system-ui;letter-spacing:0;margin:10px 0;color:var(--ink);text-shadow:none;overflow-wrap:anywhere}
+#sl-event-mode h3{font:600 12px system-ui;margin:15px 0 5px;color:var(--ink);text-shadow:none}
+#sl-event-mode p{margin:6px 0 10px}
+#sl-event-mode button,#sl-event-mode select,#sl-event-mode input{font:inherit;border:1px solid var(--line);border-radius:5px;padding:5px 8px;color:var(--ink);background:var(--paper);min-height:28px;box-shadow:none;text-shadow:none;letter-spacing:normal;text-transform:none}
+#sl-event-mode button{cursor:pointer}
+#sl-event-mode button:hover{border-color:#7198ae}
+#sl-event-mode :focus-visible{outline:2px solid #459dbd;outline-offset:2px}
+#sl-event-mode .sl-legend button{font-size:10px;padding:2px 6px;min-height:22px;margin-left:auto}
+#sl-event-mode .sl-detail li button{border:0;background:transparent;text-align:left;padding:2px 0;min-height:22px;text-decoration:underline;font-size:11px}
+#sl-event-mode{--paper:var(--ui-surface-panel-wash);--ink:inherit;--line:#8796a855;overflow:auto;flex:1;min-height:0;font:12px/1.5 system-ui;padding:8px}
+#sl-event-mode[hidden]{display:none}
+#event-list-panel.sl-event-active > :not(.event-list-panel-header):not(.sl-panel-tabs):not(#sl-event-mode){display:none!important}
+body.swim-lanes-open #event-list-panel{z-index:11010}
+body.swim-lanes-open #event-list-pull-tab{z-index:11011}
+body.swim-lanes-open.event-list-panel-open #swim-lanes{right:min(420px,90vw)}
+#event-list-panel .sl-panel-tabs button{font:12px system-ui;padding:7px 12px;border:1px solid #8796a855;border-radius:5px;background:transparent;color:inherit;cursor:pointer}
+#event-list-panel .sl-panel-tabs [aria-selected=true]{background:#27708a26;border-color:#538ba4}
+#sl-event-mode .sl-detail{max-width:none}
+.swim-lanes-menu[hidden]{display:none}
+body.swim-lanes-open #calendars-left-panel,body.swim-lanes-open #calendar-layers-pull-tab{z-index:11012}
+body.swim-lanes-open.calendars-left-panel-open #swim-lanes{left:min(320px,90vw)}
+
+/* Minimized drawer remains discoverable as a bottom-edge tab. */
+.swim-lanes-menu,body:not(.swim-lanes-open) .swim-lanes-menu{bottom:0;padding:0;border-radius:8px 8px 0 0;box-shadow:0 -2px 10px #0002}
+.swim-lanes-menu button{border:0;border-radius:8px 8px 0 0;padding:7px 18px;font-size:11px}
+#swim-lanes .sl-minimize{width:28px;height:28px;padding:0;font-size:20px;line-height:1}
+
+/* One edge-tab treatment for the calendar's three drawers. */
+body #calendar-layers-pull-tab,body #event-list-pull-tab,body .swim-lanes-menu button{
+  --edge-paper:#132936;--edge-hover:#1a3a4b;--edge-ink:#dceaf0;--edge-border:#397084;
+  background:var(--edge-paper);color:var(--edge-ink);border:1px solid var(--edge-border);
+  box-shadow:0 2px 10px #0002;font:600 11px/1.2 var(--ui-font-body,system-ui);
+  letter-spacing:.1em;text-transform:uppercase;transition:background .15s ease,border-color .15s ease;
+}
+body.light-mode #calendar-layers-pull-tab,body.light-mode #event-list-pull-tab,body.light-mode .swim-lanes-menu button{
+  --edge-paper:#e4eff4;--edge-hover:#cfe5ef;--edge-ink:#244454;--edge-border:#83a9b9;
+}
+body #calendar-layers-pull-tab:hover,body #event-list-pull-tab:hover,body .swim-lanes-menu button:hover,
+body #calendar-layers-pull-tab[aria-expanded=true],body #event-list-pull-tab[aria-expanded=true]{background:var(--edge-hover);color:var(--edge-ink);box-shadow:0 2px 10px #0002}
+body #calendar-layers-pull-tab:focus-visible,body #event-list-pull-tab:focus-visible,body .swim-lanes-menu button:focus-visible{outline:2px solid #62bad5;outline-offset:2px}
+body #calendar-layers-pull-tab,body #event-list-pull-tab{width:30px;min-height:100px;padding:14px 7px;writing-mode:vertical-rl;text-orientation:mixed}
+body #calendar-layers-pull-tab{border-left:0;border-radius:0 8px 8px 0}
+body #event-list-pull-tab{border-right:0;border-radius:8px 0 0 8px}
+body #event-list-pull-tab .event-list-pull-tab-inner{padding:0;display:contents}
+body #event-list-pull-tab .event-list-pull-tab-label{font:inherit;letter-spacing:inherit}
+body #event-list-pull-tab .event-list-pull-tab-chevron{display:none}
+body .swim-lanes-menu{background:transparent;border:0;box-shadow:none}
+body .swim-lanes-menu button{height:30px;min-width:100px;padding:7px 18px;border-bottom:0;border-radius:8px 8px 0 0}
+
+/* Left title rail + bottom tracks are one sheet. */
+body.swim-lanes-open{--sl-rail:260px}
+body.swim-lanes-open.calendars-left-panel-open #swim-lanes{left:var(--sl-rail);border-top-left-radius:0;max-height:calc(100vh - 148px)}
+#swim-lanes.sl-docked{height:auto;min-height:0;max-height:calc(100vh - 120px);padding:0;animation:none;overflow:hidden;border-radius:0 12px 0 0}
+#swim-lanes.sl-docked .sl-board-scroll{border:0;border-radius:0;background:transparent}
+#swim-lanes.sl-docked .sl-bar{display:flex;align-items:center;gap:6px;padding:6px 8px 6px 10px;overflow-x:auto;background:var(--bg,#101a23);border-bottom:1px solid var(--line,#2d3d49);color:var(--ink,#d9e5ec)}
+#swim-lanes.sl-docked .sl-bar strong{font:600 12px/1 system-ui;letter-spacing:.04em}
+#swim-lanes.sl-docked .sl-bar .sl-sr{font-size:0}
+#swim-lanes.sl-docked .sl-bar select,#swim-lanes.sl-docked .sl-bar input,#swim-lanes.sl-docked .sl-bar button{font:11px/1.2 system-ui;border:1px solid var(--line,#2d3d49);border-radius:999px;padding:4px 8px;color:inherit;background:transparent;min-height:26px;letter-spacing:0;text-transform:none;box-shadow:none;white-space:nowrap}
+#swim-lanes.sl-docked .sl-bar button{cursor:pointer}
+#swim-lanes.sl-docked .sl-bar button[aria-pressed=true]{background:#27708a33}
+#swim-lanes.sl-docked .sl-bar .sl-minimize{margin-left:auto;width:26px;border-radius:50%}
+#swim-lanes.sl-docked .sl-workflow-legend,#swim-lanes.sl-docked .sl-notice{padding:4px 10px;font-size:10px;color:var(--muted,#91a4b0)}
+body.swim-lanes-open #calendars-left-panel.sl-sheet{top:auto;bottom:0;height:auto;max-height:none;border-right-color:transparent;box-shadow:none;background:#101a23;transition:transform .18s ease}
+body.light-mode.swim-lanes-open #calendars-left-panel.sl-sheet{background:#f4f7f9}
+body.swim-lanes-open #calendars-left-panel.sl-sheet .left-panel-header,
+body.swim-lanes-open #calendars-left-panel.sl-sheet .calendars-left-footer,
+body.swim-lanes-open #calendars-left-panel.sl-sheet .left-panel-body > :not(#sl-side){display:none}
+body.sl-layers-open #calendars-left-panel.sl-sheet{top:var(--nav-height);bottom:0;height:auto}
+body.sl-layers-open #calendars-left-panel.sl-sheet .left-panel-header{display:flex}
+body.sl-layers-open #calendars-left-panel.sl-sheet .left-panel-body > :not(#sl-side){display:block}
+body.sl-layers-open #calendars-left-panel.sl-sheet .left-panel-body{overflow:auto}
+body.swim-lanes-open #calendars-left-panel.sl-sheet .left-panel-body{padding:0;overflow:hidden;background:transparent}
+#sl-side{max-height:none;padding:0;border:0;background:transparent;overflow:hidden}
+#sl-side .sl-axis-label{height:30px;justify-content:center}
+#sl-side .sl-label{display:flex;flex-direction:column;justify-content:center}
+#sl-side .sl-lane-title{display:block;width:100%;border:0;border-radius:0;background:transparent;color:var(--ink,#d9e5ec);text-align:left;font:600 12px/1.3 system-ui,sans-serif;letter-spacing:0;text-transform:none;padding:0;min-height:0;box-shadow:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#sl-side small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted,#91a4b0);font-size:9px}
+#sl-side .sl-label.sl-hot,#swim-lanes .sl-lane.sl-hot .sl-track{box-shadow:inset 0 0 0 999px rgba(87,183,206,.14)}
+#swim-lanes .sl-lane,#sl-side .sl-label{transition:box-shadow .12s ease}
+#swim-lanes.sl-docked .sl-head,#swim-lanes.sl-docked .sl-tools,#swim-lanes.sl-docked .sl-legend,#swim-lanes.sl-docked .sl-workflow-legend,#swim-lanes.sl-docked .sl-caption,#swim-lanes.sl-docked .sl-notice{margin-left:0;margin-right:0}
+body.swim-lanes-open .work-entry{display:none}
+#sl-side{--paper:#fff;--bg:#f4f7f9;--ink:#253b4b;--line:#dce4e9;--muted:#627483;--tint:.065;flex:0 0 auto;max-height:none;overflow:hidden;padding:0;border:0;background:transparent;color:var(--ink);font:12px/1.4 system-ui,sans-serif}
+#sl-side[hidden]{display:none}
+body:not(.light-mode) #sl-side{--paper:#15232e;--bg:#101a23;--ink:#d9e5ec;--line:#2d3d49;--muted:#91a4b0;--tint:.11}
+#sl-side *{box-sizing:border-box}
+#sl-side h1{font:600 18px/1.2 system-ui;letter-spacing:-.4px;margin:0;color:var(--ink)}
+#sl-side .sl-head,#sl-side .sl-actions,#sl-side .sl-tools,#sl-side .sl-caption{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+#sl-side .sl-head{justify-content:space-between;margin-bottom:8px}
+#sl-side .sl-tools{margin-bottom:6px}
+#sl-side .sl-sr{font-size:0}
+#sl-side .sl-sr select,#sl-side .sl-sr input,#sl-side button{font:11px/1.2 system-ui;border:1px solid var(--line);border-radius:5px;padding:4px 7px;color:var(--ink);background:var(--paper);min-height:26px;letter-spacing:0;text-transform:none;box-shadow:none}
+#sl-side button{cursor:pointer}
+#sl-side .sl-legend{display:flex;flex-wrap:wrap;gap:6px 10px;color:var(--muted);font-size:10px;border-block:1px solid var(--line);padding:6px 0}
+#sl-side .sl-legend span{display:flex;align-items:center;gap:4px}
+#sl-side .sl-legend i{width:7px;height:7px;display:inline-block;border-radius:2px}
+#sl-side .sl-caption{font-size:10px;color:var(--muted)}
+#sl-side .sl-notice{font-size:10px;color:var(--muted);margin:4px 0}
+#sl-side .sl-workflow-legend{display:flex;flex-wrap:wrap;gap:6px;padding:6px 0;font-size:10px}
+#sl-side .sl-workflow-legend span{padding:4px 6px;border-left:3px solid rgb(var(--workflow));background:rgba(var(--workflow),var(--tint));border-radius:4px}
+#sl-side .sl-minimize{width:26px;height:26px;padding:0;font-size:18px;line-height:1}
+#sl-side .sl-lane-title{display:block;width:100%;border:0;border-radius:0;background:transparent;color:var(--ink);text-align:left;font:600 12px/1.3 system-ui,sans-serif;letter-spacing:0;text-transform:none;padding:0;min-height:0;box-shadow:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#swim-lanes.sl-docked .sl-axis,#swim-lanes.sl-docked .sl-lane{grid-template-columns:1fr}
+#swim-lanes.sl-docked.sl-named .sl-axis,#swim-lanes.sl-docked.sl-named .sl-lane{grid-template-columns:175px 1fr}
+#swim-lanes.sl-docked.sl-named .sl-links{left:175px;width:calc(100% - 175px)}
+.sl-lane-title[aria-pressed=true]{box-shadow:inset 3px 0 0 #57b7ce}
+#swim-lanes.sl-docked .sl-board-scroll{border-left:0;border-radius:0 8px 8px 0}
+#swim-lanes.sl-docked .sl-links{left:0;width:100%}
+body.swim-lanes-open.calendars-left-panel-open .calendars-left-footer{display:none}
+#sl-title-rail{--paper:#fff;--bg:#f4f7f9;--ink:#253b4b;--line:#dce4e9;--muted:#627483;--tint:.065;position:absolute;left:0;right:-1px;bottom:0;z-index:4;overflow:hidden;background:var(--bg);color:var(--ink);pointer-events:auto}
+#sl-title-rail[hidden]{display:none}
+body:not(.light-mode) #sl-title-rail{--paper:#15232e;--bg:#101a23;--ink:#d9e5ec;--line:#2d3d49;--muted:#91a4b0;--tint:.11}
+#sl-title-rail,#sl-title-rail *{box-sizing:border-box}
+#sl-title-rail .sl-label{display:flex;flex-direction:column;justify-content:center;border-right:0;border-bottom:1px solid var(--line);background:linear-gradient(rgba(var(--workflow,100,120,140),var(--tint)),rgba(var(--workflow,100,120,140),var(--tint))),var(--paper)}
+#sl-title-rail .sl-axis-label{height:30px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--paper)}
+#sl-title-rail .sl-lane-title{display:block;width:100%;border:0;background:transparent;color:var(--ink);text-align:left;font:600 11px/1.3 system-ui,sans-serif;letter-spacing:0;text-transform:none;padding:0;min-height:0;box-shadow:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#sl-title-rail .sl-lane-title:hover{color:#2f7f9a}
+#sl-title-rail small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:9px}
+body.swim-lanes-open.calendars-left-panel-open #calendars-left-panel{box-shadow:none}
+
+/* Resize only the renderer surface; keep drawers in the full iframe coordinate space. */
+body.fit-calendar-viewport #canvas-container{position:absolute;left:var(--calendar-fit-left,0px);right:var(--calendar-fit-right,0px);top:0;bottom:var(--calendar-fit-bottom,0px);width:auto;height:auto;min-width:0;min-height:0}
+body.fit-calendar-viewport #canvas-container canvas{display:block}
+
+/* In the app, its Layers panel owns the left column; lane names stay with their tracks. */
+body.portal-calendar-layout #swim-lanes{left:var(--host-chrome-left,0px);right:var(--host-chrome-right,0px);height:38vh;min-height:250px;max-height:60vh;border-radius:10px 10px 0 0;padding:0;overflow:auto}
+body.portal-calendar-layout #swim-lanes.sl-named .sl-axis,body.portal-calendar-layout #swim-lanes.sl-named .sl-lane{grid-template-columns:175px 1fr}
+body.portal-calendar-layout #swim-lanes .sl-links{left:175px;width:calc(100% - 175px)}
+body.portal-calendar-layout #swim-lanes .sl-bar{border-top:2px solid #2563eb}
+
+body.portal-calendar-layout #swim-lanes{left:0!important;right:0!important;z-index:13000;}
+body.portal-calendar-layout #event-list-panel{top:0;bottom:var(--viewer-lanes-height,0px);z-index:12000;}
+body.portal-calendar-layout #event-list-pull-tab{z-index:12001;}
+body.portal-calendar-layout #zoom-controls{top:68px;left:calc(var(--calendar-fit-left,0px) + (100% - var(--calendar-fit-left,0px) - var(--viewer-panel-right,0px))/2);max-width:calc(100% - var(--calendar-fit-left,0px) - var(--viewer-panel-right,0px) - 16px);}
+body.portal-calendar-layout #zoom-controls .zoom-slider{max-width:100%;}
+body.portal-calendar-layout #zoom-controls .zoom-option{min-width:0;flex:1;padding-left:4px;padding-right:4px;}
+body.portal-calendar-layout #hud{top:68px;right:calc(var(--viewer-panel-right,0px) + 12px);}
+
+body.portal-calendar-layout #zoom-controls{width:680px;box-sizing:border-box;padding:8px;}
+body.portal-calendar-layout #zoom-controls .zoom-slider{width:100%;}
+body.portal-calendar-layout #zoom-controls .zoom-label{overflow:hidden;text-overflow:ellipsis;}
+
+/* Lane titles align with the host Layers column, including its outer border. */
+body.portal-calendar-layout #swim-lanes{--lane-label-width:min(45vw,var(--host-lane-label-width,352px))}
+body.portal-calendar-layout #swim-lanes.sl-named .sl-axis,body.portal-calendar-layout #swim-lanes.sl-named .sl-lane{grid-template-columns:var(--lane-label-width) 1fr}
+body.portal-calendar-layout #swim-lanes .sl-links{left:var(--lane-label-width);width:calc(100% - var(--lane-label-width))}
+body.portal-calendar-layout #swim-lanes .sl-card[draggable=true]{cursor:grab}
+
+/* App chrome owns the top 56px; embedded standalone defaults start too high. */
+body.portal-calendar-layout #orbital-data-restore,
+body.portal-calendar-layout #orbital-data-panel{top:68px;right:calc(var(--viewer-panel-right,0px) + 12px)}
+body.portal-calendar-layout #orbital-data-panel{max-height:calc(100vh - 84px - var(--viewer-lanes-height,0px));overflow:auto}
+
+/* Complete viewport-sized pages share one projection, differing only in depth. */
+body.portal-calendar-layout.interface-depth{background:radial-gradient(ellipse at 50% 35%,var(--mode-card,#24303b),#050910 85%)}
+body.portal-calendar-layout .interface-depth-page{
+  position:fixed;inset:0;width:100vw;height:100vh;box-sizing:border-box;
+  transform-origin:50% 50%;
+  transform:perspective(1800px) scale(.68) rotateX(var(--depth-pitch,8deg)) rotateY(var(--depth-yaw,-28deg)) translateZ(var(--page-depth));
+  border:1px solid var(--ui-border);border-radius:12px;
+  background:color-mix(in srgb,var(--mode-card,#14202c) 20%,transparent);
+  box-shadow:6px 8px 0 #14202c88,24px 32px 40px #0008;
+  pointer-events:none!important;overflow:hidden;
+}
+body.portal-calendar-layout .interface-depth-page[hidden]{display:none}
+body.portal-calendar-layout .interface-depth-page[data-page=scene]{z-index:1}
+body.portal-calendar-layout .interface-depth-page[data-page=events]{z-index:2}
+body.portal-calendar-layout .interface-depth-page[data-page=lanes]{z-index:3}
+body.portal-calendar-layout.interface-depth #canvas-container{inset:68px 0 0;width:auto;height:auto;transform:none}
+/* Controls retain their normal positions within their page, with no individual tilt. */
+body.portal-calendar-layout.interface-depth #event-list-panel.open{transform:translateX(0)}
+
+.depth-page-placeholder{position:absolute;inset:68px 0 auto;padding:24px;font:600 22px system-ui;color:var(--mode-accent);pointer-events:none!important}.depth-page-placeholder[hidden]{display:none}
+
+/* All three panels can coexist; keep close controls below app navigation. */
+body.portal-calendar-layout #event-list-panel{top:56px}
+body.portal-calendar-layout .swim-lanes-menu{display:none}
+body.portal-calendar-layout #event-list-panel .event-list-panel-header{position:sticky;top:0;z-index:2;background:var(--mode-card)}
+
+/* The app header owns the Icons menu; no floating expand or replay controls. */
+body.portal-calendar-layout #scene-icon-toggle,
+body.portal-calendar-layout .scene-icon-overlay.collapsed,
+.circaevum-intro-replay-btn{display:none!important}
+
+body.portal-calendar-layout #swim-lanes.sl-basic-full{top:56px;bottom:0;height:calc(100vh - 56px);max-height:none;min-height:0;border-radius:0}
+
+#event-list-panel .event-list-panel-header{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 12px}
+#event-list-panel .event-list-panel-header .sl-panel-tabs{padding:0;border:0;gap:3px;margin:0}
+#event-list-panel .event-list-panel-header .sl-panel-tabs button{padding:5px 7px;font-size:11px}
+#event-list-panel .event-list-panel-header .event-list-horizon-ring-row{padding:0;border:0;gap:4px;min-width:0;margin-left:auto}
+#event-list-panel .event-list-panel-header .event-list-horizon-ring{width:26px;height:26px}
+#event-list-panel .event-list-panel-header .event-list-horizon-ring-caption{font-size:10px}
+#event-list-panel .event-list-panel-header .event-list-horizon-ring-grain{font-size:9px;padding:1px 4px}
+#event-list-close{flex:none;order:5}
+
+/* Basic selection shares the host Layers column instead of duplicating labels. */
+body.portal-calendar-layout #swim-lanes.sl-basic-full{left:min(45vw,var(--host-lane-label-width,352px));width:auto}
+body.portal-calendar-layout #swim-lanes.sl-basic-full .sl-axis,body.portal-calendar-layout #swim-lanes.sl-basic-full .sl-lane{grid-template-columns:140px 1fr}
+body.portal-calendar-layout #swim-lanes.sl-basic-full .sl-links{left:140px;width:calc(100% - 140px)}
+
+.sl-load-state{position:sticky;left:10px;top:8px;z-index:4;display:flex;align-items:center;gap:8px;width:fit-content;max-width:95%;padding:7px;background:#14232f;color:#d5e0e6;font-size:12px}
+.sl-loading-spinner{width:12px;height:12px;border:2px solid #ffffff30;border-top-color:currentColor;border-radius:50%;animation:sl-spin .8s linear infinite}
+@keyframes sl-spin{to{transform:rotate(360deg)}}
+body.portal-calendar-layout #swim-lanes.sl-row-attached{left:var(--lane-anchor-left);top:56px;bottom:0;height:calc(100vh - 56px);max-height:none;min-height:0;background:transparent;border:0;box-shadow:none;pointer-events:none;overflow:hidden}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-bar{pointer-events:auto;background:#101e28}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-notice{display:none}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-layout,body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-board-scroll,body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-board,body.portal-calendar-layout #swim-lanes.sl-row-attached #sl-rows{position:static;overflow:visible;background:transparent}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-lane{position:absolute;left:0;right:0;grid-template-columns:1fr;background:#14232f;pointer-events:auto;transition:none;overflow:hidden}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-label,body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-links{display:none}
+body.portal-calendar-layout #swim-lanes:not(.sl-row-attached).sl-basic-full{left:0;top:auto;height:38vh;min-height:250px;max-height:60vh;border-radius:12px 12px 0 0}
+@media(prefers-reduced-motion:reduce){body.portal-calendar-layout #swim-lanes .sl-lane{transition:none}.sl-loading-spinner{animation:none}}
+
+#swim-lanes .sl-lane{transform-origin:top left}
+body.portal-calendar-layout #swim-lanes.sl-transitioning,body.portal-calendar-layout #swim-lanes.sl-transitioning .sl-board-scroll{overflow:visible}
+
+/* Scene selections use the existing right-hand Event view. */
+#sl-scene-detail .event-detail-sheet-panel{position:static;inset:auto;transform:none;transition:none;width:100%;max-width:none;max-height:none;min-height:0;margin:0;box-sizing:border-box;box-shadow:none;border-radius:0;opacity:1;visibility:visible;pointer-events:auto}
+#sl-scene-detail .event-detail-sheet-close{display:none}
+#sl-scene-detail{overflow:auto;min-height:0}
+
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-bar{position:absolute;top:var(--lane-toolbar-top,0px);left:0;right:0;height:36px;z-index:8}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-axis{position:absolute;top:calc(var(--lane-toolbar-top,0px) + 36px);left:0;right:0;height:34px;background:var(--paper);pointer-events:auto;z-index:7;grid-template-columns:1fr}
+
+#swim-lanes .sl-card[draggable=true]{cursor:grab}#swim-lanes .sl-card[draggable=true]:active{cursor:grabbing}#swim-lanes .sl-lane.sl-drop-target{outline:2px solid var(--ink);outline-offset:-2px;background:color-mix(in srgb,var(--paper) 80%,#58a9dd)}
+
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-notice{display:block;position:absolute;bottom:12px;left:12px;max-width:calc(100% - 24px);padding:8px 12px;background:var(--paper);border:1px solid var(--line);z-index:10;pointer-events:auto}

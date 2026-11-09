@@ -20,7 +20,7 @@ function getCircaevumViewportSize() {
     if (typeof window === 'undefined') {
         return { width: 0, height: 0 };
     }
-    if (!isTourEditorLayoutActive()) {
+    if (!isTourEditorLayoutActive() && !document.body.classList.contains('fit-calendar-viewport')) {
         return { width: window.innerWidth, height: window.innerHeight };
     }
     const container = document.getElementById('canvas-container');

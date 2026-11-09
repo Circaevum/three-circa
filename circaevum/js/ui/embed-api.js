@@ -22,6 +22,7 @@
   var _viewFocusNotifyKey = '';
   /** Debounced: scrub + navigate both call setSelectedDateTime — portal needs new cyan pie. */
   window.notifyParentViewFocus = function () {
+    window.dispatchEvent(new CustomEvent('circaevum:view-change'));
     if (window.self === window.top || !window.parent || !window.parent.postMessage) return;
     if (_viewFocusNotifyTimer) clearTimeout(_viewFocusNotifyTimer);
     _viewFocusNotifyTimer = setTimeout(function () {
@@ -58,6 +59,11 @@
       if (typeof window.applyFlattenFromEmbed === 'function') {
         window.applyFlattenFromEmbed(!!data.flatten, typeof data.intensity === 'number' ? data.intensity : undefined);
       }
+      return;
+    }
+    if (data.type === 'CIRCAEVUM_SET_HOST_EDITING' && event.source === window.parent) {
+      window.circaevumHostEditing = data.editing === true;
+      if(window.circaevumHostEditing)window.setCircadianShortEventsShiftPreview?.(false);
       return;
     }
     if (data.type === 'CIRCAEVUM_SET_SHIFT_PREVIEW') {
@@ -99,6 +105,10 @@
       if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
       return;
     }
+    if (data.type === 'CIRCAEVUM_OPEN_EVENT_LIST') {
+      if (typeof window.openEventListPanel === 'function') window.openEventListPanel();
+      return;
+    }
     var gl = window.circaevumGL || (window.getGL && window.getGL());
     if (!gl || typeof gl.ingestEvents !== 'function') return;
     if (data.type === 'CIRCAEVUM_INGEST_EVENTS' && data.layerId && Array.isArray(data.events)) {
@@ -106,6 +116,7 @@
         console.log('[Circaevum GL] Ingesting events from wrapper:', data.layerId, 'count=', data.events.length);
       } catch (e) {}
       gl.ingestEvents(data.layerId, data.events, data.options || {});
+      window.dispatchEvent(new CustomEvent('circaevum:calendar-events-updated'));
       if (typeof TimeseriesRenderer !== 'undefined' && typeof TimeseriesRenderer.resetRefreshCache === 'function') {
         TimeseriesRenderer.resetRefreshCache();
       }
@@ -133,6 +144,7 @@
       }
     } else if (data.type === 'CIRCAEVUM_CLEAR_EVENTS' && data.layerId) {
       gl.updateEvents(data.layerId, []);
+      window.dispatchEvent(new CustomEvent('circaevum:calendar-events-updated'));
       if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
       if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);
     } else if (data.type === 'CIRCAEVUM_HOST_CHROME') {

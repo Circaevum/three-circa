@@ -6,7 +6,9 @@
     <meta name="description" content="Circaevum — open 3D time visualization: planetary orbits, circadian rhythm, and calendar events. WebXR on HTTPS. Machine-readable: /llms.txt, /index.md">
     <title>Circaevum - Planetary Time</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="circaevum/css/styles.css?v=week-stretch-day-v1">
+    <link rel="stylesheet" href="circaevum/css/styles.css?v=collections-1">
+    <link rel="stylesheet" href="circaevum/css/swim-lanes.css?v=lane-drag-20261109-1">
+    <link rel="stylesheet" href="circaevum/css/mode-theme.css?v=modes-1">
     <link rel="describedby" href="/llms.txt" type="text/plain">
     <link rel="alternate" type="text/markdown" href="/index.md" title="Circaevum (markdown)">
     <link rel="help" href="/developers.html" title="Developers &amp; AI agents">
@@ -64,6 +66,7 @@
             <button type="button" id="calendars-left-close" class="account-panel-close-btn" aria-label="Close Layers">×</button>
         </div>
         <div class="left-panel-body">
+
             <div id="sample-profiles" class="sample-profiles">
                 <p class="sample-profiles-kicker">Hypothetical lives</p>
                 <label class="sr-only" for="sample-profile-select">Sample profile</label>
@@ -175,8 +178,8 @@
 
     <div id="hud">
         <!-- Kepler-style floating icon overlay on the scene (bottom-right) -->
-        <div class="scene-icon-overlay" role="group" aria-label="Scene controls">
-            <button type="button" class="scene-icon-btn scene-icon-toggle" id="scene-icon-toggle" title="Collapse scene controls" aria-label="Toggle scene controls" aria-controls="scene-icon-grid" aria-expanded="true">
+        <div class="scene-icon-overlay collapsed" role="group" aria-label="Scene controls">
+            <button type="button" class="scene-icon-btn scene-icon-toggle" id="scene-icon-toggle" title="Expand scene controls" aria-label="Expand scene controls" aria-controls="scene-icon-grid" aria-expanded="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M5 12h14"/><path d="M12 5l7 7-7 7"/>
                 </svg>
@@ -372,7 +375,7 @@
         >Powered by Circaevum</a>
     </div>
     
-    <div class="info-panel" id="orbital-data-panel" role="region" aria-labelledby="orbital-data-heading">
+    <div class="info-panel is-hidden" id="orbital-data-panel" role="region" aria-labelledby="orbital-data-heading" aria-hidden="true">
         <div class="info-panel-head">
             <h3 id="orbital-data-heading">ORBITAL DATA</h3>
             <div class="info-panel-head-actions">
@@ -416,7 +419,7 @@
         </div>
         </div>
     </div>
-    <button type="button" class="info-panel-restore" id="orbital-data-restore" title="Show orbital data" aria-label="Show orbital data panel" hidden>
+    <button type="button" class="info-panel-restore" id="orbital-data-restore" title="Show orbital data" aria-label="Show orbital data panel">
         <span class="info-panel-restore-label">DATA</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12l7-7 7 7"/></svg>
     </button>
@@ -656,7 +659,7 @@
     <script src="circaevum/js/geo/geophysical-shells.js?v=aria-pass-v1"></script>
     <script src="circaevum/js/geo/ionosphere-shell.js"></script>
     <script src="circaevum/js/geo/magnetosphere-shell.js"></script>
-    <script src="circaevum/js/geo/earth-globe.js?v=context-arc-cyan-v1"></script>
+    <script src="circaevum/js/geo/earth-globe.js?v=no-startup-prompt-v2"></script>
     
     <!-- Utils (geometry helpers + shared ribbon / stroke primitives) -->
     <script src="circaevum/js/theme/theme-controller.js"></script>
@@ -669,13 +672,13 @@
     <script src="circaevum/js/utils/context-sphere-warp.js?v=eh-off-no-warp-v1"></script>
     
     <!-- Core (scene initialization & WebGPU pipeline) -->
-    <script src="circaevum/js/core/scene-core.js"></script>
+    <script src="circaevum/js/core/scene-core.js?v=fit-calendar-viewport-1"></script>
     <script src="circaevum/js/core/webgpu-pipeline.js?v=2"></script>
     <script src="circaevum/js/core/moon-mechanics.js?v=moon-flatten-y-v1"></script>
     
     <!-- Renderers (worldlines, timemarkers, planets, events) -->
     <script src="circaevum/js/renderers/worldline-renderer.js?v=moon-outline-white-v1"></script>
-    <script src="circaevum/js/renderers/timemarker-renderer.js?v=ctx-zone-fit-v1"></script>
+    <script src="circaevum/js/renderers/timemarker-renderer.js?v=mode-theme-1"></script>
     <script src="circaevum/js/renderers/planet-renderer.js"></script>
     <script src="circaevum/js/renderers/event-label-renderer.js"></script>
     <script src="circaevum/js/events/lod.js?v=density-budget-v1"></script>
@@ -705,7 +708,8 @@
     <script src="circaevum/js/app/navigation.js?v=3"></script>
     <script src="circaevum/js/ui/perf-hud.js?v=perf-hud-v4"></script>
     <!-- Main Application Script -->
-    <script src="circaevum/js/main.js?v=outline-shift-release-v1"></script>
+    <script src="circaevum/js/ui/keyboard-focus.js?v=1"></script>
+    <script src="circaevum/js/main.js?v=typing-shortcuts-3"></script>
     
     <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
     <script src="circaevum/js/api/circaevum-gl.js?v=super-year-any-year-v1"></script>
@@ -713,10 +717,11 @@
     <!-- Circaevum GL API helpers: use from console or scripts -->
     <script src="circaevum/js/ui/gl-api-bridge.js"></script>
     <script src="circaevum/js/ui/common.js"></script>
-    <script src="circaevum/js/ui/events-list.js?v=week-stretch-day-v1"></script>
-    <script src="circaevum/js/ui/event-detail-sheet.js"></script>
-    <script src="circaevum/js/ui/panels.js?v=no-edge-demo-v1"></script>
-    <script src="circaevum/js/data/sample-profiles.js?v=sample-lives-v3"></script>
+    <script src="circaevum/js/ui/events-list.js?v=collections-1"></script>
+    <script src="circaevum/js/ui/event-detail-sheet.js?v=lane-drag-20261109-1"></script>
+    <script src="circaevum/js/ui/panels.js?v=header-icons-2"></script>
+    <script src="circaevum/js/data/sample-collections.js?v=collections-1"></script>
+    <script src="circaevum/js/data/sample-profiles.js?v=sample-lives-v4"></script>
     <!-- Share state: get/apply for "Open full app" (Option B – same-tab navigate with state in URL) -->
     <script src="circaevum/js/ui/share-state.js"></script>
     <!-- Intro tour config (layers + timing defaults) -->
@@ -726,7 +731,12 @@
     <!-- Intro: startup gate, prompt (uses CircaevumIntroTour when present) -->
     <script src="circaevum/js/presentation/intro.js"></script>
     <!-- Embed API: when used as viewer (?viewer=1 or iframe), parent can send events via postMessage -->
-    <script src="circaevum/js/ui/embed-api.js?v=ctx-cal-load-v2"></script>
+    <script src="circaevum/js/ui/embed-api.js?v=typing-shortcuts-2"></script>
+    <script src="circaevum/js/models/work-timeline.js?v=lanes-rdd"></script>
+    <script src="circaevum/js/models/work-mode.js?v=work-mode-1"></script>
+    <script src="circaevum/js/ui/calendar-lane-events.js?v=lane-drag-20261109-1"></script>
+    <script src="circaevum/js/ui/swim-lanes.js?v=lane-drag-20261109-1"></script>
+    <script src="circaevum/js/ui/calendar-viewport.js?v=lane-drag-20261109-1"></script>
     <script src="circaevum/js/ui/webmcp-tools.js"></script>
     
     <!-- Audio Script -->

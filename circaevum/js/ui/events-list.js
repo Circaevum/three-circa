@@ -318,12 +318,37 @@
       return;
     }
     ensureCalendarLayersGLListeners(gl);
-    var ids = gl.getLayerIds();
+    var ids = gl.getLayerIds().filter(function(id) { var mode = gl.getLayer(id)?.collection || 'basic'; return !window.circaevumHostLayout?.modes || window.circaevumHostLayout.modes[mode] !== false; });
     if (!ids.length) {
       listEl.innerHTML = '<p class="calendar-layers-empty">No layers yet.</p>';
       refreshAtcLegend();
       return;
     }
+    var collectionOrder = ['basic', 'health', 'work', 'financial'];
+    var grouped = {};
+    ids.forEach(function (layerId) {
+      var layer = gl.getLayer(layerId);
+      if (!layer || !layer.collection) return;
+      if (!grouped[layer.collection]) grouped[layer.collection] = { label: layer.collectionLabel || layer.collection, color: layer.collectionColor || layer.color || '#9aa3ad', ids: [] };
+      grouped[layer.collection].ids.push(layerId);
+    });
+    collectionOrder.forEach(function (colId) {
+      var group = grouped[colId];
+      if (!group) return;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'calendar-collection' + (window.__swimCollection === colId ? ' is-selected' : '');
+      btn.style.setProperty('--cal', group.color);
+      btn.innerHTML = '<span class="calendar-collection-swatch"></span><span class="calendar-collection-name"></span><span class="calendar-collection-count"></span>';
+      btn.querySelector('.calendar-collection-name').textContent = group.label;
+      btn.querySelector('.calendar-collection-count').textContent = group.ids.length + ' layers';
+      btn.onclick = function () {
+        window.__swimCollection = colId;
+        if (typeof window.openSwimCollection === 'function') window.openSwimCollection(colId);
+        refreshCalendarLayersList();
+      };
+      listEl.appendChild(btn);
+    });
     ids.forEach(function(layerId) {
       var layer = gl.getLayer(layerId);
       var displayName = (layer && layer.name) ? layer.name : layerId;
@@ -824,7 +849,11 @@
         events.push({ layerId: USER_EVENTS_LAYER, ev: o });
       });
     }
-    return events;
+    return events.filter(function(item) {
+      var cat = item.ev && item.ev.category != null ? String(item.ev.category).trim() : '';
+      if (!cat) cat = 'Default';
+      return categoryVisibleInLayer(gl, item.layerId, cat);
+    });
   }
 
   function eventMatchesSearchQuery(ev, q) {
@@ -1701,16 +1730,8 @@
           : 'Events in selected context window.');
     }
 
-    var events = [];
+    var events = gatherAllLoadedEvents(gl);
     var lines = [];
-    // gather events below — filter sub-day at Year (Z3)
-    if (typeof gl.getLayerIds === 'function') {
-      gl.getLayerIds().forEach(function(lid) {
-        (gl.getEventObjects(lid) || []).forEach(function(o) { events.push({ layerId: lid, ev: o }); });
-      });
-    } else {
-      (gl.getEventObjects(USER_EVENTS_LAYER) || []).forEach(function(o) { events.push({ layerId: USER_EVENTS_LAYER, ev: o }); });
-    }
     if (typeof gl.removeEventLines === 'function') gl.removeEventLines('event-lines');
     (gl.getEventLines('event-lines') || []).forEach(function(ln) { lines.push({ start: ln.start, end: ln.end, label: ln.label }); });
 

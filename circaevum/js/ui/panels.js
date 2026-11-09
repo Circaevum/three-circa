@@ -3,7 +3,7 @@
   var getUserEventsLayerId = typeof UI.getUserEventsLayerId === 'function' ? UI.getUserEventsLayerId : function() { return 'user-events'; };
   var buildFullAppUrlShared = typeof UI.buildFullAppUrl === 'function' ? UI.buildFullAppUrl : function() { return window.CIRCAEVUM_FULL_APP_URL || ''; };
 
-  document.addEventListener('DOMContentLoaded', function() {
+  function initializePanels() {
     var panel = document.getElementById('event-list-panel');
     var leftPanel = document.getElementById('calendars-left-panel');
     var keyboardPanel = document.getElementById('keyboard-controls-panel');
@@ -230,10 +230,13 @@
       sceneIconToggle.title = collapsed ? 'Expand scene controls' : 'Collapse scene controls';
       sceneIconToggle.setAttribute('aria-label', collapsed ? 'Expand scene controls' : 'Collapse scene controls');
     }
+    window.setSceneIconsOpen = function(open) {
+      if(!sceneIconOverlay)return;
+      sceneIconOverlay.classList.toggle('collapsed',!open);
+      syncSceneIconToggleUi();
+    };
     if (sceneIconOverlay && sceneIconToggle) {
-      if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
-        sceneIconOverlay.classList.add('collapsed');
-      }
+      sceneIconOverlay.classList.add('collapsed');
       syncSceneIconToggleUi();
       sceneIconToggle.onclick = function(e) {
         e.stopPropagation();
@@ -242,7 +245,7 @@
       };
     }
 
-    var ORBITAL_DATA_STORAGE_KEY = 'circaevum-orbital-data-mode';
+    var ORBITAL_DATA_STORAGE_KEY = 'circaevum-orbital-data-mode-v2';
     var orbitalPanel = document.getElementById('orbital-data-panel');
     var orbitalHide = document.getElementById('orbital-data-hide');
     var orbitalRestore = document.getElementById('orbital-data-restore');
@@ -261,6 +264,7 @@
       var m = mode === 'hidden' ? 'hidden' : 'expanded';
       orbitalPanel.classList.remove('is-collapsed');
       orbitalPanel.classList.toggle('is-hidden', m === 'hidden');
+      orbitalPanel.setAttribute('aria-hidden', m === 'hidden' ? 'true' : 'false');
       if (orbitalRestore) orbitalRestore.hidden = m !== 'hidden';
       try {
         localStorage.setItem(ORBITAL_DATA_STORAGE_KEY, m);
@@ -275,7 +279,7 @@
         if (stored === 'collapsed') return 'expanded';
         if (stored === 'expanded') return 'expanded';
       } catch (readErr) { /* ignore */ }
-      return 'expanded';
+      return 'hidden';
     }
 
     window.isOrbitalDataPanelVisible = function() {
@@ -298,12 +302,9 @@
       }
     }
 
-    // Desktop default: Events + (standalone) Layers open. Embedded portal opens Layers itself.
-    var isDesktop = !(window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
-    if (isDesktop) {
-      openEventListPanel();
-      if (window.self === window.top) openCalendarsLeftPanel();
-    }
+    // Layers, Events, and Swim Lanes stay closed until the edge tab is used.
 
-  });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializePanels, {once:true});
+  else initializePanels();
 })();

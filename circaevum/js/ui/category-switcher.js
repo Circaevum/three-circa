@@ -265,6 +265,7 @@
   }
 
   function onKey(e) {
+    if(window.isSceneKeyboardEditing?.(e))return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     var tag = (e.target && e.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;

@@ -546,7 +546,7 @@ if (typeof window !== 'undefined') {
             modifierMetaHeld = meta;
             changed = true;
         }
-        const wantPreview = shift && !meta;
+        const wantPreview = shift && !meta && !window.isSceneKeyboardEditing?.(e);
         if (wantPreview !== circadianShortEventsShiftPreview) {
             circadianShortEventsShiftPreview = wantPreview;
             changed = true;
@@ -555,7 +555,7 @@ if (typeof window !== 'undefined') {
     };
     window.setCircadianShortEventsShiftPreview = function (active) {
         if (active && modifierMetaHeld) return;
-        const next = !!active;
+        const next = !!active && !window.isSceneKeyboardEditing?.();
         if (next === circadianShortEventsShiftPreview) return;
         circadianShortEventsShiftPreview = next;
         refreshShiftPreviewScene();
@@ -4019,7 +4019,7 @@ function rebuildListHorizonEarthRingMesh(outerRadius, innerRadius, yCenter, eart
 
 /** Legacy accent for the hoop wall (annuli use sky shader). */
 function getListHorizonRingColorHex() {
-    return isLightMode ? 0x0891b2 : 0x22d3ee;
+    return window.getModeSelectedTimeColor?.(isLightMode) ?? (isLightMode ? 0x0891b2 : 0x22d3ee);
 }
 
 /**
@@ -4454,9 +4454,9 @@ function contextArcScopeColorFromT(t, isLight, edgeColorHex) {
     if (!T) return { r: 0.05, g: 0.55, b: 0.85 };
     const light = !!isLight;
     const u = Math.max(0, Math.min(1, t));
-    const inner = new T.Color(light ? 0x0369a1 : 0x0c4a6e);
-    const mid = new T.Color(light ? 0x0284c7 : 0x0891b2);
-    const hi = new T.Color(light ? 0x0ea5e9 : 0x22d3ee);
+    const hi = new T.Color(getSelectedTimeColor());
+    const inner = hi.clone().multiplyScalar(light ? 0.6 : 0.18);
+    const mid = hi.clone().multiplyScalar(light ? 0.8 : 0.5);
     const edge = new T.Color(edgeColorHex != null ? edgeColorHex : light ? 0x0891b2 : 0x67e8f9);
     const c = inner.clone();
     if (u < 0.55) {
@@ -8303,7 +8303,7 @@ function getMarkerColor() {
 
 // Selected time: cyan/blue (pairs with red current-time). White/black hid the hoop at night.
 function getSelectedTimeColor() {
-    return isLightMode ? 0x0891b2 : 0x22d3ee;
+    return window.getModeSelectedTimeColor?.(isLightMode) ?? (isLightMode ? 0x0891b2 : 0x22d3ee);
 }
 
 // Get orbit line color - darker in light mode for better contrast
@@ -9788,18 +9788,7 @@ function initControls() {
     }
 
     document.addEventListener('keydown', (e) => {
-        // Check if user is typing in a text field
-        const activeElement = document.activeElement;
-        const isTyping = activeElement && (
-            activeElement.tagName === 'INPUT' || 
-            activeElement.tagName === 'TEXTAREA' || 
-            activeElement.isContentEditable
-        );
-        
-        // Disable all keyboard shortcuts when typing in form fields
-        if (isTyping) {
-            return;
-        }
+        if (window.isSceneKeyboardEditing?.(e)) return;
 
         // Space: smooth return to wall-clock now at every zoom (including Moment / zoom 0). Handle before digit shortcuts.
         if (e.code === 'Space') {
@@ -12513,8 +12502,8 @@ function _mainSetZoomLevel(level, overrideDate) {
         landingPage.classList.remove('active');
     }
     if (controls) {
-        controls.style.top = 'auto';
-        controls.style.bottom = '30px';
+        controls.style.top = '';
+        controls.style.bottom = '';
     }
     
     // Set target camera distance for smooth transition (classic ZOOM_LEVELS.distance).
@@ -12635,6 +12624,8 @@ function _mainSetZoomLevel(level, overrideDate) {
             try { window.refreshEventsList(false, { zoom: level }); } catch (eList) { /* optional */ }
         }
     }
+    // Notify timeline projections even when zooms share meshes and skip rebuilding planets.
+    if (typeof window.notifyParentViewFocus === 'function') window.notifyParentViewFocus();
     // Second pass after layout/mesh settle — Z5↔Z7 onion hops skip createPlanets.
     // Force panel frame from live zoom (month ↔ week-stretch), not stale skeleton.
     if (prevZoom !== level && typeof window.scheduleEventsPanelRefresh === 'function') {
@@ -14108,3 +14099,11 @@ document.addEventListener('DOMContentLoaded', () => {
 if (typeof window !== 'undefined') {
     window.createPlanets = createPlanets;
 }
+
+// Recolor selected-time geometry without changing time, zoom, or camera framing.
+window.addEventListener('circaevum:mode-theme', () => {
+    if (!sceneContentGroup) return;
+    disposeListHorizonEarthRing();
+    updateListHorizonEarthRing(currentZoom);
+    createTimeMarkers(currentZoom);
+});
