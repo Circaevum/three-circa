@@ -38,6 +38,8 @@ class VEvent {
     this.isWorkEvent = data.isWorkEvent === true;
     this.work = data.work && typeof data.work === 'object' ? data.work : null;
     this.color = data.color || null;
+    // View-only mode tint. Keep the saved color for edits and export.
+    this.displayColor = /^#[0-9a-f]{6}$/i.test(data.displayColor || '') ? data.displayColor : null;
     this.class = data.class || 'PUBLIC';
     this.layerId = data.layerId || null;
     // Render-kind descriptor. Lets one VEVENT carry a non-default visual (e.g. a timeseries arc)

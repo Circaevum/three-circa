@@ -2364,6 +2364,8 @@
 
     for (const u of targets) {
       if (!u) continue;
+      const ev = u.event || u.vevent;
+      if (ev?.displayColor) return ev.displayColor;
       const isDefaultCyan = (c) => c === 0x00b4d8 || c === '#00b4d8' || c === '0x00b4d8';
       if (u.fillColor != null && u.fillColor !== '' && !isDefaultCyan(u.fillColor)) return u.fillColor;
       if (u.eventHex != null && u.eventHex !== '' && !isDefaultCyan(u.eventHex)) return u.eventHex;
@@ -2373,7 +2375,6 @@
         if (u.layerConfig.fillColor != null && u.layerConfig.fillColor !== '' && !isDefaultCyan(u.layerConfig.fillColor)) return u.layerConfig.fillColor;
         if (u.layerConfig.color != null && u.layerConfig.color !== '' && !isDefaultCyan(u.layerConfig.color)) return u.layerConfig.color;
       }
-      const ev = u.event || u.vevent;
       if (ev) {
         if (ev.fillColor != null && ev.fillColor !== '' && !isDefaultCyan(ev.fillColor)) return ev.fillColor;
         if (ev.color != null && ev.color !== '' && !isDefaultCyan(ev.color)) return ev.color;
@@ -3765,7 +3766,7 @@
       layerConfig.fillColor ||
       (firstStyle && firstStyle.fillColor) ||
       null;
-    let fillHex = parseColor(fillColorFromStyle || eventHex || fallbackGradient);
+    let fillHex = parseColor(labelEvent?.displayColor || fillColorFromStyle || eventHex || fallbackGradient);
     fillHex = applyEventDisplayColor(fillHex, anchorMs, start, end);
     const borderStyle =
       (lineStyle && lineStyle.borderStyle) ||
@@ -6170,6 +6171,7 @@
    * @param {Object|null} [eventForProvenance] - VEVENT-like row (optional)
    */
   function resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, eventForProvenance) {
+    if (eventForProvenance?.displayColor) return borderStyle === 'none' ? null : parseColor(eventForProvenance.displayColor);
     const prov = eventForProvenance != null ? getCircaevumProvenanceOutlineHex(eventForProvenance) : null;
     if (prov != null) return prov;
     const bs = borderStyle || 'event';
@@ -6648,7 +6650,7 @@
   }
 
   function hasExplicitEventColor(eventOrLine) {
-    const raw = eventOrLine?.color ?? eventOrLine?.colorId ?? null;
+    const raw = eventOrLine?.displayColor ?? eventOrLine?.color ?? eventOrLine?.colorId ?? null;
     return raw != null && String(raw).trim() !== '';
   }
 
@@ -6989,7 +6991,7 @@
     let colorEnd = getEventEnd(event);
     if (!colorEnd || colorEnd <= start) colorEnd = start;
     const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange), start, colorEnd);
-    const colorBase = parseColor(explicitColor ? (event.color ?? event.colorId) : fallbackGradient);
+    const colorBase = parseColor(explicitColor ? (event.displayColor ?? event.color ?? event.colorId) : fallbackGradient);
     const color = applyEventDisplayColor(colorBase, start.getTime(), start, colorEnd);
     const markerR = shouldUseDayBandDotPlacement() ? 0.28 : 0.55;
     const opMul = getDailyCircadianEventOpacityMul(start, spanEnd);
@@ -7117,7 +7119,7 @@
         typeof CR.buildDiskRibbonBetween === 'function' &&
         typeof calculateDateHeight === 'function';
 
-      const eventColorRaw = event.color ?? event.colorId ?? null;
+      const eventColorRaw = event.displayColor ?? event.color ?? event.colorId ?? null;
       const explicitEventColor = hasExplicitEventColor(event);
       const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange), start, end);
       let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
@@ -7186,7 +7188,7 @@
           const fillOpacity = Math.min(0.98,
             opacity * getDurationFillOpacityFactor(durationDays) * getShortTermEventFillOpacityMul() *
               (isCircadianShortEventsShiftPreview() && !eventTouchesSelectedCalendarDay(start, end) ? 1.12 : 1));
-          let fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
+          let fillHex = parseColor(event.displayColor || layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
           fillHex = applyEventDisplayColor(fillHex, anchorMsShort, start, end);
           const borderStyle = layerConfig.borderStyle || 'event';
           let outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
@@ -7394,7 +7396,7 @@
     if (isSteStyleDailySpan(start, end) && shouldRenderDayFrameSubDayOnAnnualHelix()) {
       if (!eventTouchesSelectedContextArcWindow(start, end)) return null;
       const anchorMsDay = getEventTemporalAnchorMs(start, end);
-      const eventColorRawDay = event.color ?? event.colorId ?? null;
+      const eventColorRawDay = event.displayColor ?? event.color ?? event.colorId ?? null;
       const explicitDay = hasExplicitEventColor(event);
       const fallbackDay = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange), start, end);
       let eventHexDay = parseColor(explicitDay ? eventColorRawDay : fallbackDay);
@@ -7492,14 +7494,14 @@
     let fillOpacity = Math.min(0.98, opacity * getDurationFillOpacityFactor(durationDays));
     if (superYearDraw) fillOpacity = Math.max(fillOpacity, 0.88);
     const anchorMsLong = getEventTemporalAnchorMs(start, end);
-    const eventColorRaw = event.color ?? event.colorId ?? null;
+    const eventColorRaw = event.displayColor ?? event.color ?? event.colorId ?? null;
     const explicitEventColor = hasExplicitEventColor(event);
     const fallbackGradient = getTimeGradientHex(getNormalizedTimeForDate(start, layerConfig._timeColorRange), start, end);
     let eventHex = parseColor(explicitEventColor ? eventColorRaw : fallbackGradient);
     eventHex = applyEventDisplayColor(eventHex, anchorMsLong, start, end, durationDays);
     const layerHex = parseColor(layerConfig.color || '#00b4d8');
     // Prefer explicit fillColor, then per-event color, then layer color.
-    let fillHex = parseColor(layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
+    let fillHex = parseColor(event.displayColor || layerConfig.fillColor || (explicitEventColor ? eventColorRaw : null) || fallbackGradient);
     fillHex = applyEventDisplayColor(fillHex, anchorMsLong, start, end, durationDays);
     const borderStyle = layerConfig.borderStyle || 'event';
     let outlineColorHex = resolveRibbonOutlineColor(borderStyle, layerConfig, eventHex, layerHex, event);
@@ -7760,7 +7762,7 @@
 
       const lineHasExplicitColor = hasExplicitEventColor(line);
       const lineGradient = getTimeGradientHex(getNormalizedTimeForDate(start, lineTimeRange), start, end);
-      let colorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
+      let colorHex = parseColor(lineHasExplicitColor ? (line.displayColor ?? line.color ?? line.colorId) : lineGradient);
       colorHex = applyEventDisplayColor(colorHex, anchorMs, start, end, durationDays);
       const midHeight = (startHeight + endHeight) / 2;
 
@@ -7860,10 +7862,10 @@
               opacity * getDurationFillOpacityFactor(durationDaysSmall) * getShortTermEventFillOpacityMul() *
                 (isCircadianShortEventsShiftPreview() && !eventTouchesSelectedCalendarDay(start, end) ? 1.12 : 1));
             const layerColorHex = parseColor(layerConfig.color || '#00b4d8');
-            let eventColorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
+            let eventColorHex = parseColor(lineHasExplicitColor ? (line.displayColor ?? line.color ?? line.colorId) : lineGradient);
             eventColorHex = applyTemporalVividnessToHex(eventColorHex, anchorMs, start, end);
-            const fillColorFromStyle = lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
-            let fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color) : eventColorHex);
+            const fillColorFromStyle = line.displayColor ?? lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
+            let fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color ?? line.colorId) : eventColorHex);
             fillHex = applyTemporalVividnessToHex(fillHex, anchorMs, start, end);
             const borderStyle = lineStyle.borderStyle ?? layerConfig.borderStyle ?? firstStyle.borderStyle ?? 'event';
             let outlineColorHexEvt = resolveRibbonOutlineColor(borderStyle, outlineLayerCfg, eventColorHex, layerColorHex, line);
@@ -8276,13 +8278,13 @@
       const lineDrawEnd = lineBandHeights ? lineBandHeights.endHeight : endHeight;
 
       const plotType = resolveEventPlotType(start, end, lineStyle, layerConfig, firstStyle);
-      const fillColorFromStyle = lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
+      const fillColorFromStyle = line.displayColor ?? lineStyle.fillColor ?? layerConfig.fillColor ?? firstStyle.fillColor ?? null;
       const borderStyle = lineStyle.borderStyle ?? layerConfig.borderStyle ?? firstStyle.borderStyle ?? 'event';
 
       const layerColorHex = parseColor(layerConfig.color || '#00b4d8');
-      let eventColorHex = parseColor(lineHasExplicitColor ? line.color : lineGradient);
+      let eventColorHex = parseColor(lineHasExplicitColor ? (line.displayColor ?? line.color ?? line.colorId) : lineGradient);
       eventColorHex = applyLongTermContextColorToHex(eventColorHex, anchorMs, start, end, durationDays);
-      let fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color) : eventColorHex);
+      let fillHex = fillColorFromStyle ? parseColor(fillColorFromStyle) : (lineHasExplicitColor ? parseColor(line.color ?? line.colorId) : eventColorHex);
       fillHex = applyLongTermContextColorToHex(fillHex, anchorMs, start, end, durationDays);
       const opacity = Math.min(1,
         ((lineStyle.opacity != null ? lineStyle.opacity : layerConfig.opacity) ?? 0.7) * getDurationOpacityScale(durationDays));

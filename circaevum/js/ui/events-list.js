@@ -938,8 +938,8 @@
       else row.classList.add('event-row--focus-dim');
     }
     var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
-    var borderColor = ev.color || ev.colorId || layerSwatchColor(layer) || 'rgba(0, 180, 216, 0.5)';
-    row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:8px;cursor:pointer;border-left:' + (inList ? '4px' : '3px') + ' solid ' + borderColor + ';background:' + eventColorToRgbaPanelBackground(ev.color || ev.colorId, layerSwatchColor(layer), 0.22, 0.09, inList) + ';' + (inList ? '' : 'opacity:0.5;filter:saturate(0.4) brightness(0.92);');
+    var borderColor = ev.displayColor || ev.color || ev.colorId || layerSwatchColor(layer) || 'rgba(0, 180, 216, 0.5)';
+    row.style.cssText = 'padding:10px 12px;margin-bottom:8px;border-radius:8px;cursor:pointer;border-left:' + (inList ? '4px' : '3px') + ' solid ' + borderColor + ';background:' + eventColorToRgbaPanelBackground(ev.displayColor || ev.color || ev.colorId, layerSwatchColor(layer), 0.22, 0.09, inList) + ';' + (inList ? '' : 'opacity:0.5;filter:saturate(0.4) brightness(0.92);');
     row.title = titleOverride || (inList
       ? 'Click to focus; click again or Clear selection / Esc / empty scene to unselect.'
       : 'In the time window but hidden until you zoom in (same dimming as the 3D view). Click to focus.');
@@ -952,7 +952,7 @@
     }
     if (ev.url) details.push('<div class="event-detail event-url"><a class="event-link" href="' + escapeHtml(ev.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(ev.url) + '</a></div>');
     var metaLine = formatDate(start) + (end ? ' → ' + formatDate(end) : '') + metaExtra;
-    row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + metaLine + '</div>' + details.join('') + '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>';
+    row.innerHTML = '<div class="event-title">' + escapeHtml(name) + '</div><div class="event-meta">' + metaLine + '</div>' + details.join('') + (item.layerId === 'work-activity' ? '' : '<button type="button" class="events-panel-edit-btn edit-line-btn">Edit</button>');
     row.onclick = function() {
       focusCalendarEvent(gl, item);
     };
@@ -1201,7 +1201,7 @@
 
   function eventChipColor(gl, item) {
     var layer = gl.getLayer ? gl.getLayer(item.layerId) : null;
-    return item.ev.color || item.ev.colorId || layerSwatchColor(layer) || '#22d3ee';
+    return item.ev.displayColor || item.ev.color || item.ev.colorId || layerSwatchColor(layer) || '#22d3ee';
   }
 
   function appendEventChips(host, gl, items, evFocus, maxChips) {

@@ -40,7 +40,7 @@
   const SLEEP_STAGE_RADIUS = { deep: 0.55, light: 0.61, rem: 0.67, awake: 0.73, unknown: 0.61 };
   // Draw biometrics after the sky canvas (renderOrder 7) and ignore its depth so they are not occluded.
   const TS_RENDER_ORDER = 12;
-  const SLEEP_STAGE_COLOR = { deep: 0x2a4cff, light: 0x00d2ff, rem: 0xc46bff, awake: 0xffd23c, unknown: 0x8899aa };
+  const SLEEP_STAGE_COLOR = { deep: 0x6d28d9, light: 0x8b5cf6, rem: 0xa78bfa, awake: 0xddd6fe, unknown: 0x9d78d8 };
   // Small fore/aft lift along the local day-disk normal (not world Y) so lines stay near the selected-time plane.
   const HR_FORE_OFFSET = 0.038; // × hand, in front of the sky canvas
   const SLEEP_AFT_OFFSET = 0.032; // × hand, behind the sky canvas
@@ -48,12 +48,12 @@
   const SLEEP_TUBE_RADIUS = 0.008; // × hand
   const SLEEP_CONNECTOR_TUBE_RADIUS = 0.006; // × hand — was tube; now lift hint for connectors
   /** Solid Garmin HR red — no zone gradient (resting BPM was reading as purple). */
-  const HR_RGB = [0.92, 0.18, 0.22];
-  const HR_HEX = 0xeb2e38;
+  const HR_HEX = 0xe11d48;
+  const HR_RGB = [225 / 255, 29 / 255, 72 / 255];
   /** Bump when HR stroke path changes so cached geometry rebuilds. */
   const HR_STROKE_REV = 'hr-ribbon-v1';
   /** Bump when sleep stroke path changes (tube→line). */
-  const SLEEP_STROKE_REV = 'sleep-ribbon-v3';
+  const SLEEP_STROKE_REV = 'sleep-ribbon-v4';
   /** Former tube radius — ribbon half-width base + extra fore lift. */
   const HR_TUBE_RADIUS = 0.007; // × hand
   const HR_AVERAGE_TUBE_RADIUS = 0.009; // × hand
@@ -637,7 +637,7 @@
       const endMs = eventEndMs(event, startMs);
       if (!isAverage && isDegenerateFlatHr(summary, startMs, endMs)) return;
       const opacity = isAverage ? HR_AVERAGE_LINE_OPACITY : HR_LINE_OPACITY;
-      const strokeHex = isAverage ? 0xfff2cc : HR_HEX;
+      const strokeHex = isAverage ? 0xfda4af : cssColorHex(event.displayColor || '#e11d48');
       const baseR = isAverage ? HR_AVERAGE_TUBE_RADIUS : HR_TUBE_RADIUS;
       const halfWidth = hand() * baseR * HR_RIBBON_WIDTH_MUL;
       const hrFore = HR_FORE_OFFSET + HR_LINE_EXTRA_FORE;
@@ -730,7 +730,7 @@
       const hi = Number(render.vMax);
       const vLo = isFinite(lo) ? lo : 0;
       const vHi = isFinite(hi) && hi > vLo ? hi : vLo + 1;
-      const hex = cssColorHex(event && event.color);
+      const hex = cssColorHex(event && (event.displayColor || event.color));
       const lane = Number(render.lane);
       const laneN = isFinite(lane) ? lane : 0;
       const fore = HR_FORE_OFFSET + HR_LINE_EXTRA_FORE + laneN * 0.004;

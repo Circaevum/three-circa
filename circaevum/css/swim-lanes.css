@@ -297,3 +297,32 @@ body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-axis{position:absolu
 body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-notice{display:block;position:absolute;bottom:12px;left:12px;max-width:calc(100% - 24px);padding:8px 12px;background:var(--paper);border:1px solid var(--line);z-index:10;pointer-events:auto}
 
 .sl-health-status{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);color:var(--ink)}
+
+/* Keep the controls outside the scroll area and the date ruler with its tracks. */
+#swim-lanes:not([hidden], .sl-row-attached) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#swim-lanes:not(.sl-row-attached) .sl-frozen-head { flex: none; }
+#swim-lanes:not(.sl-row-attached) .sl-layout { display: flex; flex: 1 1 auto; min-height: 0; }
+#swim-lanes:not(.sl-row-attached) .sl-board-scroll { flex: 1 1 auto; align-self: stretch; overflow: auto; }
+#swim-lanes:not(.sl-row-attached) .sl-axis,
+#sl-side .sl-axis-label { position: sticky; top: 0; z-index: 8; background: var(--paper); }
+#swim-lanes.sl-transitioning:not(.sl-row-attached) .sl-board-scroll { overflow: visible; }
+
+.sl-github-summary, .sl-github-summary > span { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.sl-github-summary { gap: 8px; }
+.sl-github-icon { display: block; width: 16px; height: 16px; flex: none; }
+.sl-github-point { width: 22px; transform: translateX(-50%); }
+#swim-lanes .sl-card.sl-github-marker {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--object, var(--ink));
+}
+#swim-lanes .sl-card.sl-github-marker:hover,
+#swim-lanes .sl-card.sl-github-marker.sl-selected { background: var(--paper); }
