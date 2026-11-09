@@ -26,7 +26,12 @@
     // Calendar metadata may arrive later. Selection belongs to the lane, not its first event.
     return JSON.stringify(collection==='layers'?['','',event.project,event.lane]:[event.access.ownerId||'',event.event.calendarId||'',event.project,event.lane]);
   }
-  const api = {project, projectFetched, rowKey, label:name=>labels[name] || name};
+  function selectionNames(names,title,mode){
+    const selected=[...new Set(names||[])];
+    return mode==='health'&&(String(title).toLowerCase().includes('garmin')||selected.some(name=>name.startsWith('Garmin ')))
+      ? [...new Set(['Garmin Sleep','Garmin Activity','Garmin Workout',...selected])] : selected;
+  }
+  const api = {project, projectFetched, rowKey, selectionNames, label:name=>labels[name] || name};
   if (typeof module !== 'undefined' && module.exports) module.exports=api;
   else root.CalendarLaneEvents=api;
 })(typeof window !== 'undefined' ? window : globalThis);

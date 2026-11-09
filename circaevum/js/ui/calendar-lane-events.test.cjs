@@ -33,3 +33,10 @@ test('calendar lane selection survives arrival of calendar and owner metadata',(
  assert.equal(rowKey(empty,'layers'),rowKey(fetched,'layers'));
  assert.notEqual(rowKey(empty,'layers'),rowKey({...fetched,lane:'Calendar B'},'layers'));
 });
+
+test('Garmin Health selection always includes structured lanes, Basic stays custom',()=>{
+ const {selectionNames}=require('./calendar-lane-events.js');
+ assert.deepEqual(selectionNames(['Garmin Sleep'],'Garmin','health'),['Garmin Sleep','Garmin Activity','Garmin Workout']);
+ assert.deepEqual(selectionNames(['Garmin Sleep'],'Garmin','basic'),['Garmin Sleep']);
+ assert.deepEqual(selectionNames(['Research'],'Project','work'),['Research']);
+});
