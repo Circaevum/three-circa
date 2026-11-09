@@ -19,6 +19,7 @@ Human summary: [developers.html](https://circaevum.com/developers.html)
 | For agents (markdown) | https://circaevum.com/docs/FOR-AGENTS.md |
 | Embed / viewer mode | https://circaevum.com/index.html?viewer=1 |
 | Public API reference | https://circaevum.com/API.md |
+| Calendar modes + swim lanes | https://circaevum.com/docs/SWIM-LANES.md |
 | Viewer + iframe wrapper | https://circaevum.com/docs/VIEWER-AND-WRAPPER.md |
 | LLM site map | https://circaevum.com/llms.txt |
 | OAuth discovery | https://circaevum.com/.well-known/oauth-authorization-server |

@@ -241,13 +241,14 @@
       ${showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([k,[label,icon,rgb]])=>`<span style="--workflow:${rgb}">${icon} ${label}</span>`).join('')}</div>`:''}
       <div class="sl-caption"><span>${fmt(start)} – ${fmt(end)} ${new Date(focus).getFullYear()} · ${list.length} items</span></div>
       <p class="sl-notice" role="status">${esc(notice||accessMessage||'')}</p>`;
+    const healthStatus=selectedMode==='health'?`<p class="sl-health-status" role="status" aria-live="polite">${laneLoading?'<span class="sl-loading-spinner"></span> Loading Health events…':laneError?'Health data could not load. Retry below.':`${list.length} Health events loaded for ${esc(fmt(start))} – ${esc(fmt(end))}`}</p>`:'';
     const dockChrome=(collectionId
       ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
       : `<div class="sl-bar" tabindex="-1">${toolBits}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`)
       + (showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([k,[label,icon,rgb]])=>`<span style="--workflow:${rgb}">${icon} ${label}</span>`).join('')}</div>`:'')
       + (notice||accessMessage?`<p class="sl-notice" role="status">${esc(notice||accessMessage)}</p>`:'');
     const board=`<div class="sl-layout"><div class="sl-board-scroll" aria-label="Project timeline"><div class="sl-board ${compact?'sl-compact':''}"><div class="sl-axis">${namesInBoard?'<div class="sl-label">Lanes</div>':''}<div class="sl-track sl-axis-track"></div></div><div id="sl-rows"></div></div></div></div>`;
-    if(docked){side.hidden=namesInBoard;host.innerHTML=dockChrome+board;}
+    if(docked){side.hidden=namesInBoard;host.innerHTML=dockChrome+healthStatus+board;}
     else{side.hidden=true;side.innerHTML='';host.innerHTML=`<button class="sl-drawer-grip" data-action="expand" aria-label="${expanded?'Reduce':'Expand'} Swim Lanes" aria-expanded="${expanded}"><span></span></button>${chrome}${board}`;}
     const weekends=[];
     const day=new Date(start);day.setHours(0,0,0,0);
@@ -255,14 +256,14 @@
     const weekendMarkup=weekends.join('');
     const ticks=M.ticks(start,end,zoom);host.querySelector('.sl-axis-track').innerHTML=weekendMarkup+ticks.map(t=>`<button class="sl-tick" data-time="${t}" style="left:${pct(t)}%">${zoom==='hour'||zoom==='day'?new Date(t).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):fmt(t)}</button>`).join('');
     const groups=new Map();list.forEach(e=>{const key=collectionId==='linked-project'?e.lane:window.CalendarLaneEvents.rowKey(e,collectionId);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);});
-    if(selectedMode==='basic'&&collectionId==='layers')for(const name of selectedLayerNames){const lane=window.CalendarLaneEvents.label(name);if(![...groups.values()].some(items=>items[0]?.lane===lane))groups.set(JSON.stringify(['','',project,lane]),[]);}
+    if(collectionId==='layers')for(const name of selectedLayerNames){const lane=window.CalendarLaneEvents.label(name);if(![...groups.values()].some(items=>items[0]?.lane===lane))groups.set(JSON.stringify(['','',project,lane]),[]);}
     if(collectionId==='linked-project')for(const lane of ['Attached calendars',...workLaneOrder.keys()])if(!groups.has(lane))groups.set(lane,[]);
     const ordered=[...groups.entries()].sort((a,b)=>{const la=a[1][0]?.lane||a[0],lb=b[1][0]?.lane||b[0];const ra=la==='Attached calendars'?-1:workLaneOrder.has(la)?workLaneOrder.get(la):(laneRank?.get(la)??999);const rb=lb==='Attached calendars'?-1:workLaneOrder.has(lb)?workLaneOrder.get(lb):(laneRank?.get(lb)??999);return ra-rb||String(la).localeCompare(String(lb));});
     positions.clear();let y=0;const markup=[],titles=[],heightStep=compact?25:40,cardHeight=compact?19:30;
     // Reserve 72 px for legible labels. Exact duration is also shown as a lower bar.
     const width=Math.max(600,host.querySelector('.sl-axis-track').getBoundingClientRect().width);
     ordered.forEach(([groupKey,events])=>{
-      const representative=events[0]||{id:'empty-'+groupKey,lane:selectedMode==='basic'?JSON.parse(groupKey)[3]:groupKey,project,workflow:'communication',access:{label:'Linked calendar'}};
+      const representative=events[0]||{id:'empty-'+groupKey,lane:collectionId==='layers'?JSON.parse(groupKey)[3]:groupKey,project,workflow:'communication',access:{label:'Linked calendar'}};
       const rowId=selectedMode==='basic'?String(groupKey):representative.id;const rowKey=esc(rowId);
       if(selectedMode==='basic'?!expanded&&kept.size&&!kept.has(rowId):kept.size&&!leftPanel?.classList.contains('open')&&!kept.has(rowId))return;
       const visible=M.pack(events.filter(e=>e.start<end&&(e.end>start||e.start>=start)),span*72/width);
@@ -351,7 +352,7 @@
     const link=e.target.closest('[data-link-from]');if(link){selectedLink={from:link.dataset.linkFrom,to:link.dataset.linkTo};selected=selectedLink.to;panelMode='event';render();return;}
     const assign=e.target.closest('[data-assign-lane]');if(assign){assignProjectEvent(assign.dataset.assignId,assign.dataset.assignLane);return;}
     const card=e.target.closest('[data-id]');if(card){selected=card.dataset.id;panelMode='event';render();return;}
-    const lane=e.target.closest('[data-lane]');if(lane){const key=lane.dataset.lane;if(collectionId==='linked-project'){const name=lane.closest('.sl-label')?.dataset.workLane;if(workLaneOrder.has(name)){parentSend({type:'CIRCAEVUM_CONFIGURE_PROJECT_LANE',project,lane:name});return;}}if(kept.has(key))kept.delete(key);else if(selectedMode!=='basic'||kept.size<3)kept.add(key);else notice='Choose up to three lanes for the lowered view.';if(kept.has(key))requestLaneData(true);render();return;}
+    const lane=e.target.closest('[data-lane]');if(lane){const key=lane.dataset.lane;if(selectedMode!=='basic'&&collectionId!=='linked-project')return;if(collectionId==='linked-project'){const name=lane.closest('.sl-label')?.dataset.workLane;if(workLaneOrder.has(name)){parentSend({type:'CIRCAEVUM_CONFIGURE_PROJECT_LANE',project,lane:name});return;}}if(kept.has(key))kept.delete(key);else if(selectedMode!=='basic'||kept.size<3)kept.add(key);else notice='Choose up to three lanes for the lowered view.';if(kept.has(key))requestLaneData(true);render();return;}
     const remove=e.target.closest('[data-remove-link]');if(remove){const target=items().find(x=>x.id===selected);if(target)await saveWork(target,{...target.event.work,dependencies:target.dependencies.filter(x=>x!==remove.dataset.removeLink),links:target.links.filter(x=>x.uid!==remove.dataset.removeLink)});return;}
     const tick=e.target.closest('[data-time]');if(tick){focus=Number(tick.dataset.time);start=focus-span/2;changedTime();render();return;}
     const action=e.target.closest('[data-action]')?.dataset.action;if(!action)return;
@@ -437,6 +438,7 @@
   }
   window.openSwimCollection=function(colId){
     if(!modeEnabled(colId))return;
+    if(appLayout()&&colId==='health'){window.openSwimLayerNames(['Garmin Sleep','Garmin Activity','Garmin Workout'],'Garmin','health');return;}
     const g=gl();
     const ids=(g?.getLayerIds?.()||[]).filter(id=>g.getLayer(id)?.collection===colId).sort((a,b)=>(g.getLayer(a).laneOrder||0)-(g.getLayer(b).laneOrder||0));
     laneRank=new Map(ids.map(id=>[g.getLayer(id).laneName||g.getLayer(id).name, g.getLayer(id).laneOrder||0]));
@@ -445,6 +447,7 @@
   };
   window.openSwimLayerNames=function(names, title, mode='basic'){
     if(!modeEnabled(mode))return;
+    names=window.CalendarLaneEvents.selectionNames(names,title,mode);
     const append=mode==='basic'&&selectedMode==='basic'&&opened&&collectionId==='layers';
     selectedMode=mode;expanded=mode==='basic';notice=expanded?'Select up to three lane headers, then Show selected.':'';
     const g=gl(); if(!g?.getLayerIds) return;

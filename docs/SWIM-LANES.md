@@ -1,54 +1,73 @@
-# Work / Swim Lanes
+# Calendar modes and swim lanes
 
-Open `http://localhost:8080/?workView=swim-lanes&skipIntro=1`, or Layers → Work → Swim Lanes. Yin-portal has the same view at `http://127.0.0.1:5173/?workView=swim-lanes`; its Layers → Work entry also creates work items.
+Updated 2026-11-09. Describes the current source implementation; it is not a claim that both deployments already contain these changes.
 
-## Launch
+## Run the integrated app
 
-In `yang/web`: `python3 -m http.server 8080 --bind 127.0.0.1`.
-In `yang/yin-portal`: `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`.
-No deployment or new dependency is required. The existing portal viewer URL defaults to localhost:8080 in development.
+Serve this repository on 8080 (`python3 -m http.server 8080 --bind 127.0.0.1`) and run Yin-portal on 5173 (`npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`). Open `http://localhost:5173/`. Keep both services running. Standalone viewer and sample-data behavior is distinct from the signed-in app.
 
-## Interaction
+## Modes and navigation
 
-Swim Lanes slides up as a bottom drawer over the 3D calendar. The top grip expands/reduces it; Hide lanes closes it. Selecting an item switches the right inspector to Event mode; its Timeline tab returns to the overview. Weekends are slightly darker in both themes.
+| Mode | Behavior |
+| --- | --- |
+| Basic | Always enabled; gray theme. Traditional calendar integrations remain here. Select calendar layers individually; click a selected layer again to remove it. Choose up to three headers for the lowered selection view. |
+| Health | Red theme; Sleep is purple. Selecting Garmin opens Sleep, Heart and Activities automatically, including empty/loading rows. No custom keep/unkeep header selection. Health calendar cards retain their order and top position. |
+| Work | Blue theme. Initiative cards contain Projects; a Project opens Research, Development, Delivery, plus an Attached calendars source lane. |
+| Financial | Green theme; account-controlled mode. Mode availability is not proof of a live financial integration. |
 
-Compact mode uses 19 px objects, 25 px overlapping-item rows and a 42 px minimum lane, with full titles, dates and links available through item details. Comfortable mode expands rows. Project filtering, Fit, date navigation, and hour/day/week/month/quarter/year views are available. Month and quarter ticks fall on calendar Mondays, including across DST.
+Account Settings controls extra modes as a preview; there is no payment system. Connections and Systems belong there, not in Calendar Layers. The header provides Icons, depth overview, camera fitting, Add event (`+`) and the hamburger menu. Keys is in the hamburger menu. Scene icons start minimized; the old Play/replay control is hidden in the app.
 
-Horizontal trackpad scrolling pans time continuously; ordinary vertical scrolling remains vertical. Shift+wheel is an alternative. The lane center drives the existing GL selected time and zoom. The existing painted context-arc bounds produce the cyan band. Changes from the 3D calendar recenter the lane view and select the corresponding zoom. No independent time model or renderer is introduced.
+## Basic layout and movement
 
-Enable Connect, then drag an output endpoint to an input endpoint, or click each endpoint in turn. Self-links and cycles in the loaded graph are rejected. Connections flow along smooth cubic curves with directional arrowheads. Select a connector to inspect its target or reset its curve. Curve handles drag on an 8 px grid; endpoints remain attached when dates or zoom change. The target item owns its dependency list. Only owned targets can be saved in the portal; a subscribed source can link into an owned target.
+The full Layers list remains available while selecting. Selected lanes align beside their actual menu rows. Scroll positioning is immediate, without easing. Closing Layers moves lanes to the bottom dock; reopening returns them beside the rows. Opening/closing transitions respect reduced motion.
 
-Object state colors: blue = upcoming; magenta = waiting for response; yellow = needs action; green = completed milestone; neutral checkmark = completed task; gray = past/no-outcome; red = blocked/cancelled. This follows the latest direction reserving blue for future work. Status is also written in item details. Overdue and follow-up warnings do not silently change the saved state.
+Saved, owned Basic events can be dragged between displayed calendar lanes. A destination highlights, the portal reads the stored event, and the card moves after a successful save. Dates and other stored fields remain intact; category/categories change and the record is marked edited. This is a Circaevum layer move, **not** a move between upstream Google calendars. Missing/unavailable records fail visibly. Work source-to-workflow assignment remains a separate per-project operation.
 
-Workflow tints are intentionally faint and independent of state: blue AI-assisted coding, violet cloud, green code/configuration, ochre communication, olive field work, earth installation, teal presentations, rose contracts, slate operations. The workflow legend names each tint and icon. Change workflow in an item's editor.
+## Data loading — independent of renderer LOD
 
-## Existing calendar / sharing contract
+`CIRCAEVUM_FETCH_LANES` requests selected layer names and the displayed `[t0,t1]` interval from the portal. The portal queries account storage using `listEventsInWindow`; a missing/failed/capped index response falls back to paginated storage reads. It filters selected layer names and interval overlap, not event duration or scene visibility.
 
-Lane identity uses the event's calendar category/layer. Editors save lane changes back to `category`; `work.lane` remains as a compatibility mirror. VEVENT `uid`, `dtstart`, `dtend`, `summary`, `description`, `isWorkEvent` stay canonical. Calendar `status` remains separate from task state.
+The viewer stores fetched lane events separately from `gl.events`. Reopening/adding a layer must not seed the view from a partial scene cache. `calendar-events-updated` does not overwrite app lane snapshots. Request IDs reject stale responses; stable calendar-lane keys do not depend on the first event's owner/calendar metadata.
 
-Optional `work` metadata:
+The selected time and zoom still follow the scene, including Zoom 7. This may change the requested date interval; it must not apply scene density/duration LOD to lanes. Loading indicators remain visible until results render. Empty rows say “No events in this time window”; errors offer Retry. Health additionally reports loading and loaded counts/date range. An empty Activities lane does not establish that Garmin has no activity history: provider ingestion/backfill and account storage are separate from lane fetching.
 
-```json
-{"project":"OpenAMI / ISV","lane":"Delivery","kind":"task","status":"waiting","workflow":"cloud","assignee":"Platform team","followUpAt":"2026-11-12","dependencies":["other-event-uid"],"links":[{"uid":"other-event-uid","from":"end","to":"start","route":"elbow","offset":16}]}
+These fetches read Circaevum storage; selecting Garmin does not synchronously call Garmin's upstream history API. Never replace unavailable account data with synthetic records or describe sample records as live.
+
+## Work organization and integrations
+
+Initiatives own calendar attachments and repository metadata. Projects are dropdown children on Initiative cards; rename preserves task identity, aliases and assignments. An attachment can stay Initiative-only or be linked to Projects. Attached events start in their own source lane and can be assigned individually to Research, Development or Delivery without reclassifying the original calendar event.
+
+Research/Development/Delivery headers open a source picker. Thread import, explicit project selections, repository/branch metadata and Zhong note IDs are prototype features. Automatic ChatGPT/Cursor history ingestion, private GitHub authentication, GitHub delivery ingestion, Microsoft 365 OAuth and automatic Zhong synchronization are **not implemented by these controls**. MCP is an integration interface, not permission to access provider history. No token counts should be invented.
+
+## Event details and other overlays
+
+Scene selections route to the right Events panel's Event mode using the existing detail content. Swim-lane cards also open that panel. Event list/Event tabs and selected-time context live in its header. Edit remains an explicit action handled by the portal. The Century/Decade pull summary has a sticky close button; dismissal survives navigation during the current mount and Menu → Show pull summary reopens it at those zooms.
+
+Depth overview represents full-page sheets sharing one axis and angle. Drag to rotate together; controls reorder preview pages. Preferences are device-local. Do not assume preview order changes normal-view stacking.
+
+## Bridge messages
+
+| Message | Direction / purpose |
+| --- | --- |
+| `CIRCAEVUM_OPEN_LAYERS` | Portal → viewer; names/title/mode. Basic toggles/accumulates; Garmin Health expands to its structured names. |
+| `CIRCAEVUM_FETCH_LANES` / `CIRCAEVUM_LANES_RESULT` | Viewer request / portal response; requestId, names, bounds; events or error. |
+| `CIRCAEVUM_LANE_ANCHORS` | Portal → viewer; open state, column width, current row rectangles. |
+| `CIRCAEVUM_LANE_ROW_SIZES` | Viewer → portal; reserve selected Basic row heights. |
+| `CIRCAEVUM_MOVE_LANE_EVENT` / `CIRCAEVUM_MOVE_LANE_RESULT` | Viewer request / portal acknowledgement; requestId, stored key, destination layer; saved event or error. |
+| `CIRCAEVUM_OPEN_LINKED_PROJECT` | Portal → viewer; Project's projected events. |
+| `CIRCAEVUM_ASSIGN_PROJECT_EVENT` | Viewer → portal; project/link/source/lane assignment. |
+| `CIRCAEVUM_CONFIGURE_PROJECT_LANE` | Viewer → portal; open Research/Development/Delivery source picker. |
+| `CIRCAEVUM_HOST_CHROME`, `CIRCAEVUM_PANEL_GEOMETRY` | Host layout and viewer geometry/open-state coordination. |
+
+Existing Work save/share and scene ingest messages remain separate contracts. Only the authenticated host performs account writes. Read-only projections must not gain write access merely because they appear in a lane.
+
+## Maintenance and verification
+
+Core files: `circaevum/js/ui/swim-lanes.js`, `calendar-lane-events.js`, `calendar-viewport.js`, `event-detail-sheet.js`, and `circaevum/css/swim-lanes.css`. Portal counterparts: `src/App.jsx`, `swim-lane-fetch.js`, `WorkProjectsPanel.jsx`, `work-projects.js`, `ProjectSourcePicker.jsx`, and `AccountHub.jsx`.
+
+```sh
+node --test circaevum/js/ui/calendar-lane-events.test.cjs circaevum/js/ui/work-visibility.test.cjs circaevum/js/models/work-timeline.test.cjs
+node --check circaevum/js/ui/swim-lanes.js
 ```
 
-Kinds: meeting/task/milestone. States: planned/todo/in-progress/waiting/blocked/cancelled/done/no-outcome. Milestones are displayed at their start instant. All-day dates follow VEvent's local-date convention; date-times retain their absolute instant.
-
-The portal queries existing `rpc_list_calendars` and `rpc_list_subscribed_events` endpoints, with a 1,000 event per-calendar request limit. Subscribed identities are qualified as `ownerId::uid` so dependencies can resolve across that owner's shared lanes without colliding with another owner's UID. Public views and subscribed lanes are read-only here. This does not grant permissions or implement a new federation protocol. Existing server subscription/access decisions remain authoritative; no backend was deployed.
-
-Lane access & sharing opens the existing share/invite controls. Only links created from this work-specific flow request the Swim Lanes view. Public work snapshots preserve metadata and visible-layer filtering. Unavailable dependency titles are never synthesized from private account data. Owned work events and shared events are kept separate; changing accounts clears the shared cache.
-
-Messages: `CIRCAEVUM_WORK_EVENTS` replaces permitted loaded events, `CIRCAEVUM_OPEN_SWIM_LANES` opens the page, `CIRCAEVUM_REFRESH_WORK` refreshes access, `CIRCAEVUM_SAVE_WORK` saves owned work metadata with a success/error acknowledgement, `CIRCAEVUM_SHARE_WORK_LANE` opens existing sharing. GL accepts these from its parent; portal validates its viewer source/origin and looks up owned events before writing. Existing `CIRCAEVUM_EDIT_EVENT` opens the event editor.
-
-## Reports and sample data
-
-Follow-up report lists loaded items, owners/responsible parties, state, overdue dates, unresolved links, and past meetings with no linked next step. Meetings deliberately marked no-outcome are exempt from that alert. CSV export is local and escapes spreadsheet-formula prefixes.
-
-The OpenAMI / ISV example is illustrative, not confirmed commitments. Example edits remain browser-local under `circaevum.work-example.v2`; old v1 edits are left intact. They never write to Nakama or affect Garmin data.
-
-## Validation and remaining limits
-
-GL: `node --test circaevum/js/models/work-timeline.test.cjs circaevum/js/aevum/helical-projection.test.cjs circaevum/js/utils/sky-geometry.test.cjs circaevum/js/app/navigation.test.js circaevum/js/renderers/event-types-zoom-visibility.test.js`.
-Portal: `node --test src/work-event.test.js` and `npm run build`.
-
-Reports and cycle detection cover loaded, permitted events, not an unbounded project database. Navigation informs the existing portal period-loader; it does not add a new global task query. Recurrence expansion and automatic dependency rescheduling are not implemented. Shared writers are intentionally not enabled: the available save path writes owner storage. Live authenticated saving and subscription ACL enforcement require the configured server and a signed-in session; they were not exercised against production during implementation. Garmin integration and renderer files remain unchanged.
+Run portal routing/fetch/work tests and its build for cross-repository changes. Keep dependent viewer script/style versions in `index.html` synchronized. Report authenticated persistence/provider checks separately from unit tests. Removed legacy menus (Swim, Layers, All Projects, Tints, Connect and Report) are not current app controls even if helper code remains.

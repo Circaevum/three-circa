@@ -10,6 +10,10 @@ circaevum.com hosts the **Graphics Library (GL)** — auth-free 3D timeline. Log
 
 ---
 
+## Account modes and swim lanes
+
+See [the current swim-lane contract](./SWIM-LANES.md) for Basic-only custom selection, automatic Garmin Health lanes, independent non-LOD data requests, Project organization, event details, and coordinated viewer/portal asset updates. Account navigation uses `/?view=account` on the wrapper. These app features do not add authentication requirements to standalone GL embeds.
+
 ## Integration paths (pick what you need)
 
 | Path | What you integrate | Auth | Start here |

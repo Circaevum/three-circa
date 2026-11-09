@@ -2,6 +2,10 @@
 
 The Circaevum web app is split so the **graphics library (GL)** is viewer-only (no account/Nakama in the repo) and **login/account** lives in the wrapper (app.circaevum.com).
 
+## Account modes and swim lanes
+
+See [the current swim-lane contract](./SWIM-LANES.md) for Basic-only custom selection, automatic Garmin Health lanes, independent non-LOD data requests, Project organization, event details, and coordinated viewer/portal asset updates. Account navigation uses `/?view=account` on the wrapper. These app features do not add authentication requirements to standalone GL embeds.
+
 ## Bring your own auth (most integrators)
 
 You do **not** have to use app.circaevum.com or Nakama. Typical pattern:
@@ -23,8 +27,8 @@ Viewer mode is enabled automatically when the URL has `?viewer=1` or when the pa
 
 ## React wrapper: Yin-portal (`account-wrapper/`)
 
-- **Location:** `yang/account-wrapper/` (or a separate repo).
+- **Location:** `yang/yin-portal/` (or a separate repo).
 - **Role:** Navbar with hamburger (Account, Event List), Account panel, and an iframe that loads `index.html?viewer=1`. On login, fetches user events from Nakama and sends them to the iframe via `postMessage`.
 - **Config:** Env vars `VITE_NAKAMA_*` and `VITE_VIEWER_URL`. In dev, if `VITE_VIEWER_URL` is unset, the wrapper uses `http://localhost:8080/index.html?viewer=1` (GL on port 8080).
 
-**Local development:** Serve the GL from `yang/web` on port 8080 (e.g. `npx serve -p 8080`), run the wrapper with `npm run dev` (port 5173). Open http://localhost:5173. See `account-wrapper/README.md` for details.
+**Local development:** Serve the GL from `yang/web` on port 8080 (e.g. `npx serve -p 8080`), run the wrapper with `npm run dev` (port 5173). Open http://localhost:5173. See the portal README for details.

@@ -6,6 +6,10 @@
 
 Read in order: **[llms.txt](https://circaevum.com/llms.txt)** → **[docs/FOR-AGENTS.md](./docs/FOR-AGENTS.md)** → [Agent Skills](./.well-known/agent-skills/index.json). Human summary: [developers.html](https://circaevum.com/developers.html).
 
+## Account modes and swim lanes
+
+See [the current swim-lane contract](./docs/SWIM-LANES.md) for Basic-only custom selection, automatic Garmin Health lanes, independent non-LOD data requests, Project organization, event details, and coordinated viewer/portal asset updates. Account navigation uses `/?view=account` on the wrapper. These app features do not add authentication requirements to standalone GL embeds.
+
 ## How time becomes space
 
 The GL maps **timestamps to 3D coordinates** so you can see and navigate time as geometry:
