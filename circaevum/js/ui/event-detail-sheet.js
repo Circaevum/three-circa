@@ -93,12 +93,13 @@
   }
 
   function canEditEvent() {
+    if (currentPayload?.layerId === 'work-activity') return false;
     if (window.self !== window.top && window.parent && window.parent.postMessage) return true;
     return !!buildFullAppUrl(false);
   }
 
   function openEventEdit() {
-    if (!currentPayload) return;
+    if (!currentPayload || !canEditEvent()) return;
     var p = currentPayload;
     var editEvent = buildEditPayload(p.vevent, p.layerId, p.start, p.end);
     if (window.self !== window.top && window.parent.postMessage) {

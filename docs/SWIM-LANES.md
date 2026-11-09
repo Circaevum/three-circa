@@ -37,7 +37,7 @@ These fetches read Circaevum storage; selecting Garmin does not synchronously ca
 
 Initiatives own calendar attachments and repository metadata. Projects are dropdown children on Initiative cards; rename preserves task identity, aliases and assignments. An attachment can stay Initiative-only or be linked to Projects. Attached events start in their own source lane and can be assigned individually to Research, Development or Delivery without reclassifying the original calendar event.
 
-Research/Development/Delivery headers open a source picker. Thread import, explicit project selections, repository/branch metadata and Zhong note IDs are prototype features. Automatic ChatGPT/Cursor history ingestion, private GitHub authentication, GitHub delivery ingestion, Microsoft 365 OAuth and automatic Zhong synchronization are **not implemented by these controls**. MCP is an integration interface, not permission to access provider history. No token counts should be invented.
+Research/Development/Delivery headers open a source picker. Thread import, explicit project selections, and Zhong note IDs are prototype features. The portal loads GitHub commits and pushes for a linked Delivery branch and passes them to the viewer as read-only events. The viewer can request a refresh and jump to the newest record. Automatic ChatGPT/Cursor history ingestion, Microsoft 365 OAuth and automatic Zhong synchronization are separate work. MCP is an integration interface, not permission to access provider history. No token counts should be invented.
 
 ## Event details and other overlays
 
@@ -54,7 +54,8 @@ Depth overview represents full-page sheets sharing one axis and angle. Drag to r
 | `CIRCAEVUM_LANE_ANCHORS` | Portal → viewer; open state, column width, current row rectangles. |
 | `CIRCAEVUM_LANE_ROW_SIZES` | Viewer → portal; reserve selected Basic row heights. |
 | `CIRCAEVUM_MOVE_LANE_EVENT` / `CIRCAEVUM_MOVE_LANE_RESULT` | Viewer request / portal acknowledgement; requestId, stored key, destination layer; saved event or error. |
-| `CIRCAEVUM_OPEN_LINKED_PROJECT` | Portal → viewer; Project's projected events. |
+| `CIRCAEVUM_OPEN_LINKED_PROJECT` | Portal → viewer; Project events and GitHub activity status. Updates refresh the active Project without reopening the lane. |
+| `CIRCAEVUM_REFRESH_GITHUB_DELIVERY` | Viewer → portal; refresh the active Project’s linked branch. |
 | `CIRCAEVUM_ASSIGN_PROJECT_EVENT` | Viewer → portal; project/link/source/lane assignment. |
 | `CIRCAEVUM_CONFIGURE_PROJECT_LANE` | Viewer → portal; open Research/Development/Delivery source picker. |
 | `CIRCAEVUM_HOST_CHROME`, `CIRCAEVUM_PANEL_GEOMETRY` | Host layout and viewer geometry/open-state coordination. |

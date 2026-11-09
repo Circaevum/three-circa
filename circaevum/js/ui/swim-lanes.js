@@ -2,8 +2,11 @@
 (function () {
   const M = window.WorkTimeline, KEY = 'circaevum.work-example.v3';
   const ZOOMS = { hour:[0,1/24],day:[8,1],week:[7,7],month:[5,31],quarter:[4,92],year:[3,366] };
-  const COLORS = {upcoming:['#528bd4','Upcoming / horizon'],waiting:['#d72ad7','Waiting for response'],action:['#dec445','Needs action'],'milestone-done':['#45a573','Completed milestone'],completed:['#8397a2','Completed task ✓'],past:['#89929a','Past / no new outcome'],blocked:['#d96669','Blocker / cancellation']};
+  const MODE_COLORS = {basic:'#9aa3ad',health:'#e11d48',work:'#2563eb',financial:'#16a34a'};
+  const SLEEP_COLOR = '#8b5cf6';
+  const STATUS_ICONS = {done:'✓',blocked:'!',cancelled:'×',waiting:'…'};
   let demo=M.seed(), workSupplied=null, supplied=null, source='example', project='', selected=null, zoom='month', compact=true, connect=false;
+  let githubDelivery=null;
   let collectionId='', collectionLabel='', laneRank=null, selectedMode='basic', selectedLayerNames=[];
   let start=+new Date(2026,10,1), span=31*M.DAY, context=null, focus=start+span/2, opened=false, returnFocus;
   let draw=null, routeDrag=null, linkStart=null, saving=false, notice='', accessMessage='', syncTimer, rendering=false, pushing=false, initialized=false;
@@ -92,7 +95,7 @@
     if(body)body.style.paddingBottom='';
   }
   function placeRail(){
-    const board=host.querySelector('.sl-board');
+    const board=host.querySelector('.sl-board-scroll');
     const body=leftPanel?.querySelector('.left-panel-body');
     rail.hidden=true;
     if(appLayout()||!opened||!host.classList.contains('sl-docked')||!leftPanel||!board){
@@ -116,7 +119,9 @@
       leftPanel.style.top='auto';
       leftPanel.style.height=boardRect.height+'px';
       leftPanel.style.bottom=Math.max(0,window.innerHeight-boardRect.bottom)+'px';
+      side.style.height=boardRect.height+'px';
     }
+    side.scrollTop=board.scrollTop;
   }
   function hotRow(key){
     host.querySelectorAll('.sl-hot').forEach(n=>n.classList.remove('sl-hot'));
@@ -220,13 +225,39 @@
     }
     window.dispatchEvent(new CustomEvent('circaevum:lanes-layout'));
   }
+  function laneColor(lane){
+    if(selectedMode==='health'&&/^(garmin )?sleep$/i.test(lane))return SLEEP_COLOR;
+    return MODE_COLORS[selectedMode]||MODE_COLORS.basic;
+  }
+
+  function githubMarker(kind){
+    const glyph=kind==='commits'
+      ? '<path d="M1 10h5m8 0h5"/><circle cx="10" cy="10" r="4"/>'
+      : kind==='force-push'
+        ? '<path d="m4 5 5 5-5 5m8-10 5 5-5 5"/>'
+        : '<path d="M2 10h15m-6-5 6 5-6 5"/>';
+    return `<svg class="sl-github-icon" aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg>`;
+  }
+  function githubDeliveryStatus(list){
+    if(collectionId!=='linked-project'||!githubDelivery)return '';
+    const counts=githubDelivery.counts||{};
+    const summary=githubDelivery.loading?'Loading GitHub activity…':`
+      <span>${githubMarker('commits')}${counts.commits==null?'Commits unavailable':esc(counts.commits)+' commits'}</span>
+      <span>${githubMarker('pushes')}${counts.pushes==null?'Pushes unavailable':esc(counts.pushes)+' recent pushes'}</span>`;
+    const hasActivity=list.some(item=>item.event.githubActivity);
+    return `<div class="sl-notice sl-actions"><span class="sl-github-summary" role="status">GitHub · ${summary}</span>
+      ${hasActivity?'<button data-action="github-latest">Go to latest GitHub activity</button>':''}
+      <button data-action="github-refresh" ${githubDelivery.loading?'disabled':''}>Refresh GitHub</button></div>`;
+  }
   function render(){
     if(!opened)return;requestLaneData();rendering=true;host.classList.toggle('sl-expanded',expanded);host.classList.toggle('sl-basic-full',selectedMode==='basic'&&expanded);
     const docked=appLayout()||!!leftPanel?.classList.contains('open');
     host.classList.toggle('sl-docked',docked);
     const namesInBoard=appLayout()||!docked||!leftPanel?.classList.contains('open');
     host.classList.toggle('sl-named',docked&&namesInBoard);
-    const scroll=host.scrollTop, all=items(), list=rows(), end=start+span, projects=[...new Set(all.map(e=>e.project))];
+    const oldBoard=host.querySelector('.sl-board-scroll');
+    const scrollTop=oldBoard?.scrollTop||0, scrollLeft=oldBoard?.scrollLeft||0;
+    const all=items(), list=rows(), end=start+span, projects=[...new Set(all.map(e=>e.project))];
     const toolBits=`<label class="sl-sr">Source<select id="sl-source"><option value="example" ${source==='example'?'selected':''}>OpenAMI / ISV example</option><option value="loaded" ${source==='loaded'?'selected':''}>My & shared work layers</option></select></label>
       ${projects.length>1?`<label class="sl-sr">Project<select id="sl-project">${projects.map(p=>`<option value="${esc(p)}" ${p===project?'selected':''}>${esc(p)}</option>`).join('')}</select></label>`:''}
       <button data-action="prev" aria-label="Earlier">←</button><button data-action="today">Today</button><button data-action="next" aria-label="Later">→</button>
@@ -237,19 +268,18 @@
       `;
     const chrome=`<header class="sl-head"><div><span class="sl-kicker">Circaevum / Work</span><h1 tabindex="-1">Swim Lanes</h1></div><div class="sl-actions"><button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div></header>
       <div class="sl-tools">${toolBits}</div>
-      <div class="sl-legend" aria-label="Object color meanings">${Object.entries(COLORS).map(([key,[color,label]])=>`<span><i style="background:${color}"></i>${label}</span>`).join('')}</div>
-      ${showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([k,[label,icon,rgb]])=>`<span style="--workflow:${rgb}">${icon} ${label}</span>`).join('')}</div>`:''}
+      ${showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([, [label,icon]])=>`<span style="--workflow:var(--mode-rgb,37,99,235)">${icon} ${label}</span>`).join('')}</div>`:''}
       <div class="sl-caption"><span>${fmt(start)} – ${fmt(end)} ${new Date(focus).getFullYear()} · ${list.length} items</span></div>
       <p class="sl-notice" role="status">${esc(notice||accessMessage||'')}</p>`;
     const healthStatus=selectedMode==='health'?`<p class="sl-health-status" role="status" aria-live="polite">${laneLoading?'<span class="sl-loading-spinner"></span> Loading Health events…':laneError?'Health data could not load. Retry below.':`${list.length} Health events loaded for ${esc(fmt(start))} – ${esc(fmt(end))}`}</p>`:'';
     const dockChrome=(collectionId
       ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
       : `<div class="sl-bar" tabindex="-1">${toolBits}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`)
-      + (showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([k,[label,icon,rgb]])=>`<span style="--workflow:${rgb}">${icon} ${label}</span>`).join('')}</div>`:'')
+      + (showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([, [label,icon]])=>`<span style="--workflow:var(--mode-rgb,37,99,235)">${icon} ${label}</span>`).join('')}</div>`:'')
       + (notice||accessMessage?`<p class="sl-notice" role="status">${esc(notice||accessMessage)}</p>`:'');
     const board=`<div class="sl-layout"><div class="sl-board-scroll" aria-label="Project timeline"><div class="sl-board ${compact?'sl-compact':''}"><div class="sl-axis">${namesInBoard?'<div class="sl-label">Lanes</div>':''}<div class="sl-track sl-axis-track"></div></div><div id="sl-rows"></div></div></div></div>`;
-    if(docked){side.hidden=namesInBoard;host.innerHTML=dockChrome+healthStatus+board;}
-    else{side.hidden=true;side.innerHTML='';host.innerHTML=`<button class="sl-drawer-grip" data-action="expand" aria-label="${expanded?'Reduce':'Expand'} Swim Lanes" aria-expanded="${expanded}"><span></span></button>${chrome}${board}`;}
+    if(docked){side.hidden=namesInBoard;host.innerHTML=`<div class="sl-frozen-head">${dockChrome}${healthStatus}${githubDeliveryStatus(list)}</div>${board}`;}
+    else{side.hidden=true;side.innerHTML='';host.innerHTML=`<div class="sl-frozen-head"><button class="sl-drawer-grip" data-action="expand" aria-label="${expanded?'Reduce':'Expand'} Swim Lanes" aria-expanded="${expanded}"><span></span></button>${chrome}${githubDeliveryStatus(list)}</div>${board}`;}
     const weekends=[];
     const day=new Date(start);day.setHours(0,0,0,0);
     while(+day<end){const a=+day,d=day.getDay();day.setDate(day.getDate()+1);if(d===0||d===6)weekends.push(`<span class="sl-weekend" style="left:${pct(a)}%;width:${pct(+day)-pct(a)}%" aria-hidden="true"></span>`);}
@@ -260,30 +290,48 @@
     if(collectionId==='linked-project')for(const lane of ['Attached calendars',...workLaneOrder.keys()])if(!groups.has(lane))groups.set(lane,[]);
     const ordered=[...groups.entries()].sort((a,b)=>{const la=a[1][0]?.lane||a[0],lb=b[1][0]?.lane||b[0];const ra=la==='Attached calendars'?-1:workLaneOrder.has(la)?workLaneOrder.get(la):(laneRank?.get(la)??999);const rb=lb==='Attached calendars'?-1:workLaneOrder.has(lb)?workLaneOrder.get(lb):(laneRank?.get(lb)??999);return ra-rb||String(la).localeCompare(String(lb));});
     positions.clear();let y=0;const markup=[],titles=[],heightStep=compact?25:40,cardHeight=compact?19:30;
-    // Reserve 72 px for legible labels. Exact duration is also shown as a lower bar.
-    const width=Math.max(600,host.querySelector('.sl-axis-track').getBoundingClientRect().width);
+    // Reserve space for text cards and a smaller, centered footprint for point markers.
+    const width=Math.max(1,host.querySelector('.sl-axis-track').getBoundingClientRect().width);
+    const markerHalfSpan=span*12/width, cardSpan=span*72/width;
     ordered.forEach(([groupKey,events])=>{
       const representative=events[0]||{id:'empty-'+groupKey,lane:collectionId==='layers'?JSON.parse(groupKey)[3]:groupKey,project,workflow:'communication',access:{label:'Linked calendar'}};
       const rowId=selectedMode==='basic'?String(groupKey):representative.id;const rowKey=esc(rowId);
       if(selectedMode==='basic'?!expanded&&kept.size&&!kept.has(rowId):kept.size&&!leftPanel?.classList.contains('open')&&!kept.has(rowId))return;
-      const visible=M.pack(events.filter(e=>e.start<end&&(e.end>start||e.start>=start)),span*72/width);
+      const visible=M.pack(events.filter(e=>e.start<end&&(e.end>start||e.start>=start)).map(item=>
+        item.event.githubActivity
+          ? {item,start:item.start-markerHalfSpan,end:item.start+markerHalfSpan}
+          : {item,start:item.start,end:Math.max(item.end,item.start+cardSpan)}));
       const height=Math.max(compact?42:60,(Math.max(-1,...visible.map(e=>e.row))+1)*heightStep+12),workflow=M.workflows[representative.workflow];
       const access=source==='example'?'Local example':representative.access.label||'Read only';
       const on=kept.has(rowId);
-      const sleep=representative.lane==='Sleep';
-      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${sleep?'124,58,237':workflow[2]}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc(representative.lane+' / '+representative.project+' · '+access)}">${sleep?'●':workflow[1]} ${esc(representative.lane)}</button><small>${esc(representative.project)}</small></div>`;
+      const color=laneColor(representative.lane);
+      const rgb=[1,3,5].map(offset=>parseInt(color.slice(offset,offset+2),16)).join(',');
+      const sleep=color===SLEEP_COLOR;
+      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc(representative.lane+' / '+representative.project+' · '+access)}">${sleep?'●':workflow[1]} ${esc(representative.lane)}</button><small>${esc(representative.project)}</small></div>`;
       if(docked&&!namesInBoard)titles.push(label);
-      markup.push(`<section class="sl-lane ${on?'sl-kept':''}" data-row="${rowKey}" data-drop-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${workflow[2]}">${namesInBoard?label:''}<div class="sl-track">${weekendMarkup}${ticks.map(t=>`<span class="sl-gridline" style="left:${pct(t)}%"></span>`).join('')}${context?`<span class="sl-context" style="left:${pct(context.t0)}%;width:${Math.max(0,pct(context.t1)-pct(context.t0))}%"></span>`:''}
-      ${collectionId==='layers'&&laneLoading?'<div class="sl-load-state" role="status"><span class="sl-loading-spinner"></span>Loading events…</div>':collectionId==='layers'&&laneError?`<div class="sl-load-state" role="alert">${esc(laneError)} <button data-action="retry-lanes">Retry</button></div>`:collectionId==='layers'&&!visible.length?'<div class="sl-load-state">No events in this time window</div>':''}${visible.map(e=>{
-        const left=pct(e.start),duration=pct(e.end)-left,objectWidth=Math.min(100-left,Math.max(72/width*100,duration));
-        const top=6+e.row*heightStep,semantic=M.semantic(e),icon=e.status==='done'?'✓':{meeting:'●',task:'▰',milestone:'◆'}[e.kind];
+      markup.push(`<section class="sl-lane ${on?'sl-kept':''}" data-row="${rowKey}" data-drop-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}">${namesInBoard?label:''}<div class="sl-track">${weekendMarkup}${ticks.map(t=>`<span class="sl-gridline" style="left:${pct(t)}%"></span>`).join('')}${context?`<span class="sl-context" style="left:${pct(context.t0)}%;width:${Math.max(0,pct(context.t1)-pct(context.t0))}%"></span>`:''}
+      ${collectionId==='layers'&&laneLoading?'<div class="sl-load-state" role="status"><span class="sl-loading-spinner"></span>Loading events…</div>':collectionId==='layers'&&laneError?`<div class="sl-load-state" role="alert">${esc(laneError)} <button data-action="retry-lanes">Retry</button></div>`:collectionId==='layers'&&!visible.length?'<div class="sl-load-state">No events in this time window</div>':''}${visible.map(({item:e,row})=>{
+        const left=pct(e.start), top=6+row*heightStep;
+        const activity=e.event.githubActivity;
+        if(activity){
+          const center=left/100*width;
+          positions.set(e.id,{left:center,right:center,y:y+top+cardHeight/2});
+          return `<div class="sl-object sl-github-point" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button type="button" class="sl-card sl-github-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" title="${esc(e.event.summary)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}">${githubMarker(activity)}</button></div>`;
+        }
+        const duration=pct(e.end)-left,objectWidth=Math.min(100-left,Math.max(72/width*100,duration));
+        const icon=STATUS_ICONS[e.status]||{meeting:'●',task:'▰',milestone:'◆'}[e.kind];
         positions.set(e.id,{left:left/100*width,right:(left+objectWidth)/100*width,y:y+top+cardHeight/2});
-        return `<div class="sl-object" style="left:${left}%;width:${objectWidth}%;top:${top}px;height:${cardHeight}px;--object:${COLORS[semantic][0]}"><button class="sl-card ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" draggable="${(collectionId==='linked-project'&&!!e.event.projectLinkId)||(collectionId==='layers'&&selectedMode==='basic'&&!!e.event.key&&!laneMoveId)}" title="${esc(e.event.summary)} · ${esc(e.status)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}, ${e.kind}, ${e.status}"><span>${icon}</span> ${esc(e.event.summary)}</button><span class="sl-duration" style="width:${Math.min(100,duration/objectWidth*100)}%"></span>${connect?`<button class="sl-port sl-port-in" data-port="start" data-item="${esc(e.id)}" aria-label="Connect to start of ${esc(e.event.summary)}"></button><button class="sl-port sl-port-out" data-port="end" data-item="${esc(e.id)}" aria-label="Connect from end of ${esc(e.event.summary)}"></button>`:''}</div>`;
+        return `<div class="sl-object" style="left:${left}%;width:${objectWidth}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button class="sl-card ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" draggable="${(collectionId==='linked-project'&&!!e.event.projectLinkId)||(collectionId==='layers'&&selectedMode==='basic'&&!!e.event.key&&!laneMoveId)}" title="${esc(e.event.summary)} · ${esc(e.status)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}, ${e.kind}, ${e.status}"><span>${icon}</span> ${esc(e.event.summary)}</button><span class="sl-duration" style="width:${Math.min(100,duration/objectWidth*100)}%"></span>${connect?`<button class="sl-port sl-port-in" data-port="start" data-item="${esc(e.id)}" aria-label="Connect to start of ${esc(e.event.summary)}"></button><button class="sl-port sl-port-out" data-port="end" data-item="${esc(e.id)}" aria-label="Connect from end of ${esc(e.event.summary)}"></button>`:''}</div>`;
       }).join('')}${Date.now()>=start&&Date.now()<end?`<span class="sl-now" style="left:${pct(Date.now())}%"></span>`:''}</div></section>`);y+=height;
     });
     side.innerHTML=docked&&!namesInBoard?`<div class="sl-label sl-axis-label">Lanes</div>${titles.join('')}`:'';
     host.querySelector('#sl-rows').innerHTML=markup.join('')||'<p class="sl-empty">No work layers loaded. Choose the example or mark an account event as Work.</p>';
-    if(list.length&&!positions.size)host.querySelector('#sl-rows').insertAdjacentHTML('beforeend','<p class="sl-empty">No objects in this window. Use Fit to find this project.</p>');
+    if(list.length&&!positions.size){
+      const hint=collectionId==='linked-project'&&list.some(item=>item.event.githubActivity)
+        ? 'No objects in this window. Use Go to latest GitHub activity to find the newest record.'
+        : 'No objects in this window. Use Fit to find this project.';
+      host.querySelector('#sl-rows').insertAdjacentHTML('beforeend',`<p class="sl-empty">${hint}</p>`);
+    }
     const links=[];
     list.forEach(target=>target.dependencies.forEach(from=>{
       const a=positions.get(from),b=positions.get(target.id);if(!a||!b)return;
@@ -298,14 +346,17 @@
       parentSend({type:'CIRCAEVUM_LANE_ROW_SIZES',sizes});
     }
     requestAnimationFrame(alignLaneRows);
-    syncPanel();if(panelMode==='event'&&selected)detail(selected);host.scrollTop=scroll;rendering=false;requestAnimationFrame(()=>{placeRail();window.dispatchEvent(new CustomEvent('circaevum:lanes-layout'));});
+    const boardScroll=host.querySelector('.sl-board-scroll');
+    boardScroll.scrollTop=scrollTop;boardScroll.scrollLeft=scrollLeft;
+    boardScroll.addEventListener('scroll',()=>{if(!side.hidden)side.scrollTop=boardScroll.scrollTop;},{passive:true});
+    syncPanel();if(panelMode==='event'&&selected)detail(selected);rendering=false;requestAnimationFrame(()=>{placeRail();window.dispatchEvent(new CustomEvent('circaevum:lanes-layout'));});
   }
   function detail(id){
     sceneDetail.hidden=true;eventMode.querySelector('#sl-detail').hidden=false;
     selected=id;panelMode='event';const item=items().find(e=>e.id===id);if(!item){selected=null;return;}
     const all=items(),deps=M.dependencyState(item,all),next=all.filter(e=>e.dependencies.includes(id)),r=M.report([item])[0];
     syncPanel(true);
-    eventMode.querySelector('#sl-detail').innerHTML=`<section class="sl-detail"><div class="sl-actions"><strong>${esc(item.kind)} · ${esc(item.status)}</strong><button data-action="dismiss-detail" aria-label="Close item details">×</button></div><h2>${esc(item.event.summary)}</h2><p>${esc(item.project)} / ${esc(item.lane)}</p><p>${new Date(item.start).toLocaleString()}${item.kind==='milestone'?'':' → '+new Date(item.end).toLocaleString()}</p><p>${esc(item.event.description||'')}</p><p>${M.workflows[item.workflow][1]} ${M.workflows[item.workflow][0]}</p><p>Access: ${esc(source==='example'?'Local example':item.access.label)}${item.access.ownerId?'<br>Owner: '+esc(item.access.ownerId):''}</p><p>Responsible: ${esc(item.assignee||'Unassigned')}<br>Follow-up: ${Number.isFinite(item.followUpAt)?new Date(item.followUpAt).toLocaleString():'Not set'}</p>
+    eventMode.querySelector('#sl-detail').innerHTML=`<section class="sl-detail"><div class="sl-actions"><strong>${esc(item.kind)} · ${esc(item.status)}</strong><button data-action="dismiss-detail" aria-label="Close item details">×</button></div><h2>${esc(item.event.summary)}</h2><p>${esc(item.project)} / ${esc(item.lane)}</p><p>${new Date(item.start).toLocaleString()}${item.kind==='milestone'?'':' → '+new Date(item.end).toLocaleString()}</p><p>${esc(item.event.description||'')}</p>${item.event.githubActivity&&/^https:\/\/github\.com\//.test(item.event.url)?`<p><a href="${esc(item.event.url)}" target="_blank" rel="noreferrer">Open on GitHub</a></p>`:''}<p>${M.workflows[item.workflow][1]} ${M.workflows[item.workflow][0]}</p><p>Access: ${esc(source==='example'?'Local example':item.access.label)}${item.access.ownerId?'<br>Owner: '+esc(item.access.ownerId):''}</p><p>Responsible: ${esc(item.assignee||'Unassigned')}<br>Follow-up: ${Number.isFinite(item.followUpAt)?new Date(item.followUpAt).toLocaleString():'Not set'}</p>
       ${r.overdue||r.followUpDue||r.noFollowUp?`<p class="sl-attention">${r.overdue?'Past due. ':''}${r.followUpDue?'Follow-up due. ':''}${r.noFollowUp?'Past meeting has no linked next step.':''}</p>`:''}
       ${collectionId==='linked-project'&&item.event.projectLinkId?`<div class="sl-actions" aria-label="Move event to work lane">${['Attached calendars',...workLaneOrder.keys()].filter(l=>l!==item.lane).map(l=>`<button data-assign-lane="${esc(l)}" data-assign-id="${esc(item.id)}">Move to ${esc(l)}</button>`).join('')}</div>`:''}
       <h3>Depends on</h3><ul>${deps.length?deps.map(d=>`<li>${d.item?`<button data-id="${esc(d.id)}">${esc(d.item.event.summary)}</button>`:'Unavailable item (not loaded or not shared)'} · ${d.unresolved?'unresolved':'done'}${writable(item)?` <button data-remove-link="${esc(d.id)}" aria-label="Remove dependency">×</button>`:''}</li>`).join(''):'<li>None</li>'}</ul>
@@ -356,6 +407,15 @@
     const remove=e.target.closest('[data-remove-link]');if(remove){const target=items().find(x=>x.id===selected);if(target)await saveWork(target,{...target.event.work,dependencies:target.dependencies.filter(x=>x!==remove.dataset.removeLink),links:target.links.filter(x=>x.uid!==remove.dataset.removeLink)});return;}
     const tick=e.target.closest('[data-time]');if(tick){focus=Number(tick.dataset.time);start=focus-span/2;changedTime();render();return;}
     const action=e.target.closest('[data-action]')?.dataset.action;if(!action)return;
+    if(action==='github-refresh'){
+      parentSend({type:'CIRCAEVUM_REFRESH_GITHUB_DELIVERY',project});
+      return;
+    }
+    if(action==='github-latest'){
+      const dates=rows().filter(item=>item.event.githubActivity).map(item=>item.start);
+      if(dates.length){start=Math.max(...dates)-span/2;changedTime();render();}
+      return;
+    }
     if(action==='retry-lanes'){requestLaneData(true);render();return;}
     if(action==='basic-size'){expanded=!expanded;notice=expanded?'Select up to three lane headers, then Show selected.':'';render();return;}
     if(action==='expand'){expanded=!expanded;render();return;}if(action==='panel-event'){panelMode='event';syncPanel(true);if(selected)detail(selected);else if(sceneDetail.hidden)eventMode.querySelector('#sl-detail').innerHTML='<p>Select an event in the scene or Swim Lanes.</p>';return;}if(action==='panel-timeline'){panelMode='timeline';syncPanel();return;}
@@ -471,8 +531,12 @@
     if(e.source!==window.parent||window.parent===window)return;const data=e.data;
     if(data?.type==='CIRCAEVUM_WORK_EVENTS'&&Array.isArray(data.events)){workSupplied=data.events;if(collectionId&&collectionId!=='work-project')return;supplied=data.events;accessMessage=data.message||'';if(data.publicView)source='loaded';if(opened&&source==='loaded')render();}
     if(data?.type==='CIRCAEVUM_OPEN_LINKED_PROJECT'&&Array.isArray(data.events)&&modeEnabled('work')){
+      if(data.update&&(collectionId!=='linked-project'||project!==data.project))return;
+      githubDelivery=data.github||null;
+      supplied=data.events;
+      if(data.update){if(opened)render();return;}
       selectedMode='work';collectionId='linked-project';collectionLabel=data.project||'Project';
-      supplied=data.events;source='loaded';project=collectionLabel;laneRank=workLaneOrder;kept.clear();setOpen(true);
+      source='loaded';project=collectionLabel;laneRank=workLaneOrder;kept.clear();setOpen(true);
     }
     if(data?.type==='CIRCAEVUM_REOPEN_SWIM_LANES'){reopenSwimLanes();return;}
     if(data?.type==='CIRCAEVUM_CLOSE_SWIM_LANES'){setOpen(false);return;}
