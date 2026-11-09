@@ -1,5 +1,10 @@
 # Circaevum Three.js API Reference
 
+## App swim-lane extension
+
+The account wrapper's selected-layer fetch, row anchors and event-move acknowledgement messages are documented in [SWIM-LANES.md](docs/SWIM-LANES.md#bridge-messages). These are separate from the scene ingest/clear API: scene LOD and cache replacement must not discard app swim-lane events. The host owns authentication and writes; standalone embedders need not implement account-specific controls.
+
+
 > **AI agents:** Read [llms.txt](https://circaevum.com/llms.txt) then [FOR-AGENTS.md](https://circaevum.com/docs/FOR-AGENTS.md) before this API. Path A embed: `?viewer=1` + `CIRCAEVUM_INGEST_EVENTS`.
 
 ## Overview

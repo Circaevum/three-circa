@@ -22,6 +22,8 @@ No Cloudflare required: fetch markdown directly (`/index.md`, `/docs/FOR-AGENTS.
 - [Graphics Library API](https://circaevum.com/API.md): `CircaevumAPI` / embed `postMessage` contract for integrators.
 - [Viewer & wrapper guide](https://circaevum.com/docs/VIEWER-AND-WRAPPER.md): iframe embed mode (`?viewer=1`), portal integration.
 
+- [Calendar modes and swim lanes](https://circaevum.com/docs/SWIM-LANES.md): Basic selection, automatic Health lanes, independent data loading, Work hierarchy and viewer/portal contracts.
+
 ## Open source
 
 - [three-circa on GitHub](https://github.com/Circaevum/three-circa): Source for this site.

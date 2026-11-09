@@ -13,6 +13,10 @@
 ### Philosophy
 - **[Taiji Philosophy](./philosophy/TAIJI_PHILOSOPHY.md)** - Daoist concepts and architecture alignment
 
+### Current app integration
+- **[Calendar modes and swim lanes](./SWIM-LANES.md)** — Basic selection, Health auto-population, Work hierarchy, loading and bridge messages.
+- **[Viewer and wrapper](./VIEWER-AND-WRAPPER.md)** — app versus standalone responsibilities.
+
 ### Guides
 - **[User Guide](./guides/USER_GUIDE.md)** - End user documentation
 - **[Developer Guide](./guides/DEVELOPER_GUIDE.md)** - Code modification guide
@@ -38,5 +42,5 @@
 
 ---
 
-**Last Updated**: March 2025 (Q1 2025)
+**Index updated**: 2026-11-09. Individual linked documents may describe older architecture; use their scope and dates.
 
