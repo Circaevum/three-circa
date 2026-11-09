@@ -19,7 +19,14 @@
     }
     return [...result.values()];
   }
-  const api = {project, label:name=>labels[name] || name};
+  function projectFetched(events,names,title){
+    return project({getLayerIds:()=>['fetched'],getLayer:()=>({}),events:new Map([['fetched',events||[]]])},names,title);
+  }
+  function rowKey(event,collection){
+    // Calendar metadata may arrive later. Selection belongs to the lane, not its first event.
+    return JSON.stringify(collection==='layers'?['','',event.project,event.lane]:[event.access.ownerId||'',event.event.calendarId||'',event.project,event.lane]);
+  }
+  const api = {project, projectFetched, rowKey, label:name=>labels[name] || name};
   if (typeof module !== 'undefined' && module.exports) module.exports=api;
   else root.CalendarLaneEvents=api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -252,3 +252,46 @@ body.portal-calendar-layout #event-list-panel .event-list-panel-header{position:
 body.portal-calendar-layout #scene-icon-toggle,
 body.portal-calendar-layout .scene-icon-overlay.collapsed,
 .circaevum-intro-replay-btn{display:none!important}
+
+body.portal-calendar-layout #swim-lanes.sl-basic-full{top:56px;bottom:0;height:calc(100vh - 56px);max-height:none;min-height:0;border-radius:0}
+
+#event-list-panel .event-list-panel-header{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 12px}
+#event-list-panel .event-list-panel-header .sl-panel-tabs{padding:0;border:0;gap:3px;margin:0}
+#event-list-panel .event-list-panel-header .sl-panel-tabs button{padding:5px 7px;font-size:11px}
+#event-list-panel .event-list-panel-header .event-list-horizon-ring-row{padding:0;border:0;gap:4px;min-width:0;margin-left:auto}
+#event-list-panel .event-list-panel-header .event-list-horizon-ring{width:26px;height:26px}
+#event-list-panel .event-list-panel-header .event-list-horizon-ring-caption{font-size:10px}
+#event-list-panel .event-list-panel-header .event-list-horizon-ring-grain{font-size:9px;padding:1px 4px}
+#event-list-close{flex:none;order:5}
+
+/* Basic selection shares the host Layers column instead of duplicating labels. */
+body.portal-calendar-layout #swim-lanes.sl-basic-full{left:min(45vw,var(--host-lane-label-width,352px));width:auto}
+body.portal-calendar-layout #swim-lanes.sl-basic-full .sl-axis,body.portal-calendar-layout #swim-lanes.sl-basic-full .sl-lane{grid-template-columns:140px 1fr}
+body.portal-calendar-layout #swim-lanes.sl-basic-full .sl-links{left:140px;width:calc(100% - 140px)}
+
+.sl-load-state{position:sticky;left:10px;top:8px;z-index:4;display:flex;align-items:center;gap:8px;width:fit-content;max-width:95%;padding:7px;background:#14232f;color:#d5e0e6;font-size:12px}
+.sl-loading-spinner{width:12px;height:12px;border:2px solid #ffffff30;border-top-color:currentColor;border-radius:50%;animation:sl-spin .8s linear infinite}
+@keyframes sl-spin{to{transform:rotate(360deg)}}
+body.portal-calendar-layout #swim-lanes.sl-row-attached{left:var(--lane-anchor-left);top:56px;bottom:0;height:calc(100vh - 56px);max-height:none;min-height:0;background:transparent;border:0;box-shadow:none;pointer-events:none;overflow:hidden}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-bar{pointer-events:auto;background:#101e28}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-notice{display:none}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-layout,body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-board-scroll,body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-board,body.portal-calendar-layout #swim-lanes.sl-row-attached #sl-rows{position:static;overflow:visible;background:transparent}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-lane{position:absolute;left:0;right:0;grid-template-columns:1fr;background:#14232f;pointer-events:auto;transition:none;overflow:hidden}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-label,body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-links{display:none}
+body.portal-calendar-layout #swim-lanes:not(.sl-row-attached).sl-basic-full{left:0;top:auto;height:38vh;min-height:250px;max-height:60vh;border-radius:12px 12px 0 0}
+@media(prefers-reduced-motion:reduce){body.portal-calendar-layout #swim-lanes .sl-lane{transition:none}.sl-loading-spinner{animation:none}}
+
+#swim-lanes .sl-lane{transform-origin:top left}
+body.portal-calendar-layout #swim-lanes.sl-transitioning,body.portal-calendar-layout #swim-lanes.sl-transitioning .sl-board-scroll{overflow:visible}
+
+/* Scene selections use the existing right-hand Event view. */
+#sl-scene-detail .event-detail-sheet-panel{position:static;inset:auto;transform:none;transition:none;width:100%;max-width:none;max-height:none;min-height:0;margin:0;box-sizing:border-box;box-shadow:none;border-radius:0;opacity:1;visibility:visible;pointer-events:auto}
+#sl-scene-detail .event-detail-sheet-close{display:none}
+#sl-scene-detail{overflow:auto;min-height:0}
+
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-bar{position:absolute;top:var(--lane-toolbar-top,0px);left:0;right:0;height:36px;z-index:8}
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-axis{position:absolute;top:calc(var(--lane-toolbar-top,0px) + 36px);left:0;right:0;height:34px;background:var(--paper);pointer-events:auto;z-index:7;grid-template-columns:1fr}
+
+#swim-lanes .sl-card[draggable=true]{cursor:grab}#swim-lanes .sl-card[draggable=true]:active{cursor:grabbing}#swim-lanes .sl-lane.sl-drop-target{outline:2px solid var(--ink);outline-offset:-2px;background:color-mix(in srgb,var(--paper) 80%,#58a9dd)}
+
+body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-notice{display:block;position:absolute;bottom:12px;left:12px;max-width:calc(100% - 24px);padding:8px 12px;background:var(--paper);border:1px solid var(--line);z-index:10;pointer-events:auto}

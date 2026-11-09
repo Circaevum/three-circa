@@ -193,6 +193,13 @@
       editBtn.textContent = window.self !== window.top ? 'Edit event' : 'Edit in full app';
     }
 
+    if(typeof window.openSceneEventPanel==='function'){
+      sheetEl.classList.remove('open');sheetEl.setAttribute('aria-hidden','true');
+      document.body.classList.remove('event-detail-sheet-open');
+      window.openSceneEventPanel(panelEl);
+      if(titleEl){titleEl.tabIndex=-1;titleEl.focus();}
+      return true;
+    }
     sheetEl.classList.add('open');
     sheetEl.setAttribute('aria-hidden', 'false');
     document.body.classList.add('event-detail-sheet-open');
@@ -207,6 +214,7 @@
     sheetEl.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('event-detail-sheet-open');
     currentPayload = null;
+    if(typeof window.closeSceneEventPanel==='function')window.closeSceneEventPanel();
     if (opts.clearFocus) {
       var gl = window.circaevumGL || (window.getGL && window.getGL());
       if (gl && typeof gl.setEventHighlight === 'function') {

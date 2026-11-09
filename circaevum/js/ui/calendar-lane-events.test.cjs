@@ -18,3 +18,18 @@ test('Separate viewer layers remain supported without leaking unrelated calendar
  assert.equal(project(gl,['Sleep'],'Health').length,1);
  assert.equal(project(gl,['Other'],'Other').length,0);
 });
+
+test('fetched lanes do not depend on scene cache, visibility, or duration LOD',()=>{
+ const {projectFetched}=require('./calendar-lane-events.js');
+ const events=[1,60,86400,31536000].map((seconds,i)=>({uid:String(i),category:'Calendar A',dtstart:{dateTime:'2026-11-09T00:00:00Z'},dtend:{dateTime:new Date(Date.parse('2026-11-09T00:00:00Z')+seconds*1000).toISOString()}}));
+ assert.equal(projectFetched(events,['Calendar A'],'Basic calendars').length,4);
+ assert.equal(projectFetched(events,['Other'],'Basic calendars').length,0);
+ assert.equal(events[0].work,undefined);
+});
+test('calendar lane selection survives arrival of calendar and owner metadata',()=>{
+ const {rowKey}=require('./calendar-lane-events.js');
+ const empty={project:'Basic calendars',lane:'Calendar A',access:{},event:{}};
+ const fetched={...empty,access:{ownerId:'owner'},event:{calendarId:'google-calendar'}};
+ assert.equal(rowKey(empty,'layers'),rowKey(fetched,'layers'));
+ assert.notEqual(rowKey(empty,'layers'),rowKey({...fetched,lane:'Calendar B'},'layers'));
+});

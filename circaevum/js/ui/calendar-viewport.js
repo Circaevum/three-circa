@@ -79,7 +79,8 @@
     const rightPanel = document.body.classList.contains('event-list-panel-open') ? visibleRect('event-list-panel') : null;
     const left = Math.min(Math.max(state.left, leftPanel?.right || 0), Math.max(0, innerWidth - 240));
     const right = Math.min(Math.max(state.right, rightPanel ? rightPanel.width : 0), Math.max(0, innerWidth - left - 240));
-    const bottom = Math.min(swim ? innerHeight - swim.top : 0, Math.max(0, innerHeight - 180));
+    const attached=document.getElementById('swim-lanes')?.classList.contains('sl-row-attached');
+    const bottom = attached?0:Math.min(swim ? innerHeight - swim.top : 0, Math.max(0, innerHeight - 180));
     const root = document.documentElement.style;
     root.setProperty('--calendar-fit-left', left + 'px');
     if(state.left>0)root.setProperty('--host-lane-label-width',state.left+'px');
@@ -87,10 +88,11 @@
     root.setProperty('--calendar-fit-bottom', bottom + 'px');
     root.setProperty('--viewer-lanes-height', bottom + 'px');
     root.setProperty('--viewer-panel-right', right + 'px');
-    const geometry = JSON.stringify([bottom,right]);
+    const fullPage=document.getElementById('swim-lanes')?.classList.contains('sl-basic-full')&&document.body.classList.contains('swim-lanes-open');
+    const geometry = JSON.stringify([bottom,right,fullPage,document.body.classList.contains('swim-lanes-open')]);
     if(state.managed && geometry !== lastGeometry){
       lastGeometry=geometry;
-      window.parent.postMessage({type:'CIRCAEVUM_PANEL_GEOMETRY',bottom,right},'*');
+      window.parent.postMessage({type:'CIRCAEVUM_PANEL_GEOMETRY',bottom,right,fullPage,lanesOpen:document.body.classList.contains('swim-lanes-open')},'*');
     }
     syncDepthPages();
     window.circaevumResizeViewport?.();

@@ -8,6 +8,7 @@
   let start=+new Date(2026,10,1), span=31*M.DAY, context=null, focus=start+span/2, opened=false, returnFocus;
   let draw=null, routeDrag=null, linkStart=null, saving=false, notice='', accessMessage='', syncTimer, rendering=false, pushing=false, initialized=false;
   let selectedLink=null, queuedPan=0, panFrame=null, showWorkflow=false, panelMode='timeline', expanded=false, suppressPortClickUntil=0, forcedLeft=false, kept=new Set();
+  let laneMoveId='',fetchedLaneEvents=[],laneRequestKey='',laneRequestId='',laneLoading=false,laneError='',laneAnchors={open:false,rows:[]};
   const positions=new Map(), pending=new Map();
   const workLaneOrder=new Map(['Research','Development','Delivery'].map((name,index)=>[name,index]));
   const appLayout=()=>window.circaevumHostLayout?.managed===true;
@@ -24,8 +25,16 @@
   const eventPanel=document.getElementById('event-list-panel');
   const panelTabs=document.createElement('div');panelTabs.className='sl-panel-tabs';panelTabs.setAttribute('role','tablist');panelTabs.setAttribute('aria-label','Events panel mode');
   panelTabs.innerHTML='<button role="tab" data-action="panel-timeline" aria-selected="true">Event list</button><button role="tab" data-action="panel-event" aria-selected="false">Event</button>';
-  eventPanel.querySelector('.event-list-panel-header').after(panelTabs);
+  const panelHeader=eventPanel.querySelector('.event-list-panel-header');
+  panelHeader.insertBefore(panelTabs,document.getElementById('event-list-close'));
+  const contextHeader=document.getElementById('event-list-horizon-ring-row');if(contextHeader)panelHeader.insertBefore(contextHeader,document.getElementById('event-list-close'));
   const eventMode=document.createElement('div');eventMode.id='sl-event-mode';eventMode.hidden=true;eventMode.innerHTML='<div id="sl-detail" role="tabpanel" aria-label="Event details"></div>';eventPanel.append(eventMode);
+  const sceneDetail=document.createElement('div');sceneDetail.id='sl-scene-detail';sceneDetail.hidden=true;eventMode.append(sceneDetail);
+  window.openSceneEventPanel=function(content){
+    selected=null;panelMode='event';sceneDetail.replaceChildren(content);sceneDetail.hidden=false;
+    eventMode.querySelector('#sl-detail').hidden=true;syncPanel(true);
+  };
+  window.closeSceneEventPanel=function(){sceneDetail.hidden=true;eventMode.querySelector('#sl-detail').hidden=false;panelMode='timeline';syncPanel();};
   function syncPanel(open=false){
     const active=panelMode==='event';eventPanel.classList.toggle('sl-event-active',active);eventMode.hidden=!active;
     panelTabs.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',String((b.dataset.action==='panel-event')===active)));
@@ -117,7 +126,7 @@
     side.querySelectorAll(`[data-row="${key}"]`).forEach(n=>n.classList.add('sl-hot'));
   }
   function setOpen(value){
-    if(value)returnFocus=document.activeElement;
+    if(value){returnFocus=document.activeElement;if(!opened&&selectedMode==='basic')expanded=true;}
     opened=value;host.hidden=!value;document.body.classList.toggle('swim-lanes-open',value);
     bar.querySelector('button').setAttribute('aria-expanded',String(value));bar.hidden=value;
     if(value){showLeft();if(initialized)readContext(true);render();host.querySelector('.sl-bar')?.focus?.();}
@@ -187,8 +196,32 @@
     return `M${x1},${y1} C${c1},${y1} ${c2},${y2} ${x2},${y2}`;
   }
   function pct(t){return Math.max(0,Math.min(100,(t-start)/span*100));}
+  function requestLaneData(force=false){
+    if(!appLayout()||collectionId!=='layers'||!selectedLayerNames.length||!opened)return;
+    const key=JSON.stringify([selectedLayerNames,start,span]);if(!force&&key===laneRequestKey)return;
+    laneRequestKey=key;laneRequestId=crypto.randomUUID();laneLoading=true;laneError='';
+    parentSend({type:'CIRCAEVUM_FETCH_LANES',requestId:laneRequestId,names:selectedLayerNames,t0:start,t1:start+span});
+  }
+  function alignLaneRows(){
+    const attached=opened&&selectedMode==='basic'&&collectionId==='layers'&&laneAnchors.open&&!document.body.classList.contains('interface-depth');
+    const switching=host.classList.contains('sl-row-attached')!==attached;
+    const oldRects=switching?new Map([...host.querySelectorAll('.sl-lane')].map(row=>[row,row.getBoundingClientRect()])):null;
+    if(switching){host.classList.add('sl-transitioning');clearTimeout(host._motionTimer);host._motionTimer=setTimeout(()=>host.classList.remove('sl-transitioning'),340);}
+    host.classList.toggle('sl-row-attached',attached);
+    host.style.setProperty('--lane-anchor-left',(laneAnchors.left||352)+'px');
+    const visibleAnchors=laneAnchors.rows.filter(a=>selectedLayerNames.includes(a.name)&&a.top+a.height>100&&a.top<innerHeight);
+    host.style.setProperty('--lane-toolbar-top',Math.max(0,(visibleAnchors.length?Math.min(...visibleAnchors.map(a=>a.top)):126)-126)+'px');
+    for(const row of host.querySelectorAll('.sl-lane')){
+      const anchor=laneAnchors.rows.find(a=>window.CalendarLaneEvents.label(a.name)===row.dataset.dropLane);
+      const visible=!attached||(anchor&&anchor.top+anchor.height>100&&anchor.top<innerHeight);
+      row.style.visibility=visible?'':'hidden';
+      if(attached&&anchor)row.style.top=(anchor.top-56)+'px';else row.style.top='';
+      if(switching&&visible&&row.animate&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const before=oldRects.get(row),after=row.getBoundingClientRect();if(before&&after.width)row.animate([{transform:`translate(${before.left-after.left}px,${before.top-after.top}px) scaleX(${before.width/after.width})`},{transform:'none'}],{duration:320,easing:'cubic-bezier(.22,1,.36,1)'});}
+    }
+    window.dispatchEvent(new CustomEvent('circaevum:lanes-layout'));
+  }
   function render(){
-    if(!opened)return;rendering=true;host.classList.toggle('sl-expanded',expanded);
+    if(!opened)return;requestLaneData();rendering=true;host.classList.toggle('sl-expanded',expanded);host.classList.toggle('sl-basic-full',selectedMode==='basic'&&expanded);
     const docked=appLayout()||!!leftPanel?.classList.contains('open');
     host.classList.toggle('sl-docked',docked);
     const namesInBoard=appLayout()||!docked||!leftPanel?.classList.contains('open');
@@ -209,7 +242,7 @@
       <div class="sl-caption"><span>${fmt(start)} – ${fmt(end)} ${new Date(focus).getFullYear()} · ${list.length} items</span></div>
       <p class="sl-notice" role="status">${esc(notice||accessMessage||'')}</p>`;
     const dockChrome=(collectionId
-      ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong><button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
+      ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
       : `<div class="sl-bar" tabindex="-1">${toolBits}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`)
       + (showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([k,[label,icon,rgb]])=>`<span style="--workflow:${rgb}">${icon} ${label}</span>`).join('')}</div>`:'')
       + (notice||accessMessage?`<p class="sl-notice" role="status">${esc(notice||accessMessage)}</p>`:'');
@@ -221,29 +254,30 @@
     while(+day<end){const a=+day,d=day.getDay();day.setDate(day.getDate()+1);if(d===0||d===6)weekends.push(`<span class="sl-weekend" style="left:${pct(a)}%;width:${pct(+day)-pct(a)}%" aria-hidden="true"></span>`);}
     const weekendMarkup=weekends.join('');
     const ticks=M.ticks(start,end,zoom);host.querySelector('.sl-axis-track').innerHTML=weekendMarkup+ticks.map(t=>`<button class="sl-tick" data-time="${t}" style="left:${pct(t)}%">${zoom==='hour'||zoom==='day'?new Date(t).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):fmt(t)}</button>`).join('');
-    const groups=new Map();list.forEach(e=>{const key=collectionId==='linked-project'?e.lane:JSON.stringify([e.access.ownerId||'',e.event.calendarId||'',e.project,e.lane]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);});
+    const groups=new Map();list.forEach(e=>{const key=collectionId==='linked-project'?e.lane:window.CalendarLaneEvents.rowKey(e,collectionId);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);});
+    if(selectedMode==='basic'&&collectionId==='layers')for(const name of selectedLayerNames){const lane=window.CalendarLaneEvents.label(name);if(![...groups.values()].some(items=>items[0]?.lane===lane))groups.set(JSON.stringify(['','',project,lane]),[]);}
     if(collectionId==='linked-project')for(const lane of ['Attached calendars',...workLaneOrder.keys()])if(!groups.has(lane))groups.set(lane,[]);
     const ordered=[...groups.entries()].sort((a,b)=>{const la=a[1][0]?.lane||a[0],lb=b[1][0]?.lane||b[0];const ra=la==='Attached calendars'?-1:workLaneOrder.has(la)?workLaneOrder.get(la):(laneRank?.get(la)??999);const rb=lb==='Attached calendars'?-1:workLaneOrder.has(lb)?workLaneOrder.get(lb):(laneRank?.get(lb)??999);return ra-rb||String(la).localeCompare(String(lb));});
     positions.clear();let y=0;const markup=[],titles=[],heightStep=compact?25:40,cardHeight=compact?19:30;
     // Reserve 72 px for legible labels. Exact duration is also shown as a lower bar.
     const width=Math.max(600,host.querySelector('.sl-axis-track').getBoundingClientRect().width);
     ordered.forEach(([groupKey,events])=>{
-      const representative=events[0]||{id:'empty-'+groupKey,lane:groupKey,project,workflow:'communication',access:{label:'Linked calendar'}};
-      const rowKey=esc(representative.id);
-      if(kept.size&&!leftPanel?.classList.contains('open')&&!kept.has(rowKey))return;
+      const representative=events[0]||{id:'empty-'+groupKey,lane:selectedMode==='basic'?JSON.parse(groupKey)[3]:groupKey,project,workflow:'communication',access:{label:'Linked calendar'}};
+      const rowId=selectedMode==='basic'?String(groupKey):representative.id;const rowKey=esc(rowId);
+      if(selectedMode==='basic'?!expanded&&kept.size&&!kept.has(rowId):kept.size&&!leftPanel?.classList.contains('open')&&!kept.has(rowId))return;
       const visible=M.pack(events.filter(e=>e.start<end&&(e.end>start||e.start>=start)),span*72/width);
       const height=Math.max(compact?42:60,(Math.max(-1,...visible.map(e=>e.row))+1)*heightStep+12),workflow=M.workflows[representative.workflow];
       const access=source==='example'?'Local example':representative.access.label||'Read only';
-      const on=kept.has(rowKey);
+      const on=kept.has(rowId);
       const sleep=representative.lane==='Sleep';
-      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" style="height:${height}px;--workflow:${sleep?'124,58,237':workflow[2]}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc(representative.lane+' / '+representative.project+' · '+access)}">${sleep?'●':workflow[1]} ${esc(representative.lane)}</button><small>${esc(representative.project)}</small></div>`;
+      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${sleep?'124,58,237':workflow[2]}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc(representative.lane+' / '+representative.project+' · '+access)}">${sleep?'●':workflow[1]} ${esc(representative.lane)}</button><small>${esc(representative.project)}</small></div>`;
       if(docked&&!namesInBoard)titles.push(label);
       markup.push(`<section class="sl-lane ${on?'sl-kept':''}" data-row="${rowKey}" data-drop-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${workflow[2]}">${namesInBoard?label:''}<div class="sl-track">${weekendMarkup}${ticks.map(t=>`<span class="sl-gridline" style="left:${pct(t)}%"></span>`).join('')}${context?`<span class="sl-context" style="left:${pct(context.t0)}%;width:${Math.max(0,pct(context.t1)-pct(context.t0))}%"></span>`:''}
-      ${visible.map(e=>{
+      ${collectionId==='layers'&&laneLoading?'<div class="sl-load-state" role="status"><span class="sl-loading-spinner"></span>Loading events…</div>':collectionId==='layers'&&laneError?`<div class="sl-load-state" role="alert">${esc(laneError)} <button data-action="retry-lanes">Retry</button></div>`:collectionId==='layers'&&!visible.length?'<div class="sl-load-state">No events in this time window</div>':''}${visible.map(e=>{
         const left=pct(e.start),duration=pct(e.end)-left,objectWidth=Math.min(100-left,Math.max(72/width*100,duration));
         const top=6+e.row*heightStep,semantic=M.semantic(e),icon=e.status==='done'?'✓':{meeting:'●',task:'▰',milestone:'◆'}[e.kind];
         positions.set(e.id,{left:left/100*width,right:(left+objectWidth)/100*width,y:y+top+cardHeight/2});
-        return `<div class="sl-object" style="left:${left}%;width:${objectWidth}%;top:${top}px;height:${cardHeight}px;--object:${COLORS[semantic][0]}"><button class="sl-card ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" draggable="${collectionId==='linked-project'&&!!e.event.projectLinkId}" title="${esc(e.event.summary)} · ${esc(e.status)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}, ${e.kind}, ${e.status}"><span>${icon}</span> ${esc(e.event.summary)}</button><span class="sl-duration" style="width:${Math.min(100,duration/objectWidth*100)}%"></span>${connect?`<button class="sl-port sl-port-in" data-port="start" data-item="${esc(e.id)}" aria-label="Connect to start of ${esc(e.event.summary)}"></button><button class="sl-port sl-port-out" data-port="end" data-item="${esc(e.id)}" aria-label="Connect from end of ${esc(e.event.summary)}"></button>`:''}</div>`;
+        return `<div class="sl-object" style="left:${left}%;width:${objectWidth}%;top:${top}px;height:${cardHeight}px;--object:${COLORS[semantic][0]}"><button class="sl-card ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" draggable="${(collectionId==='linked-project'&&!!e.event.projectLinkId)||(collectionId==='layers'&&selectedMode==='basic'&&!!e.event.key&&!laneMoveId)}" title="${esc(e.event.summary)} · ${esc(e.status)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}, ${e.kind}, ${e.status}"><span>${icon}</span> ${esc(e.event.summary)}</button><span class="sl-duration" style="width:${Math.min(100,duration/objectWidth*100)}%"></span>${connect?`<button class="sl-port sl-port-in" data-port="start" data-item="${esc(e.id)}" aria-label="Connect to start of ${esc(e.event.summary)}"></button><button class="sl-port sl-port-out" data-port="end" data-item="${esc(e.id)}" aria-label="Connect from end of ${esc(e.event.summary)}"></button>`:''}</div>`;
       }).join('')}${Date.now()>=start&&Date.now()<end?`<span class="sl-now" style="left:${pct(Date.now())}%"></span>`:''}</div></section>`);y+=height;
     });
     side.innerHTML=docked&&!namesInBoard?`<div class="sl-label sl-axis-label">Lanes</div>${titles.join('')}`:'';
@@ -258,9 +292,15 @@
       links.push(`<g><path class="sl-link" d="${path}" marker-end="url(#sl-arrow)"/><path class="sl-link-hit" data-link-from="${esc(from)}" data-link-to="${esc(target.id)}" d="${path}" tabindex="0" role="button" aria-label="Dependency to ${esc(target.event.summary)}"/>${connect&&writable(target)?`<circle class="sl-route-handle" cx="${bend}" cy="${(a.y+b.y)/2}" r="4" data-route-from="${esc(from)}" data-route-to="${esc(target.id)}" aria-label="Drag to snap connector routing"/>`:''}</g>`);
     }));
     if(y)host.querySelector('.sl-board').insertAdjacentHTML('beforeend',`<svg class="sl-links" style="height:${y}px" viewBox="0 0 ${width} ${y}" preserveAspectRatio="none" aria-label="Item relationships"><defs><marker id="sl-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L6 3 L0 6" fill="#7e929d"/></marker></defs>${links.join('')}<path id="sl-draft"/></svg>`);
+    if(selectedMode==='basic'&&collectionId==='layers'){
+      const sizes={};for(const row of host.querySelectorAll('.sl-lane')){const name=selectedLayerNames.find(name=>window.CalendarLaneEvents.label(name)===row.dataset.dropLane);if(name)sizes[name]=row.offsetHeight;}
+      parentSend({type:'CIRCAEVUM_LANE_ROW_SIZES',sizes});
+    }
+    requestAnimationFrame(alignLaneRows);
     syncPanel();if(panelMode==='event'&&selected)detail(selected);host.scrollTop=scroll;rendering=false;requestAnimationFrame(()=>{placeRail();window.dispatchEvent(new CustomEvent('circaevum:lanes-layout'));});
   }
   function detail(id){
+    sceneDetail.hidden=true;eventMode.querySelector('#sl-detail').hidden=false;
     selected=id;panelMode='event';const item=items().find(e=>e.id===id);if(!item){selected=null;return;}
     const all=items(),deps=M.dependencyState(item,all),next=all.filter(e=>e.dependencies.includes(id)),r=M.report([item])[0];
     syncPanel(true);
@@ -311,11 +351,13 @@
     const link=e.target.closest('[data-link-from]');if(link){selectedLink={from:link.dataset.linkFrom,to:link.dataset.linkTo};selected=selectedLink.to;panelMode='event';render();return;}
     const assign=e.target.closest('[data-assign-lane]');if(assign){assignProjectEvent(assign.dataset.assignId,assign.dataset.assignLane);return;}
     const card=e.target.closest('[data-id]');if(card){selected=card.dataset.id;panelMode='event';render();return;}
-    const lane=e.target.closest('[data-lane]');if(lane){const key=lane.dataset.lane;if(kept.has(key))kept.delete(key);else kept.add(key);render();return;}
+    const lane=e.target.closest('[data-lane]');if(lane){const key=lane.dataset.lane;if(collectionId==='linked-project'){const name=lane.closest('.sl-label')?.dataset.workLane;if(workLaneOrder.has(name)){parentSend({type:'CIRCAEVUM_CONFIGURE_PROJECT_LANE',project,lane:name});return;}}if(kept.has(key))kept.delete(key);else if(selectedMode!=='basic'||kept.size<3)kept.add(key);else notice='Choose up to three lanes for the lowered view.';if(kept.has(key))requestLaneData(true);render();return;}
     const remove=e.target.closest('[data-remove-link]');if(remove){const target=items().find(x=>x.id===selected);if(target)await saveWork(target,{...target.event.work,dependencies:target.dependencies.filter(x=>x!==remove.dataset.removeLink),links:target.links.filter(x=>x.uid!==remove.dataset.removeLink)});return;}
     const tick=e.target.closest('[data-time]');if(tick){focus=Number(tick.dataset.time);start=focus-span/2;changedTime();render();return;}
     const action=e.target.closest('[data-action]')?.dataset.action;if(!action)return;
-    if(action==='expand'){expanded=!expanded;render();return;}if(action==='panel-event'){panelMode='event';syncPanel(true);if(selected)detail(selected);else eventMode.querySelector('#sl-detail').innerHTML='<p>Select an event in Swim Lanes.</p>';return;}if(action==='panel-timeline'){panelMode='timeline';syncPanel();return;}
+    if(action==='retry-lanes'){requestLaneData(true);render();return;}
+    if(action==='basic-size'){expanded=!expanded;notice=expanded?'Select up to three lane headers, then Show selected.':'';render();return;}
+    if(action==='expand'){expanded=!expanded;render();return;}if(action==='panel-event'){panelMode='event';syncPanel(true);if(selected)detail(selected);else if(sceneDetail.hidden)eventMode.querySelector('#sl-detail').innerHTML='<p>Select an event in the scene or Swim Lanes.</p>';return;}if(action==='panel-timeline'){panelMode='timeline';syncPanel();return;}
     if(action==='close')return setOpen(false);if(action==='edit')return editor(selected);if(action==='new')return editor(null);
     if(action==='route-style'&&selectedLink){const target=items().find(e=>e.id===selectedLink.to);if(target){const spec=target.links.find(l=>l.uid===selectedLink.from)||{};await saveWork(target,{...target.event.work,links:target.links.filter(l=>l.uid!==selectedLink.from).concat({...spec,uid:selectedLink.from,route:'elbow',offset:0})});}return;}
     if(action==='focus'){const item=items().find(e=>e.id===selected);if(item){start=item.start-span/2;changedTime();} }
@@ -335,6 +377,12 @@
   }
   function assignProjectEvent(id,lane){
     const item=items().find(e=>e.id===id)
+    if(collectionId==='layers'&&selectedMode==='basic'&&item?.event.key&&!laneMoveId){
+      const destination=selectedLayerNames.find(name=>window.CalendarLaneEvents.label(name)===lane);
+      if(!destination||item.lane===lane)return;
+      laneMoveId=crypto.randomUUID();notice='Moving event…';
+      parentSend({type:'CIRCAEVUM_MOVE_LANE_EVENT',requestId:laneMoveId,key:item.event.key,layer:destination});render();return;
+    }
     if(collectionId!=='linked-project'||!item?.event.projectLinkId||!['Attached calendars',...workLaneOrder.keys()].includes(lane))return
     parentSend({type:'CIRCAEVUM_ASSIGN_PROJECT_EVENT',project,linkId:item.event.projectLinkId,sourceId:item.event.projectSourceId,lane})
   }
@@ -342,8 +390,10 @@
     const card=e.target.closest('[data-id][draggable="true"]');if(!card)return
     e.dataTransfer.setData('application/x-circaevum-project-event',card.dataset.id);e.dataTransfer.effectAllowed='move'
   })
-  host.addEventListener('dragover',e=>{if(e.target.closest('[data-drop-lane]')&&e.dataTransfer.types.includes('application/x-circaevum-project-event')){e.preventDefault();e.dataTransfer.dropEffect='move'}})
-  host.addEventListener('drop',e=>{const lane=e.target.closest('[data-drop-lane]');const id=e.dataTransfer.getData('application/x-circaevum-project-event');if(lane&&id){e.preventDefault();assignProjectEvent(id,lane.dataset.dropLane)}})
+  host.addEventListener('dragover',e=>{if(e.target.closest('[data-drop-lane]')&&e.dataTransfer.types.includes('application/x-circaevum-project-event')){e.preventDefault();e.dataTransfer.dropEffect='move';host.querySelectorAll('.sl-drop-target').forEach(row=>row.classList.remove('sl-drop-target'));e.target.closest('[data-drop-lane]').classList.add('sl-drop-target')}})
+  host.addEventListener('dragend',()=>host.querySelectorAll('.sl-drop-target').forEach(row=>row.classList.remove('sl-drop-target')))
+  host.addEventListener('dragleave',e=>{const row=e.target.closest('[data-drop-lane]');if(row&&!row.contains(e.relatedTarget))row.classList.remove('sl-drop-target')})
+  host.addEventListener('drop',e=>{host.querySelectorAll('.sl-drop-target').forEach(row=>row.classList.remove('sl-drop-target'));const lane=e.target.closest('[data-drop-lane]');const id=e.dataTransfer.getData('application/x-circaevum-project-event');if(lane&&id){e.preventDefault();assignProjectEvent(id,lane.dataset.dropLane)}})
   host.addEventListener('change',onControlChange);
   side.addEventListener('change',onControlChange);
   host.addEventListener('wheel',e=>{
@@ -390,21 +440,27 @@
     const g=gl();
     const ids=(g?.getLayerIds?.()||[]).filter(id=>g.getLayer(id)?.collection===colId).sort((a,b)=>(g.getLayer(a).laneOrder||0)-(g.getLayer(b).laneOrder||0));
     laneRank=new Map(ids.map(id=>[g.getLayer(id).laneName||g.getLayer(id).name, g.getLayer(id).laneOrder||0]));
-    selectedMode=colId; collectionId=colId; collectionLabel=ids.length?g.getLayer(ids[0]).collectionLabel:colId;
+    selectedMode=colId;expanded=colId==='basic';notice=expanded?'Select up to three lane headers, then Show selected.':''; collectionId=colId; collectionLabel=ids.length?g.getLayer(ids[0]).collectionLabel:colId;
     supplied=eventsForLayers(ids); source='loaded'; project=supplied[0]?.work?.project||''; kept.clear(); setOpen(true);
   };
   window.openSwimLayerNames=function(names, title, mode='basic'){
     if(!modeEnabled(mode))return;
-    selectedMode=mode;
+    const append=mode==='basic'&&selectedMode==='basic'&&opened&&collectionId==='layers';
+    selectedMode=mode;expanded=mode==='basic';notice=expanded?'Select up to three lane headers, then Show selected.':'';
     const g=gl(); if(!g?.getLayerIds) return;
-    selectedLayerNames=[...(names||[])];
+    const removing=append&&names?.length===1&&selectedLayerNames.includes(names[0]);
+    selectedLayerNames=removing?selectedLayerNames.filter(name=>name!==names[0]):[...new Set([...(append?selectedLayerNames:[]),...(names||[])])];
+    if(removing){for(const key of kept){try{if(JSON.parse(key)[3]===window.CalendarLaneEvents.label(names[0]))kept.delete(key)}catch{}}}
+    if(!selectedLayerNames.length){laneRequestId='';laneRequestKey='';supplied=[];parentSend({type:'CIRCAEVUM_LANE_ROW_SIZES',sizes:{}});setOpen(false);return;}
+
     laneRank=new Map(selectedLayerNames.map((name,i)=>[window.CalendarLaneEvents.label(name),i]));
-    collectionId='layers'; collectionLabel=title||'Calendar';
-    supplied=window.CalendarLaneEvents.project(g,selectedLayerNames,collectionLabel);
-    source='loaded'; project=collectionLabel; kept.clear(); setOpen(true);
+    collectionId='layers'; collectionLabel=mode==='basic'?'Basic calendars':title||'Calendar';
+    if(!append)fetchedLaneEvents=[];
+    supplied=appLayout()?window.CalendarLaneEvents.projectFetched(fetchedLaneEvents,selectedLayerNames,collectionLabel):window.CalendarLaneEvents.project(g,selectedLayerNames,collectionLabel);
+    source='loaded'; project=collectionLabel; if(!append)kept.clear();laneRequestKey=''; setOpen(true);
   };
   window.addEventListener('circaevum:calendar-events-updated',()=>{
-    if(collectionId!=='layers')return;
+    if(collectionId!=='layers'||appLayout())return;
     supplied=window.CalendarLaneEvents.project(gl(),selectedLayerNames,collectionLabel);
     if(opened)render();
   });
@@ -430,6 +486,17 @@
       const have=gl()?.getLayerIds?.().some(id=>gl().getLayer(id)?.collection===data.collection);
       if(!have&&data.allowSample!==false&&typeof window.loadSampleProfile==='function')window.loadSampleProfile(data.sample||'noor');
       window.openSwimCollection(data.collection);
+    }
+    if(data?.type==='CIRCAEVUM_MOVE_LANE_RESULT'&&laneMoveId&&data.requestId===laneMoveId){
+      laneMoveId='';laneLoading=false;notice=data.error||'Event moved.';
+      if(!data.error&&data.event){fetchedLaneEvents=fetchedLaneEvents.filter(event=>event.key!==data.event.key).concat(data.event);supplied=window.CalendarLaneEvents.projectFetched(fetchedLaneEvents,selectedLayerNames,collectionLabel);laneRequestId='';}
+      if(opened)render();
+    }
+    if(data?.type==='CIRCAEVUM_LANE_ANCHORS'){laneAnchors=data;alignLaneRows();}
+    if(data?.type==='CIRCAEVUM_LANES_RESULT'&&collectionId==='layers'&&data.requestId===laneRequestId){
+      laneLoading=false;laneError=data.error||'';
+      if(!laneError){fetchedLaneEvents=data.events||[];supplied=window.CalendarLaneEvents.projectFetched(fetchedLaneEvents,selectedLayerNames,collectionLabel);}
+      if(opened)render();
     }
     if(data?.type==='CIRCAEVUM_OPEN_LAYERS'&&Array.isArray(data.layerNames))window.openSwimLayerNames(data.layerNames, data.title, data.mode);
     if(data?.type==='CIRCAEVUM_WORK_SAVED'){const p=pending.get(data.requestId);if(!p)return;clearTimeout(p.timer);pending.delete(data.requestId);if(data.error)p.reject(new Error(data.error));else{if(supplied&&data.event)supplied=supplied.map(x=>x.uid===data.event.uid&&x.workAccess?.canWrite?{...x,...data.event}:x);p.resolve();}}
