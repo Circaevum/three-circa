@@ -6,6 +6,8 @@ Read [README.md](README.md), [docs/FOR-AGENTS.md](docs/FOR-AGENTS.md), and [docs
 - Inspect existing changes and preserve unrelated work. Keep local previews accessible. The user reviews features; use focused code/build checks without imposing a review ceremony.
 - Do not push, merge or deploy without an explicit request. Report local versus deployed status separately.
 - Keep scene duration/density LOD confined to 3D rendering. App swim lanes consume independently fetched data and stable lane identities, not renderer cache replacements.
+- Keep the Events panel scoped to its selected window. The wrapper owns all-date tables and saved event counts. Use the host's optional `displayColor` as a rendering override and retain the event's saved `color` in edit and serialization paths.
+- The host computes circadian Project blocks and Initiative spans and supplies them on the `work-activity` layer. Keep them read-only and separate from account events. Keep Work lane controls and the date ruler visible while scrolling.
 - Basic alone supports custom lane selection and menu-row alignment. Health opens structured Sleep/Heart/Activities lanes automatically and keeps its menu at the top.
 - Opening/closing may animate; scrolling must track menu rows immediately. Respect reduced motion. Keep text input isolated from scene shortcuts.
 - Route scene event details to the existing right Events panel's Event mode. Avoid reintroducing a second bottom event sheet in the integrated app.

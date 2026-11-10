@@ -13,9 +13,11 @@ Serve this repository on 8080 (`python3 -m http.server 8080 --bind 127.0.0.1`) a
 | Basic | Always enabled; gray theme. Traditional calendar integrations remain here. Select calendar layers individually; click a selected layer again to remove it. Choose up to three headers for the lowered selection view. |
 | Health | Red theme; Sleep is purple. Selecting Garmin opens Sleep, Heart and Activities automatically, including empty/loading rows. No custom keep/unkeep header selection. Health calendar cards retain their order and top position. |
 | Work | Blue theme. Initiative cards contain Projects; a Project opens Research, Development, Delivery, plus an Attached calendars source lane. |
-| Financial | Green theme; account-controlled mode. Mode availability is not proof of a live financial integration. |
+| Finance | Green theme; account-controlled mode. |
 
-Account Settings controls extra modes as a preview; there is no payment system. Connections and Systems belong there, not in Calendar Layers. The header provides Icons, depth overview, camera fitting, Add event (`+`) and the hamburger menu. Keys is in the hamburger menu. Scene icons start minimized; the old Play/replay control is hidden in the app.
+Account Settings controls the extra modes and groups connections and System Health checks by mode. The header provides Icons, depth overview, camera fitting, Add event (`+`) and the hamburger menu. Keys is in the hamburger menu. Scene icons start minimized.
+
+Account events carry an optional `displayColor` from the host in six-digit hex form (`#rrggbb`). The viewer uses it for scene geometry and event list markers. The saved `color` remains available to editors and serializers. Work lane status uses icons within the Work palette, and the Garmin sleep renderer distinguishes stages with purple shades.
 
 ## Basic layout and movement
 
@@ -33,11 +35,15 @@ The selected time and zoom still follow the scene, including Zoom 7. This may ch
 
 These fetches read Circaevum storage; selecting Garmin does not synchronously call Garmin's upstream history API. Never replace unavailable account data with synthetic records or describe sample records as live.
 
+The right **Event List** follows the selected scene window. Its search covers events already loaded into the viewer. For saved history, the signed-in wrapper's **Layers → Open table** shows **All dates** for that layer. The table and Layers badge share an independent paginated snapshot, and opening the table preserves scene date and zoom.
+
 ## Work organization and integrations
 
 Initiatives own calendar attachments and repository metadata. Projects are dropdown children on Initiative cards; rename preserves task identity, aliases and assignments. An attachment can stay Initiative-only or be linked to Projects. Attached events start in their own source lane and can be assigned individually to Research, Development or Delivery without reclassifying the original calendar event.
 
-Research/Development/Delivery headers open a source picker. Thread import, explicit project selections, and Zhong note IDs are prototype features. The portal loads GitHub commits and pushes for a linked Delivery branch and passes them to the viewer as read-only events. The viewer can request a refresh and jump to the newest record. Automatic ChatGPT/Cursor history ingestion, Microsoft 365 OAuth and automatic Zhong synchronization are separate work. MCP is an integration interface, not permission to access provider history. No token counts should be invented.
+Research, Development, and Delivery headers open their source pickers. The portal owns GitHub authorization and Initiative repository links. Delivery shows read-only commit and push markers for its selected branch, with controls to refresh or jump to the latest record. The timeline controls and date ruler stay visible as the rows scroll. AI thread activity comes from imported and explicitly selected sources. Missing usage metrics stay unavailable.
+
+The portal combines observed Project work into blocks across gaps of up to 30 minutes and sends them to Day, Clock, and Hour views. It derives Initiative spans from the first and last observed activity across their Projects and sends each span at its matching zoom. These projections use the `work-activity` layer and remain read-only.
 
 ## Event details and other overlays
 
@@ -56,6 +62,7 @@ Depth overview represents full-page sheets sharing one axis and angle. Drag to r
 | `CIRCAEVUM_MOVE_LANE_EVENT` / `CIRCAEVUM_MOVE_LANE_RESULT` | Viewer request / portal acknowledgement; requestId, stored key, destination layer; saved event or error. |
 | `CIRCAEVUM_OPEN_LINKED_PROJECT` | Portal → viewer; Project events and GitHub activity status. Updates refresh the active Project without reopening the lane. |
 | `CIRCAEVUM_REFRESH_GITHUB_DELIVERY` | Viewer → portal; refresh the active Project’s linked branch. |
+| `CIRCAEVUM_INGEST_EVENTS` / `CIRCAEVUM_CLEAR_EVENTS` | Portal → viewer; also sends and clears the read-only `work-activity` layer as Work mode and zoom change. |
 | `CIRCAEVUM_ASSIGN_PROJECT_EVENT` | Viewer → portal; project/link/source/lane assignment. |
 | `CIRCAEVUM_CONFIGURE_PROJECT_LANE` | Viewer → portal; open Research/Development/Delivery source picker. |
 | `CIRCAEVUM_HOST_CHROME`, `CIRCAEVUM_PANEL_GEOMETRY` | Host layout and viewer geometry/open-state coordination. |

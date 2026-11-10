@@ -8,6 +8,13 @@ This changelog tracks all changes across Yin (backend), Yang (frontend), and Zho
 
 ---
 
+## Unreleased · Work timeline and mode colors
+
+- The account viewer uses gray for Basic, blue for Work, red for Health, purple for Sleep, and green for Finance. Work status remains visible through icons. Host display tints preserve the original event color for editing and serialization.
+- Linked GitHub Delivery lanes show commit and push markers with details. Lane controls and the date ruler stay visible while the rows scroll.
+- The viewer renders portal-derived Project blocks at circadian zooms and Initiative spans at a zoom suited to their length.
+- The wrapper's Table View and Layers counts share saved events across all dates. The viewer's Event List continues to follow the selected time window.
+
 ## [Q4 2026] - October 2026 (Garmin connect, sleep window, flat dates)
 
 ### Yang (Frontend) — `yang-web`

@@ -8,7 +8,7 @@ Read in order: **[llms.txt](https://circaevum.com/llms.txt)** → **[docs/FOR-AG
 
 ## Account modes and swim lanes
 
-See [the current swim-lane contract](./docs/SWIM-LANES.md) for Basic-only custom selection, automatic Garmin Health lanes, independent non-LOD data requests, Project organization, event details, and coordinated viewer/portal asset updates. Account navigation uses `/?view=account` on the wrapper. These app features do not add authentication requirements to standalone GL embeds.
+See [the swim-lane and timeline guide](./docs/SWIM-LANES.md) for calendar modes, date-window loading, GitHub Delivery markers, derived Project work and Initiative spans. The wrapper owns Account Settings (`/?view=account`) and the all-dates layer tables and counts. The standalone GL remains auth-free. See [CHANGELOG.md](./CHANGELOG.md) for recent viewer changes.
 
 ## How time becomes space
 

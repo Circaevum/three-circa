@@ -4,7 +4,7 @@ The Circaevum web app is split so the **graphics library (GL)** is viewer-only (
 
 ## Account modes and swim lanes
 
-See [the current swim-lane contract](./SWIM-LANES.md) for Basic-only custom selection, automatic Garmin Health lanes, independent non-LOD data requests, Project organization, event details, and coordinated viewer/portal asset updates. Account navigation uses `/?view=account` on the wrapper. These app features do not add authentication requirements to standalone GL embeds.
+See [the swim-lane and timeline contract](./SWIM-LANES.md) for lane loading, Work projections, and viewer messages. The wrapper owns Account Settings (`/?view=account`), GitHub authorization, and the all-date tables and layer counts. The viewer owns the selected-window Event List. Standalone GL embeds remain auth-free.
 
 ## Bring your own auth (most integrators)
 
