@@ -21,6 +21,20 @@ const mondayTicks=M.ticks(+new Date(2026,10,1),+new Date(2026,11,1),'month');
 assert(mondayTicks.length>=4);
 assert(mondayTicks.every(t=>new Date(t).getDay()===1),'month ticks must be calendar Mondays');
 assert(mondayTicks.every(t=>new Date(t).getHours()===0),'weekly ticks survive DST at midnight');
+const hourTicks = M.ticks(+new Date(2026, 10, 11, 10, 59, 49), +new Date(2026, 10, 11, 11, 59, 49), 'hour');
+assert.deepEqual(hourTicks.map(t => new Date(t).getMinutes()), [0, 10, 20, 30, 40, 50]);
+assert(hourTicks.every(t => new Date(t).getSeconds() === 0));
+const dayFocus = new Date(2026, 10, 11, 11, 29);
+const day = M.localDayWindow(dayFocus);
+assert.equal(day.start, +new Date(2026, 10, 11));
+assert.equal(day.start + day.span, +new Date(2026, 10, 12));
+for (const focus of [dayFocus, new Date(2026, 10, 1, 12), new Date(2026, 2, 8, 12)]) {
+  const window = M.localDayWindow(focus);
+  const ticks = M.ticks(window.start, window.start + window.span, 'day').map(t => new Date(t));
+  assert.deepEqual(ticks.map(t => t.getHours()), [0, 3, 6, 9, 12, 15, 18, 21]);
+  assert(ticks.every(t => t.getMinutes() === 0 && t.getDate() === focus.getDate()));
+}
+
 assert.equal(M.semantic({...M.normalize(event),status:'waiting'}),'waiting');
 assert.equal(M.semantic({...M.normalize(event),status:'done',kind:'milestone'}),'milestone-done');
 assert.equal(M.semantic({...M.normalize(event),status:'planned',end:Date.now()+86400000}),'upcoming');

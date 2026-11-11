@@ -1,17 +1,18 @@
 /* Work is a compact projection of VEVENTs and the same selected time as the GL. */
 (function () {
   const M = window.WorkTimeline, KEY = 'circaevum.work-example.v3';
-  const ZOOMS = { hour:[0,1/24],day:[8,1],week:[7,7],month:[5,31],quarter:[4,92],year:[3,366] };
+  const ZOOMS = { hour:[0,1/24],day:[8,1],clock:[9,1],week:[7,7],month:[5,31],quarter:[4,92],year:[3,366] };
   const MODE_COLORS = {basic:'#9aa3ad',health:'#e11d48',work:'#2563eb',financial:'#16a34a'};
   const SLEEP_COLOR = '#8b5cf6';
   const STATUS_ICONS = {done:'✓',blocked:'!',cancelled:'×',waiting:'…'};
   let demo=M.seed(), workSupplied=null, supplied=null, source='example', project='', selected=null, zoom='month', compact=true, connect=false;
   let githubDelivery=null;
+  let reviewColors=null,reviewWork=[],reviewShowEmpty=false;
   let collectionId='', collectionLabel='', laneRank=null, selectedMode='basic', selectedLayerNames=[];
   let start=+new Date(2026,10,1), span=31*M.DAY, context=null, focus=start+span/2, opened=false, returnFocus;
   let draw=null, routeDrag=null, linkStart=null, saving=false, notice='', accessMessage='', syncTimer, rendering=false, pushing=false, initialized=false;
   let selectedLink=null, queuedPan=0, panFrame=null, showWorkflow=false, panelMode='timeline', expanded=false, suppressPortClickUntil=0, forcedLeft=false, kept=new Set();
-  let laneMoveId='',fetchedLaneEvents=[],laneRequestKey='',laneRequestId='',laneLoading=false,laneError='',laneAnchors={open:false,rows:[]};
+  let laneMoveId='',fetchedLaneEvents=[],laneRequestKey='',laneRequestId='',laneLoading=false,laneError='',unavailableLanes=new Set(),laneAnchors={open:false,rows:[]};
   const positions=new Map(), pending=new Map();
   const workLaneOrder=new Map(['Research','Development','Delivery'].map((name,index)=>[name,index]));
   const appLayout=()=>window.circaevumHostLayout?.managed===true;
@@ -52,11 +53,12 @@
   const bar=document.createElement('nav');bar.className='swim-lanes-menu';bar.setAttribute('aria-label','Calendar bottom menu');
   bar.innerHTML='<button type="button" aria-controls="swim-lanes" aria-expanded="false" aria-label="Open Swim Lanes">Swim Lanes</button>';
   document.getElementById('xr-ui-layer').append(bar);
-  function loaded(){if(supplied!==null)return supplied;const result=[];gl()?.events?.forEach((events,id)=>{if(gl().layers.get(id)?.visible!==false)result.push(...events);});return result;}
+  function loaded(){if(supplied!==null)return reviewColors
+    ? supplied.concat(window.CalendarLaneEvents.projectFetched(reviewWork,['Work'],collectionLabel)) : supplied;const result=[];gl()?.events?.forEach((events,id)=>{if(gl().layers.get(id)?.visible!==false)result.push(...events);});return result;}
   function items(){const map=new Map();(source==='example'?demo:loaded()).forEach(e=>{const n=M.normalize(e);if(n?.id)map.set(n.id,n);});return [...map.values()];}
   function rows(){
     const all=items();
-    if(collectionId==='linked-project')return all.filter(e=>e.project===project);
+    if(collectionId==='linked-project'||reviewColors)return all.filter(e=>e.project===project);
     if(!all.some(e=>e.project===project))project=all[0]?.project||'';
     return all.filter(e=>e.project===project);
   }
@@ -131,7 +133,7 @@
     side.querySelectorAll(`[data-row="${key}"]`).forEach(n=>n.classList.add('sl-hot'));
   }
   function setOpen(value){
-    if(value){returnFocus=document.activeElement;if(!opened&&selectedMode==='basic')expanded=true;}
+    if(value){returnFocus=document.activeElement;if(!opened&&selectedMode==='basic'&&!reviewColors)expanded=true;}
     opened=value;host.hidden=!value;document.body.classList.toggle('swim-lanes-open',value);
     bar.querySelector('button').setAttribute('aria-expanded',String(value));bar.hidden=value;
     if(value){showLeft();if(initialized)readContext(true);render();host.querySelector('.sl-bar')?.focus?.();}
@@ -150,10 +152,13 @@
     const hit=Object.keys(ZOOMS).find(k=>ZOOMS[k][0]===level);
     if(hit)return hit;
     if(level===6)return 'month';
-    if(level===9)return 'hour';
     return 'year';
   }
   function windowFromPayload(payload){
+    if (payload?.zoom === 8 || payload?.zoom === 9) {
+      const day = M.localDayWindow(payload.focus);
+      if (day) return day;
+    }
     const arc=payload&&payload.contextArc;
     if(arc&&Number.isFinite(arc.t0)&&Number.isFinite(arc.t1)&&arc.t1>arc.t0)return {start:arc.t0,span:arc.t1-arc.t0,context:arc};
     const name=zoomName(payload&&payload.zoom);
@@ -201,14 +206,14 @@
     return `M${x1},${y1} C${c1},${y1} ${c2},${y2} ${x2},${y2}`;
   }
   function pct(t){return Math.max(0,Math.min(100,(t-start)/span*100));}
-  function requestLaneData(force=false){
+  function requestLaneData(force=false,refreshGarmin=false){
     if(!appLayout()||collectionId!=='layers'||!selectedLayerNames.length||!opened)return;
     const key=JSON.stringify([selectedLayerNames,start,span]);if(!force&&key===laneRequestKey)return;
-    laneRequestKey=key;laneRequestId=crypto.randomUUID();laneLoading=true;laneError='';
-    parentSend({type:'CIRCAEVUM_FETCH_LANES',requestId:laneRequestId,names:selectedLayerNames,t0:start,t1:start+span});
+    laneRequestKey=key;laneRequestId=crypto.randomUUID();laneLoading=true;laneError='';unavailableLanes.clear();
+    parentSend({type:'CIRCAEVUM_FETCH_LANES',requestId:laneRequestId,names:selectedLayerNames,t0:start,t1:start+span,review:!!reviewColors,refreshGarmin});
   }
   function alignLaneRows(){
-    const attached=opened&&selectedMode==='basic'&&collectionId==='layers'&&laneAnchors.open&&!document.body.classList.contains('interface-depth');
+    const attached=opened&&!reviewColors&&selectedMode==='basic'&&collectionId==='layers'&&laneAnchors.open&&!document.body.classList.contains('interface-depth');
     const switching=host.classList.contains('sl-row-attached')!==attached;
     const oldRects=switching?new Map([...host.querySelectorAll('.sl-lane')].map(row=>[row,row.getBoundingClientRect()])):null;
     if(switching){host.classList.add('sl-transitioning');clearTimeout(host._motionTimer);host._motionTimer=setTimeout(()=>host.classList.remove('sl-transitioning'),340);}
@@ -226,6 +231,7 @@
     window.dispatchEvent(new CustomEvent('circaevum:lanes-layout'));
   }
   function laneColor(lane){
+    if (reviewColors?.has(lane)) return reviewColors.get(lane);
     if(selectedMode==='health'&&/^(garmin )?sleep$/i.test(lane))return SLEEP_COLOR;
     return MODE_COLORS[selectedMode]||MODE_COLORS.basic;
   }
@@ -250,7 +256,7 @@
       <button data-action="github-refresh" ${githubDelivery.loading?'disabled':''}>Refresh GitHub</button></div>`;
   }
   function render(){
-    if(!opened)return;requestLaneData();rendering=true;host.classList.toggle('sl-expanded',expanded);host.classList.toggle('sl-basic-full',selectedMode==='basic'&&expanded);
+    if(!opened)return;requestLaneData();rendering=true;host.classList.toggle('sl-review',!!reviewColors);host.classList.toggle('sl-expanded',expanded);host.classList.toggle('sl-basic-full',selectedMode==='basic'&&expanded);
     const docked=appLayout()||!!leftPanel?.classList.contains('open');
     host.classList.toggle('sl-docked',docked);
     const namesInBoard=appLayout()||!docked||!leftPanel?.classList.contains('open');
@@ -258,6 +264,17 @@
     const oldBoard=host.querySelector('.sl-board-scroll');
     const scrollTop=oldBoard?.scrollTop||0, scrollLeft=oldBoard?.scrollLeft||0;
     const all=items(), list=rows(), end=start+span, projects=[...new Set(all.map(e=>e.project))];
+    const fullDay=zoom==='day'||zoom==='clock';
+    const heartLayer=reviewColors?'Heart':'Garmin Activity';
+    const overlayHeart=(reviewColors||selectedMode==='health')&&collectionId==='layers'&&selectedLayerNames.includes(heartLayer);
+    const heartItems=overlayHeart?list.filter(item=>item.event.render?.metric==='hr'):[];
+    const heartTrace=window.CalendarLaneEvents.heartTrace(heartItems,start,end);
+    const laneItems=overlayHeart?list.filter(item=>item.lane!=='Heart'):list;
+    const dayLabel=fullDay ? new Date(start).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) : '';
+    const dateWindow=dayLabel || `${fmt(start)} – ${fmt(end)}`;
+    const localZone=new Intl.DateTimeFormat(undefined,{timeZoneName:'short'}).formatToParts(new Date(start))
+      .find(part=>part.type==='timeZoneName')?.value || '';
+    const dayControls='<button data-action="prev" aria-label="Previous day">←</button><button data-action="today">Today</button><button data-action="next" aria-label="Next day">→</button>';
     const toolBits=`<label class="sl-sr">Source<select id="sl-source"><option value="example" ${source==='example'?'selected':''}>OpenAMI / ISV example</option><option value="loaded" ${source==='loaded'?'selected':''}>My & shared work layers</option></select></label>
       ${projects.length>1?`<label class="sl-sr">Project<select id="sl-project">${projects.map(p=>`<option value="${esc(p)}" ${p===project?'selected':''}>${esc(p)}</option>`).join('')}</select></label>`:''}
       <button data-action="prev" aria-label="Earlier">←</button><button data-action="today">Today</button><button data-action="next" aria-label="Later">→</button>
@@ -271,37 +288,42 @@
       ${showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([, [label,icon]])=>`<span style="--workflow:var(--mode-rgb,37,99,235)">${icon} ${label}</span>`).join('')}</div>`:''}
       <div class="sl-caption"><span>${fmt(start)} – ${fmt(end)} ${new Date(focus).getFullYear()} · ${list.length} items</span></div>
       <p class="sl-notice" role="status">${esc(notice||accessMessage||'')}</p>`;
-    const healthStatus=selectedMode==='health'?`<p class="sl-health-status" role="status" aria-live="polite">${laneLoading?'<span class="sl-loading-spinner"></span> Loading Health events…':laneError?'Health data could not load. Retry below.':`${list.length} Health events loaded for ${esc(fmt(start))} – ${esc(fmt(end))}`}</p>`:'';
+    const healthStatus=(selectedMode==='health'||reviewColors||unavailableLanes.size)?`<p class="sl-health-status" role="status" aria-live="polite">${laneLoading?'<span class="sl-loading-spinner"></span> Loading Health events…':laneError?'Health data could not load. Retry below.':`${list.length} events loaded for ${esc(dateWindow)}`}${unavailableLanes.size?` · Couldn’t fully load ${esc([...unavailableLanes].join(', '))}. <button data-action="retry-lanes">Retry</button>`:''}</p>`:'';
     const dockChrome=(collectionId
-      ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
+      ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${reviewColors?`${dayControls}<button data-action="review-empty" aria-pressed="${reviewShowEmpty}">${reviewShowEmpty?'Hide empty lanes':'Show empty lanes'}</button><small>Powered by Garmin Connect™</small>`:overlayHeart&&fullDay?dayControls:selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
       : `<div class="sl-bar" tabindex="-1">${toolBits}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`)
       + (showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([, [label,icon]])=>`<span style="--workflow:var(--mode-rgb,37,99,235)">${icon} ${label}</span>`).join('')}</div>`:'')
+      + (overlayHeart&&!laneLoading&&!laneError?`<p class="sl-heart-legend">${heartTrace.length
+        ? `<span aria-hidden="true"></span> Heart rate · ${esc(localZone)}`
+        : unavailableLanes.has('Heart')?'Heart rate unavailable':'No heart-rate samples in this time window'}</p>`:'')
       + (notice||accessMessage?`<p class="sl-notice" role="status">${esc(notice||accessMessage)}</p>`:'');
-    const board=`<div class="sl-layout"><div class="sl-board-scroll" aria-label="Project timeline"><div class="sl-board ${compact?'sl-compact':''}"><div class="sl-axis">${namesInBoard?'<div class="sl-label">Lanes</div>':''}<div class="sl-track sl-axis-track"></div></div><div id="sl-rows"></div></div></div></div>`;
+    const board=`<div class="sl-layout"><div class="sl-board-scroll" aria-label="Project timeline"><div class="sl-board ${compact?'sl-compact':''}"><div class="sl-axis">${namesInBoard?`<div class="sl-label">${esc(dayLabel || 'Lanes')}</div>`:''}<div class="sl-track sl-axis-track"></div></div><div id="sl-rows"></div></div></div></div>`;
     if(docked){side.hidden=namesInBoard;host.innerHTML=`<div class="sl-frozen-head">${dockChrome}${healthStatus}${githubDeliveryStatus(list)}</div>${board}`;}
     else{side.hidden=true;side.innerHTML='';host.innerHTML=`<div class="sl-frozen-head"><button class="sl-drawer-grip" data-action="expand" aria-label="${expanded?'Reduce':'Expand'} Swim Lanes" aria-expanded="${expanded}"><span></span></button>${chrome}${githubDeliveryStatus(list)}</div>${board}`;}
     const weekends=[];
     const day=new Date(start);day.setHours(0,0,0,0);
     while(+day<end){const a=+day,d=day.getDay();day.setDate(day.getDate()+1);if(d===0||d===6)weekends.push(`<span class="sl-weekend" style="left:${pct(a)}%;width:${pct(+day)-pct(a)}%" aria-hidden="true"></span>`);}
     const weekendMarkup=weekends.join('');
-    const ticks=M.ticks(start,end,zoom);host.querySelector('.sl-axis-track').innerHTML=weekendMarkup+ticks.map(t=>`<button class="sl-tick" data-time="${t}" style="left:${pct(t)}%">${zoom==='hour'||zoom==='day'?new Date(t).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):fmt(t)}</button>`).join('');
-    const groups=new Map();list.forEach(e=>{const key=collectionId==='linked-project'?e.lane:window.CalendarLaneEvents.rowKey(e,collectionId);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);});
-    if(collectionId==='layers')for(const name of selectedLayerNames){const lane=window.CalendarLaneEvents.label(name);if(![...groups.values()].some(items=>items[0]?.lane===lane))groups.set(JSON.stringify(['','',project,lane]),[]);}
+    const ticks=M.ticks(start,end,fullDay?'day':zoom);host.querySelector('.sl-axis-track').innerHTML=weekendMarkup+ticks.map(t=>`<button class="sl-tick" data-time="${t}" style="left:${pct(t)}%">${fullDay?new Date(t).toLocaleTimeString(undefined,{hour:'numeric'}):zoom==='hour'?new Date(t).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):fmt(t)}</button>`).join('');
+    const groups=new Map();laneItems.forEach(e=>{const key=collectionId==='linked-project'?e.lane:window.CalendarLaneEvents.rowKey(e,collectionId);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);});
+    if(collectionId==='layers')for(const name of selectedLayerNames){if(overlayHeart&&name===heartLayer)continue;const lane=window.CalendarLaneEvents.label(name);if(reviewColors&&!reviewShowEmpty&&!['Fitness','Work','Sleep'].includes(lane)&&!unavailableLanes.has(lane))continue;if(![...groups.values()].some(items=>items[0]?.lane===lane))groups.set(JSON.stringify(['','',project,lane]),[]);}
     if(collectionId==='linked-project')for(const lane of ['Attached calendars',...workLaneOrder.keys()])if(!groups.has(lane))groups.set(lane,[]);
-    const ordered=[...groups.entries()].sort((a,b)=>{const la=a[1][0]?.lane||a[0],lb=b[1][0]?.lane||b[0];const ra=la==='Attached calendars'?-1:workLaneOrder.has(la)?workLaneOrder.get(la):(laneRank?.get(la)??999);const rb=lb==='Attached calendars'?-1:workLaneOrder.has(lb)?workLaneOrder.get(lb):(laneRank?.get(lb)??999);return ra-rb||String(la).localeCompare(String(lb));});
-    positions.clear();let y=0;const markup=[],titles=[],heightStep=compact?25:40,cardHeight=compact?19:30;
+    const rowLane=([key,events])=>events[0]?.lane||(collectionId==='layers'?JSON.parse(key)[3]:key);
+    const ordered=[...groups.entries()].sort((a,b)=>{const la=rowLane(a),lb=rowLane(b);const ra=la==='Attached calendars'?-1:workLaneOrder.has(la)?workLaneOrder.get(la):(laneRank?.get(la)??999);const rb=lb==='Attached calendars'?-1:workLaneOrder.has(lb)?workLaneOrder.get(lb):(laneRank?.get(lb)??999);return ra-rb||String(la).localeCompare(String(lb));});
+    positions.clear();let y=0;const markup=[],titles=[],laneHeight=compact?42:60,cardHeight=compact?19:30;
     // Reserve space for text cards and a smaller, centered footprint for point markers.
-    const width=Math.max(1,host.querySelector('.sl-axis-track').getBoundingClientRect().width);
+    const axisTrack=host.querySelector('.sl-axis-track');
+    const width=Math.max(1,axisTrack.offsetWidth);
     const markerHalfSpan=span*12/width, cardSpan=span*72/width;
     ordered.forEach(([groupKey,events])=>{
       const representative=events[0]||{id:'empty-'+groupKey,lane:collectionId==='layers'?JSON.parse(groupKey)[3]:groupKey,project,workflow:'communication',access:{label:'Linked calendar'}};
       const rowId=selectedMode==='basic'?String(groupKey):representative.id;const rowKey=esc(rowId);
       if(selectedMode==='basic'?!expanded&&kept.size&&!kept.has(rowId):kept.size&&!leftPanel?.classList.contains('open')&&!kept.has(rowId))return;
       const visible=M.pack(events.filter(e=>e.start<end&&(e.end>start||e.start>=start)).map(item=>
-        item.event.githubActivity
+        (item.event.githubActivity || window.CalendarLaneEvents.isGarminActivity(item.event))
           ? {item,start:item.start-markerHalfSpan,end:item.start+markerHalfSpan}
           : {item,start:item.start,end:Math.max(item.end,item.start+cardSpan)}));
-      const height=Math.max(compact?42:60,(Math.max(-1,...visible.map(e=>e.row))+1)*heightStep+12),workflow=M.workflows[representative.workflow];
+      const height=laneHeight,workflow=M.workflows[representative.workflow];
       const access=source==='example'?'Local example':representative.access.label||'Read only';
       const on=kept.has(rowId);
       const color=laneColor(representative.lane);
@@ -310,27 +332,63 @@
       const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc(representative.lane+' / '+representative.project+' · '+access)}">${sleep?'●':workflow[1]} ${esc(representative.lane)}</button><small>${esc(representative.project)}</small></div>`;
       if(docked&&!namesInBoard)titles.push(label);
       markup.push(`<section class="sl-lane ${on?'sl-kept':''}" data-row="${rowKey}" data-drop-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}">${namesInBoard?label:''}<div class="sl-track">${weekendMarkup}${ticks.map(t=>`<span class="sl-gridline" style="left:${pct(t)}%"></span>`).join('')}${context?`<span class="sl-context" style="left:${pct(context.t0)}%;width:${Math.max(0,pct(context.t1)-pct(context.t0))}%"></span>`:''}
-      ${collectionId==='layers'&&laneLoading?'<div class="sl-load-state" role="status"><span class="sl-loading-spinner"></span>Loading events…</div>':collectionId==='layers'&&laneError?`<div class="sl-load-state" role="alert">${esc(laneError)} <button data-action="retry-lanes">Retry</button></div>`:collectionId==='layers'&&!visible.length?'<div class="sl-load-state">No events in this time window</div>':''}${visible.map(({item:e,row})=>{
-        const left=pct(e.start), top=6+row*heightStep;
+      ${collectionId==='layers'&&laneLoading?'<div class="sl-load-state" role="status"><span class="sl-loading-spinner"></span>Loading events…</div>':collectionId==='layers'&&laneError?`<div class="sl-load-state" role="alert">${esc(laneError)} <button data-action="retry-lanes">Retry</button></div>`:collectionId==='layers'&&!visible.length?`<div class="sl-load-state">${unavailableLanes.has(representative.lane)?'Data unavailable':'No events in this time window'}</div>`:''}${visible.map(({item:e,row})=>{
+        const left=pct(e.start), top=6+Math.min(row*4,height-cardHeight-12);
         const activity=e.event.githubActivity;
         if(activity){
           const center=left/100*width;
           positions.set(e.id,{left:center,right:center,y:y+top+cardHeight/2});
           return `<div class="sl-object sl-github-point" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button type="button" class="sl-card sl-github-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" title="${esc(e.event.summary)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}">${githubMarker(activity)}</button></div>`;
         }
+        if (window.CalendarLaneEvents.isGarminActivity(e.event)) {
+          const center = left / 100 * width;
+          const middle = top + cardHeight / 2;
+          positions.set(e.id, {left:center,right:center,y:y+middle});
+          const label = esc(e.event.summary || 'Garmin activity');
+          const times = new Date(e.start).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) +
+            ' – ' + new Date(e.end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+          const duration = pct(e.end) - left;
+          return `<span class="sl-activity-duration" style="left:${left}%;width:${duration}%;top:${middle}px;--object:${color}" aria-hidden="true"></span>
+            <div class="sl-object sl-activity-point" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}">
+              <button type="button" class="sl-card sl-activity-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}"
+                title="${label} · ${esc(times)}" aria-label="${label}, ${esc(times)}">${window.CalendarLaneEvents.garminActivityIcon(e.event)}</button>
+            </div>`;
+        }
         const duration=pct(e.end)-left,objectWidth=Math.min(100-left,Math.max(72/width*100,duration));
         const icon=STATUS_ICONS[e.status]||{meeting:'●',task:'▰',milestone:'◆'}[e.kind];
         positions.set(e.id,{left:left/100*width,right:(left+objectWidth)/100*width,y:y+top+cardHeight/2});
-        return `<div class="sl-object" style="left:${left}%;width:${objectWidth}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button class="sl-card ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" draggable="${(collectionId==='linked-project'&&!!e.event.projectLinkId)||(collectionId==='layers'&&selectedMode==='basic'&&!!e.event.key&&!laneMoveId)}" title="${esc(e.event.summary)} · ${esc(e.status)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}, ${e.kind}, ${e.status}"><span>${icon}</span> ${esc(e.event.summary)}</button><span class="sl-duration" style="width:${Math.min(100,duration/objectWidth*100)}%"></span>${connect?`<button class="sl-port sl-port-in" data-port="start" data-item="${esc(e.id)}" aria-label="Connect to start of ${esc(e.event.summary)}"></button><button class="sl-port sl-port-out" data-port="end" data-item="${esc(e.id)}" aria-label="Connect from end of ${esc(e.event.summary)}"></button>`:''}</div>`;
+        return `<div class="sl-object" style="left:${left}%;width:${objectWidth}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button class="sl-card ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" draggable="${(collectionId==='linked-project'&&!!e.event.projectLinkId)||(collectionId==='layers'&&!reviewColors&&selectedMode==='basic'&&!!e.event.key&&!laneMoveId)}" title="${esc(e.event.summary)} · ${esc(e.status)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}, ${e.kind}, ${e.status}"><span>${icon}</span> ${esc(e.event.summary)}</button><span class="sl-duration" style="width:${Math.min(100,duration/objectWidth*100)}%"></span>${connect?`<button class="sl-port sl-port-in" data-port="start" data-item="${esc(e.id)}" aria-label="Connect to start of ${esc(e.event.summary)}"></button><button class="sl-port sl-port-out" data-port="end" data-item="${esc(e.id)}" aria-label="Connect from end of ${esc(e.event.summary)}"></button>`:''}</div>`;
       }).join('')}${Date.now()>=start&&Date.now()<end?`<span class="sl-now" style="left:${pct(Date.now())}%"></span>`:''}</div></section>`);y+=height;
     });
-    side.innerHTML=docked&&!namesInBoard?`<div class="sl-label sl-axis-label">Lanes</div>${titles.join('')}`:'';
+    side.innerHTML=docked&&!namesInBoard?`<div class="sl-label sl-axis-label">${esc(dayLabel || 'Lanes')}</div>${titles.join('')}`:'';
     host.querySelector('#sl-rows').innerHTML=markup.join('')||'<p class="sl-empty">No work layers loaded. Choose the example or mark an account event as Work.</p>';
-    if(list.length&&!positions.size){
+    if(laneItems.length&&!positions.size&&!heartTrace.length){
       const hint=collectionId==='linked-project'&&list.some(item=>item.event.githubActivity)
         ? 'No objects in this window. Use Go to latest GitHub activity to find the newest record.'
         : 'No objects in this window. Use Fit to find this project.';
       host.querySelector('#sl-rows').insertAdjacentHTML('beforeend',`<p class="sl-empty">${hint}</p>`);
+    }
+    if (y && heartTrace.length) {
+      let low=50,high=150;
+      for (const [,bpm] of heartTrace) {
+        low=Math.min(low,bpm);
+        high=Math.max(high,bpm);
+      }
+      const points=heartTrace.map(([time,bpm])=>({
+        time,x:(pct(time)/100*width).toFixed(1),
+        y:(6+(1-(bpm-low)/(high-low))*(y-12)).toFixed(1),
+      }));
+      const gap=30*60000;
+      const path=points.map(({time,x,y},i)=>{
+        const command=i===0||time-points[i-1].time>gap?'M':'L';
+        return `${command}${x},${y}`;
+      }).join(' ');
+      const isolated=points.filter(({time},i)=>
+        (i===0||time-points[i-1].time>gap)&&(i===points.length-1||points[i+1].time-time>gap));
+      const dots=isolated.map(({x,y})=>`<circle cx="${x}" cy="${y}" r="2"/>`).join('');
+      const axis=host.querySelector('.sl-axis');
+      const trackLeft=axis.offsetLeft+axisTrack.offsetLeft;
+      host.querySelector('.sl-board').insertAdjacentHTML('beforeend',`<svg class="sl-heart-trace" style="left:${trackLeft}px;width:${width}px;top:${axis.offsetHeight}px;height:${y}px" viewBox="0 0 ${width} ${y}" preserveAspectRatio="none" role="img" aria-label="Heart rate over the selected time window"><path d="${path}"/>${dots}</svg>`);
     }
     const links=[];
     list.forEach(target=>target.dependencies.forEach(from=>{
@@ -341,7 +399,7 @@
       links.push(`<g><path class="sl-link" d="${path}" marker-end="url(#sl-arrow)"/><path class="sl-link-hit" data-link-from="${esc(from)}" data-link-to="${esc(target.id)}" d="${path}" tabindex="0" role="button" aria-label="Dependency to ${esc(target.event.summary)}"/>${connect&&writable(target)?`<circle class="sl-route-handle" cx="${bend}" cy="${(a.y+b.y)/2}" r="4" data-route-from="${esc(from)}" data-route-to="${esc(target.id)}" aria-label="Drag to snap connector routing"/>`:''}</g>`);
     }));
     if(y)host.querySelector('.sl-board').insertAdjacentHTML('beforeend',`<svg class="sl-links" style="height:${y}px" viewBox="0 0 ${width} ${y}" preserveAspectRatio="none" aria-label="Item relationships"><defs><marker id="sl-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L6 3 L0 6" fill="#7e929d"/></marker></defs>${links.join('')}<path id="sl-draft"/></svg>`);
-    if(selectedMode==='basic'&&collectionId==='layers'){
+    if(selectedMode==='basic'&&collectionId==='layers'&&!reviewColors){
       const sizes={};for(const row of host.querySelectorAll('.sl-lane')){const name=selectedLayerNames.find(name=>window.CalendarLaneEvents.label(name)===row.dataset.dropLane);if(name)sizes[name]=row.offsetHeight;}
       parentSend({type:'CIRCAEVUM_LANE_ROW_SIZES',sizes});
     }
@@ -403,7 +461,7 @@
     const link=e.target.closest('[data-link-from]');if(link){selectedLink={from:link.dataset.linkFrom,to:link.dataset.linkTo};selected=selectedLink.to;panelMode='event';render();return;}
     const assign=e.target.closest('[data-assign-lane]');if(assign){assignProjectEvent(assign.dataset.assignId,assign.dataset.assignLane);return;}
     const card=e.target.closest('[data-id]');if(card){selected=card.dataset.id;panelMode='event';render();return;}
-    const lane=e.target.closest('[data-lane]');if(lane){const key=lane.dataset.lane;if(selectedMode!=='basic'&&collectionId!=='linked-project')return;if(collectionId==='linked-project'){const name=lane.closest('.sl-label')?.dataset.workLane;if(workLaneOrder.has(name)){parentSend({type:'CIRCAEVUM_CONFIGURE_PROJECT_LANE',project,lane:name});return;}}if(kept.has(key))kept.delete(key);else if(selectedMode!=='basic'||kept.size<3)kept.add(key);else notice='Choose up to three lanes for the lowered view.';if(kept.has(key))requestLaneData(true);render();return;}
+    const lane=e.target.closest('[data-lane]');if(lane){if(reviewColors)return;const key=lane.dataset.lane;if(selectedMode!=='basic'&&collectionId!=='linked-project')return;if(collectionId==='linked-project'){const name=lane.closest('.sl-label')?.dataset.workLane;if(workLaneOrder.has(name)){parentSend({type:'CIRCAEVUM_CONFIGURE_PROJECT_LANE',project,lane:name});return;}}if(kept.has(key))kept.delete(key);else if(selectedMode!=='basic'||kept.size<3)kept.add(key);else notice='Choose up to three lanes for the lowered view.';if(kept.has(key))requestLaneData(true);render();return;}
     const remove=e.target.closest('[data-remove-link]');if(remove){const target=items().find(x=>x.id===selected);if(target)await saveWork(target,{...target.event.work,dependencies:target.dependencies.filter(x=>x!==remove.dataset.removeLink),links:target.links.filter(x=>x.uid!==remove.dataset.removeLink)});return;}
     const tick=e.target.closest('[data-time]');if(tick){focus=Number(tick.dataset.time);start=focus-span/2;changedTime();render();return;}
     const action=e.target.closest('[data-action]')?.dataset.action;if(!action)return;
@@ -416,13 +474,21 @@
       if(dates.length){start=Math.max(...dates)-span/2;changedTime();render();}
       return;
     }
-    if(action==='retry-lanes'){requestLaneData(true);render();return;}
+    if(action==='review-empty'){reviewShowEmpty=!reviewShowEmpty;render();return;}
+    if(action==='retry-lanes'){requestLaneData(true,true);render();return;}
     if(action==='basic-size'){expanded=!expanded;notice=expanded?'Select up to three lane headers, then Show selected.':'';render();return;}
     if(action==='expand'){expanded=!expanded;render();return;}if(action==='panel-event'){panelMode='event';syncPanel(true);if(selected)detail(selected);else if(sceneDetail.hidden)eventMode.querySelector('#sl-detail').innerHTML='<p>Select an event in the scene or Swim Lanes.</p>';return;}if(action==='panel-timeline'){panelMode='timeline';syncPanel();return;}
     if(action==='close')return setOpen(false);if(action==='edit')return editor(selected);if(action==='new')return editor(null);
     if(action==='route-style'&&selectedLink){const target=items().find(e=>e.id===selectedLink.to);if(target){const spec=target.links.find(l=>l.uid===selectedLink.from)||{};await saveWork(target,{...target.event.work,links:target.links.filter(l=>l.uid!==selectedLink.from).concat({...spec,uid:selectedLink.from,route:'elbow',offset:0})});}return;}
     if(action==='focus'){const item=items().find(e=>e.id===selected);if(item){start=item.start-span/2;changedTime();} }
     if(action==='share-lane'){const item=items().find(e=>e.id===selected);if(item)parentSend({type:'CIRCAEVUM_SHARE_WORK_LANE',uid:item.event.uid});return;}
+    if ((reviewColors || zoom==='day' || zoom==='clock') && ['prev','next','today'].includes(action)) {
+      const day = new Date(action==='today'?Date.now():focus);
+      day.setDate(day.getDate()+(action==='next'?1:action==='prev'?-1:0));
+      day.setHours(12,0,0,0);
+      if(zoom!=='clock')zoom='day';
+      start=+day-span/2;changedTime();return;
+    }
     if(action==='prev')start-=span;if(action==='next')start+=span;if(action==='today')start=Date.now()-span/2;
     if(['prev','next','today'].includes(action))changedTime();
     if(action==='fit')fit();if(action==='density')compact=!compact;if(action==='connect'){connect=!connect;linkStart=null;notice='';}
@@ -438,7 +504,7 @@
   }
   function assignProjectEvent(id,lane){
     const item=items().find(e=>e.id===id)
-    if(collectionId==='layers'&&selectedMode==='basic'&&item?.event.key&&!laneMoveId){
+    if(collectionId==='layers'&&!reviewColors&&selectedMode==='basic'&&item?.event.key&&!laneMoveId){
       const destination=selectedLayerNames.find(name=>window.CalendarLaneEvents.label(name)===lane);
       if(!destination||item.lane===lane)return;
       laneMoveId=crypto.randomUUID();notice='Moving event…';
@@ -459,6 +525,7 @@
   side.addEventListener('change',onControlChange);
   host.addEventListener('wheel',e=>{
     if(e.ctrlKey||!e.target.closest('.sl-board-scroll'))return;
+    if(reviewColors&&!e.shiftKey)return;
     const delta=Math.abs(e.deltaX)>Math.abs(e.deltaY)*.3?e.deltaX:e.shiftKey?e.deltaY:0;if(!delta)return;
     e.preventDefault();e.stopPropagation();queuedPan+=delta*(e.deltaMode===1?16:e.deltaMode===2?600:1);
     if(panFrame===null)panFrame=requestAnimationFrame(()=>{const width=host.querySelector('.sl-axis-track')?.clientWidth||800;start+=queuedPan/width*span;queuedPan=0;panFrame=null;changedTime();render();});
@@ -499,17 +566,20 @@
   window.openSwimCollection=function(colId){
     if(!modeEnabled(colId))return;
     if(appLayout()&&colId==='health'){window.openSwimLayerNames(['Garmin Sleep','Garmin Activity','Garmin Workout'],'Garmin','health');return;}
+    reviewColors=null;
     const g=gl();
     const ids=(g?.getLayerIds?.()||[]).filter(id=>g.getLayer(id)?.collection===colId).sort((a,b)=>(g.getLayer(a).laneOrder||0)-(g.getLayer(b).laneOrder||0));
     laneRank=new Map(ids.map(id=>[g.getLayer(id).laneName||g.getLayer(id).name, g.getLayer(id).laneOrder||0]));
     selectedMode=colId;expanded=colId==='basic';notice=expanded?'Select up to three lane headers, then Show selected.':''; collectionId=colId; collectionLabel=ids.length?g.getLayer(ids[0]).collectionLabel:colId;
     supplied=eventsForLayers(ids); source='loaded'; project=supplied[0]?.work?.project||''; kept.clear(); setOpen(true);
   };
-  window.openSwimLayerNames=function(names, title, mode='basic'){
+  window.openSwimLayerNames=function(names, title, mode='basic', colors){
     if(!modeEnabled(mode))return;
     names=window.CalendarLaneEvents.selectionNames(names,title,mode);
-    const append=mode==='basic'&&selectedMode==='basic'&&opened&&collectionId==='layers';
-    selectedMode=mode;expanded=mode==='basic';notice=expanded?'Select up to three lane headers, then Show selected.':'';
+    const append=!colors&&!reviewColors&&mode==='basic'&&selectedMode==='basic'&&opened&&collectionId==='layers';
+    reviewColors=colors?new Map(Object.entries(colors).filter(([,color])=>/^#[0-9a-f]{6}$/i.test(color))):null;
+    if(reviewColors){reviewShowEmpty=false;parentSend({type:'CIRCAEVUM_LANE_ROW_SIZES',sizes:{}});}
+    selectedMode=mode;expanded=mode==='basic'&&!reviewColors;notice=expanded?'Select up to three lane headers, then Show selected.':'';
     const g=gl(); if(!g?.getLayerIds) return;
     const removing=append&&names?.length===1&&selectedLayerNames.includes(names[0]);
     selectedLayerNames=removing?selectedLayerNames.filter(name=>name!==names[0]):[...new Set([...(append?selectedLayerNames:[]),...(names||[])])];
@@ -517,7 +587,7 @@
     if(!selectedLayerNames.length){laneRequestId='';laneRequestKey='';supplied=[];parentSend({type:'CIRCAEVUM_LANE_ROW_SIZES',sizes:{}});setOpen(false);return;}
 
     laneRank=new Map(selectedLayerNames.map((name,i)=>[window.CalendarLaneEvents.label(name),i]));
-    collectionId='layers'; collectionLabel=mode==='basic'?'Basic calendars':title||'Calendar';
+    collectionId='layers'; collectionLabel=mode==='basic'&&!reviewColors?'Basic calendars':title||'Calendar';
     if(!append)fetchedLaneEvents=[];
     supplied=appLayout()?window.CalendarLaneEvents.projectFetched(fetchedLaneEvents,selectedLayerNames,collectionLabel):window.CalendarLaneEvents.project(g,selectedLayerNames,collectionLabel);
     source='loaded'; project=collectionLabel; if(!append)kept.clear();laneRequestKey=''; setOpen(true);
@@ -535,7 +605,7 @@
       githubDelivery=data.github||null;
       supplied=data.events;
       if(data.update){if(opened)render();return;}
-      selectedMode='work';collectionId='linked-project';collectionLabel=data.project||'Project';
+      reviewColors=null;selectedMode='work';collectionId='linked-project';collectionLabel=data.project||'Project';
       source='loaded';project=collectionLabel;laneRank=workLaneOrder;kept.clear();setOpen(true);
     }
     if(data?.type==='CIRCAEVUM_REOPEN_SWIM_LANES'){reopenSwimLanes();return;}
@@ -544,7 +614,7 @@
       if(!modeEnabled('work'))return;
       source=data.source||(loaded().some(x=>M.normalize(x))?'loaded':'example');
       if(source==='loaded'&&workSupplied!==null)supplied=workSupplied;
-      selectedMode='work';project=data.project||'';collectionId='work-project';collectionLabel='Work';laneRank=workLaneOrder;kept.clear();setOpen(true);
+      reviewColors=null;selectedMode='work';project=data.project||'';collectionId='work-project';collectionLabel='Work';laneRank=workLaneOrder;kept.clear();setOpen(true);
     }
     // Old deep links/messages now open the calendar, never the retired columns page.
     if(data?.type==='CIRCAEVUM_OPEN_WORK_MODE')window.openSwimCollection('work');
@@ -562,10 +632,18 @@
     if(data?.type==='CIRCAEVUM_LANE_ANCHORS'){laneAnchors=data;alignLaneRows();}
     if(data?.type==='CIRCAEVUM_LANES_RESULT'&&collectionId==='layers'&&data.requestId===laneRequestId){
       laneLoading=false;laneError=data.error||'';
+      unavailableLanes=new Set(Array.isArray(data.unavailableLanes)?data.unavailableLanes:[]);
       if(!laneError){fetchedLaneEvents=data.events||[];supplied=window.CalendarLaneEvents.projectFetched(fetchedLaneEvents,selectedLayerNames,collectionLabel);}
       if(opened)render();
     }
-    if(data?.type==='CIRCAEVUM_OPEN_LAYERS'&&Array.isArray(data.layerNames))window.openSwimLayerNames(data.layerNames, data.title, data.mode);
+    if(data?.type==='CIRCAEVUM_REFRESH_GARMIN_LANES'&&opened&&
+      (reviewColors||selectedLayerNames.some(name=>name.startsWith('Garmin ')))){requestLaneData(true);render();}
+    if(data?.type==='CIRCAEVUM_REVIEW_WORK'&&Array.isArray(data.events)){
+      reviewWork=data.events;
+      if(reviewColors&&opened)render();
+    }
+    if(data?.type==='CIRCAEVUM_REFRESH_REVIEW_LANES'&&reviewColors&&opened){requestLaneData(true);render();}
+    if(data?.type==='CIRCAEVUM_OPEN_LAYERS'&&Array.isArray(data.layerNames))window.openSwimLayerNames(data.layerNames, data.title, data.mode, data.reviewColors);
     if(data?.type==='CIRCAEVUM_WORK_SAVED'){const p=pending.get(data.requestId);if(!p)return;clearTimeout(p.timer);pending.delete(data.requestId);if(data.error)p.reject(new Error(data.error));else{if(supplied&&data.event)supplied=supplied.map(x=>x.uid===data.event.uid&&x.workAccess?.canWrite?{...x,...data.event}:x);p.resolve();}}
   });
   // The viewer initializes after these scripts; read its selected time once ready.

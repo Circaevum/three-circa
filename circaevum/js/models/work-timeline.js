@@ -69,9 +69,33 @@
     if (item.status === 'no-outcome' || item.end < now) return 'past';
     return 'upcoming';
   }
+  function localDayWindow(focus) {
+    const day = new Date(focus);
+    if (!Number.isFinite(+day)) return null;
+    day.setHours(0, 0, 0, 0);
+    const start = +day;
+    day.setDate(day.getDate() + 1);
+    return { start, span: +day - start, context: null };
+  }
   function ticks(start, end, zoom) {
     const result = [], d = new Date(start);
-    if (zoom === 'month' || zoom === 'quarter' || zoom === 'week') {
+    if (zoom === 'day') {
+      d.setHours(0, 0, 0, 0);
+      while (+d < end && result.length < 100) {
+        if (+d >= start) result.push(+d);
+        d.setHours(d.getHours() + 3, 0, 0, 0);
+      }
+    } else if (zoom === 'hour') {
+      const targetMinutes = (end - start) / (8 * 60000);
+      const steps = [5, 10, 15, 30, 60, 120, 180, 360, 720, 1440];
+      const step = steps.find(minutes => minutes >= targetMinutes) || steps.at(-1);
+      const minutes = d.getHours() * 60 + d.getMinutes();
+      d.setHours(0, Math.floor(minutes / step) * step, 0, 0);
+      while (+d < end && result.length < 100) {
+        if (+d >= start) result.push(+d);
+        d.setMinutes(d.getMinutes() + step, 0, 0);
+      }
+    } else if (zoom === 'month' || zoom === 'quarter' || zoom === 'week') {
       d.setHours(0,0,0,0);
       if (zoom !== 'week') d.setDate(d.getDate() + (8-d.getDay())%7);
       if (+d < start) d.setDate(d.getDate() + (zoom === 'week' ? 1 : 7));
@@ -97,7 +121,7 @@
       followUpDue: Number.isFinite(e.followUpAt) && e.followUpAt <= now && !['done','cancelled'].includes(e.status),
       noFollowUp: e.kind==='meeting' && e.end<now && !outgoing.has(e.id) && !['cancelled','no-outcome'].includes(e.status)}));
   }
-  const api = { DAY, statuses, workflows, time, normalize, pack, dependencyState, seed, semantic, ticks, cycle, report };
+  const api = { DAY, statuses, workflows, time, normalize, pack, dependencyState, seed, semantic, localDayWindow, ticks, cycle, report };
   if (typeof module !== 'undefined') module.exports = api;
   root.WorkTimeline = api;
 })(typeof window !== 'undefined' ? window : globalThis);
