@@ -29,9 +29,35 @@
   function selectionNames(names,title,mode){
     const selected=[...new Set(names||[])];
     return mode==='health'&&(String(title).toLowerCase().includes('garmin')||selected.some(name=>name.startsWith('Garmin ')))
-      ? [...new Set(['Garmin Sleep','Garmin Activity','Garmin Workout',...selected])] : selected;
+      ? [...new Set(['Garmin Workout',...selected.filter(name=>!Object.hasOwn(labels,name)),'Garmin Sleep','Garmin Activity'])] : selected;
   }
-  const api = {project, projectFetched, rowKey, selectionNames, label:name=>labels[name] || name};
+  function isGarminActivity(event) {
+    return event?.circaevumSourceDetail === 'garmin_activity' || event?.category === 'Garmin Workout';
+  }
+
+  function garminActivityIcon(event) {
+    const type = String(event.activityType || event.summary || '').toLowerCase();
+    if (/cycl|bik/.test(type)) return '🚲';
+    if (/runn|run\b|jog/.test(type)) return '🏃';
+    if (/swim/.test(type)) return '🏊';
+    if (/walk|hik/.test(type)) return '🚶';
+    if (/strength|weight|train/.test(type)) return '🏋';
+    return '●';
+  }
+
+  function heartTrace(items, start, end) {
+    const samples = new Map();
+    for (const item of items) {
+      for (const point of item.event.render?.summary || []) {
+        const time = item.start + point.tOff;
+        if (Number.isFinite(time) && time >= start && time < end && Number.isFinite(point.v) && point.v > 0) {
+          samples.set(time, point.v);
+        }
+      }
+    }
+    return [...samples].sort(([a],[b]) => a-b);
+  }
+  const api = {project, projectFetched, rowKey, selectionNames, heartTrace, isGarminActivity, garminActivityIcon, label:name=>labels[name] || name};
   if (typeof module !== 'undefined' && module.exports) module.exports=api;
   else root.CalendarLaneEvents=api;
 })(typeof window !== 'undefined' ? window : globalThis);

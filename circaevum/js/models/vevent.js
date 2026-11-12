@@ -51,6 +51,7 @@ class VEvent {
     this.circaevumSource = data.circaevumSource || null;
     this.circaevumEdited = data.circaevumEdited === true;
     this.circaevumSourceDetail = data.circaevumSourceDetail || null;
+    this.activityType = data.activityType || null;
     this.key = data.key || null;
   }
 

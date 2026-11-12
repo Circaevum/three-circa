@@ -33,6 +33,15 @@ body.viewer-no-nav #swim-lanes{top:auto}
 .sl-axis{height:30px;background:var(--paper);position:relative;z-index:4}.sl-label{padding:6px 9px;border-right:1px solid var(--line);background:linear-gradient(rgba(var(--workflow,100,120,140),var(--tint)),rgba(var(--workflow,100,120,140),var(--tint))),var(--paper);position:relative;z-index:2;min-width:0}
 .sl-label small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:9px}
 #swim-lanes .sl-lane-title{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;border:0;padding:0;min-height:0;background:transparent;text-align:left;font-size:11px;font-weight:600}
+.sl-label:has(.sl-add-marker) { padding-inline-end: 48px; }
+#swim-lanes .sl-add-marker {
+  position: absolute;
+  inset-block-start: 5px;
+  inset-inline-end: 6px;
+  min-height: 24px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
 .sl-track{position:relative;min-width:0;background:rgba(var(--workflow,100,120,140),var(--tint))}
 #swim-lanes .sl-tick{position:absolute;top:4px;border:0;background:transparent;font-size:10px;white-space:nowrap;padding:3px 4px;min-height:20px}
 #swim-lanes .sl-gridline,#swim-lanes .sl-context,#swim-lanes .sl-now,#swim-lanes .sl-duration{pointer-events:none}
@@ -40,6 +49,8 @@ body.viewer-no-nav #swim-lanes{top:auto}
 .sl-context{position:absolute;top:0;bottom:0;background:#2fc1d512;border-inline:1px solid #3eafbd88}
 .sl-now{position:absolute;top:0;bottom:0;border-left:1px solid #d86666;z-index:3}
 .sl-object{position:absolute;z-index:3;min-width:6px}
+.sl-object:has(.sl-card.sl-selected){z-index:4}
+.sl-object:focus-within{z-index:5}
 #swim-lanes .sl-card{width:100%;height:100%;min-height:0;display:block;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid color-mix(in srgb,var(--object) 48%,var(--line));border-left:3px solid var(--object);border-radius:3px;padding:0 4px;font-size:10px;line-height:17px;background:color-mix(in srgb,var(--object) 12%,var(--paper));color:var(--ink)}
 #swim-lanes .sl-card.sl-selected{outline:2px solid #57b7ce;outline-offset:1px}
 .sl-duration{position:absolute;bottom:-2px;left:0;height:2px;background:var(--object);min-width:2px}
@@ -326,3 +337,42 @@ body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-notice{display:block
 }
 #swim-lanes .sl-card.sl-github-marker:hover,
 #swim-lanes .sl-card.sl-github-marker.sl-selected { background: var(--paper); }
+
+.sl-activity-point { width: 22px; transform: translateX(-50%); }
+#swim-lanes .sl-card.sl-activity-marker {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  border-left-width: 1px;
+  font-size: 13px;
+}
+.sl-activity-duration {
+  position: absolute;
+  border-top: 1px solid var(--object);
+  pointer-events: none;
+}
+
+.sl-heart-trace { position: absolute; z-index: 4; overflow: hidden; pointer-events: none; }
+.sl-heart-trace path { fill: none; stroke: #ff5969; stroke-width: 1.5; vector-effect: non-scaling-stroke; opacity: .8; }
+.sl-heart-trace circle { fill: #ff5969; }
+.sl-heart-legend { margin: 0; padding: 4px 12px; font-size: 11px; }
+.sl-heart-legend span { display: inline-block; width: 14px; border-top: 2px solid #ff5969; vertical-align: middle; }
+
+body.portal-calendar-layout #swim-lanes.sl-review {
+  --lane-label-width: clamp(92px, 15vw, 154px);
+  height: min(52vh, 470px);
+  overflow: hidden;
+}
+#swim-lanes.sl-review .sl-board { min-width: 0; width: 100%; }
+#swim-lanes.sl-review:not(.sl-row-attached) .sl-board-scroll {
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+#swim-lanes.sl-review .sl-bar { flex-wrap: wrap; }
+@media (max-width: 640px) {
+  #swim-lanes.sl-review .sl-tick:nth-of-type(even) { visibility: hidden; }
+}

@@ -1079,17 +1079,11 @@
     return true;
   }
 
-  /** Moment (0): hide all LTEs. Clock (9): hide multi-day LTEs only; single all-day (24h) events pass through. Day zoom (8) keeps all LTEs. */
+  /** Hour, Day, and Clock show sub-day and single-day spans only. */
   function shouldHideLongTermOnDailySkySte(start, end) {
     const zl = getZoomLevelForEvents();
-    if (zl !== 0 && zl !== 9) return false;
-    if (!start || isNaN(start.getTime())) return false;
-    const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
-    // Clock zoom: allow single all-day events (24h) to render; only hide multi-day spans.
-    if (zl === 9) return durationDaysBetween(start, evEnd) >= 2;
-    if (isLongTermEventSpanForPlotType(start, evEnd)) return true;
-    if (durationDaysBetween(start, evEnd) >= 2) return true;
-    return false;
+    if (zl !== 0 && zl !== 8 && zl !== 9) return false;
+    return !!start && !!end && durationDaysBetween(start, end) > 1;
   }
 
   function isLongTermSpanForDailySky(start, end) {
@@ -2197,6 +2191,10 @@
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     const zl = getZoomLevelForEvents();
     if (zl === 1 || zl === 2) return true;
+    if (isEarthDailySkyEventZoom(zl)) {
+      if (shouldHideLongTermOnDailySkySte(start, evEnd)) return false;
+      if (isCircadianShortEventsShiftPreview()) return eventAllowedUnderShiftPeek(start, evEnd);
+    }
     if (isSuperYearDurationDays(durationDaysBetween(start, evEnd))) return true;
     if (!eventTouchesPersistentMeshWindow(start, evEnd)) return false;
     if (eventInSelectedNestZonesForVividColor(start, evEnd)) return true;
@@ -5534,6 +5532,8 @@
   }
 
   function getEventSummaryText(event, start, end) {
+    const activity = window.CalendarLaneEvents;
+    if (activity?.isGarminActivity(event)) return activity.garminActivityIcon(event);
     if (typeof VEvent !== 'undefined' && event instanceof VEvent) {
       const s = event.summary;
       const base = s && String(s).trim() ? String(s).trim() : null;
@@ -8986,6 +8986,10 @@
     if (!start || isNaN(start.getTime())) return false;
     const evEnd = end && end > start ? end : new Date(start.getTime() + 3600000);
     if ((zl === 1 || zl === 2) && isSuperYearDurationDays(durationDaysBetween(start, evEnd))) return true;
+    if (isEarthDailySkyEventZoom(zl)) {
+      if (shouldHideLongTermOnDailySkySte(start, evEnd)) return false;
+      if (isCircadianShortEventsShiftPreview()) return eventAllowedUnderShiftPeek(start, evEnd);
+    }
     if (!eventTouchesSelectedContextArcWindow(start, evEnd)) return false;
 
     if (!isEarthDailySkyEventZoom(zl)) return true;

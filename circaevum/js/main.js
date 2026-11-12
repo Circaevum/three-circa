@@ -551,7 +551,12 @@ if (typeof window !== 'undefined') {
             circadianShortEventsShiftPreview = wantPreview;
             changed = true;
         }
-        if (changed) refreshShiftPreviewScene();
+        if (changed) {
+            refreshShiftPreviewScene();
+            if (wantPreview && window.parent !== window) {
+                window.parent.postMessage({ type: 'CIRCAEVUM_SHIFT_PEEK' }, '*');
+            }
+        }
     };
     window.setCircadianShortEventsShiftPreview = function (active) {
         if (active && modifierMetaHeld) return;
