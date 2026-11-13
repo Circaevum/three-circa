@@ -360,6 +360,20 @@
                 title="${label} · ${esc(times)}" aria-label="${label}, ${esc(times)}">${window.CalendarLaneEvents.garminActivityIcon(e.event)}</button>
             </div>`;
         }
+        if (window.CalendarLaneEvents.isGarminActivity(e.event)) {
+          const center = left / 100 * width;
+          const middle = top + cardHeight / 2;
+          positions.set(e.id, {left:center,right:center,y:y+middle});
+          const label = esc(e.event.summary || 'Garmin activity');
+          const times = new Date(e.start).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) +
+            ' – ' + new Date(e.end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+          const duration = pct(e.end) - left;
+          return `<span class="sl-activity-duration" style="left:${left}%;width:${duration}%;top:${middle}px;--object:${color}" aria-hidden="true"></span>
+            <div class="sl-object sl-activity-point" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}">
+              <button type="button" class="sl-card sl-activity-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}"
+                title="${label} · ${esc(times)}" aria-label="${label}, ${esc(times)}">${window.CalendarLaneEvents.garminActivityIcon(e.event)}</button>
+            </div>`;
+        }
         const duration=pct(e.end)-left,objectWidth=Math.min(100-left,Math.max(72/width*100,duration));
         const icon=STATUS_ICONS[e.status]||{meeting:'●',task:'▰',milestone:'◆'}[e.kind];
         positions.set(e.id,{left:left/100*width,right:(left+objectWidth)/100*width,y:y+top+cardHeight/2});
