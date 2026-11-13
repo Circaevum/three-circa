@@ -113,6 +113,12 @@
     if(!appLayout()||source!=='loaded')return null;
     return item?.event.calendarEditKey||null;
   }
+  const canLink = item => !!item && (writable(item) || item.access?.canTrack === true);
+  function connectionPorts(item){
+    if(!connect)return '';
+    return `<button type="button" class="sl-port sl-port-in" data-port="start" data-item="${esc(item.id)}" aria-label="Start of ${esc(item.event.summary)}"></button>
+      <button type="button" class="sl-port sl-port-out" data-port="end" data-item="${esc(item.id)}" aria-label="End of ${esc(item.event.summary)}"></button>`;
+  }
   function writable(item){return source==='example'||item?.access?.canWrite===true;}
   function showLeft(){
     if(appLayout())return false;
@@ -206,6 +212,16 @@
     return 'year';
   }
   function windowFromPayload(payload){
+    if (payload?.zoom === 7) {
+      const weekStart = new Date(payload.focus || focus);
+      if (Number.isFinite(+weekStart)) {
+        weekStart.setHours(0,0,0,0);
+        weekStart.setDate(weekStart.getDate()-weekStart.getDay());
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate()+7);
+        return {start:+weekStart,span:weekEnd-weekStart,context:null};
+      }
+    }
     if (payload?.zoom === 8 || payload?.zoom === 9) {
       const day = M.localDayWindow(payload.focus);
       if (day) return day;
@@ -219,7 +235,7 @@
     return {start:center-width/2,span:width,context:null};
   }
   function readContext(recenter=false){
-    if(pushing)return;
+    if(pushing||syncTimer)return;
     let payload;try{payload=window.getEmbedContextArcPayload?.();}catch(_){return;}if(!payload?.focus)return;
     initialized=true;
     const next=Date.parse(payload.focus);if(!Number.isFinite(next))return;
@@ -233,6 +249,7 @@
   function changedTime(){
     focus=start+span/2;clearTimeout(syncTimer);
     syncTimer=setTimeout(()=>{
+      syncTimer=null;
       const viewer=gl();if(!viewer)return;
       pushing=true;
       try {
@@ -322,6 +339,8 @@
     const heartTrace=window.CalendarLaneEvents.heartTrace(heartItems,start,end);
     const laneItems=overlayHeart?list.filter(item=>item.lane!=='Heart'):list;
     const dayLabel=fullDay ? new Date(start).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) : '';
+    const selectedTime=focus>=start&&focus<end
+      ? `<span class="sl-selected-time" style="left:${pct(focus)}%" aria-hidden="true"></span>`:'';
     const dateWindow=dayLabel || `${fmt(start)} – ${fmt(end)}`;
     const localZone=new Intl.DateTimeFormat(undefined,{timeZoneName:'short'}).formatToParts(new Date(start))
       .find(part=>part.type==='timeZoneName')?.value || '';
@@ -329,7 +348,7 @@
     const dateControls=`<button type="button" data-action="prev" aria-label="Previous ${stepLabel}" title="Previous ${stepLabel}">←</button>
       <button type="button" data-action="today">Today</button>
       <button type="button" data-action="next" aria-label="Next ${stepLabel}" title="Next ${stepLabel}">→</button>
-      <input id="sl-date" type="date" aria-label="Go to date" value="${localDate(focus)}">`;
+      <input id="sl-date" type="date" title="Selected time: ${esc(new Date(focus).toLocaleString())}" aria-label="Go to date" value="${localDate(focus)}">`;
     const selectedEvent=list.find(item=>item.id===selected&&item.start<end&&(item.end>start||item.start>=start));
     const iconRibbon=`<div class="sl-icon-ribbon" role="group" aria-label="Event icon">
       <span>${canChooseIcon(selectedEvent)?esc(selectedEvent.event.summary||'Event'):'Select an event'}</span>
@@ -340,9 +359,11 @@
     const creationRibbon=collectionId==='linked-project'&&canCreateProjectMarker
       ? `<details class="sl-create-work"><summary>New Work item</summary><div class="sl-icon-ribbon">${Object.entries(ITEM_TYPES).map(([type,label])=>
         `<button type="button" data-create-work-type="${type}">${label}</button>`).join('')}</div></details>`:'';
+    const connectButton=selectedMode==='work'||source==='example'
+      ? `<button type="button" data-action="connect" aria-pressed="${connect}">Connect events</button>`:'';
     const toolBits=`<label class="sl-sr">Source<select id="sl-source"><option value="example" ${source==='example'?'selected':''}>OpenAMI / ISV example</option><option value="loaded" ${source==='loaded'?'selected':''}>My & shared work layers</option></select></label>
       ${projects.length>1?`<label class="sl-sr">Project<select id="sl-project">${projects.map(p=>`<option value="${esc(p)}" ${p===project?'selected':''}>${esc(p)}</option>`).join('')}</select></label>`:''}
-      ${dateControls}
+      ${dateControls}${connectButton}
       <label class="sl-sr">Zoom<select id="sl-zoom">${Object.keys(ZOOMS).map(k=>`<option value="${k}" ${zoom===k?'selected':''}>${k[0].toUpperCase()+k.slice(1)}</option>`).join('')}</select></label>
       <button data-action="fit">Fit</button><button data-action="density" aria-pressed="${compact}">${compact?'Compact':'Comfortable'}</button>
       ${source==='example'?'<button data-action="new">+ Item</button>':'<button data-action="refresh">Refresh</button>'}
@@ -354,7 +375,7 @@
       <p class="sl-notice" role="status">${esc(notice||accessMessage||'')}</p>`;
     const healthStatus=(selectedMode==='health'||reviewColors||unavailableLanes.size)?`<p class="sl-health-status" role="status" aria-live="polite">${laneLoading?'<span class="sl-loading-spinner"></span> Loading Health events…':laneError?'Health data could not load. Retry below.':`${list.length} events loaded for ${esc(dateWindow)}`}${unavailableLanes.size?` · Couldn’t fully load ${esc([...unavailableLanes].join(', '))}. <button data-action="retry-lanes">Retry</button>`:''}</p>`:'';
     const dockChrome=(collectionId
-      ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${dateControls}${creationRibbon}${reviewColors?`<button data-action="review-empty" aria-pressed="${reviewShowEmpty}">${reviewShowEmpty?'Hide empty lanes':'Show empty lanes'}</button><small>Powered by Garmin Connect™</small>`:selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}${iconRibbon}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
+      ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${dateControls}${connectButton}${creationRibbon}${reviewColors?`<button data-action="review-empty" aria-pressed="${reviewShowEmpty}">${reviewShowEmpty?'Hide empty lanes':'Show empty lanes'}</button><small>Powered by Garmin Connect™</small>`:selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}${iconRibbon}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
       : `<div class="sl-bar" tabindex="-1">${toolBits}${iconRibbon}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`)
       + (showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([, [label,icon]])=>`<span style="--workflow:var(--mode-rgb,37,99,235)">${icon} ${label}</span>`).join('')}</div>`:'')
       + (overlayHeart&&!laneLoading&&!laneError?`<p class="sl-heart-legend">${heartTrace.length
@@ -368,7 +389,7 @@
     const day=new Date(start);day.setHours(0,0,0,0);
     while(+day<end){const a=+day,d=day.getDay();day.setDate(day.getDate()+1);if(d===0||d===6)weekends.push(`<span class="sl-weekend" style="left:${pct(a)}%;width:${pct(+day)-pct(a)}%" aria-hidden="true"></span>`);}
     const weekendMarkup=weekends.join('');
-    const ticks=M.ticks(start,end,fullDay?'day':zoom);host.querySelector('.sl-axis-track').innerHTML=weekendMarkup+ticks.map(t=>`<button class="sl-tick" data-time="${t}" style="left:${pct(t)}%">${fullDay?new Date(t).toLocaleTimeString(undefined,{hour:'numeric'}):zoom==='hour'?new Date(t).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):fmt(t)}</button>`).join('');
+    const ticks=M.ticks(start,end,fullDay?'day':zoom);host.querySelector('.sl-axis-track').innerHTML=selectedTime+weekendMarkup+ticks.map(t=>`<button class="sl-tick" data-time="${t}" style="left:${pct(t)}%">${fullDay?new Date(t).toLocaleTimeString(undefined,{hour:'numeric'}):zoom==='hour'?new Date(t).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):fmt(t)}</button>`).join('');
     const projectRows=new Map();
     const projectRowKey=(lane,sourceLayer)=>JSON.stringify([lane,sourceLayer||'']);
     if(collectionId==='linked-project'){
@@ -434,7 +455,7 @@
         if(iconChoice){
           const center=left/100*width, middle=top+cardHeight/2;
           const right=pct(e.end);
-          positions.set(e.id,{left:center,right:right/100*width,y:y+middle});
+          positions.set(e.id,{left:center,right:center,y:y+middle});
           const title=esc(e.event.summary||'Event');
           const times=esc(new Date(e.start).toLocaleString()+' – '+new Date(e.end).toLocaleString());
           const draggable=(collectionId==='linked-project'&&!!e.event.projectLinkId)||
@@ -442,14 +463,14 @@
           return `<span class="sl-activity-duration" style="left:${left}%;width:${right-left}%;top:${middle}px;--object:${color}" aria-hidden="true"></span>
             <div class="sl-object sl-activity-point ${e.status==='waiting'?'sl-waiting':''}" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}">
               <button type="button" class="sl-card sl-activity-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}"
-                draggable="${draggable}" title="${eventIcons[iconChoice][1]} · ${title} · ${times}" aria-label="${eventIcons[iconChoice][1]}, ${title}, ${times}">${eventIcons[iconChoice][0]}</button>
+                draggable="${draggable}" title="${eventIcons[iconChoice][1]} · ${title} · ${times}" aria-label="${eventIcons[iconChoice][1]}, ${title}, ${times}">${eventIcons[iconChoice][0]}</button>${connectionPorts(e)}
             </div>`;
         }
         const activity=e.event.githubActivity;
         if(activity||isProjectMarker(e)){
           const center=left/100*width;
           positions.set(e.id,{left:center,right:center,y:y+top+cardHeight/2});
-          return `<div class="sl-object sl-github-point" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button type="button" class="sl-card sl-github-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" title="${esc(e.event.summary)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}">${activity?githubMarker(activity):workMarkerIcons[e.lane]}</button></div>`;
+          return `<div class="sl-object sl-github-point" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button type="button" class="sl-card sl-github-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" title="${esc(e.event.summary)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}">${activity?githubMarker(activity):workMarkerIcons[e.lane]}</button>${connectionPorts(e)}</div>`;
         }
         if (window.CalendarLaneEvents.isGarminActivity(e.event)) {
           const center = left / 100 * width;
@@ -468,8 +489,8 @@
         const duration=pct(e.end)-left,objectWidth=Math.min(100-left,Math.max(72/width*100,duration));
         const icon=STATUS_ICONS[e.status]||eventIcons[e.event.work?.activityType==='phone'?'call':e.event.work?.activityType]?.[0]||eventIcons[e.kind]?.[0];
         positions.set(e.id,{left:left/100*width,right:(left+objectWidth)/100*width,y:y+top+cardHeight/2});
-        return `<div class="sl-object ${e.status==='waiting'?'sl-waiting':''}" style="left:${left}%;width:${objectWidth}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button class="sl-card ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" draggable="${(collectionId==='linked-project'&&!!e.event.projectLinkId)||(collectionId==='layers'&&!reviewColors&&selectedMode==='basic'&&!!e.event.key&&!laneMoveId)}" title="${esc(e.event.summary)} · ${esc(e.status)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}, ${e.kind}, ${e.status}"><span>${icon}</span> ${esc(e.event.summary)}</button><span class="sl-duration" style="width:${Math.min(100,duration/objectWidth*100)}%"></span>${connect?`<button class="sl-port sl-port-in" data-port="start" data-item="${esc(e.id)}" aria-label="Connect to start of ${esc(e.event.summary)}"></button><button class="sl-port sl-port-out" data-port="end" data-item="${esc(e.id)}" aria-label="Connect from end of ${esc(e.event.summary)}"></button>`:''}</div>`;
-      }).join('')}${ghosts.length?`<div class="sl-ghost-followups" aria-label="Unscheduled follow-ups">${ghosts.map(f=>`<button data-id="${esc(f.sourceId)}" title="Date not set">⇢ ${esc(f.title)}</button>`).join('')}</div>`:''}${Date.now()>=start&&Date.now()<end?`<span class="sl-now" style="left:${pct(Date.now())}%"></span>`:''}</div></section>`);y+=height;
+        return `<div class="sl-object ${e.status==='waiting'?'sl-waiting':''}" style="left:${left}%;width:${objectWidth}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button class="sl-card ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" draggable="${(collectionId==='linked-project'&&!!e.event.projectLinkId)||(collectionId==='layers'&&!reviewColors&&selectedMode==='basic'&&!!e.event.key&&!laneMoveId)}" title="${esc(e.event.summary)} · ${esc(e.status)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}, ${e.kind}, ${e.status}"><span>${icon}</span> ${esc(e.event.summary)}</button><span class="sl-duration" style="width:${Math.min(100,duration/objectWidth*100)}%"></span>${connectionPorts(e)}</div>`;
+      }).join('')}${ghosts.length?`<div class="sl-ghost-followups" aria-label="Unscheduled follow-ups">${ghosts.map(f=>`<button data-id="${esc(f.sourceId)}" title="Date not set">⇢ ${esc(f.title)}</button>`).join('')}</div>`:''}${selectedTime}${Date.now()>=start&&Date.now()<end?`<span class="sl-now" style="left:${pct(Date.now())}%"></span>`:''}</div></section>`);y+=height;
     });
     side.innerHTML=docked&&!namesInBoard?`<div class="sl-label sl-axis-label">${esc(dayLabel || 'Lanes')}</div>${titles.join('')}`:'';
     host.querySelector('#sl-rows').innerHTML=markup.join('')||'<p class="sl-empty">No work layers loaded. Choose the example or mark an account event as Work.</p>';
@@ -501,6 +522,23 @@
       const trackLeft=axis.offsetLeft+axisTrack.offsetLeft;
       host.querySelector('.sl-board').insertAdjacentHTML('beforeend',`<svg class="sl-heart-trace" style="left:${trackLeft}px;width:${width}px;top:${axis.offsetHeight}px;height:${y}px" viewBox="0 0 ${width} ${y}" preserveAspectRatio="none" role="img" aria-label="Heart rate over the selected time window"><path d="${path}"/>${dots}</svg>`);
     }
+    const boardElement=host.querySelector('.sl-board');
+    const boardRect=boardElement.getBoundingClientRect();
+    const trackRect=axisTrack.getBoundingClientRect();
+    const rowsRect=host.querySelector('#sl-rows').getBoundingClientRect();
+    const linkLeft=trackRect.left-boardRect.left;
+    const linkTop=rowsRect.top-boardRect.top;
+    const linkWidth=Math.max(1,trackRect.width);
+    for(const card of boardElement.querySelectorAll('.sl-object > [data-id]')){
+      const rect=card.getBoundingClientRect();
+      const leftPort=card.parentElement.querySelector('[data-port="start"]')?.getBoundingClientRect();
+      const rightPort=card.parentElement.querySelector('[data-port="end"]')?.getBoundingClientRect();
+      positions.set(card.dataset.id,{
+        left:(leftPort?leftPort.left+leftPort.width/2:rect.left)-trackRect.left,
+        right:(rightPort?rightPort.left+rightPort.width/2:rect.right)-trackRect.left,
+        y:rect.top+rect.height/2-rowsRect.top,
+      });
+    }
     const links=[];
     list.forEach(target=>target.dependencies.forEach(from=>{
       const a=positions.get(from),b=positions.get(target.id);if(!a||!b)return;
@@ -509,7 +547,7 @@
       const path=curve(x1,a.y,x2,b.y,bend);
       links.push(`<g><path class="sl-link" d="${path}" marker-end="url(#sl-arrow)"/><path class="sl-link-hit" data-link-from="${esc(from)}" data-link-to="${esc(target.id)}" d="${path}" tabindex="0" role="button" aria-label="Dependency to ${esc(target.event.summary)}"/>${connect&&writable(target)?`<circle class="sl-route-handle" cx="${bend}" cy="${(a.y+b.y)/2}" r="4" data-route-from="${esc(from)}" data-route-to="${esc(target.id)}" aria-label="Drag to snap connector routing"/>`:''}</g>`);
     }));
-    if(y)host.querySelector('.sl-board').insertAdjacentHTML('beforeend',`<svg class="sl-links" style="height:${y}px" viewBox="0 0 ${width} ${y}" preserveAspectRatio="none" aria-label="Item relationships"><defs><marker id="sl-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L6 3 L0 6" fill="#7e929d"/></marker></defs>${links.join('')}<path id="sl-draft"/></svg>`);
+    if(y)boardElement.insertAdjacentHTML('beforeend',`<svg class="sl-links" style="left:${linkLeft}px;top:${linkTop}px;width:${linkWidth}px;height:${y}px" viewBox="0 0 ${linkWidth} ${y}" preserveAspectRatio="none" aria-label="Item relationships"><defs><marker id="sl-arrow" viewBox="0 0 6 6" refX="6" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L6 3 L0 6" fill="#7e929d"/></marker></defs>${links.join('')}<path id="sl-draft"/></svg>`);
     if(selectedMode==='basic'&&collectionId==='layers'&&!reviewColors){
       const sizes={};for(const row of host.querySelectorAll('.sl-lane')){const name=selectedLayerNames.find(name=>window.CalendarLaneEvents.label(name)===row.dataset.dropLane);if(name)sizes[name]=row.offsetHeight;}
       parentSend({type:'CIRCAEVUM_LANE_ROW_SIZES',sizes});
@@ -533,9 +571,9 @@
       <p>${item.status==='waiting'?'Waiting on follow-up'+(item.event.work?.waitingOn?' from '+esc(item.event.work.waitingOn):''):''}${item.status==='no-outcome'?'Dead end / no outcome':''}</p>
       ${item.event.work?.outcomeNotes?`<p>${esc(item.event.work.outcomeNotes)}</p>`:''}
       ${follow?`<h3>Follow-up</h3><p>${esc(follow.title)} · ${follow.ghost?'Date not set':new Date(follow.scheduledAt).toLocaleString()}${follow.unresolved?' · linked task not loaded':''}</p>${follow.taskId&&!follow.unresolved?`<button data-id="${esc(follow.taskId)}">Open follow-up task</button>`:''}`:''}
-      ${(writable(item)||item.access?.canTrack)?`<form id="sl-work-progress"><h3>Status and follow-up</h3><label>Item type<select name="activityType">${Object.entries(ITEM_TYPES).map(([value,label])=>`<option value="${value}" ${value===(item.event.work?.activityType||item.kind)?'selected':''}>${label}</option>`).join('')}</select></label><label>Status<select name="status">${M.statuses.map(status=>`<option value="${status}" ${status===item.status?'selected':''}>${status==='waiting'?'Waiting for response':status==='no-outcome'?'Dead end / no outcome':status}</option>`).join('')}</select></label><label class="sl-waiting-toggle"><input type="checkbox" name="waitingFollowUp" ${item.status==='waiting'?'checked':''}>Waiting on follow-up</label><label>From (optional)<input name="waitingOn" value="${esc(item.event.work?.waitingOn||'')}" placeholder="Person or team (optional)"></label><label>Result / dead-end notes<textarea name="outcomeNotes">${esc(item.event.work?.outcomeNotes||'')}</textarea></label><label>Earlier tasks<select name="earlier" multiple>${all.filter(e=>e.id!==item.id).map(e=>`<option value="${esc(e.id)}" ${item.dependencies.includes(e.id)?'selected':''}>${esc(e.event.summary)}</option>`).join('')}${item.dependencies.filter(id=>!all.some(e=>e.id===id)).map(id=>`<option value="${esc(id)}" selected>Earlier task not loaded</option>`).join('')}</select></label><label><input name="needed" type="checkbox" ${item.event.work?.followUpNeeded?'checked':''}>Follow-up needed</label><label>Next action / project<input name="followUpTitle" value="${esc(item.event.work?.followUpTitle||'')}"></label><label>Existing follow-up task<select name="followUpTaskId"><option value="">No linked task</option>${all.filter(e=>e.id!==item.id).map(e=>`<option value="${esc(e.id)}" ${e.id===item.event.work?.followUpTaskId?'selected':''}>${esc(e.event.summary)}</option>`).join('')}${follow?.unresolved?`<option selected value="${esc(follow.taskId)}">Linked task not loaded</option>`:''}</select></label><label>Scheduled date (optional)<input type="date" name="followUpAt" value="${esc(item.event.work?.followUpAt?.slice(0,10)||'')}"></label><p>Leave the date unset for a ghost follow-up. Its visual position is not a commitment.</p><p role="alert" class="sl-progress-error"></p><button type="submit">Save status & follow-up</button></form>`:''}
-      <h3>Earlier tasks / dependencies</h3><ul>${deps.length?deps.map(d=>`<li>${d.item?`<button data-id="${esc(d.id)}">${esc(d.item.event.summary)}</button>`:'Unavailable item (not loaded or not shared)'} · ${d.unresolved?'unresolved':'done'}${writable(item)?` <button data-remove-link="${esc(d.id)}" aria-label="Remove dependency">×</button>`:''}</li>`).join(''):'<li>None</li>'}</ul>
-      <h3>Depends on</h3><ul>${deps.length?deps.map(d=>`<li>${d.item?`<button data-id="${esc(d.id)}">${esc(d.item.event.summary)}</button>`:'Unavailable item (not loaded or not shared)'} · ${d.unresolved?'unresolved':'done'}${writable(item)?` <button data-remove-link="${esc(d.id)}" aria-label="Remove dependency">×</button>`:''}</li>`).join(''):'<li>None</li>'}</ul>
+      ${(writable(item)||item.access?.canTrack)?`<form id="sl-work-progress"><h3>Status and follow-up</h3><label>Item type<select name="activityType">${Object.entries(ITEM_TYPES).map(([value,label])=>`<option value="${value}" ${value===(item.event.work?.activityType||item.kind)?'selected':''}>${label}</option>`).join('')}</select></label><label>Status<select name="status">${M.statuses.map(status=>`<option value="${status}" ${status===item.status?'selected':''}>${status==='waiting'?'Waiting for response':status==='no-outcome'?'Dead end / no outcome':status}</option>`).join('')}</select></label><label class="sl-waiting-toggle"><input type="checkbox" name="waitingFollowUp" ${item.status==='waiting'?'checked':''}>Waiting on follow-up</label><label>From (optional)<input name="waitingOn" value="${esc(item.event.work?.waitingOn||'')}" placeholder="Person or team (optional)"></label><label>Result / dead-end notes<textarea name="outcomeNotes">${esc(item.event.work?.outcomeNotes||'')}</textarea></label><label><input name="needed" type="checkbox" ${item.event.work?.followUpNeeded?'checked':''}>Follow-up needed</label><label>Next action / project<input name="followUpTitle" value="${esc(item.event.work?.followUpTitle||'')}"></label><label>Existing follow-up task<select name="followUpTaskId"><option value="">No linked task</option>${all.filter(e=>e.id!==item.id).map(e=>`<option value="${esc(e.id)}" ${e.id===item.event.work?.followUpTaskId?'selected':''}>${esc(e.event.summary)}</option>`).join('')}${follow?.unresolved?`<option selected value="${esc(follow.taskId)}">Linked task not loaded</option>`:''}</select></label><label>Scheduled date (optional)<input type="date" name="followUpAt" value="${esc(item.event.work?.followUpAt?.slice(0,10)||'')}"></label><p>Leave the date unset for a ghost follow-up. Its visual position is not a commitment.</p><p role="alert" class="sl-progress-error"></p><button type="submit">Save status & follow-up</button></form>`:''}
+      <h3>Earlier tasks / dependencies</h3><ul>${deps.length?deps.map(d=>`<li>${d.item?`<button data-id="${esc(d.id)}">${esc(d.item.event.summary)}</button>`:'Unavailable item (not loaded or not shared)'} · ${d.unresolved?'unresolved':'done'}${canLink(item)?` <button data-remove-link="${esc(d.id)}" aria-label="Remove dependency">×</button>`:''}</li>`).join(''):'<li>None</li>'}</ul>
+      <h3>Depends on</h3><ul>${deps.length?deps.map(d=>`<li>${d.item?`<button data-id="${esc(d.id)}">${esc(d.item.event.summary)}</button>`:'Unavailable item (not loaded or not shared)'} · ${d.unresolved?'unresolved':'done'}${canLink(item)?` <button data-remove-link="${esc(d.id)}" aria-label="Remove dependency">×</button>`:''}</li>`).join(''):'<li>None</li>'}</ul>
       <h3>Next steps</h3><ul>${next.length?next.map(e=>`<li><button data-id="${esc(e.id)}">${esc(e.event.summary)}</button></li>`).join(''):'<li>No linked follow-up</li>'}</ul>
       ${selectedLink?.to===item.id&&writable(item)?`<div class="sl-link-editor"><strong>Selected connection</strong><p>Endpoints stay attached to their objects. In Connect mode, drag its handle to snap the curve in 8 px steps.</p><button data-action="route-style">Reset curve</button></div>`:''}
       <div class="sl-actions">${(calendarEditKey(item)||writable(item))?'<button data-action="edit">Edit event</button>':''}<button data-action="focus">Focus time</button>${source==='loaded'&&item.access.canWrite?'<button data-action="share-lane">Lane access & sharing</button>':''}</div></section>`;
@@ -543,7 +581,7 @@
     progressForm?.elements.waitingFollowUp.addEventListener('change',e=>{progressForm.elements.status.value=e.target.checked?'waiting':'todo';});
     progressForm?.elements.status.addEventListener('change',e=>{progressForm.elements.waitingFollowUp.checked=e.target.value==='waiting';});
     eventMode.querySelector('#sl-work-progress')?.addEventListener('submit',async e=>{
-      e.preventDefault();const data=new FormData(e.target),dependencies=data.getAll('earlier');
+      e.preventDefault();const data=new FormData(e.target),dependencies=item.dependencies;
       if(M.cycle(item.id,dependencies,all)){e.target.querySelector('.sl-progress-error').textContent='An earlier-task link cannot create a cycle.';return;}
       const work={...item.event.work,activityType:data.get('activityType'),status:data.get('status'),waitingOn:data.get('waitingOn').trim(),outcomeNotes:data.get('outcomeNotes').trim(),dependencies,links:item.links.filter(link=>dependencies.includes(link.uid)),followUpNeeded:data.has('needed'),followUpTitle:data.get('followUpTitle').trim(),followUpTaskId:data.get('followUpTaskId'),followUpAt:data.get('followUpAt')||null};
       const button=e.target.querySelector('[type=submit]');button.disabled=true;
@@ -560,12 +598,12 @@
     });
   }
   async function saveWork(item,work){
-    if(saving||!writable(item))return; saving=true;notice='Saving…';
+    if(saving||!canLink(item))return; saving=true;notice='Saving…';
     try{await persist({...item.event,work});notice='Saved.';}catch(e){notice=e.message||'Save failed.';}finally{saving=false;render();}
   }
   async function makeLink(a,b){
     if(a.id===b.id){notice='An item cannot connect to itself.';render();return;}
-    const target=items().find(e=>e.id===b.id);if(!target||!writable(target)){notice='This target is read only. Link into a layer you own.';render();return;}
+    const target=items().find(e=>e.id===b.id);if(!canLink(target)){notice='This target is read only. Link into a layer you own.';render();return;}
     const deps=[...new Set([...target.dependencies,a.id])];if(M.cycle(target.id,deps,items())){notice='That connection would create a cycle.';render();return;}
     const links=target.links.filter(l=>l.uid!==a.id).concat({uid:a.id,from:a.port,to:b.port,route:'elbow',offset:0});
     selected=target.id;panelMode='event';await saveWork(target,{...target.event.work,dependencies:deps,links});
@@ -651,7 +689,7 @@
       changedTime();
       return;
     }
-    if(action==='fit')fit();if(action==='density')compact=!compact;if(action==='connect'){connect=!connect;linkStart=null;notice='';}
+    if(action==='fit')fit();if(action==='density')compact=!compact;if(action==='connect'){connect=!connect;linkStart=null;notice=connect?'Drag between event handles, or click two handles in order.':'';}
     if(action==='workflow')showWorkflow=!showWorkflow;if(action==='dismiss-detail'){selected=null;panelMode='timeline';}if(action==='cancel'){selected=null;panelMode='timeline';syncPanel();}
     if(action==='refresh'){notice='Refreshing shared access…';parentSend({type:'CIRCAEVUM_REFRESH_WORK'});}render();
   });

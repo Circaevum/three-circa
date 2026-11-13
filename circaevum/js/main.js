@@ -796,8 +796,9 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
             selectedSunday.setDate(selectedDate.getDate() - selectedDayOfWeek);
             selectedSunday.setHours(0, 0, 0, 0);
             
-            const daysBetween = Math.floor((selectedSunday - currentSunday) / (1000 * 60 * 60 * 24));
-            selectedDayOffset = Math.floor(daysBetween / 7);
+            // Compare calendar dates so a daylight-saving change cannot shift the week.
+            const utcDay = date => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+            selectedDayOffset = Math.round((utcDay(selectedSunday) - utcDay(currentSunday)) / (7 * 86400000));
             
             // Day within week (0-6, where 0 is Sunday)
             currentDayInWeek = selectedDayOfWeek;
