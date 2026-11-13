@@ -33,6 +33,15 @@ body.viewer-no-nav #swim-lanes{top:auto}
 .sl-axis{height:30px;background:var(--paper);position:relative;z-index:4}.sl-label{padding:6px 9px;border-right:1px solid var(--line);background:linear-gradient(rgba(var(--workflow,100,120,140),var(--tint)),rgba(var(--workflow,100,120,140),var(--tint))),var(--paper);position:relative;z-index:2;min-width:0}
 .sl-label small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:9px}
 #swim-lanes .sl-lane-title{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;border:0;padding:0;min-height:0;background:transparent;text-align:left;font-size:11px;font-weight:600}
+.sl-label:has(.sl-add-marker) { padding-inline-end: 48px; }
+#swim-lanes .sl-add-marker {
+  position: absolute;
+  inset-block-start: 5px;
+  inset-inline-end: 6px;
+  min-height: 24px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
 .sl-track{position:relative;min-width:0;background:rgba(var(--workflow,100,120,140),var(--tint))}
 #swim-lanes .sl-tick{position:absolute;top:4px;border:0;background:transparent;font-size:10px;white-space:nowrap;padding:3px 4px;min-height:20px}
 #swim-lanes .sl-gridline,#swim-lanes .sl-context,#swim-lanes .sl-now,#swim-lanes .sl-duration{pointer-events:none}

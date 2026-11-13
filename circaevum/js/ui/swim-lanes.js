@@ -14,6 +14,9 @@
   let selectedLink=null, queuedPan=0, panFrame=null, showWorkflow=false, panelMode='timeline', expanded=false, suppressPortClickUntil=0, forcedLeft=false, kept=new Set();
   let laneMoveId='',fetchedLaneEvents=[],laneRequestKey='',laneRequestId='',laneLoading=false,laneError='',unavailableLanes=new Set(),laneAnchors={open:false,rows:[]};
   const positions=new Map(), pending=new Map();
+  const workMarkerIcons={Research:'⚗',Development:'⌘',Delivery:'◆'};
+  const isProjectMarker=item=>collectionId==='linked-project'&&item.kind==='milestone'&&workLaneOrder.has(item.lane);
+  let canCreateProjectMarker=false;
   const workLaneOrder=new Map(['Research','Development','Delivery'].map((name,index)=>[name,index]));
   const appLayout=()=>window.circaevumHostLayout?.managed===true;
   const modeEnabled=mode=>!appLayout()||!window.circaevumHostLayout?.modes||window.circaevumHostLayout.modes[mode||'basic']===true;
@@ -320,7 +323,7 @@
       const rowId=selectedMode==='basic'?String(groupKey):representative.id;const rowKey=esc(rowId);
       if(selectedMode==='basic'?!expanded&&kept.size&&!kept.has(rowId):kept.size&&!leftPanel?.classList.contains('open')&&!kept.has(rowId))return;
       const visible=M.pack(events.filter(e=>e.start<end&&(e.end>start||e.start>=start)).map(item=>
-        (item.event.githubActivity || window.CalendarLaneEvents.isGarminActivity(item.event))
+        (item.event.githubActivity || isProjectMarker(item) || window.CalendarLaneEvents.isGarminActivity(item.event))
           ? {item,start:item.start-markerHalfSpan,end:item.start+markerHalfSpan}
           : {item,start:item.start,end:Math.max(item.end,item.start+cardSpan)}));
       const height=laneHeight,workflow=M.workflows[representative.workflow];
@@ -329,16 +332,33 @@
       const color=laneColor(representative.lane);
       const rgb=[1,3,5].map(offset=>parseInt(color.slice(offset,offset+2),16)).join(',');
       const sleep=color===SLEEP_COLOR;
-      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc(representative.lane+' / '+representative.project+' · '+access)}">${sleep?'●':workflow[1]} ${esc(representative.lane)}</button><small>${esc(representative.project)}</small></div>`;
+      const addMarker=collectionId==='linked-project'&&canCreateProjectMarker&&workLaneOrder.has(representative.lane)
+        ? `<button type="button" class="sl-add-marker" data-create-marker="${esc(representative.lane)}" title="Add ${esc(representative.lane)} marker" aria-label="Add ${esc(representative.lane)} marker">${workMarkerIcons[representative.lane]} +</button>`
+        : '';
+      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc(representative.lane+' / '+representative.project+' · '+access)}">${sleep?'●':workflow[1]} ${esc(representative.lane)}</button>${addMarker}<small>${esc(representative.project)}</small></div>`;
       if(docked&&!namesInBoard)titles.push(label);
       markup.push(`<section class="sl-lane ${on?'sl-kept':''}" data-row="${rowKey}" data-drop-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}">${namesInBoard?label:''}<div class="sl-track">${weekendMarkup}${ticks.map(t=>`<span class="sl-gridline" style="left:${pct(t)}%"></span>`).join('')}${context?`<span class="sl-context" style="left:${pct(context.t0)}%;width:${Math.max(0,pct(context.t1)-pct(context.t0))}%"></span>`:''}
       ${collectionId==='layers'&&laneLoading?'<div class="sl-load-state" role="status"><span class="sl-loading-spinner"></span>Loading events…</div>':collectionId==='layers'&&laneError?`<div class="sl-load-state" role="alert">${esc(laneError)} <button data-action="retry-lanes">Retry</button></div>`:collectionId==='layers'&&!visible.length?`<div class="sl-load-state">${unavailableLanes.has(representative.lane)?'Data unavailable':'No events in this time window'}</div>`:''}${visible.map(({item:e,row})=>{
         const left=pct(e.start), top=6+Math.min(row*4,height-cardHeight-12);
         const activity=e.event.githubActivity;
-        if(activity){
+        if(activity||isProjectMarker(e)){
           const center=left/100*width;
           positions.set(e.id,{left:center,right:center,y:y+top+cardHeight/2});
-          return `<div class="sl-object sl-github-point" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button type="button" class="sl-card sl-github-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" title="${esc(e.event.summary)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}">${githubMarker(activity)}</button></div>`;
+          return `<div class="sl-object sl-github-point" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button type="button" class="sl-card sl-github-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" title="${esc(e.event.summary)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}">${activity?githubMarker(activity):workMarkerIcons[e.lane]}</button></div>`;
+        }
+        if (window.CalendarLaneEvents.isGarminActivity(e.event)) {
+          const center = left / 100 * width;
+          const middle = top + cardHeight / 2;
+          positions.set(e.id, {left:center,right:center,y:y+middle});
+          const label = esc(e.event.summary || 'Garmin activity');
+          const times = new Date(e.start).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) +
+            ' – ' + new Date(e.end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+          const duration = pct(e.end) - left;
+          return `<span class="sl-activity-duration" style="left:${left}%;width:${duration}%;top:${middle}px;--object:${color}" aria-hidden="true"></span>
+            <div class="sl-object sl-activity-point" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}">
+              <button type="button" class="sl-card sl-activity-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}"
+                title="${label} · ${esc(times)}" aria-label="${label}, ${esc(times)}">${window.CalendarLaneEvents.garminActivityIcon(e.event)}</button>
+            </div>`;
         }
         if (window.CalendarLaneEvents.isGarminActivity(e.event)) {
           const center = left / 100 * width;
@@ -461,6 +481,12 @@
     const link=e.target.closest('[data-link-from]');if(link){selectedLink={from:link.dataset.linkFrom,to:link.dataset.linkTo};selected=selectedLink.to;panelMode='event';render();return;}
     const assign=e.target.closest('[data-assign-lane]');if(assign){assignProjectEvent(assign.dataset.assignId,assign.dataset.assignLane);return;}
     const card=e.target.closest('[data-id]');if(card){selected=card.dataset.id;panelMode='event';render();return;}
+    const addMarker=e.target.closest('[data-create-marker]');
+    if(addMarker&&collectionId==='linked-project'&&canCreateProjectMarker){
+      const time=focus>=start&&focus<start+span?focus:start+span/2;
+      parentSend({type:'CIRCAEVUM_CREATE_PROJECT_MARKER',project,lane:addMarker.dataset.createMarker,time});
+      return;
+    }
     const lane=e.target.closest('[data-lane]');if(lane){if(reviewColors)return;const key=lane.dataset.lane;if(selectedMode!=='basic'&&collectionId!=='linked-project')return;if(collectionId==='linked-project'){const name=lane.closest('.sl-label')?.dataset.workLane;if(workLaneOrder.has(name)){parentSend({type:'CIRCAEVUM_CONFIGURE_PROJECT_LANE',project,lane:name});return;}}if(kept.has(key))kept.delete(key);else if(selectedMode!=='basic'||kept.size<3)kept.add(key);else notice='Choose up to three lanes for the lowered view.';if(kept.has(key))requestLaneData(true);render();return;}
     const remove=e.target.closest('[data-remove-link]');if(remove){const target=items().find(x=>x.id===selected);if(target)await saveWork(target,{...target.event.work,dependencies:target.dependencies.filter(x=>x!==remove.dataset.removeLink),links:target.links.filter(x=>x.uid!==remove.dataset.removeLink)});return;}
     const tick=e.target.closest('[data-time]');if(tick){focus=Number(tick.dataset.time);start=focus-span/2;changedTime();render();return;}
@@ -603,6 +629,7 @@
     if(data?.type==='CIRCAEVUM_OPEN_LINKED_PROJECT'&&Array.isArray(data.events)&&modeEnabled('work')){
       if(data.update&&(collectionId!=='linked-project'||project!==data.project))return;
       githubDelivery=data.github||null;
+      canCreateProjectMarker=data.canCreateMarker===true;
       supplied=data.events;
       if(data.update){if(opened)render();return;}
       reviewColors=null;selectedMode='work';collectionId='linked-project';collectionLabel=data.project||'Project';
