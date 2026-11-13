@@ -121,7 +121,15 @@
       followUpDue: Number.isFinite(e.followUpAt) && e.followUpAt <= now && !['done','cancelled'].includes(e.status),
       noFollowUp: e.kind==='meeting' && e.end<now && !outgoing.has(e.id) && !['cancelled','no-outcome'].includes(e.status)}));
   }
-  const api = { DAY, statuses, workflows, time, normalize, pack, dependencyState, seed, semantic, localDayWindow, ticks, cycle, report };
+  function followUp(item,items){
+    const work=item.event.work||{};
+    const linked=items.find(other=>other.id===work.followUpTaskId);
+    const scheduled=linked?.start??time(work.followUpAt);
+    const wanted=work.followUpNeeded===true||!!work.followUpTaskId||Number.isFinite(scheduled);
+    if(!wanted)return null;
+    return {sourceId:item.id,taskId:work.followUpTaskId||'',title:linked?.event.summary||work.followUpTitle||'Follow up: '+(item.event.summary||'Work item'),scheduledAt:Number.isFinite(scheduled)?scheduled:null,ghost:!Number.isFinite(scheduled),unresolved:!!work.followUpTaskId&&!linked};
+  }
+  const api = { DAY, statuses, workflows, time, normalize, followUp, pack, dependencyState, seed, semantic, localDayWindow, ticks, cycle, report };
   if (typeof module !== 'undefined') module.exports = api;
   root.WorkTimeline = api;
 })(typeof window !== 'undefined' ? window : globalThis);

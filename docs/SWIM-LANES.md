@@ -79,3 +79,17 @@ node --check circaevum/js/ui/swim-lanes.js
 ```
 
 Run portal routing/fetch/work tests and its build for cross-repository changes. Keep dependent viewer script/style versions in `index.html` synchronized. Report authenticated persistence/provider checks separately from unit tests. Removed legacy menus (Swim, Layers, All Projects, Tints, Connect and Report) are not current app controls even if helper code remains.
+
+## Work status and follow-ups (2026-11-10)
+
+Owned Work items expose a Status and follow-up form in the right Event view. Waiting for response records a person/team separately from the assignee. Dead end / no outcome retains the compatible `no-outcome` value and allows result notes. Earlier-task selections use the existing cycle-checked dependencies. The event editor exposes the same fields.
+
+Mark Follow-up needed and describe the next action/project. Optionally link an existing task or set a follow-up date. Without a known date, a dashed ghost appears at the future edge of the source lane, explicitly marked Date not set. This visual placeholder is metadata on the original item, not a new dated event or automatically created Project. A loaded linked task provides its actual title/date; unavailable links stay unresolved. Provider records and shared read-only events remain read-only.
+
+Additional work metadata: `waitingOn`, `outcomeNotes`, `followUpNeeded`, `followUpTitle`, `followUpTaskId`; existing `followUpAt` and `dependencies` remain compatible.
+
+### Project creation ribbon and linked-item tracking
+
+The Work Swim Lanes header has a New Work item menu with Meeting, Email, Phone call, Teams message, Message, Task and Milestone. These open a new native Work item with the active Project, Research lane and selected type prefilled; no calendar attachment is required. Saving uses the authenticated event editor. Cancel leaves no stored event. Item type uses matching icons on timeline cards.
+
+Linked calendar items expose Status and follow-up in the right Event panel. Their Project metadata is saved separately under `projectWork[project][sourceId]` on the source link in work organization preferences. Source dates, calendar identity and permissions remain unchanged. Metadata follows Project rename and stays independent across Projects. `canTrack` enables only Project metadata, not source editing. The viewer sends `CIRCAEVUM_SAVE_PROJECT_WORK`; the host validates the active Project/source and dependency cycles before saving. Creation uses `CIRCAEVUM_CREATE_PROJECT_MARKER` with an optional activity type. Account-sync failures retain the existing device-local dirty state and message.
