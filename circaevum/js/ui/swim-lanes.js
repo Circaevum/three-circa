@@ -30,6 +30,7 @@
   let start=+new Date(2026,10,1), span=31*M.DAY, context=null, focus=start+span/2, opened=false, returnFocus;
   let draw=null, routeDrag=null, linkStart=null, saving=false, notice='', accessMessage='', syncTimer, rendering=false, pushing=false, initialized=false;
   let selectedLink=null, queuedPan=0, panFrame=null, showWorkflow=false, panelMode='timeline', expanded=false, suppressPortClickUntil=0, forcedLeft=false, kept=new Set();
+  let hiddenLanes=new Set();
   let laneMoveId='',fetchedLaneEvents=[],laneRequestKey='',laneRequestId='',laneLoading=false,laneError='',unavailableLanes=new Set(),laneAnchors={open:false,rows:[]};
   const positions=new Map(), pending=new Map();
   const sleepStages = {
@@ -278,7 +279,7 @@
     if(!appLayout()||collectionId!=='layers'||!selectedLayerNames.length||!opened)return;
     const key=JSON.stringify([selectedLayerNames,start,span]);if(!force&&key===laneRequestKey)return;
     laneRequestKey=key;laneRequestId=crypto.randomUUID();laneLoading=true;laneError='';unavailableLanes.clear();
-    parentSend({type:'CIRCAEVUM_FETCH_LANES',requestId:laneRequestId,names:selectedLayerNames,t0:start,t1:start+span,review:!!reviewColors,refreshGarmin});
+    parentSend({type:'CIRCAEVUM_FETCH_LANES',requestId:laneRequestId,names:selectedLayerNames,t0:start,t1:start+span,review:!!reviewColors,mode:selectedMode,refreshGarmin});
   }
   function alignLaneRows(){
     const attached=opened&&!reviewColors&&selectedMode==='basic'&&collectionId==='layers'&&laneAnchors.open&&!document.body.classList.contains('interface-depth');
@@ -334,7 +335,7 @@
     const all=items(), list=rows(), end=start+span, projects=[...new Set(all.map(e=>e.project))];
     const fullDay=zoom==='day'||zoom==='clock';
     const heartLayer=reviewColors?'Heart':'Garmin Activity';
-    const overlayHeart=(reviewColors||selectedMode==='health')&&collectionId==='layers'&&selectedLayerNames.includes(heartLayer);
+    const overlayHeart=(reviewColors||selectedMode==='health')&&collectionId==='layers'&&selectedLayerNames.includes(heartLayer)&&!hiddenLanes.has(heartLayer);
     const heartItems=overlayHeart?list.filter(item=>item.event.render?.metric==='hr'):[];
     const heartTrace=window.CalendarLaneEvents.heartTrace(heartItems,start,end);
     const laneItems=overlayHeart?list.filter(item=>item.lane!=='Heart'):list;
@@ -408,7 +409,7 @@
       if(collectionId==='linked-project'&&!projectRows.has(key))projectRows.set(key,{lane:item.lane,label:layer||item.lane});
       groups.get(key).push(item);
     }
-    if(collectionId==='layers')for(const name of selectedLayerNames){if(overlayHeart&&name===heartLayer)continue;const lane=window.CalendarLaneEvents.label(name);if(reviewColors&&!reviewShowEmpty&&!['Fitness','Work','Sleep'].includes(lane)&&!unavailableLanes.has(lane))continue;if(![...groups.values()].some(items=>items[0]?.lane===lane))groups.set(JSON.stringify(['','',project,lane]),[]);}
+    if(collectionId==='layers')for(const name of selectedLayerNames){if(hiddenLanes.has(name)||(overlayHeart&&name===heartLayer))continue;const lane=window.CalendarLaneEvents.label(name);if(reviewColors&&!reviewShowEmpty&&!['Fitness','Work','Sleep'].includes(lane)&&!unavailableLanes.has(lane))continue;if(![...groups.values()].some(items=>items[0]?.lane===lane))groups.set(JSON.stringify(['','',project,lane]),[]);}
     const rowLane=([key,events])=>(projectRows.get(key)?.lane||events[0]?.lane)||(collectionId==='layers'?JSON.parse(key)[3]:key);
     const laneOrder=lane=>lane==='Attached calendars'?-1:(workLaneOrder.get(lane)??laneRank?.get(lane)??999);
     const ordered=[...groups.entries()].sort((a,b)=>{
@@ -801,7 +802,7 @@
 
     laneRank=new Map(selectedLayerNames.map((name,i)=>[window.CalendarLaneEvents.label(name),i]));
     collectionId='layers'; collectionLabel=mode==='basic'&&!reviewColors?'Basic calendars':title||'Calendar';
-    if(!append)fetchedLaneEvents=[];
+    if(!append){fetchedLaneEvents=[];hiddenLanes.clear();}
     supplied=appLayout()?window.CalendarLaneEvents.projectFetched(fetchedLaneEvents,selectedLayerNames,collectionLabel):window.CalendarLaneEvents.project(g,selectedLayerNames,collectionLabel);
     source='loaded'; project=collectionLabel; if(!append)kept.clear();laneRequestKey=''; setOpen(true);
   };
@@ -847,6 +848,7 @@
     if(data?.type==='CIRCAEVUM_LANE_ANCHORS'){laneAnchors=data;alignLaneRows();}
     if(data?.type==='CIRCAEVUM_LANES_RESULT'&&collectionId==='layers'&&data.requestId===laneRequestId){
       laneLoading=false;laneError=data.error||'';
+      hiddenLanes=new Set(data.hiddenLanes||[]);
       unavailableLanes=new Set(Array.isArray(data.unavailableLanes)?data.unavailableLanes:[]);
       if(!laneError){fetchedLaneEvents=data.events||[];supplied=window.CalendarLaneEvents.projectFetched(fetchedLaneEvents,selectedLayerNames,collectionLabel);}
       if(opened)render();
@@ -857,7 +859,7 @@
       reviewWork=data.events;
       if(reviewColors&&opened)render();
     }
-    if(data?.type==='CIRCAEVUM_REFRESH_CALENDAR_LANES'&&opened&&collectionId==='layers'){requestLaneData(true);render();}
+    if(data?.type==='CIRCAEVUM_REFRESH_CALENDAR_LANES'&&opened&&collectionId==='layers'&&selectedMode!=='work'){requestLaneData(true);render();}
     if(data?.type==='CIRCAEVUM_REFRESH_REVIEW_LANES'&&reviewColors&&opened){requestLaneData(true);render();}
     if(data?.type==='CIRCAEVUM_OPEN_LAYERS'&&Array.isArray(data.layerNames))window.openSwimLayerNames(data.layerNames, data.title, data.mode, data.reviewColors);
     if(data?.type==='CIRCAEVUM_WORK_SAVED'){const p=pending.get(data.requestId);if(!p)return;clearTimeout(p.timer);pending.delete(data.requestId);if(data.error)p.reject(new Error(data.error));else{if(supplied&&data.event)supplied=supplied.map(x=>(data.event.projectLinkId?x.workRef===data.event.workRef:x.uid===data.event.uid)&& (x.workAccess?.canWrite||x.workAccess?.canTrack)?{...x,work:data.event.work}:x);p.resolve();}}
