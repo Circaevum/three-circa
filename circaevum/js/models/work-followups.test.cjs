@@ -1,0 +1,7 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const M=require('./work-timeline.js');
+function item(work={},uid='a'){return M.normalize({uid,summary:'Discuss options',isWorkEvent:true,dtstart:{dateTime:'2026-11-10T10:00:00Z'},work:{project:'Project',lane:'Research',...work}})}
+test('unscheduled follow-up stays dateless and leaves original dates unchanged',()=>{const a=item({followUpNeeded:true,followUpTitle:'Explore alternative'});const before=JSON.stringify(a);const f=M.followUp(a,[a]);assert.equal(f.ghost,true);assert.equal(f.scheduledAt,null);assert.equal(f.title,'Explore alternative');assert.equal(JSON.stringify(a),before)})
+test('explicit scheduled follow-up is not a ghost',()=>{const a=item({followUpNeeded:true,followUpAt:'2026-12-01'});assert.equal(M.followUp(a,[a]).ghost,false)})
+test('linked task supplies the actual title and date',()=>{const a=item({followUpTaskId:'b'}),b=item({},'b');assert.equal(M.followUp(a,[a,b]).scheduledAt,b.start);assert.equal(M.followUp(a,[a,b]).ghost,false)})
+test('unloaded linked task remains unresolved rather than inventing a date',()=>{const a=item({followUpTaskId:'missing'});assert.equal(M.followUp(a,[a]).unresolved,true);assert.equal(M.followUp(a,[a]).scheduledAt,null)})
+test('dead ends do not automatically create follow-up commitments',()=>{const a=item({status:'no-outcome'});assert.equal(M.followUp(a,[a]),null)})

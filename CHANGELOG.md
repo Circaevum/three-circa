@@ -1,5 +1,11 @@
 # Circaevum Zhong Changelog
 
+## 2026-11-10 — Work follow-up planning
+
+- Added waiting-on, dead-end notes, earlier-task relationships and scheduled/linked follow-ups for editable Work items.
+- Added dateless dashed follow-up placeholders; they do not create calendar commitments.
+
+
 **The Center Contract** - Administrative hub for managing Circaevum
 
 This changelog tracks all changes across Yin (backend), Yang (frontend), and Zhong (administration) projects. Updates are reflected in the DAO quarterly reviews.
@@ -201,3 +207,9 @@ This changelog tracks all changes across Yin (backend), Yang (frontend), and Zho
 **Last Updated**: 19 October 2026 (Q4 2026 Garmin, flatten, Shift sleep)
 **Maintained By**: Circaevum Zhong (中) - The Center Contract
 
+
+### Work item creation and linked status correction
+- Add a typed creation ribbon to the Project Swim Lanes header and matching item icons.
+- Allow Project-specific status/follow-up tracking on linked calendar items without editing source calendars.
+
+- Waiting on follow-up is an explicit toggle with an optional person; waiting swim-lane cards are magenta. Unchecking returns the item to To do.

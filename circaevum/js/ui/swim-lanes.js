@@ -3,6 +3,24 @@
   const M = window.WorkTimeline, KEY = 'circaevum.work-example.v3';
   const ZOOMS = { hour:[0,1/24],day:[8,1],clock:[9,1],week:[7,7],month:[5,31],quarter:[4,92],year:[3,366] };
   const MODE_COLORS = {basic:'#9aa3ad',health:'#e11d48',work:'#2563eb',financial:'#16a34a'};
+  const ICON_KEY = 'circaevum.swim-lane-icons.v1';
+  const eventIcons = {
+    call: ['📞', 'Call'], email: ['✉️', 'Email'], research: ['🔎', 'Online research'],
+    ai: ['🤖', 'AI thread'], meeting: ['👥', 'Meeting'], development: ['💻', 'Development'],
+    task: ['☑️', 'Task'], milestone: ['🏁', 'Milestone'], teams: ['💬', 'Teams message'], message: ['💬', 'Message'],
+  };
+  const ITEM_TYPES={meeting:'Meeting',email:'Email',phone:'Phone call',teams:'Teams message',message:'Message',task:'Task',milestone:'Milestone'};
+  const eventIconChoices = new Map();
+  try {
+    for (const [id, icon] of JSON.parse(localStorage.getItem(ICON_KEY) || '[]')) {
+      const value = icon === 'dot' ? 'task' : icon === 'flag' ? 'milestone' : icon;
+      if (typeof id === 'string' && Object.hasOwn(eventIcons, value)) eventIconChoices.set(id, value);
+    }
+  } catch (_) {}
+  const canChooseIcon = item => item && !item.event.githubActivity &&
+    !item.event.render?.metric && item.event.circaevumSourceDetail !== 'garmin_sleep' &&
+    !window.CalendarLaneEvents.isGarminActivity(item.event);
+  const chosenIcon = item => canChooseIcon(item) ? eventIconChoices.get(item.id) : undefined;
   const SLEEP_COLOR = '#8b5cf6';
   const STATUS_ICONS = {done:'✓',blocked:'!',cancelled:'×',waiting:'…'};
   let demo=M.seed(), workSupplied=null, supplied=null, source='example', project='', selected=null, zoom='month', compact=true, connect=false;
@@ -14,9 +32,34 @@
   let selectedLink=null, queuedPan=0, panFrame=null, showWorkflow=false, panelMode='timeline', expanded=false, suppressPortClickUntil=0, forcedLeft=false, kept=new Set();
   let laneMoveId='',fetchedLaneEvents=[],laneRequestKey='',laneRequestId='',laneLoading=false,laneError='',unavailableLanes=new Set(),laneAnchors={open:false,rows:[]};
   const positions=new Map(), pending=new Map();
-  const workMarkerIcons={Research:'⚗',Development:'⌘',Delivery:'◆'};
+  const sleepStages = {
+    awake: {label:'Awake', color:'#f3ab77', level:0},
+    rem: {label:'REM', color:'#eb8bea', level:1},
+    light: {label:'Light', color:'#a993ff', level:2},
+    deep: {label:'Deep', color:'#7264e8', level:3},
+    unknown: {label:'Unknown', color:'#867991', level:2},
+  };
+  function sleepStageMarkup(item, start, end, pct, top, height) {
+    const render=item.event.render;
+    if(render?.metric!=='sleepStage'||!Array.isArray(render.summary))return null;
+    const segments=[];
+    for(const segment of render.summary){
+      if(!Number.isFinite(segment?.tOff)||!Number.isFinite(segment?.dur)||segment.dur<=0)continue;
+      const from=Math.max(start,item.start+segment.tOff);
+      const to=Math.min(end,item.end,item.start+segment.tOff+segment.dur);
+      if(to<=from)continue;
+      const stage=Object.hasOwn(sleepStages,segment.stage)?sleepStages[segment.stage]:sleepStages.unknown;
+      const time=ms=>new Date(ms).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+      const title=esc(stage.label+' · '+time(from)+' – '+time(to));
+      segments.push(`<button type="button" class="sl-sleep-stage ${selected===item.id?'sl-selected':''}" data-id="${esc(item.id)}"
+        style="left:${pct(from)}%;width:${pct(to)-pct(from)}%;top:${top+stage.level*height/4}px;height:${height/4}px;--stage:${stage.color}"
+        title="${title}" aria-label="${title}"></button>`);
+    }
+    return segments.length?segments.join(''):null;
+  }
+  const workMarkerIcons={Research:eventIcons.research[0],Development:eventIcons.development[0],Delivery:eventIcons.milestone[0]};
   const isProjectMarker=item=>collectionId==='linked-project'&&item.kind==='milestone'&&workLaneOrder.has(item.lane);
-  let canCreateProjectMarker=false;
+  let canCreateProjectMarker=false, projectSourceLayers={};
   const workLaneOrder=new Map(['Research','Development','Delivery'].map((name,index)=>[name,index]));
   const appLayout=()=>window.circaevumHostLayout?.managed===true;
   const modeEnabled=mode=>!appLayout()||!window.circaevumHostLayout?.modes||window.circaevumHostLayout.modes[mode||'basic']===true;
@@ -61,9 +104,14 @@
   function items(){const map=new Map();(source==='example'?demo:loaded()).forEach(e=>{const n=M.normalize(e);if(n?.id)map.set(n.id,n);});return [...map.values()];}
   function rows(){
     const all=items();
-    if(collectionId==='linked-project'||reviewColors)return all.filter(e=>e.project===project);
+    if(collectionId==='linked-project')return all;
+    if(reviewColors)return all.filter(e=>e.project===project);
     if(!all.some(e=>e.project===project))project=all[0]?.project||'';
     return all.filter(e=>e.project===project);
+  }
+  function calendarEditKey(item){
+    if(!appLayout()||source!=='loaded')return null;
+    return item?.event.calendarEditKey||null;
   }
   function writable(item){return source==='example'||item?.access?.canWrite===true;}
   function showLeft(){
@@ -259,7 +307,7 @@
       <button data-action="github-refresh" ${githubDelivery.loading?'disabled':''}>Refresh GitHub</button></div>`;
   }
   function render(){
-    if(!opened)return;requestLaneData();rendering=true;host.classList.toggle('sl-review',!!reviewColors);host.classList.toggle('sl-expanded',expanded);host.classList.toggle('sl-basic-full',selectedMode==='basic'&&expanded);
+    if(!opened)return;requestLaneData();rendering=true;host.classList.toggle('sl-review',!!reviewColors);host.classList.toggle('sl-work',selectedMode==='work');host.classList.toggle('sl-expanded',expanded);host.classList.toggle('sl-basic-full',selectedMode==='basic'&&expanded);
     const docked=appLayout()||!!leftPanel?.classList.contains('open');
     host.classList.toggle('sl-docked',docked);
     const namesInBoard=appLayout()||!docked||!leftPanel?.classList.contains('open');
@@ -277,24 +325,37 @@
     const dateWindow=dayLabel || `${fmt(start)} – ${fmt(end)}`;
     const localZone=new Intl.DateTimeFormat(undefined,{timeZoneName:'short'}).formatToParts(new Date(start))
       .find(part=>part.type==='timeZoneName')?.value || '';
-    const dayControls='<button data-action="prev" aria-label="Previous day">←</button><button data-action="today">Today</button><button data-action="next" aria-label="Next day">→</button>';
+    const stepLabel=fullDay?'day':zoom==='week'?'week':zoom==='hour'?'hour':'window';
+    const dateControls=`<button type="button" data-action="prev" aria-label="Previous ${stepLabel}" title="Previous ${stepLabel}">←</button>
+      <button type="button" data-action="today">Today</button>
+      <button type="button" data-action="next" aria-label="Next ${stepLabel}" title="Next ${stepLabel}">→</button>
+      <input id="sl-date" type="date" aria-label="Go to date" value="${localDate(focus)}">`;
+    const selectedEvent=list.find(item=>item.id===selected&&item.start<end&&(item.end>start||item.start>=start));
+    const iconRibbon=`<div class="sl-icon-ribbon" role="group" aria-label="Event icon">
+      <span>${canChooseIcon(selectedEvent)?esc(selectedEvent.event.summary||'Event'):'Select an event'}</span>
+      ${[['card',['📄','Event card']],...Object.entries(eventIcons)].map(([value,[glyph,label]])=>
+        `<button type="button" data-event-icon="${value}" title="${label}" aria-label="${label}"
+          aria-pressed="${(chosenIcon(selectedEvent)||'card')===value}" ${canChooseIcon(selectedEvent)?'':'disabled'}><span aria-hidden="true">${glyph}</span> ${label}</button>`).join('')}
+    </div>`;
+    const creationRibbon=collectionId==='linked-project'&&canCreateProjectMarker
+      ? `<details class="sl-create-work"><summary>New Work item</summary><div class="sl-icon-ribbon">${Object.entries(ITEM_TYPES).map(([type,label])=>
+        `<button type="button" data-create-work-type="${type}">${label}</button>`).join('')}</div></details>`:'';
     const toolBits=`<label class="sl-sr">Source<select id="sl-source"><option value="example" ${source==='example'?'selected':''}>OpenAMI / ISV example</option><option value="loaded" ${source==='loaded'?'selected':''}>My & shared work layers</option></select></label>
       ${projects.length>1?`<label class="sl-sr">Project<select id="sl-project">${projects.map(p=>`<option value="${esc(p)}" ${p===project?'selected':''}>${esc(p)}</option>`).join('')}</select></label>`:''}
-      <button data-action="prev" aria-label="Earlier">←</button><button data-action="today">Today</button><button data-action="next" aria-label="Later">→</button>
+      ${dateControls}
       <label class="sl-sr">Zoom<select id="sl-zoom">${Object.keys(ZOOMS).map(k=>`<option value="${k}" ${zoom===k?'selected':''}>${k[0].toUpperCase()+k.slice(1)}</option>`).join('')}</select></label>
-      <label class="sl-sr">Go to date<input id="sl-date" type="date" value="${localDate(focus)}"></label>
       <button data-action="fit">Fit</button><button data-action="density" aria-pressed="${compact}">${compact?'Compact':'Comfortable'}</button>
       ${source==='example'?'<button data-action="new">+ Item</button>':'<button data-action="refresh">Refresh</button>'}
       `;
     const chrome=`<header class="sl-head"><div><span class="sl-kicker">Circaevum / Work</span><h1 tabindex="-1">Swim Lanes</h1></div><div class="sl-actions"><button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div></header>
-      <div class="sl-tools">${toolBits}</div>
+      <div class="sl-tools">${toolBits}</div>${iconRibbon}
       ${showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([, [label,icon]])=>`<span style="--workflow:var(--mode-rgb,37,99,235)">${icon} ${label}</span>`).join('')}</div>`:''}
       <div class="sl-caption"><span>${fmt(start)} – ${fmt(end)} ${new Date(focus).getFullYear()} · ${list.length} items</span></div>
       <p class="sl-notice" role="status">${esc(notice||accessMessage||'')}</p>`;
     const healthStatus=(selectedMode==='health'||reviewColors||unavailableLanes.size)?`<p class="sl-health-status" role="status" aria-live="polite">${laneLoading?'<span class="sl-loading-spinner"></span> Loading Health events…':laneError?'Health data could not load. Retry below.':`${list.length} events loaded for ${esc(dateWindow)}`}${unavailableLanes.size?` · Couldn’t fully load ${esc([...unavailableLanes].join(', '))}. <button data-action="retry-lanes">Retry</button>`:''}</p>`:'';
     const dockChrome=(collectionId
-      ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${reviewColors?`${dayControls}<button data-action="review-empty" aria-pressed="${reviewShowEmpty}">${reviewShowEmpty?'Hide empty lanes':'Show empty lanes'}</button><small>Powered by Garmin Connect™</small>`:overlayHeart&&fullDay?dayControls:selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
-      : `<div class="sl-bar" tabindex="-1">${toolBits}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`)
+      ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${dateControls}${creationRibbon}${reviewColors?`<button data-action="review-empty" aria-pressed="${reviewShowEmpty}">${reviewShowEmpty?'Hide empty lanes':'Show empty lanes'}</button><small>Powered by Garmin Connect™</small>`:selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}${iconRibbon}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
+      : `<div class="sl-bar" tabindex="-1">${toolBits}${iconRibbon}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`)
       + (showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([, [label,icon]])=>`<span style="--workflow:var(--mode-rgb,37,99,235)">${icon} ${label}</span>`).join('')}</div>`:'')
       + (overlayHeart&&!laneLoading&&!laneError?`<p class="sl-heart-legend">${heartTrace.length
         ? `<span aria-hidden="true"></span> Heart rate · ${esc(localZone)}`
@@ -308,38 +369,82 @@
     while(+day<end){const a=+day,d=day.getDay();day.setDate(day.getDate()+1);if(d===0||d===6)weekends.push(`<span class="sl-weekend" style="left:${pct(a)}%;width:${pct(+day)-pct(a)}%" aria-hidden="true"></span>`);}
     const weekendMarkup=weekends.join('');
     const ticks=M.ticks(start,end,fullDay?'day':zoom);host.querySelector('.sl-axis-track').innerHTML=weekendMarkup+ticks.map(t=>`<button class="sl-tick" data-time="${t}" style="left:${pct(t)}%">${fullDay?new Date(t).toLocaleTimeString(undefined,{hour:'numeric'}):zoom==='hour'?new Date(t).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):fmt(t)}</button>`).join('');
-    const groups=new Map();laneItems.forEach(e=>{const key=collectionId==='linked-project'?e.lane:window.CalendarLaneEvents.rowKey(e,collectionId);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);});
+    const projectRows=new Map();
+    const projectRowKey=(lane,sourceLayer)=>JSON.stringify([lane,sourceLayer||'']);
+    if(collectionId==='linked-project'){
+      for(const layers of Object.values(projectSourceLayers)){
+        for(const layer of layers)projectRows.set(projectRowKey('Attached calendars',layer),{lane:'Attached calendars',label:layer});
+      }
+      for(const lane of workLaneOrder.keys())projectRows.set(projectRowKey(lane),{lane,label:lane});
+    }
+    const groups=new Map([...projectRows.keys()].map(key=>[key,[]]));
+    for(const item of laneItems){
+      const layer=item.lane==='Attached calendars'?item.event.projectSourceLayer:null;
+      const key=collectionId==='linked-project'
+        ? projectRowKey(item.lane,layer)
+        : window.CalendarLaneEvents.rowKey(item,collectionId);
+      if(!groups.has(key))groups.set(key,[]);
+      if(collectionId==='linked-project'&&!projectRows.has(key))projectRows.set(key,{lane:item.lane,label:layer||item.lane});
+      groups.get(key).push(item);
+    }
     if(collectionId==='layers')for(const name of selectedLayerNames){if(overlayHeart&&name===heartLayer)continue;const lane=window.CalendarLaneEvents.label(name);if(reviewColors&&!reviewShowEmpty&&!['Fitness','Work','Sleep'].includes(lane)&&!unavailableLanes.has(lane))continue;if(![...groups.values()].some(items=>items[0]?.lane===lane))groups.set(JSON.stringify(['','',project,lane]),[]);}
-    if(collectionId==='linked-project')for(const lane of ['Attached calendars',...workLaneOrder.keys()])if(!groups.has(lane))groups.set(lane,[]);
-    const rowLane=([key,events])=>events[0]?.lane||(collectionId==='layers'?JSON.parse(key)[3]:key);
-    const ordered=[...groups.entries()].sort((a,b)=>{const la=rowLane(a),lb=rowLane(b);const ra=la==='Attached calendars'?-1:workLaneOrder.has(la)?workLaneOrder.get(la):(laneRank?.get(la)??999);const rb=lb==='Attached calendars'?-1:workLaneOrder.has(lb)?workLaneOrder.get(lb):(laneRank?.get(lb)??999);return ra-rb||String(la).localeCompare(String(lb));});
+    const rowLane=([key,events])=>(projectRows.get(key)?.lane||events[0]?.lane)||(collectionId==='layers'?JSON.parse(key)[3]:key);
+    const laneOrder=lane=>lane==='Attached calendars'?-1:(workLaneOrder.get(lane)??laneRank?.get(lane)??999);
+    const ordered=[...groups.entries()].sort((a,b)=>{
+      const left=rowLane(a),right=rowLane(b);
+      return laneOrder(left)-laneOrder(right) ||
+        (projectRows.get(a[0])?.label||left).localeCompare(projectRows.get(b[0])?.label||right);
+    });
     positions.clear();let y=0;const markup=[],titles=[],laneHeight=compact?42:60,cardHeight=compact?19:30;
     // Reserve space for text cards and a smaller, centered footprint for point markers.
     const axisTrack=host.querySelector('.sl-axis-track');
     const width=Math.max(1,axisTrack.offsetWidth);
     const markerHalfSpan=span*12/width, cardSpan=span*72/width;
     ordered.forEach(([groupKey,events])=>{
-      const representative=events[0]||{id:'empty-'+groupKey,lane:collectionId==='layers'?JSON.parse(groupKey)[3]:groupKey,project,workflow:'communication',access:{label:'Linked calendar'}};
-      const rowId=selectedMode==='basic'?String(groupKey):representative.id;const rowKey=esc(rowId);
+      const projectRow=projectRows.get(groupKey);
+      const representative=events[0]||{id:'empty-'+groupKey,lane:collectionId==='layers'?JSON.parse(groupKey)[3]:projectRow?.lane||groupKey,project,workflow:'communication',access:{label:'Linked calendar'}};
+      const rowId=selectedMode==='basic'||projectRow?String(groupKey):representative.id;const rowKey=esc(rowId);
       if(selectedMode==='basic'?!expanded&&kept.size&&!kept.has(rowId):kept.size&&!leftPanel?.classList.contains('open')&&!kept.has(rowId))return;
       const visible=M.pack(events.filter(e=>e.start<end&&(e.end>start||e.start>=start)).map(item=>
-        (item.event.githubActivity || isProjectMarker(item) || window.CalendarLaneEvents.isGarminActivity(item.event))
+        (item.event.githubActivity || chosenIcon(item) || isProjectMarker(item) || window.CalendarLaneEvents.isGarminActivity(item.event))
           ? {item,start:item.start-markerHalfSpan,end:item.start+markerHalfSpan}
           : {item,start:item.start,end:Math.max(item.end,item.start+cardSpan)}));
+      const ghosts=visible.map(({item})=>M.followUp(item,all)).filter(f=>f?.ghost);
       const height=laneHeight,workflow=M.workflows[representative.workflow];
       const access=source==='example'?'Local example':representative.access.label||'Read only';
       const on=kept.has(rowId);
       const color=laneColor(representative.lane);
       const rgb=[1,3,5].map(offset=>parseInt(color.slice(offset,offset+2),16)).join(',');
       const sleep=color===SLEEP_COLOR;
+      const rowProject=projectRow?project:representative.project;
       const addMarker=collectionId==='linked-project'&&canCreateProjectMarker&&workLaneOrder.has(representative.lane)
-        ? `<button type="button" class="sl-add-marker" data-create-marker="${esc(representative.lane)}" title="Add ${esc(representative.lane)} marker" aria-label="Add ${esc(representative.lane)} marker">${workMarkerIcons[representative.lane]} +</button>`
+        ? `<button type="button" class="sl-add-marker" data-create-marker="${esc(representative.lane)}" title="Add ${esc(representative.lane)} marker to ${esc(rowProject)}" aria-label="Add ${esc(representative.lane)} marker to ${esc(rowProject)}">${workMarkerIcons[representative.lane]} +</button>`
         : '';
-      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc(representative.lane+' / '+representative.project+' · '+access)}">${sleep?'●':workflow[1]} ${esc(representative.lane)}</button>${addMarker}<small>${esc(representative.project)}</small></div>`;
+      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" data-project="${esc(rowProject)}" style="height:${height}px;--workflow:${rgb}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc((projectRow?.label||representative.lane)+' / '+(projectRow?collectionLabel:rowProject)+' · '+access)}">${sleep?'●':workflow[1]} ${esc(projectRow?.label||representative.lane)}</button>${addMarker}<small>${esc(projectRow?collectionLabel:rowProject)}</small></div>`;
       if(docked&&!namesInBoard)titles.push(label);
       markup.push(`<section class="sl-lane ${on?'sl-kept':''}" data-row="${rowKey}" data-drop-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}">${namesInBoard?label:''}<div class="sl-track">${weekendMarkup}${ticks.map(t=>`<span class="sl-gridline" style="left:${pct(t)}%"></span>`).join('')}${context?`<span class="sl-context" style="left:${pct(context.t0)}%;width:${Math.max(0,pct(context.t1)-pct(context.t0))}%"></span>`:''}
       ${collectionId==='layers'&&laneLoading?'<div class="sl-load-state" role="status"><span class="sl-loading-spinner"></span>Loading events…</div>':collectionId==='layers'&&laneError?`<div class="sl-load-state" role="alert">${esc(laneError)} <button data-action="retry-lanes">Retry</button></div>`:collectionId==='layers'&&!visible.length?`<div class="sl-load-state">${unavailableLanes.has(representative.lane)?'Data unavailable':'No events in this time window'}</div>`:''}${visible.map(({item:e,row})=>{
         const left=pct(e.start), top=6+Math.min(row*4,height-cardHeight-12);
+        const phases=sleepStageMarkup(e,start,end,pct,top,cardHeight);
+        if(phases){
+          positions.set(e.id,{left:left/100*width,right:pct(e.end)/100*width,y:y+top+cardHeight/2});
+          return phases;
+        }
+        const iconChoice=chosenIcon(e);
+        if(iconChoice){
+          const center=left/100*width, middle=top+cardHeight/2;
+          const right=pct(e.end);
+          positions.set(e.id,{left:center,right:right/100*width,y:y+middle});
+          const title=esc(e.event.summary||'Event');
+          const times=esc(new Date(e.start).toLocaleString()+' – '+new Date(e.end).toLocaleString());
+          const draggable=(collectionId==='linked-project'&&!!e.event.projectLinkId)||
+            (collectionId==='layers'&&!reviewColors&&selectedMode==='basic'&&!!e.event.key&&!laneMoveId);
+          return `<span class="sl-activity-duration" style="left:${left}%;width:${right-left}%;top:${middle}px;--object:${color}" aria-hidden="true"></span>
+            <div class="sl-object sl-activity-point ${e.status==='waiting'?'sl-waiting':''}" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}">
+              <button type="button" class="sl-card sl-activity-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}"
+                draggable="${draggable}" title="${eventIcons[iconChoice][1]} · ${title} · ${times}" aria-label="${eventIcons[iconChoice][1]}, ${title}, ${times}">${eventIcons[iconChoice][0]}</button>
+            </div>`;
+        }
         const activity=e.event.githubActivity;
         if(activity||isProjectMarker(e)){
           const center=left/100*width;
@@ -361,10 +466,10 @@
             </div>`;
         }
         const duration=pct(e.end)-left,objectWidth=Math.min(100-left,Math.max(72/width*100,duration));
-        const icon=STATUS_ICONS[e.status]||{meeting:'●',task:'▰',milestone:'◆'}[e.kind];
+        const icon=STATUS_ICONS[e.status]||eventIcons[e.event.work?.activityType==='phone'?'call':e.event.work?.activityType]?.[0]||eventIcons[e.kind]?.[0];
         positions.set(e.id,{left:left/100*width,right:(left+objectWidth)/100*width,y:y+top+cardHeight/2});
-        return `<div class="sl-object" style="left:${left}%;width:${objectWidth}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button class="sl-card ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" draggable="${(collectionId==='linked-project'&&!!e.event.projectLinkId)||(collectionId==='layers'&&!reviewColors&&selectedMode==='basic'&&!!e.event.key&&!laneMoveId)}" title="${esc(e.event.summary)} · ${esc(e.status)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}, ${e.kind}, ${e.status}"><span>${icon}</span> ${esc(e.event.summary)}</button><span class="sl-duration" style="width:${Math.min(100,duration/objectWidth*100)}%"></span>${connect?`<button class="sl-port sl-port-in" data-port="start" data-item="${esc(e.id)}" aria-label="Connect to start of ${esc(e.event.summary)}"></button><button class="sl-port sl-port-out" data-port="end" data-item="${esc(e.id)}" aria-label="Connect from end of ${esc(e.event.summary)}"></button>`:''}</div>`;
-      }).join('')}${Date.now()>=start&&Date.now()<end?`<span class="sl-now" style="left:${pct(Date.now())}%"></span>`:''}</div></section>`);y+=height;
+        return `<div class="sl-object ${e.status==='waiting'?'sl-waiting':''}" style="left:${left}%;width:${objectWidth}%;top:${top}px;height:${cardHeight}px;--object:${color}"><button class="sl-card ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}" draggable="${(collectionId==='linked-project'&&!!e.event.projectLinkId)||(collectionId==='layers'&&!reviewColors&&selectedMode==='basic'&&!!e.event.key&&!laneMoveId)}" title="${esc(e.event.summary)} · ${esc(e.status)} · ${new Date(e.start).toLocaleString()}" aria-label="${esc(e.event.summary)}, ${e.kind}, ${e.status}"><span>${icon}</span> ${esc(e.event.summary)}</button><span class="sl-duration" style="width:${Math.min(100,duration/objectWidth*100)}%"></span>${connect?`<button class="sl-port sl-port-in" data-port="start" data-item="${esc(e.id)}" aria-label="Connect to start of ${esc(e.event.summary)}"></button><button class="sl-port sl-port-out" data-port="end" data-item="${esc(e.id)}" aria-label="Connect from end of ${esc(e.event.summary)}"></button>`:''}</div>`;
+      }).join('')}${ghosts.length?`<div class="sl-ghost-followups" aria-label="Unscheduled follow-ups">${ghosts.map(f=>`<button data-id="${esc(f.sourceId)}" title="Date not set">⇢ ${esc(f.title)}</button>`).join('')}</div>`:''}${Date.now()>=start&&Date.now()<end?`<span class="sl-now" style="left:${pct(Date.now())}%"></span>`:''}</div></section>`);y+=height;
     });
     side.innerHTML=docked&&!namesInBoard?`<div class="sl-label sl-axis-label">${esc(dayLabel || 'Lanes')}</div>${titles.join('')}`:'';
     host.querySelector('#sl-rows').innerHTML=markup.join('')||'<p class="sl-empty">No work layers loaded. Choose the example or mark an account event as Work.</p>';
@@ -419,21 +524,39 @@
     sceneDetail.hidden=true;eventMode.querySelector('#sl-detail').hidden=false;
     selected=id;panelMode='event';const item=items().find(e=>e.id===id);if(!item){selected=null;return;}
     const all=items(),deps=M.dependencyState(item,all),next=all.filter(e=>e.dependencies.includes(id)),r=M.report([item])[0];
+    const follow=M.followUp(item,all);
     syncPanel(true);
     eventMode.querySelector('#sl-detail').innerHTML=`<section class="sl-detail"><div class="sl-actions"><strong>${esc(item.kind)} · ${esc(item.status)}</strong><button data-action="dismiss-detail" aria-label="Close item details">×</button></div><h2>${esc(item.event.summary)}</h2><p>${esc(item.project)} / ${esc(item.lane)}</p><p>${new Date(item.start).toLocaleString()}${item.kind==='milestone'?'':' → '+new Date(item.end).toLocaleString()}</p><p>${esc(item.event.description||'')}</p>${item.event.githubActivity&&/^https:\/\/github\.com\//.test(item.event.url)?`<p><a href="${esc(item.event.url)}" target="_blank" rel="noreferrer">Open on GitHub</a></p>`:''}<p>${M.workflows[item.workflow][1]} ${M.workflows[item.workflow][0]}</p><p>Access: ${esc(source==='example'?'Local example':item.access.label)}${item.access.ownerId?'<br>Owner: '+esc(item.access.ownerId):''}</p><p>Responsible: ${esc(item.assignee||'Unassigned')}<br>Follow-up: ${Number.isFinite(item.followUpAt)?new Date(item.followUpAt).toLocaleString():'Not set'}</p>
       ${r.overdue||r.followUpDue||r.noFollowUp?`<p class="sl-attention">${r.overdue?'Past due. ':''}${r.followUpDue?'Follow-up due. ':''}${r.noFollowUp?'Past meeting has no linked next step.':''}</p>`:''}
       ${collectionId==='linked-project'&&item.event.projectLinkId?`<div class="sl-actions" aria-label="Move event to work lane">${['Attached calendars',...workLaneOrder.keys()].filter(l=>l!==item.lane).map(l=>`<button data-assign-lane="${esc(l)}" data-assign-id="${esc(item.id)}">Move to ${esc(l)}</button>`).join('')}</div>`:''}
+      ${chosenIcon(item)?`<p>Swim Lanes icon · ${eventIcons[chosenIcon(item)][1]}</p>`:''}
+      <p>${item.status==='waiting'?'Waiting on follow-up'+(item.event.work?.waitingOn?' from '+esc(item.event.work.waitingOn):''):''}${item.status==='no-outcome'?'Dead end / no outcome':''}</p>
+      ${item.event.work?.outcomeNotes?`<p>${esc(item.event.work.outcomeNotes)}</p>`:''}
+      ${follow?`<h3>Follow-up</h3><p>${esc(follow.title)} · ${follow.ghost?'Date not set':new Date(follow.scheduledAt).toLocaleString()}${follow.unresolved?' · linked task not loaded':''}</p>${follow.taskId&&!follow.unresolved?`<button data-id="${esc(follow.taskId)}">Open follow-up task</button>`:''}`:''}
+      ${(writable(item)||item.access?.canTrack)?`<form id="sl-work-progress"><h3>Status and follow-up</h3><label>Item type<select name="activityType">${Object.entries(ITEM_TYPES).map(([value,label])=>`<option value="${value}" ${value===(item.event.work?.activityType||item.kind)?'selected':''}>${label}</option>`).join('')}</select></label><label>Status<select name="status">${M.statuses.map(status=>`<option value="${status}" ${status===item.status?'selected':''}>${status==='waiting'?'Waiting for response':status==='no-outcome'?'Dead end / no outcome':status}</option>`).join('')}</select></label><label class="sl-waiting-toggle"><input type="checkbox" name="waitingFollowUp" ${item.status==='waiting'?'checked':''}>Waiting on follow-up</label><label>From (optional)<input name="waitingOn" value="${esc(item.event.work?.waitingOn||'')}" placeholder="Person or team (optional)"></label><label>Result / dead-end notes<textarea name="outcomeNotes">${esc(item.event.work?.outcomeNotes||'')}</textarea></label><label>Earlier tasks<select name="earlier" multiple>${all.filter(e=>e.id!==item.id).map(e=>`<option value="${esc(e.id)}" ${item.dependencies.includes(e.id)?'selected':''}>${esc(e.event.summary)}</option>`).join('')}${item.dependencies.filter(id=>!all.some(e=>e.id===id)).map(id=>`<option value="${esc(id)}" selected>Earlier task not loaded</option>`).join('')}</select></label><label><input name="needed" type="checkbox" ${item.event.work?.followUpNeeded?'checked':''}>Follow-up needed</label><label>Next action / project<input name="followUpTitle" value="${esc(item.event.work?.followUpTitle||'')}"></label><label>Existing follow-up task<select name="followUpTaskId"><option value="">No linked task</option>${all.filter(e=>e.id!==item.id).map(e=>`<option value="${esc(e.id)}" ${e.id===item.event.work?.followUpTaskId?'selected':''}>${esc(e.event.summary)}</option>`).join('')}${follow?.unresolved?`<option selected value="${esc(follow.taskId)}">Linked task not loaded</option>`:''}</select></label><label>Scheduled date (optional)<input type="date" name="followUpAt" value="${esc(item.event.work?.followUpAt?.slice(0,10)||'')}"></label><p>Leave the date unset for a ghost follow-up. Its visual position is not a commitment.</p><p role="alert" class="sl-progress-error"></p><button type="submit">Save status & follow-up</button></form>`:''}
+      <h3>Earlier tasks / dependencies</h3><ul>${deps.length?deps.map(d=>`<li>${d.item?`<button data-id="${esc(d.id)}">${esc(d.item.event.summary)}</button>`:'Unavailable item (not loaded or not shared)'} · ${d.unresolved?'unresolved':'done'}${writable(item)?` <button data-remove-link="${esc(d.id)}" aria-label="Remove dependency">×</button>`:''}</li>`).join(''):'<li>None</li>'}</ul>
       <h3>Depends on</h3><ul>${deps.length?deps.map(d=>`<li>${d.item?`<button data-id="${esc(d.id)}">${esc(d.item.event.summary)}</button>`:'Unavailable item (not loaded or not shared)'} · ${d.unresolved?'unresolved':'done'}${writable(item)?` <button data-remove-link="${esc(d.id)}" aria-label="Remove dependency">×</button>`:''}</li>`).join(''):'<li>None</li>'}</ul>
       <h3>Next steps</h3><ul>${next.length?next.map(e=>`<li><button data-id="${esc(e.id)}">${esc(e.event.summary)}</button></li>`).join(''):'<li>No linked follow-up</li>'}</ul>
       ${selectedLink?.to===item.id&&writable(item)?`<div class="sl-link-editor"><strong>Selected connection</strong><p>Endpoints stay attached to their objects. In Connect mode, drag its handle to snap the curve in 8 px steps.</p><button data-action="route-style">Reset curve</button></div>`:''}
-      <div class="sl-actions">${writable(item)?'<button data-action="edit">Edit item</button>':''}<button data-action="focus">Focus time</button>${source==='loaded'&&item.access.canWrite?'<button data-action="share-lane">Lane access & sharing</button>':''}</div></section>`;
+      <div class="sl-actions">${(calendarEditKey(item)||writable(item))?'<button data-action="edit">Edit event</button>':''}<button data-action="focus">Focus time</button>${source==='loaded'&&item.access.canWrite?'<button data-action="share-lane">Lane access & sharing</button>':''}</div></section>`;
+    const progressForm=eventMode.querySelector('#sl-work-progress');
+    progressForm?.elements.waitingFollowUp.addEventListener('change',e=>{progressForm.elements.status.value=e.target.checked?'waiting':'todo';});
+    progressForm?.elements.status.addEventListener('change',e=>{progressForm.elements.waitingFollowUp.checked=e.target.value==='waiting';});
+    eventMode.querySelector('#sl-work-progress')?.addEventListener('submit',async e=>{
+      e.preventDefault();const data=new FormData(e.target),dependencies=data.getAll('earlier');
+      if(M.cycle(item.id,dependencies,all)){e.target.querySelector('.sl-progress-error').textContent='An earlier-task link cannot create a cycle.';return;}
+      const work={...item.event.work,activityType:data.get('activityType'),status:data.get('status'),waitingOn:data.get('waitingOn').trim(),outcomeNotes:data.get('outcomeNotes').trim(),dependencies,links:item.links.filter(link=>dependencies.includes(link.uid)),followUpNeeded:data.has('needed'),followUpTitle:data.get('followUpTitle').trim(),followUpTaskId:data.get('followUpTaskId'),followUpAt:data.get('followUpAt')||null};
+      const button=e.target.querySelector('[type=submit]');button.disabled=true;
+      try{await persist({...item.event,work});render();detail(item.id);}catch(error){e.target.querySelector('.sl-progress-error').textContent='Not saved: '+error.message;button.disabled=false;}
+    });
+
   }
   async function persist(event){
     if(source==='example'){const next=demo.filter(e=>e.uid!==event.uid).concat(event);localStorage.setItem(KEY,JSON.stringify(next));demo=next;return;}
     const requestId=crypto.randomUUID();
     await new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>{pending.delete(requestId);reject(new Error('Save timed out. Refresh shared layers before retrying.'));},20000);
-      pending.set(requestId,{resolve,reject,timer});parentSend({type:'CIRCAEVUM_SAVE_WORK',requestId,event});
+      pending.set(requestId,{resolve,reject,timer});parentSend({type:event.projectLinkId?'CIRCAEVUM_SAVE_PROJECT_WORK':'CIRCAEVUM_SAVE_WORK',requestId,event});
     });
   }
   async function saveWork(item,work){
@@ -448,7 +571,10 @@
     selected=target.id;panelMode='event';await saveWork(target,{...target.event.work,dependencies:deps,links});
   }
   function editor(id){
-    const item=items().find(e=>e.id===id);if(source!=='example'){if(item&&writable(item))parentSend({type:'CIRCAEVUM_EDIT_EVENT',event:item.event});return;}
+    const item=items().find(e=>e.id===id);
+    const key=calendarEditKey(item);
+    if(key){parentSend({type:'CIRCAEVUM_EDIT_LANE_EVENT',key});return;}
+    if(source!=='example'){if(item&&writable(item))parentSend({type:'CIRCAEVUM_EDIT_EVENT',event:item.event});return;}
     const e=item?.event||{uid:'work-example-'+crypto.randomUUID(),summary:'',category:'Delivery',dtstart:{dateTime:new Date(focus).toISOString()},dtend:{dateTime:new Date(focus+3600000).toISOString()},work:{project:project||'OpenAMI / ISV',lane:'Delivery',kind:'task',status:'todo',workflow:'communication',dependencies:[]}};
     selected=e.uid;panelMode='event';syncPanel(true);
     const field=(label,name,value,type='text',required=false)=>`<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${required?'required':''}></label>`;
@@ -466,14 +592,32 @@
     const port=e.target.closest('[data-port]');if(port){if(draw?.moved||Date.now()<suppressPortClickUntil)return;const p={id:port.dataset.item,port:port.dataset.port};if(linkStart){const a=linkStart;linkStart=null;await makeLink(a,p);}else{linkStart=p;notice='Select the target endpoint.';(side.querySelector('.sl-notice')||host.querySelector('.sl-notice')).textContent=notice;}return;}
     const link=e.target.closest('[data-link-from]');if(link){selectedLink={from:link.dataset.linkFrom,to:link.dataset.linkTo};selected=selectedLink.to;panelMode='event';render();return;}
     const assign=e.target.closest('[data-assign-lane]');if(assign){assignProjectEvent(assign.dataset.assignId,assign.dataset.assignLane);return;}
+    const iconButton=e.target.closest('[data-event-icon]');
+    if(iconButton){
+      const item=rows().find(row=>row.id===selected);
+      const icon=iconButton.dataset.eventIcon;
+      if(!canChooseIcon(item))return;
+      if(icon==='card')eventIconChoices.delete(item.id);
+      else if(Object.hasOwn(eventIcons,icon))eventIconChoices.set(item.id,icon);
+      else return;
+      try{localStorage.setItem(ICON_KEY,JSON.stringify([...eventIconChoices]));}catch(_){}
+      render();
+      host.querySelector(`[data-event-icon="${icon}"]`)?.focus();
+      return;
+    }
     const card=e.target.closest('[data-id]');if(card){selected=card.dataset.id;panelMode='event';render();return;}
+    const createWork=e.target.closest('[data-create-work-type]');
+    if(createWork&&collectionId==='linked-project'&&canCreateProjectMarker){
+      parentSend({type:'CIRCAEVUM_CREATE_PROJECT_MARKER',project,lane:'Research',time:focus,activityType:createWork.dataset.createWorkType});
+      return;
+    }
     const addMarker=e.target.closest('[data-create-marker]');
     if(addMarker&&collectionId==='linked-project'&&canCreateProjectMarker){
       const time=focus>=start&&focus<start+span?focus:start+span/2;
       parentSend({type:'CIRCAEVUM_CREATE_PROJECT_MARKER',project,lane:addMarker.dataset.createMarker,time});
       return;
     }
-    const lane=e.target.closest('[data-lane]');if(lane){if(reviewColors)return;const key=lane.dataset.lane;if(selectedMode!=='basic'&&collectionId!=='linked-project')return;if(collectionId==='linked-project'){const name=lane.closest('.sl-label')?.dataset.workLane;if(workLaneOrder.has(name)){parentSend({type:'CIRCAEVUM_CONFIGURE_PROJECT_LANE',project,lane:name});return;}}if(kept.has(key))kept.delete(key);else if(selectedMode!=='basic'||kept.size<3)kept.add(key);else notice='Choose up to three lanes for the lowered view.';if(kept.has(key))requestLaneData(true);render();return;}
+    const lane=e.target.closest('[data-lane]');if(lane){if(reviewColors)return;const key=lane.dataset.lane;if(selectedMode!=='basic'&&collectionId!=='linked-project')return;if(collectionId==='linked-project'){const name=lane.closest('.sl-label')?.dataset.workLane;if(workLaneOrder.has(name)){parentSend({type:'CIRCAEVUM_CONFIGURE_PROJECT_LANE',project:lane.closest('.sl-label')?.dataset.project,lane:name});return;}}if(kept.has(key))kept.delete(key);else if(selectedMode!=='basic'||kept.size<3)kept.add(key);else notice='Choose up to three lanes for the lowered view.';if(kept.has(key))requestLaneData(true);render();return;}
     const remove=e.target.closest('[data-remove-link]');if(remove){const target=items().find(x=>x.id===selected);if(target)await saveWork(target,{...target.event.work,dependencies:target.dependencies.filter(x=>x!==remove.dataset.removeLink),links:target.links.filter(x=>x.uid!==remove.dataset.removeLink)});return;}
     const tick=e.target.closest('[data-time]');if(tick){focus=Number(tick.dataset.time);start=focus-span/2;changedTime();render();return;}
     const action=e.target.closest('[data-action]')?.dataset.action;if(!action)return;
@@ -494,15 +638,19 @@
     if(action==='route-style'&&selectedLink){const target=items().find(e=>e.id===selectedLink.to);if(target){const spec=target.links.find(l=>l.uid===selectedLink.from)||{};await saveWork(target,{...target.event.work,links:target.links.filter(l=>l.uid!==selectedLink.from).concat({...spec,uid:selectedLink.from,route:'elbow',offset:0})});}return;}
     if(action==='focus'){const item=items().find(e=>e.id===selected);if(item){start=item.start-span/2;changedTime();} }
     if(action==='share-lane'){const item=items().find(e=>e.id===selected);if(item)parentSend({type:'CIRCAEVUM_SHARE_WORK_LANE',uid:item.event.uid});return;}
-    if ((reviewColors || zoom==='day' || zoom==='clock') && ['prev','next','today'].includes(action)) {
-      const day = new Date(action==='today'?Date.now():focus);
-      day.setDate(day.getDate()+(action==='next'?1:action==='prev'?-1:0));
-      day.setHours(12,0,0,0);
-      if(zoom!=='clock')zoom='day';
-      start=+day-span/2;changedTime();return;
+    if (['prev','next','today'].includes(action)) {
+      const direction=action==='prev'?-1:1;
+      const target=new Date(action==='today'?Date.now():focus);
+      if (zoom==='day'||zoom==='clock'||zoom==='week') {
+        if(action!=='today')target.setDate(target.getDate()+direction*(zoom==='week'?7:1));
+        if(zoom!=='week')target.setHours(12,0,0,0);
+      } else if(action!=='today') {
+        target.setTime(+target+direction*span);
+      }
+      start=+target-span/2;
+      changedTime();
+      return;
     }
-    if(action==='prev')start-=span;if(action==='next')start+=span;if(action==='today')start=Date.now()-span/2;
-    if(['prev','next','today'].includes(action))changedTime();
     if(action==='fit')fit();if(action==='density')compact=!compact;if(action==='connect'){connect=!connect;linkStart=null;notice='';}
     if(action==='workflow')showWorkflow=!showWorkflow;if(action==='dismiss-detail'){selected=null;panelMode='timeline';}if(action==='cancel'){selected=null;panelMode='timeline';syncPanel();}
     if(action==='refresh'){notice='Refreshing shared access…';parentSend({type:'CIRCAEVUM_REFRESH_WORK'});}render();
@@ -511,7 +659,7 @@
     if(e.target.id==='sl-source'){source=e.target.value;project='';selected=null;notice='';fit();if(source==='loaded')parentSend({type:'CIRCAEVUM_REFRESH_WORK'});}
     else if(e.target.id==='sl-project'){project=e.target.value;selected=null;fit();}
     else if(e.target.id==='sl-zoom'){zoom=e.target.value;span=ZOOMS[zoom][1]*M.DAY;start=focus-span/2;changedTime();}
-    else if(e.target.id==='sl-date'){const value=M.time(e.target.value);if(Number.isFinite(value)){start=value-span/2;changedTime();}}
+    else if(e.target.id==='sl-date'){const date=new Date(M.time(e.target.value));if(Number.isFinite(+date)){const current=new Date(focus);date.setHours(current.getHours(),current.getMinutes(),current.getSeconds(),current.getMilliseconds());start=+date-span/2;changedTime();}}
     else return;render();
   }
   function assignProjectEvent(id,lane){
@@ -523,7 +671,7 @@
       parentSend({type:'CIRCAEVUM_MOVE_LANE_EVENT',requestId:laneMoveId,key:item.event.key,layer:destination});render();return;
     }
     if(collectionId!=='linked-project'||!item?.event.projectLinkId||!['Attached calendars',...workLaneOrder.keys()].includes(lane))return
-    parentSend({type:'CIRCAEVUM_ASSIGN_PROJECT_EVENT',project,linkId:item.event.projectLinkId,sourceId:item.event.projectSourceId,lane})
+    parentSend({type:'CIRCAEVUM_ASSIGN_PROJECT_EVENT',project:item.project,linkId:item.event.projectLinkId,sourceId:item.event.projectSourceId,lane})
   }
   host.addEventListener('dragstart',e=>{
     const card=e.target.closest('[data-id][draggable="true"]');if(!card)return
@@ -537,6 +685,7 @@
   side.addEventListener('change',onControlChange);
   host.addEventListener('wheel',e=>{
     if(e.ctrlKey||!e.target.closest('.sl-board-scroll'))return;
+    if(selectedMode==='work')return;
     if(reviewColors&&!e.shiftKey)return;
     const delta=Math.abs(e.deltaX)>Math.abs(e.deltaY)*.3?e.deltaX:e.shiftKey?e.deltaY:0;if(!delta)return;
     e.preventDefault();e.stopPropagation();queuedPan+=delta*(e.deltaMode===1?16:e.deltaMode===2?600:1);
@@ -616,10 +765,11 @@
       if(data.update&&(collectionId!=='linked-project'||project!==data.project))return;
       githubDelivery=data.github||null;
       canCreateProjectMarker=data.canCreateMarker===true;
+      projectSourceLayers=data.sourceLayers&&!Array.isArray(data.sourceLayers)?data.sourceLayers:{[data.project]:data.sourceLayers||[]};
       supplied=data.events;
       if(data.update){if(opened)render();return;}
-      reviewColors=null;selectedMode='work';collectionId='linked-project';collectionLabel=data.project||'Project';
-      source='loaded';project=collectionLabel;laneRank=workLaneOrder;kept.clear();setOpen(true);
+      reviewColors=null;selectedMode='work';collectionId='linked-project';collectionLabel=Object.keys(projectSourceLayers).length>1?'Work projects':data.project||'Project';
+      source='loaded';project=data.project||'';laneRank=workLaneOrder;kept.clear();setOpen(true);
     }
     if(data?.type==='CIRCAEVUM_REOPEN_SWIM_LANES'){reopenSwimLanes();return;}
     if(data?.type==='CIRCAEVUM_CLOSE_SWIM_LANES'){setOpen(false);return;}
@@ -655,9 +805,10 @@
       reviewWork=data.events;
       if(reviewColors&&opened)render();
     }
+    if(data?.type==='CIRCAEVUM_REFRESH_CALENDAR_LANES'&&opened&&collectionId==='layers'){requestLaneData(true);render();}
     if(data?.type==='CIRCAEVUM_REFRESH_REVIEW_LANES'&&reviewColors&&opened){requestLaneData(true);render();}
     if(data?.type==='CIRCAEVUM_OPEN_LAYERS'&&Array.isArray(data.layerNames))window.openSwimLayerNames(data.layerNames, data.title, data.mode, data.reviewColors);
-    if(data?.type==='CIRCAEVUM_WORK_SAVED'){const p=pending.get(data.requestId);if(!p)return;clearTimeout(p.timer);pending.delete(data.requestId);if(data.error)p.reject(new Error(data.error));else{if(supplied&&data.event)supplied=supplied.map(x=>x.uid===data.event.uid&&x.workAccess?.canWrite?{...x,...data.event}:x);p.resolve();}}
+    if(data?.type==='CIRCAEVUM_WORK_SAVED'){const p=pending.get(data.requestId);if(!p)return;clearTimeout(p.timer);pending.delete(data.requestId);if(data.error)p.reject(new Error(data.error));else{if(supplied&&data.event)supplied=supplied.map(x=>(data.event.projectLinkId?x.workRef===data.event.workRef:x.uid===data.event.uid)&& (x.workAccess?.canWrite||x.workAccess?.canTrack)?{...x,work:data.event.work}:x);p.resolve();}}
   });
   // The viewer initializes after these scripts; read its selected time once ready.
   let startupAttempts=0;
