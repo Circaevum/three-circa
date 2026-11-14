@@ -6,6 +6,12 @@ body:not(.swim-lanes-open) .swim-lanes-menu{bottom:12px}
 #swim-lanes{--paper:#fff;--bg:#f4f7f9;--ink:#253b4b;--line:#dce4e9;--muted:#627483;--tint:.065;position:fixed;inset:auto 0 0;height:56vh;min-height:330px;max-height:calc(100vh - 148px);border-radius:16px 16px 0 0;box-shadow:0 -8px 30px #0003;animation:sl-rise .24s ease-out;z-index:11000;padding:16px 20px 20px;background:var(--bg);color:var(--ink);overflow:auto;font:12px/1.4 system-ui,sans-serif;overscroll-behavior:contain}
 #swim-lanes[hidden]{display:none}
 body:not(.light-mode) #swim-lanes{--paper:#15232e;--bg:#101a23;--ink:#d9e5ec;--line:#2d3d49;--muted:#91a4b0;--tint:.11}
+body.light-mode :is(#swim-lanes, #sl-side, #sl-title-rail, #sl-event-mode) {
+  --ink: #253b4b;
+  --muted: #475569;
+  color: var(--ink);
+  color-scheme: light;
+}
 body.viewer-no-nav #swim-lanes{top:auto}
 #swim-lanes *{box-sizing:border-box}
 #swim-lanes h1{font:600 23px/1.2 system-ui!important;letter-spacing:-.6px;margin:0;color:var(--ink);text-shadow:none}
@@ -282,12 +288,23 @@ body.portal-calendar-layout #swim-lanes.sl-basic-full .sl-links{left:140px;width
 
 .sl-load-state{position:sticky;left:10px;top:8px;z-index:4;display:flex;align-items:center;gap:8px;width:fit-content;max-width:95%;padding:7px;background:#14232f;color:#d5e0e6;font-size:12px}
 .sl-loading-spinner{width:12px;height:12px;border:2px solid #ffffff30;border-top-color:currentColor;border-radius:50%;animation:sl-spin .8s linear infinite}
+body.light-mode #swim-lanes .sl-load-state {
+  background: var(--paper);
+  color: var(--ink);
+}
+body.light-mode #swim-lanes .sl-loading-spinner {
+  border-color: var(--line);
+  border-top-color: currentColor;
+}
 @keyframes sl-spin{to{transform:rotate(360deg)}}
 body.portal-calendar-layout #swim-lanes.sl-row-attached{left:var(--lane-anchor-left);top:56px;bottom:0;height:calc(100vh - 56px);max-height:none;min-height:0;background:transparent;border:0;box-shadow:none;pointer-events:none;overflow:hidden}
 body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-bar{pointer-events:auto;background:#101e28}
 body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-notice{display:none}
 body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-layout,body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-board-scroll,body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-board,body.portal-calendar-layout #swim-lanes.sl-row-attached #sl-rows{position:static;overflow:visible;background:transparent}
 body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-lane{position:absolute;left:0;right:0;grid-template-columns:1fr;background:#14232f;pointer-events:auto;transition:none;overflow:hidden}
+body.light-mode.portal-calendar-layout #swim-lanes.sl-row-attached :is(.sl-bar, .sl-lane) {
+  background: var(--paper);
+}
 body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-label,body.portal-calendar-layout #swim-lanes.sl-row-attached .sl-links{display:none}
 body.portal-calendar-layout #swim-lanes:not(.sl-row-attached).sl-basic-full{left:0;top:auto;height:38vh;min-height:250px;max-height:60vh;border-radius:12px 12px 0 0}
 @media(prefers-reduced-motion:reduce){body.portal-calendar-layout #swim-lanes .sl-lane{transition:none}.sl-loading-spinner{animation:none}}
