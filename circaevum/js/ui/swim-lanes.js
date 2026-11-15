@@ -9,18 +9,29 @@
     ai: ['🤖', 'AI thread'], meeting: ['👥', 'Meeting'], development: ['💻', 'Development'],
     task: ['☑️', 'Task'], milestone: ['🏁', 'Milestone'], teams: ['💬', 'Teams message'], message: ['💬', 'Message'],
   };
+  const activityIcons = {
+    cycling: ['🚲', 'Cycling'], running: ['🏃', 'Running'], walking: ['🚶', 'Walking'],
+    hiking: ['🥾', 'Hiking'], swimming: ['🏊', 'Swimming'], strength: ['🏋', 'Strength'],
+    workout: ['⚡', 'Workout'],
+  };
+  const iconOptions = {...eventIcons, ...activityIcons};
   const ITEM_TYPES={meeting:'Meeting',email:'Email',phone:'Phone call',teams:'Teams message',message:'Message',task:'Task',milestone:'Milestone'};
   const eventIconChoices = new Map();
   try {
     for (const [id, icon] of JSON.parse(localStorage.getItem(ICON_KEY) || '[]')) {
       const value = icon === 'dot' ? 'task' : icon === 'flag' ? 'milestone' : icon;
-      if (typeof id === 'string' && Object.hasOwn(eventIcons, value)) eventIconChoices.set(id, value);
+      if (typeof id === 'string' && Object.hasOwn(iconOptions, value)) eventIconChoices.set(id, value);
     }
   } catch (_) {}
   const canChooseIcon = item => item && !item.event.githubActivity &&
-    !item.event.render?.metric && item.event.circaevumSourceDetail !== 'garmin_sleep' &&
-    !window.CalendarLaneEvents.isGarminActivity(item.event);
-  const chosenIcon = item => canChooseIcon(item) ? eventIconChoices.get(item.id) : undefined;
+    !item.event.render?.metric && item.event.circaevumSourceDetail !== 'garmin_sleep';
+  const iconsForItem = item => window.CalendarLaneEvents.isGarminActivity(item?.event) ||
+    selectedMode==='health' ? activityIcons : eventIcons;
+  const chosenIcon = item => {
+    if (!canChooseIcon(item)) return undefined;
+    const choice = eventIconChoices.get(item.id);
+    return Object.hasOwn(iconsForItem(item), choice) ? choice : undefined;
+  };
   const SLEEP_COLOR = '#8b5cf6';
   const STATUS_ICONS = {done:'✓',blocked:'!',cancelled:'×',waiting:'…'};
   let demo=M.seed(), workSupplied=null, supplied=null, source='example', project='', selected=null, zoom='month', compact=true, connect=false;
@@ -351,9 +362,9 @@
       <button type="button" data-action="next" aria-label="Next ${stepLabel}" title="Next ${stepLabel}">→</button>
       <input id="sl-date" type="date" title="Selected time: ${esc(new Date(focus).toLocaleString())}" aria-label="Go to date" value="${localDate(focus)}">`;
     const selectedEvent=list.find(item=>item.id===selected&&item.start<end&&(item.end>start||item.start>=start));
-    const iconRibbon=`<div class="sl-icon-ribbon" role="group" aria-label="Event icon">
-      <span>${canChooseIcon(selectedEvent)?esc(selectedEvent.event.summary||'Event'):'Select an event'}</span>
-      ${[['card',['📄','Event card']],...Object.entries(eventIcons)].map(([value,[glyph,label]])=>
+    const iconRibbon=`<div class="sl-icon-ribbon" role="group" aria-label="${selectedMode==='health'?'Activity icon':'Event icon'}">
+      <span>${canChooseIcon(selectedEvent)?esc(selectedEvent.event.summary||'Event'):selectedMode==='health'?'Select an activity':'Select an event'}</span>
+      ${[['card',selectedMode==='health'||iconsForItem(selectedEvent)===activityIcons?['↺','Default icon']:['📄','Event card']],...Object.entries(iconsForItem(selectedEvent))].map(([value,[glyph,label]])=>
         `<button type="button" data-event-icon="${value}" title="${label}" aria-label="${label}"
           aria-pressed="${(chosenIcon(selectedEvent)||'card')===value}" ${canChooseIcon(selectedEvent)?'':'disabled'}><span aria-hidden="true">${glyph}</span> ${label}</button>`).join('')}
     </div>`;
@@ -464,7 +475,7 @@
           return `<span class="sl-activity-duration" style="left:${left}%;width:${right-left}%;top:${middle}px;--object:${color}" aria-hidden="true"></span>
             <div class="sl-object sl-activity-point ${e.status==='waiting'?'sl-waiting':''}" style="left:${left}%;top:${top}px;height:${cardHeight}px;--object:${color}">
               <button type="button" class="sl-card sl-activity-marker ${selected===e.id?'sl-selected':''}" data-id="${esc(e.id)}"
-                draggable="${draggable}" title="${eventIcons[iconChoice][1]} · ${title} · ${times}" aria-label="${eventIcons[iconChoice][1]}, ${title}, ${times}">${eventIcons[iconChoice][0]}</button>${connectionPorts(e)}
+                draggable="${draggable}" title="${iconOptions[iconChoice][1]} · ${title} · ${times}" aria-label="${iconOptions[iconChoice][1]}, ${title}, ${times}">${iconOptions[iconChoice][0]}</button>${connectionPorts(e)}
             </div>`;
         }
         const activity=e.event.githubActivity;
@@ -582,7 +593,7 @@
     eventMode.querySelector('#sl-detail').innerHTML=`<section class="sl-detail"><div class="sl-actions"><strong>${esc(item.kind)} · ${esc(item.status)}</strong><button data-action="dismiss-detail" aria-label="Close item details">×</button></div><h2>${esc(item.event.summary)}</h2><p>${esc(item.project)} / ${esc(item.lane)}</p><p>${new Date(item.start).toLocaleString()}${item.kind==='milestone'?'':' → '+new Date(item.end).toLocaleString()}</p><p>${esc(item.event.description||'')}</p>${item.event.githubActivity&&/^https:\/\/github\.com\//.test(item.event.url)?`<p><a href="${esc(item.event.url)}" target="_blank" rel="noreferrer">Open on GitHub</a></p>`:''}<p>${M.workflows[item.workflow][1]} ${M.workflows[item.workflow][0]}</p><p>Access: ${esc(source==='example'?'Local example':item.access.label)}${item.access.ownerId?'<br>Owner: '+esc(item.access.ownerId):''}</p><p>Responsible: ${esc(item.assignee||'Unassigned')}<br>Follow-up: ${Number.isFinite(item.followUpAt)?new Date(item.followUpAt).toLocaleString():'Not set'}</p>
       ${r.overdue||r.followUpDue||r.noFollowUp?`<p class="sl-attention">${r.overdue?'Past due. ':''}${r.followUpDue?'Follow-up due. ':''}${r.noFollowUp?'Past meeting has no linked next step.':''}</p>`:''}
       ${collectionId==='linked-project'&&item.event.projectLinkId?`<div class="sl-actions" aria-label="Move event to work lane">${['Attached calendars',...workLaneOrder.keys()].filter(l=>l!==item.lane).map(l=>`<button data-assign-lane="${esc(l)}" data-assign-id="${esc(item.id)}">Move to ${esc(l)}</button>`).join('')}</div>`:''}
-      ${chosenIcon(item)?`<p>Swim Lanes icon · ${eventIcons[chosenIcon(item)][1]}</p>`:''}
+      ${chosenIcon(item)?`<p>Swim Lanes icon · ${iconOptions[chosenIcon(item)][1]}</p>`:''}
       <p>${item.status==='waiting'?'Waiting on follow-up'+(item.event.work?.waitingOn?' from '+esc(item.event.work.waitingOn):''):''}${item.status==='no-outcome'?'Dead end / no outcome':''}</p>
       ${item.event.work?.outcomeNotes?`<p>${esc(item.event.work.outcomeNotes)}</p>`:''}
       ${follow?`<h3>Follow-up</h3><p>${esc(follow.title)} · ${follow.ghost?'Date not set':new Date(follow.scheduledAt).toLocaleString()}${follow.unresolved?' · linked task not loaded':''}</p>${follow.taskId&&!follow.unresolved?`<button data-id="${esc(follow.taskId)}">Open follow-up task</button>`:''}`:''}
@@ -651,7 +662,7 @@
       const icon=iconButton.dataset.eventIcon;
       if(!canChooseIcon(item))return;
       if(icon==='card')eventIconChoices.delete(item.id);
-      else if(Object.hasOwn(eventIcons,icon))eventIconChoices.set(item.id,icon);
+      else if(Object.hasOwn(iconsForItem(item),icon))eventIconChoices.set(item.id,icon);
       else return;
       try{localStorage.setItem(ICON_KEY,JSON.stringify([...eventIconChoices]));}catch(_){}
       render();
