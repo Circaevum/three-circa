@@ -220,6 +220,7 @@
   function zoomName(level){
     const hit=Object.keys(ZOOMS).find(k=>ZOOMS[k][0]===level);
     if(hit)return hit;
+    if(level===0)return 'day';
     if(level===6)return 'month';
     return 'year';
   }
@@ -234,7 +235,7 @@
         return {start:+weekStart,span:weekEnd-weekStart,context:null};
       }
     }
-    if (payload?.zoom === 8 || payload?.zoom === 9) {
+    if (payload?.zoom === 8 || payload?.zoom === 9 || payload?.zoom === 0) {
       const day = M.localDayWindow(payload.focus);
       if (day) return day;
     }

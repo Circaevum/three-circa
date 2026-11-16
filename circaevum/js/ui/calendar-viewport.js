@@ -110,7 +110,7 @@
     const data = event.data;
     if(data?.type==='CIRCAEVUM_DEPTH_LAYOUT'){applyDepthLayout(data.depthLayout);syncDepthPages();return;}
     if (data?.type !== 'CIRCAEVUM_HOST_CHROME' || data.workbench !== true) return;
-    Object.assign(state, { managed: true, enabled: data.fitViewport === true, workEnabled: data.workEnabled === true,
+    Object.assign(state, { managed: true, circadianAccountData: data.circadianAccountData === true, signedIn: data.signedIn === true, enabled: data.fitViewport === true, workEnabled: data.workEnabled === true,
       left: Number.isFinite(data.left) ? Math.max(0, data.left) : 0,
       right: Number.isFinite(data.right) ? Math.max(0, data.right) : 0 });
     document.body.classList.toggle('interface-depth',data.depthPreview === true);

@@ -1,0 +1,2 @@
+# SPA fallback: /my-slug loads the app so the client can call rpc_resolve_calendar_slug (Netlify).
+/*  /index.html  200

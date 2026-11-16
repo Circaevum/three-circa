@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="circaevum/css/styles.css?v=collections-1">
     <link rel="stylesheet" href="circaevum/css/swim-lanes.css?v=light-mode-contrast-1">
     <link rel="stylesheet" href="circaevum/css/mode-theme.css?v=modes-1">
+    <link rel="stylesheet" href="circaevum/css/circadian-2d.css?v=health-traces-1">
     <link rel="describedby" href="/llms.txt" type="text/plain">
     <link rel="alternate" type="text/markdown" href="/index.md" title="Circaevum (markdown)">
     <link rel="help" href="/developers.html" title="Developers &amp; AI agents">
@@ -54,7 +55,24 @@
 
     <!-- Main area: full-width canvas -->
     <div id="main-after-nav">
-        <div id="canvas-container" role="application" aria-label="Circaevum 3D time visualization"></div>
+        <div id="canvas-container" role="application" aria-label="Circaevum time visualization">
+            <div id="circadian-render-mode" role="group" aria-label="Daily display renderer" hidden>
+                <button type="button" value="2D" aria-pressed="true" title="2D circadian view">2D</button>
+                <button type="button" value="3D" aria-pressed="false" title="3D circadian view">3D</button>
+            </div>
+            <section id="circadian-2d" aria-label="Daily circadian clock" hidden>
+                <div class="circadian-date">
+                    <button type="button" data-day-step="-1" aria-label="Previous day" title="Previous day">‹</button>
+                    <time></time>
+                    <button type="button" data-day-step="1" aria-label="Next day" title="Next day">›</button>
+                </div>
+                <svg viewBox="-215 -215 430 430" aria-label="24-hour dial in local time, with noon at the top">
+                    <g class="circadian-face"></g>
+                    <g class="circadian-selection" pointer-events="none"></g>
+                </svg>
+                <div class="circadian-day-status"></div>
+            </section>
+        </div>
     </div>
 
     <button type="button" id="calendar-layers-pull-tab" class="calendar-layers-pull-tab" aria-label="Open Layers" title="Layers" aria-controls="calendars-left-panel" aria-expanded="false">Layers</button>
@@ -709,10 +727,12 @@
     <script src="circaevum/js/ui/perf-hud.js?v=perf-hud-v4"></script>
     <!-- Main Application Script -->
     <script src="circaevum/js/ui/keyboard-focus.js?v=1"></script>
-    <script src="circaevum/js/main.js?v=swim-week-focus-1"></script>
+    <script src="circaevum/js/vendor/d3-arc/d3-arc.min.js?v=3.2.0"></script>
+    <script src="circaevum/js/ui/circadian-2d.js?v=health-traces-1"></script>
+    <script src="circaevum/js/main.js?v=account-day-1"></script>
     
     <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
-    <script src="circaevum/js/api/circaevum-gl.js?v=super-year-any-year-v1"></script>
+    <script src="circaevum/js/api/circaevum-gl.js?v=circadian-2d-1"></script>
     
     <!-- Circaevum GL API helpers: use from console or scripts -->
     <script src="circaevum/js/ui/gl-api-bridge.js"></script>
@@ -735,8 +755,8 @@
     <script src="circaevum/js/models/work-timeline.js?v=work-followups-1"></script>
     <script src="circaevum/js/models/work-mode.js?v=work-mode-1"></script>
     <script src="circaevum/js/ui/calendar-lane-events.js?v=health-overlay-1"></script>
-    <script src="circaevum/js/ui/swim-lanes.js?v=health-activity-icons-1"></script>
-    <script src="circaevum/js/ui/calendar-viewport.js?v=health-auto-20261109-1"></script>
+    <script src="circaevum/js/ui/swim-lanes.js?v=account-day-1"></script>
+    <script src="circaevum/js/ui/calendar-viewport.js?v=account-day-1"></script>
     <script src="circaevum/js/ui/webmcp-tools.js"></script>
     
     <!-- Audio Script -->

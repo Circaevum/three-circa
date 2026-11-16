@@ -701,12 +701,12 @@ class CircaevumGL {
   // ============================================
 
   /**
-   * Set zoom level (1-9)
+   * Set zoom level (0-9)
    * @param {number} level - Zoom level
    */
   setZoomLevel(level) {
-    if (level < 1 || level > 9) {
-      console.warn(`Invalid zoom level: ${level}. Must be 1-9.`);
+    if (!Number.isInteger(level) || level < 0 || level > 9) {
+      console.warn(`Invalid zoom level: ${level}. Must be an integer from 0 to 9.`);
       return;
     }
 

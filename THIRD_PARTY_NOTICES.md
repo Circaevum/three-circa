@@ -30,6 +30,13 @@ This file documents attribution and license information for those dependencies.
 - Upstream: https://github.com/niklasvh/html2canvas
 - License: MIT
 
+4) D3 arc generator
+-------------------
+- Component: `circaevum/js/vendor/d3-arc/d3-arc.min.js`
+- Source: [d3-shape 3.2.0](https://github.com/d3/d3-shape/tree/v3.2.0) (`src/arc.js`) and [d3-path 3.1.0](https://github.com/d3/d3-path/tree/v3.1.0).
+- Build: bundle the default export of `d3-shape/src/arc.js` as named export `arc` using esbuild with `--bundle --minify --format=iife --global-name=CircaevumD3`.
+- License: ISC. License texts are in `circaevum/js/vendor/d3-arc/`.
+
 Project license
 ---------------
 - The current project license file is `LICENSE`.

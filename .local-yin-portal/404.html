@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Redirecting…</title>
+</head>
+<body>
+  <p>Redirecting…</p>
+  <script>
+    (function() {
+      var parts = window.location.pathname.split('/').filter(function (s) { return s; });
+      var slug = parts.length ? parts[parts.length - 1] : '';
+      if (slug && slug !== 'index.html' && slug.indexOf('.') === -1) {
+        var basePath = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+        var prefix = basePath ? '/' + basePath : '';
+        var params = new URLSearchParams(window.location.search);
+        if (slug === 'account') {
+          params.delete('slug');
+          params.set('view', 'account');
+        } else {
+          params.set('slug', slug);
+        }
+        window.location.replace(prefix + '/?' + params.toString() + window.location.hash);
+      } else {
+        window.location.replace('/');
+      }
+    })();
+  </script>
+</body>
+</html>

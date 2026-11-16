@@ -718,7 +718,6 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
     const actualYear = now.getFullYear();
     const actualMonth = now.getMonth();
     const actualDayInWeek = now.getDay();
-    const actualHour = now.getHours();
     
     const selectedYear = selectedDate.getFullYear();
     const selectedMonth = selectedDate.getMonth();
@@ -726,6 +725,7 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
     const selectedDayOfWeek = selectedDate.getDay();
     const selectedHour = selectedDate.getHours();
     
+    const utcDay = date => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
     switch(targetZoomLevel) {
         case 1: // Century view - preserve exact selected year
             currentYear = selectedYear;
@@ -797,7 +797,6 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
             selectedSunday.setHours(0, 0, 0, 0);
             
             // Compare calendar dates so a daylight-saving change cannot shift the week.
-            const utcDay = date => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
             selectedDayOffset = Math.round((utcDay(selectedSunday) - utcDay(currentSunday)) / (7 * 86400000));
             
             // Day within week (0-6, where 0 is Sunday)
@@ -809,16 +808,8 @@ function applySelectedDateToZoomLevel(selectedDate, targetZoomLevel) {
         case 0: // Landing camera view (shares day/hour selection model)
         case 8: // Day view
         case 9: // Clock view
-            // Calculate day offset
-            const currentMidnight = new Date(now);
-            currentMidnight.setHours(0, 0, 0, 0);
-            const selectedMidnight = new Date(selectedDate);
-            selectedMidnight.setHours(0, 0, 0, 0);
-            
-            const daysOffset = Math.floor((selectedMidnight - currentMidnight) / (1000 * 60 * 60 * 24));
-            // selectedHourOffset represents days (not hours) - it's multiplied by dayHeight later
-            selectedHourOffset = daysOffset;
-            
+            selectedHourOffset = (utcDay(selectedDate) - utcDay(now)) / 86400000;
+
             // Hour within day
             currentHourInDay = selectedHour;
             selectedMinuteInHour = selectedDate.getMinutes();
@@ -900,7 +891,6 @@ function getSelectedDateTime() {
     const actualYear = now.getFullYear();
     const actualMonth = now.getMonth();
     const actualDayInWeek = now.getDay();
-    const actualHour = now.getHours();
     
     // Apply offsets based on current zoom level
     switch(currentZoom) {
@@ -983,9 +973,8 @@ function getSelectedDateTime() {
         case 0: // Landing camera view (shares day/hour selection model)
         case 8: // Day view
         case 9: // Clock view
-            const hourDiff = currentHourInDay - actualHour;
-            selected.setHours(selected.getHours() + hourDiff + (selectedHourOffset * 24));
-            selected.setMinutes(selectedMinuteInHour, 0, 0);
+            selected.setDate(selected.getDate() + selectedHourOffset);
+            selected.setHours(currentHourInDay, selectedMinuteInHour, 0, 0);
             break;
             
         default:
@@ -13462,6 +13451,7 @@ function applyCircadianEventNameBillboards(root, camRef) {
 }
 
 function animate(time, frame) {
+    if (window.CircaevumCircadian2D?.update(time, currentZoom, !!xrAdapter?.isPresenting())) return;
     time += 0.01;
     
     // Handle XR input if in VR mode (using adapter system)

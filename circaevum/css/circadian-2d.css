@@ -1,0 +1,166 @@
+#circadian-2d[hidden],
+#circadian-render-mode[hidden] {
+    display: none;
+}
+
+body.circadian-2d-active #canvas-container > canvas {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+#circadian-2d {
+    --dial-surface: #131d2a;
+    --dial-line: #3d4d62;
+    --dial-muted: #a9b8cb;
+    --dial-day: #e9b66c;
+    --dial-night: #486383;
+    --dial-hand: #f0ddbd;
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    justify-items: center;
+    align-content: center;
+    gap: 4px;
+    box-sizing: border-box;
+    padding: clamp(10px, 4vh, 45px) clamp(10px, 5vw, 54px);
+    background: var(--deep-space);
+    color: var(--orbit-silver);
+    font-family: "Instrument Sans", system-ui, sans-serif;
+}
+
+body.light-mode #circadian-2d {
+    --dial-surface: #f9fcff;
+    --dial-line: #93a7bf;
+    --dial-muted: #435873;
+    --dial-day: #da963e;
+    --dial-night: #738cab;
+    --dial-hand: #755021;
+}
+
+#circadian-2d svg {
+    display: block;
+    width: min(100%, 580px);
+    height: 100%;
+    min-height: 0;
+    overflow: visible;
+}
+
+.circadian-date {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(4px, 2vw, 16px);
+    font-weight: 600;
+    font-size: clamp(12px, 2vw, 19px);
+    text-align: center;
+}
+
+.circadian-date button,
+#circadian-render-mode button {
+    color: inherit;
+    border: 1px solid var(--ui-border);
+    background: var(--ui-surface-panel);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.circadian-date button {
+    min-width: 36px;
+    height: 34px;
+    padding: 0;
+    font: 22px/1 system-ui, sans-serif;
+}
+
+.circadian-day-status {
+    font-size: 12px;
+    color: var(--dial-muted);
+    text-align: center;
+}
+
+#circadian-render-mode {
+    position: absolute;
+    z-index: 2;
+    left: max(16px, env(safe-area-inset-left, 0px));
+    bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    gap: 3px;
+    padding: 3px;
+    background: var(--ui-surface-panel);
+    border: 1px solid var(--ui-border);
+    border-radius: 9px;
+    color: var(--orbit-silver);
+}
+
+#circadian-render-mode button {
+    min-width: 42px;
+    min-height: 36px;
+    padding: 0 8px;
+    font: 650 12px system-ui, sans-serif;
+}
+
+#circadian-render-mode button[aria-pressed="true"] {
+    color: var(--cosmic-cyan);
+    border-color: currentColor;
+}
+
+.circadian-dial-bg {
+    fill: var(--dial-surface);
+    stroke: var(--dial-line);
+}
+
+.circadian-daylight { fill: var(--dial-day); }
+.circadian-night { fill: var(--dial-night); }
+.circadian-tick { stroke: var(--dial-muted); }
+.circadian-hand { stroke: var(--dial-hand); stroke-width: 2; }
+.circadian-hand-tip { fill: var(--dial-hand); }
+
+.circadian-hour,
+.circadian-clock,
+.circadian-clock-caption {
+    text-anchor: middle;
+    dominant-baseline: middle;
+    font-variant-numeric: tabular-nums;
+}
+
+.circadian-hour,
+.circadian-clock-caption { fill: var(--dial-muted); font-size: 13px; }
+.circadian-clock { fill: currentColor; font-size: 27px; font-weight: 650; }
+.circadian-event { fill: var(--cosmic-cyan); cursor: pointer; }
+.circadian-event:hover,
+.circadian-event:focus-visible { stroke: currentColor; stroke-width: 2; }
+
+.circadian-heart {
+    --dial-heart: #ff7388;
+    pointer-events: none;
+}
+
+body.light-mode .circadian-heart,
+body.light-mode .circadian-heart-selected { --dial-heart: #b3204c; }
+
+.circadian-heart-guide {
+    fill: none;
+    stroke: var(--dial-line);
+    stroke-width: 0.6;
+    stroke-dasharray: 2 3;
+}
+
+.circadian-heart-line {
+    fill: none;
+    stroke: var(--dial-heart);
+    stroke-width: 1.65;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.circadian-heart-dot { fill: var(--dial-heart, #ff7388); }
+
+.circadian-heart-selected {
+    stroke: var(--dial-surface);
+    stroke-width: 1;
+}
+
+.circadian-sleep-stage {
+    stroke: var(--dial-surface);
+    stroke-width: 0.55;
+}

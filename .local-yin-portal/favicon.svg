@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Circaevum">
+  <rect width="32" height="32" rx="7" fill="#0a1424"/>
+  <!-- C: long arc CCW through west, mouth opens east; hub (16, 16) -->
+  <path
+    d="M 24.23 11.25 A 9.5 9.5 0 1 0 24.23 20.75"
+    fill="none"
+    stroke="#22d3ee"
+    stroke-width="2.6"
+    stroke-linecap="round"
+  />
+  <path
+    d="M16 12.2 L17.18 15.05 L20.35 15.05 L17.85 17.05 L18.75 20.35 L16 18.35 L13.25 20.35 L14.15 17.05 L11.65 15.05 L14.82 15.05 Z"
+    fill="#f5d76e"
+  />
+  <circle cx="16" cy="16" r="1.25" fill="#fff6cc"/>
+</svg>
