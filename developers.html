@@ -16,6 +16,7 @@
         <nav class="dev-doc-nav" aria-label="Developer sections">
             <a href="#paths">Paths</a>
             <a href="#discovery">Discovery</a>
+            <a href="#api-reference">API Reference</a>
             <a href="#embed-api">Embed API</a>
             <a href="#postmessage">postMessage</a>
             <a href="#osc">OSC lab</a>
@@ -159,6 +160,19 @@ gl.ingestEvents('my-layer', events, { layerStyles: {} });</code></pre>
             </ul>
         </section>
 
+        <section id="api-reference" class="dev-doc-section" aria-labelledby="api-reference-title">
+            <h2 id="api-reference-title">API Reference</h2>
+            <p>Run Garmin storage, receiver, and backfill queries with your signed-in Circaevum account.</p>
+            <ul class="dev-doc-list">
+                <li><a id="api-account-link" href="https://app.circaevum.com/?view=account">Circaevum account</a></li>
+                <li><a href="docs/garmin-openapi.json">OpenAPI document</a></li>
+                <li><a href="https://apis.garmin.com/tools/dataViewer">Garmin Data Viewer</a> and <a href="https://apis.garmin.com/tools/summaryResender">Summary Resender</a></li>
+            </ul>
+            <p id="api-reference-status" role="status">Loading Scalar API Reference…</p>
+            <div id="scalar-api-reference"></div>
+            <noscript>Enable JavaScript to run requests.</noscript>
+        </section>
+
         <section id="account" class="dev-doc-section">
             <h2>Account &amp; OAuth (Path B — optional)</h2>
             <p>
@@ -191,5 +205,7 @@ gl.ingestEvents('my-layer', events, { layerStyles: {} });</code></pre>
     <footer class="dev-doc-footer">
         <p>© 2026 Circaevum · <a href="/">Back to visualization</a></p>
     </footer>
+    <script defer src="circaevum/js/vendor/scalar/api-reference-1.79.0.js"></script>
+    <script defer src="circaevum/js/ui/developer-api-reference.js"></script>
 </body>
 </html>

@@ -1,0 +1,92 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Circaevum Garmin queries",
+    "version": "1.0.0",
+    "description": "Run these operations with Test Request on Developers & Agents. The request paths identify browser operations routed through the signed-in Circaevum account frame. Standalone HTTP clients cannot call these paths. The account frame uses the signed-in session automatically."
+  },
+  "servers": [{ "url": "/", "description": "Circaevum browser reference" }],
+  "tags": [{ "name": "Garmin", "description": "Storage, webhook delivery, and backfill." }],
+  "paths": {
+    "/api/garmin/storage": {
+      "post": {
+        "operationId": "storedGarminSummaries",
+        "tags": ["Garmin"],
+        "summary": "Check stored summaries",
+        "description": "Read the signed-in account’s selected window from Nakama. The dates describe stored summaries and the events identify records with timeline geometry. Daily summary coverage can include dates with no heart-rate samples.",
+        "requestBody": { "$ref": "#/components/requestBodies/SummaryWindow" },
+        "responses": {
+          "200": { "description": "Summary dates, timeline events, Garmin User IDs found in storage, and any incomplete read." },
+          "400": { "$ref": "#/components/responses/InvalidWindow" },
+          "401": { "$ref": "#/components/responses/SignIn" }
+        }
+      }
+    },
+    "/api/garmin/journal": {
+      "post": {
+        "operationId": "garminReceiverJournal",
+        "tags": ["Garmin"],
+        "summary": "Read receiver journal",
+        "description": "Inspect recent receiver-wide delivery counts. Sleep pushes report accepted.sleeps. A ping can have a separate ping_processed entry. Written and failed count storage outcomes across that delivery.",
+        "responses": {
+          "200": { "description": "Receiver delivery timestamps, modes, summary counts, and storage outcomes." },
+          "401": { "$ref": "#/components/responses/SignIn" },
+          "502": { "description": "The receiver diagnostics query failed." }
+        }
+      }
+    },
+    "/api/garmin/backfill/status": {
+      "post": {
+        "operationId": "garminBackfillStatus",
+        "tags": ["Garmin"],
+        "summary": "Read backfill history and Garmin User IDs",
+        "description": "List the authenticated account’s logged Garmin backfill requests and linked Garmin User IDs when exposed by the receiver. Use Check stored summaries to look up IDs from existing records.",
+        "responses": {
+          "200": { "description": "Backfill requests and any linked Garmin User IDs." },
+          "401": { "$ref": "#/components/responses/SignIn" }
+        }
+      }
+    },
+    "/api/garmin/backfill": {
+      "post": {
+        "operationId": "requestGarminBackfill",
+        "tags": ["Garmin"],
+        "summary": "Request Garmin backfill",
+        "description": "Submits a backfill request for the linked account. Garmin delivers accepted requests asynchronously. Check the journal for delivery and stored summaries to confirm the selected record reached Nakama.",
+        "requestBody": { "$ref": "#/components/requestBodies/SummaryWindow" },
+        "responses": {
+          "200": { "description": "Garmin accepted the request or reported an existing request for this window." },
+          "400": { "$ref": "#/components/responses/InvalidWindow" },
+          "401": { "$ref": "#/components/responses/SignIn" },
+          "409": { "description": "The account does not have a usable Garmin connection." },
+          "502": { "description": "The receiver could not complete the Garmin request." }
+        }
+      }
+    }
+  },
+  "components": {
+    "requestBodies": {
+      "SummaryWindow": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["summaryType", "start", "end"],
+              "properties": {
+                "summaryType": { "type": "string", "enum": ["sleeps", "activities", "dailies"] },
+                "start": { "type": "integer", "description": "Start in Unix seconds, inclusive.", "minimum": 0 },
+                "end": { "type": "integer", "description": "End in Unix seconds, inclusive. Must follow start and span at most 24 hours.", "minimum": 1 }
+              }
+            },
+            "example": { "summaryType": "sleeps", "start": 1794794400, "end": 1794880799 }
+          }
+        }
+      }
+    },
+    "responses": {
+      "InvalidWindow": { "description": "Invalid summary type or timestamp window." },
+      "SignIn": { "description": "Sign in to Circaevum in this browser." }
+    }
+  }
+}
