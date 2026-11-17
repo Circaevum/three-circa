@@ -1,0 +1,641 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Circaevum Documentation",
+    "version": "1.0.0",
+    "description": "Guides for Circaevum users, developers, and agents, with interactive account and Garmin requests.\n\n## Getting started\n\n[Open Circaevum](/) to explore the time viewer. The public Graphics Library works without an account. Use the [account portal](https://app.circaevum.com/?view=account) for synced calendars, sharing, and connected data.\n\n- [User guide](/docs/guides/USER_GUIDE.md) · navigation and calendar workflows\n- [Calendar modes and swim lanes](/docs/SWIM-LANES.md) · Basic, Health, and Work\n- [Viewer and wrapper](/docs/VIEWER-AND-WRAPPER.md) · standalone and account-backed deployments\n- [Documentation index](/docs/) · architecture, guides, examples, and reference\n\n## Sign in and manage your account\n\nChoose **Connect to Nakama** at the top of this page or run **Account → Connect to Nakama** using Scalar’s **Test Request**. With an existing session, Circaevum checks it against Nakama and shows the result. Without a session, the account portal opens its sign-in form inside the documentation.\n\n1. Enter your Circaevum username or email and password in the account form.\n2. The portal sends them to Nakama and stores the resulting session on the account origin.\n3. The documentation checks the account endpoint and displays **Connected to Nakama**. Run **Connect to Nakama** again to see the verification response in Scalar.\n\nUse **Account settings** to create an account, recover or change a password, sign out, or manage connected data. The account form offers the same browser-trust option as regular sign-in.\n\n## Account authentication and agent discovery\n\nThe Nakama session is used inside the account frame. The Scalar reference receives operation results and connection status. Credentials and session tokens stay in the account flow. The request paths in this reference are browser operations. They cannot be called as standalone HTTP endpoints.\n\nFor registered agents and OAuth clients, see the [agent registration guide](/auth.md), [OAuth authorization server metadata](/.well-known/oauth-authorization-server), [OpenID Connect configuration](/.well-known/openid-configuration), and [protected resource metadata](/.well-known/oauth-protected-resource). This discovery path is separate from the browser’s Nakama sign-in.\n\n## AI agents and discovery\n\n1. Read [llms.txt](/llms.txt) for the machine-readable site map.\n2. Read [FOR-AGENTS.md](/docs/FOR-AGENTS.md) for integration paths, the Embed API, iframe messages, and authentication.\n3. Use the [Agent Skills index](/.well-known/agent-skills/index.json) to find `circaevum-gl-embed`, `circaevum-site`, and `circaevum-developers`.\n\nThe [API catalog](/.well-known/api-catalog) links the available service documentation. Fetch the [Markdown homepage](/index.md) directly if you need text. See the [sitemap](/sitemap.xml) for canonical URLs and [robots.txt](/robots.txt) for crawl rules.\n\n## MCP and WebMCP\n\nThe [MCP Server Card](/.well-known/mcp/server-card.json) describes browser WebMCP tools. On the [Circaevum homepage](/), WebMCP exposes tools such as `circaevum_navigate_to_time`, `circaevum_set_zoom`, and `circaevum_ingest_events`. Circaevum’s static site has no Streamable HTTP `/mcp` endpoint. The Scalar reference covers browser API requests. See the [MCP integration guide](/docs/FOR-AGENTS.md#mcp-model-context-protocol).\n\n## Integration paths\n\n| Path | Use when | Authentication |\n| --- | --- | --- |\n| Graphics Library | Embed the time viewer | Your application handles auth if needed |\n| Circaevum account | Use saved calendars, Nakama storage, or Garmin | Circaevum portal and Nakama |\n| Reference wrapper | Use the Yin-portal iframe pattern | Configure your Nakama deployment |\n| Local sensor lab | Stream Muse, ESP32, and OSC on your LAN | Local setup |\n\nSee [integration paths](/docs/FOR-AGENTS.md#integration-paths-pick-what-you-need) for details.\n\n## Embed API\n\nEmbed [the viewer](/index.html?viewer=1) with an iframe. Use your own authentication if you already have one, or use the Circaevum account wrapper.\n\n```js\nconst gl = window.getGL();\ngl.ingestEvents('my-layer', events, { layerStyles: {} });\n```\n\nFor cross-origin embeds, wait for `CIRCAEVUM_READY` before sending viewer commands.\n\n| Message | Purpose |\n| --- | --- |\n| `CIRCAEVUM_INGEST_EVENTS` | Add or update a layer with `{ layerId, events, options? }` |\n| `CIRCAEVUM_CLEAR_EVENTS` | Clear `{ layerId }` |\n| `CIRCAEVUM_FIT_VIEW` | Fit `{ focus, zoom }` |\n| `CIRCAEVUM_OPEN_EVENT_LIST` | Open the viewer’s event list |\n\nSee the [GL reference](/API.md), [viewer and wrapper guide](/docs/VIEWER-AND-WRAPPER.md), and [message contracts](/docs/FOR-AGENTS.md#postmessage-iframe-host--gl).\n\n## Browse data already saved in Nakama\n\nSign in and use **Garmin → Browse stored Garmin metadata** for one collection at a time. Start with `{\"summaryType\":\"sleeps\",\"limit\":10}` for a quick storage page. Use `\"order\":\"latest\"` to rank by summary date, or send each `nextCursor` with the same filters to page through the collection. Metadata responses omit the raw sensor arrays. Nakama still sends each object’s value to the account frame so it can extract the metadata.\n\n**Account → Browse saved events** has request examples for native Circaevum events, synced Google Calendar events, and work-tagged events. **Browse work-board tasks** and **Browse calendar layout records** inspect the stored task board and calendar settings.\n\n## Garmin requests\n\nAfter connecting to Nakama, use **Test Request** on a Garmin operation to read stored summaries, inspect webhook delivery, or request backfill. Use [Garmin Data Viewer](https://apis.garmin.com/tools/dataViewer) and [Summary Resender](https://apis.garmin.com/tools/summaryResender) for Garmin’s own tools.\n\n## Local sensor lab\n\nStream Muse, ESP32, or other LAN sensors over OSC/UDP and record CSV locally. Common addresses include `/eeg`, `/ppg`, `/optics`, `/acc`, `/gyro`, `/drlref`, `/imu`, and `/thermistor`. Muse iOS can send `/eeg` over UDP port 7000. See [FOR-AGENTS.md](/docs/FOR-AGENTS.md) for integration notes.\n\n## Project references\n\n[Source repository](https://github.com/Circaevum/three-circa) · [Storage contracts](https://github.com/Circaevum/circaevum-spec) · [Agent readiness](/docs/AGENT-READINESS.md)"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Circaevum browser reference"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Account",
+      "description": "Sign in and verify the Nakama connection used by these requests."
+    },
+    {
+      "name": "Garmin",
+      "description": "Storage, webhook delivery, and backfill."
+    }
+  ],
+  "paths": {
+    "/api/account/connect": {
+      "post": {
+        "operationId": "connectNakamaAccount",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Connect to Nakama",
+        "description": "**Username or email** and **Password** are required in the Circaevum sign-in form. **Test Request** checks your browser session and opens the form if you are signed out. Send the request again after sign-in to see the verification result.\n\n### Request sent by the sign-in form\n\nThe form calls `POST /v2/account/authenticate/email?create=false`. The SDK supplies the configured Nakama server key using Basic authorization. The example below shows the JSON body when signing in by email.\n\n```json\n{\n  \"email\": \"pilot@example.com\",\n  \"password\": \"<password entered in the form>\"\n}\n```\n\nFor a username such as `pilot`, the form sends it as the `username` query parameter and sends an empty `email` in the JSON body, as required by Nakama’s username flow. For example, `POST /v2/account/authenticate/email?create=false&username=pilot`. The password stays in the JSON body in both cases.\n\n### Nakama response\n\n```json\n{\n  \"created\": false,\n  \"token\": \"<session token kept by the portal>\",\n  \"refresh_token\": \"<refresh token kept by the portal>\"\n}\n```\n\nThe form sends credentials directly to Nakama. In Scalar, **Test Request** returns the verification status and steps shown under **Responses**, with no credentials or tokens in the response history.",
+        "responses": {
+          "200": {
+            "description": "Nakama verified the account. The response includes connection steps.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "connected",
+                    "provider",
+                    "steps"
+                  ],
+                  "properties": {
+                    "connected": {
+                      "type": "boolean",
+                      "description": "Whether Nakama verified the account."
+                    },
+                    "provider": {
+                      "type": "string",
+                      "description": "Authentication provider."
+                    },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Completed verification steps."
+                    }
+                  }
+                },
+                "example": {
+                  "connected": true,
+                  "provider": "Nakama",
+                  "steps": [
+                    "Session restored",
+                    "Account verified"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The browser needs a Circaevum sign-in. Scalar opens the sign-in form.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "error": "Sign in to Circaevum in this browser and try again."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The portal could not verify the account with Nakama.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "error": "Nakama did not return an account for this session."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/garmin/storage": {
+      "post": {
+        "operationId": "storedGarminSummaries",
+        "tags": [
+          "Garmin"
+        ],
+        "summary": "Check stored summaries",
+        "description": "Read the signed-in account’s selected window from Nakama. The dates describe stored summaries and the events identify records with timeline geometry. Daily summary coverage can include dates with no heart-rate samples.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/SummaryWindow"
+        },
+        "responses": {
+          "200": {
+            "description": "Summary dates, timeline events, Garmin User IDs found in storage, and any incomplete read."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidWindow"
+          },
+          "401": {
+            "$ref": "#/components/responses/SignIn"
+          }
+        }
+      }
+    },
+    "/api/garmin/journal": {
+      "post": {
+        "operationId": "garminReceiverJournal",
+        "tags": [
+          "Garmin"
+        ],
+        "summary": "Read receiver journal",
+        "description": "Inspect recent receiver-wide delivery counts. Sleep pushes report accepted.sleeps. A ping can have a separate ping_processed entry. Written and failed count storage outcomes across that delivery.",
+        "responses": {
+          "200": {
+            "description": "Receiver delivery timestamps, modes, summary counts, and storage outcomes."
+          },
+          "401": {
+            "$ref": "#/components/responses/SignIn"
+          },
+          "502": {
+            "description": "The receiver diagnostics query failed."
+          }
+        }
+      }
+    },
+    "/api/garmin/backfill/status": {
+      "post": {
+        "operationId": "garminBackfillStatus",
+        "tags": [
+          "Garmin"
+        ],
+        "summary": "Read backfill history and Garmin User IDs",
+        "description": "List the authenticated account’s logged Garmin backfill requests and linked Garmin User IDs when exposed by the receiver. Use Check stored summaries to look up IDs from existing records.",
+        "responses": {
+          "200": {
+            "description": "Backfill requests and any linked Garmin User IDs."
+          },
+          "401": {
+            "$ref": "#/components/responses/SignIn"
+          }
+        }
+      }
+    },
+    "/api/garmin/backfill": {
+      "post": {
+        "operationId": "requestGarminBackfill",
+        "tags": [
+          "Garmin"
+        ],
+        "summary": "Request Garmin backfill",
+        "description": "Submits a backfill request for the linked account. Garmin delivers accepted requests asynchronously. Check the journal for delivery and stored summaries to confirm the selected record reached Nakama.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/SummaryWindow"
+        },
+        "responses": {
+          "200": {
+            "description": "Garmin accepted the request or reported an existing request for this window."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidWindow"
+          },
+          "401": {
+            "$ref": "#/components/responses/SignIn"
+          },
+          "409": {
+            "description": "The account does not have a usable Garmin connection."
+          },
+          "502": {
+            "description": "The receiver could not complete the Garmin request."
+          }
+        }
+      }
+    },
+    "/api/garmin/metadata": {
+      "post": {
+        "operationId": "browseGarminStorageMetadata",
+        "tags": [
+          "Garmin"
+        ],
+        "summary": "Browse stored Garmin metadata",
+        "description": "Read one Nakama collection without a date window. Each item describes a storage object, which may contain multiple summaries. Storage order reads one page and supports cursors. Latest ranks objects by their latest summary date across up to 300 scanned objects. A partial result means additional storage pages remain unscanned and the ranking may be incomplete.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25,
+                    "default": 10,
+                    "description": "Maximum storage objects per page, or tasks per page for the work board."
+                  },
+                  "summaryType": {
+                    "type": "string",
+                    "enum": [
+                      "sleeps",
+                      "dailies",
+                      "activities"
+                    ],
+                    "default": "sleeps"
+                  },
+                  "order": {
+                    "type": "string",
+                    "enum": [
+                      "storage",
+                      "latest"
+                    ],
+                    "default": "storage"
+                  },
+                  "cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Copy nextCursor from the previous result and keep the same filters."
+                  }
+                }
+              },
+              "examples": {
+                "sleep": {
+                  "summary": "First sleep metadata page",
+                  "value": {
+                    "summaryType": "sleeps",
+                    "limit": 10
+                  }
+                },
+                "latest": {
+                  "summary": "Ten latest sleep objects by summary date",
+                  "value": {
+                    "summaryType": "sleeps",
+                    "order": "latest",
+                    "limit": 10
+                  }
+                },
+                "daily": {
+                  "summary": "Daily summary metadata",
+                  "value": {
+                    "summaryType": "dailies",
+                    "limit": 10
+                  }
+                },
+                "activity": {
+                  "summary": "Activity metadata",
+                  "value": {
+                    "summaryType": "activities",
+                    "limit": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored metadata for the signed-in account.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "collection": "garmin_sleep",
+                  "summaryType": "sleeps",
+                  "order": "storage",
+                  "scannedCount": 1,
+                  "returnedCount": 1,
+                  "items": [
+                    {
+                      "key": "example-sleep",
+                      "createdAt": "2026-11-15T16:10:00Z",
+                      "updatedAt": "2026-11-15T16:10:00Z",
+                      "summaryCount": 1,
+                      "earliestDate": "2026-11-15",
+                      "latestDate": "2026-11-15"
+                    }
+                  ],
+                  "nextCursor": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters."
+          },
+          "401": {
+            "$ref": "#/components/responses/SignIn"
+          },
+          "502": {
+            "description": "The Nakama storage read failed."
+          }
+        }
+      }
+    },
+    "/api/account/events": {
+      "post": {
+        "operationId": "browseAccountSavedEvents",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Browse saved events",
+        "description": "Read event metadata from Nakama for the signed-in account. Choose google for synced Google Calendar copies, native for records explicitly marked as created in Circaevum, work for work-tagged events, or all to include legacy unclassified records. This reads saved account records. Unsynced browser data and live Google API results are outside its scope. A filtered call checks up to four storage pages. Follow nextCursor even if items is empty.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25,
+                    "default": 10,
+                    "description": "Maximum storage objects per page, or tasks per page for the work board."
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "google",
+                      "native",
+                      "work"
+                    ],
+                    "default": "all"
+                  },
+                  "cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Copy nextCursor from the previous result and keep the same filters."
+                  }
+                }
+              },
+              "examples": {
+                "all": {
+                  "summary": "All saved events",
+                  "value": {
+                    "source": "all",
+                    "limit": 10
+                  }
+                },
+                "google": {
+                  "summary": "Synced Google Calendar events",
+                  "value": {
+                    "source": "google",
+                    "limit": 10
+                  }
+                },
+                "native": {
+                  "summary": "Events created in Circaevum",
+                  "value": {
+                    "source": "native",
+                    "limit": 10
+                  }
+                },
+                "work": {
+                  "summary": "Work-tagged calendar events",
+                  "value": {
+                    "source": "work",
+                    "limit": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored metadata for the signed-in account.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "collection": "events",
+                  "source": "native",
+                  "scannedCount": 1,
+                  "returnedCount": 1,
+                  "items": [
+                    {
+                      "key": "example-event",
+                      "title": "Project review",
+                      "source": "native",
+                      "start": "2026-11-15T16:00:00Z",
+                      "updatedAt": "2026-11-15T16:10:00Z"
+                    }
+                  ],
+                  "nextCursor": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters."
+          },
+          "401": {
+            "$ref": "#/components/responses/SignIn"
+          },
+          "502": {
+            "description": "The Nakama storage read failed."
+          }
+        }
+      }
+    },
+    "/api/account/work-tasks": {
+      "post": {
+        "operationId": "browseAccountWorkTasks",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Browse work-board tasks",
+        "description": "Read task metadata from the saved Nakama work board, newest update first. Use nextOffset for more tasks. Work-tagged calendar events are available separately under Browse saved events.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25,
+                    "default": 10,
+                    "description": "Maximum storage objects per page, or tasks per page for the work board."
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0
+                  }
+                }
+              },
+              "examples": {
+                "first": {
+                  "summary": "Ten most recently updated tasks",
+                  "value": {
+                    "limit": 10,
+                    "offset": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored metadata for the signed-in account.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "collection": "work_board",
+                  "totalCount": 1,
+                  "returnedCount": 1,
+                  "items": [
+                    {
+                      "id": "example-task",
+                      "title": "Review flight plan",
+                      "project": "Planning",
+                      "status": "active",
+                      "updatedAt": "2026-11-15T16:10:00Z"
+                    }
+                  ],
+                  "nextOffset": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters."
+          },
+          "401": {
+            "$ref": "#/components/responses/SignIn"
+          },
+          "502": {
+            "description": "The Nakama storage read failed."
+          }
+        }
+      }
+    },
+    "/api/account/calendar-layout": {
+      "post": {
+        "operationId": "browseAccountCalendarLayout",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Browse calendar layout records",
+        "description": "List the keys and timestamps for stored calendar settings such as calendar groups, layer names, and enabled layers.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25,
+                    "default": 10,
+                    "description": "Maximum storage objects per page, or tasks per page for the work board."
+                  },
+                  "cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Copy nextCursor from the previous result and keep the same filters."
+                  }
+                }
+              },
+              "examples": {
+                "first": {
+                  "summary": "First calendar settings page",
+                  "value": {
+                    "limit": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored metadata for the signed-in account.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "collection": "layers",
+                  "scannedCount": 1,
+                  "returnedCount": 1,
+                  "items": [
+                    {
+                      "key": "calendars",
+                      "updatedAt": "2026-11-15T16:10:00Z"
+                    }
+                  ],
+                  "nextCursor": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters."
+          },
+          "401": {
+            "$ref": "#/components/responses/SignIn"
+          },
+          "502": {
+            "description": "The Nakama storage read failed."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "requestBodies": {
+      "SummaryWindow": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "summaryType",
+                "start",
+                "end"
+              ],
+              "properties": {
+                "summaryType": {
+                  "type": "string",
+                  "enum": [
+                    "sleeps",
+                    "activities",
+                    "dailies"
+                  ]
+                },
+                "start": {
+                  "type": "integer",
+                  "description": "Start in Unix seconds, inclusive.",
+                  "minimum": 0
+                },
+                "end": {
+                  "type": "integer",
+                  "description": "End in Unix seconds, inclusive. Must follow start and span at most 24 hours.",
+                  "minimum": 1
+                }
+              }
+            },
+            "example": {
+              "summaryType": "sleeps",
+              "start": 1794794400,
+              "end": 1794880799
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "InvalidWindow": {
+        "description": "Invalid summary type or timestamp window."
+      },
+      "SignIn": {
+        "description": "Sign in to Circaevum in this browser."
+      }
+    }
+  }
+}

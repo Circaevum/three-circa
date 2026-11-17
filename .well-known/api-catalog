@@ -8,6 +8,10 @@
           "type": "text/html"
         },
         {
+          "href": "https://circaevum.com/docs/garmin-openapi.json",
+          "type": "application/json"
+        },
+        {
           "href": "https://circaevum.com/docs/FOR-AGENTS.md",
           "type": "text/markdown"
         },

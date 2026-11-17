@@ -37,6 +37,13 @@ This file documents attribution and license information for those dependencies.
 - Build: bundle the default export of `d3-shape/src/arc.js` as named export `arc` using esbuild with `--bundle --minify --format=iife --global-name=CircaevumD3`.
 - License: ISC. License texts are in `circaevum/js/vendor/d3-arc/`.
 
+5) Scalar API Reference
+-----------------------
+- Component: `circaevum/js/vendor/scalar/api-reference-1.79.0.js`
+- Source: [published standalone bundle](https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.79.0/dist/browser/standalone.js)
+- Upstream: https://github.com/scalar/scalar
+- License: MIT. License text is in `circaevum/js/vendor/scalar/LICENSE`.
+
 Project license
 ---------------
 - The current project license file is `LICENSE`.
