@@ -4562,11 +4562,11 @@ function ensureTimeseriesArcGroup() {
     if (typeof TimeseriesRenderer === 'undefined' || typeof TimeseriesRenderer.hasData !== 'function') return;
     if (typeof sceneContentGroup === 'undefined' || !sceneContentGroup) return;
     if (!shouldAttachTimeseriesArcGroup(currentZoom)) return;
-    if (!TimeseriesRenderer.hasData()) return;
     for (let i = 0; i < circadianWorldlines.length; i++) {
         const ln = circadianWorldlines[i];
         if (ln && ln.userData && ln.userData.circadianTimeseriesAnim) return; // already attached
     }
+    if (!TimeseriesRenderer.hasData()) return;
     const tsGroup = TimeseriesRenderer.createGroup();
     if (tsGroup) {
         tsGroup.userData.spanDays = circadianSpanDaysForZoom(currentZoom);
@@ -13768,7 +13768,10 @@ function animate(time, frame) {
         const straightenChanged = Math.abs(currentCircadianStraightenAmount - (window._lastCircadianStraightenAmt || 0)) > 1e-4;
         const timeChanged = sdTimeMs !== (window._lastCircadianSelectedTimeMs || 0);
 
-        if (straightenChanged || timeChanged) {
+        const timeseriesChanged = typeof TimeseriesRenderer !== 'undefined' && TimeseriesRenderer.needsRefresh?.() &&
+            circadianWorldlines.some(line => line?.userData?.circadianTimeseriesAnim);
+
+        if (straightenChanged || timeChanged || timeseriesChanged) {
             window._lastCircadianStraightenAmt = currentCircadianStraightenAmount;
             window._lastCircadianSelectedTimeMs = sdTimeMs;
 

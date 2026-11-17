@@ -464,3 +464,9 @@ body.portal-calendar-layout #swim-lanes.sl-review {
   border: 4px solid transparent;
   border-top-color: #55d6ee;
 }
+
+.sl-nutrition-icon {
+  display: inline-block;
+  vertical-align: -0.2em;
+  flex: none;
+}

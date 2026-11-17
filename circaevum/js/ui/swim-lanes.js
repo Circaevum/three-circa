@@ -4,33 +4,54 @@
   const ZOOMS = { hour:[0,1/24],day:[8,1],clock:[9,1],week:[7,7],month:[5,31],quarter:[4,92],year:[3,366] };
   const MODE_COLORS = {basic:'#9aa3ad',health:'#e11d48',work:'#2563eb',financial:'#16a34a'};
   const ICON_KEY = 'circaevum.swim-lane-icons.v1';
+  const droneGlyph = '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" style="vertical-align:middle"><path d="M8 8L4 4m4 4 4-4M8 8l-4 4m4-4 4 4"/><circle cx="4" cy="4" r="2.5"/><circle cx="12" cy="4" r="2.5"/><circle cx="4" cy="12" r="2.5"/><circle cx="12" cy="12" r="2.5"/></svg>';
   const eventIcons = {
     call: ['📞', 'Call'], email: ['✉️', 'Email'], research: ['🔎', 'Online research'],
     ai: ['🤖', 'AI thread'], meeting: ['👥', 'Meeting'], development: ['💻', 'Development'],
-    task: ['☑️', 'Task'], milestone: ['🏁', 'Milestone'], teams: ['💬', 'Teams message'], message: ['💬', 'Message'],
+    'drone-flight': [droneGlyph, 'Drone Flight'], task: ['☑️', 'Task'], milestone: ['🏁', 'Milestone'], teams: ['💬', 'Teams message'], message: ['💬', 'Message'],
   };
   const activityIcons = {
     cycling: ['🚲', 'Cycling'], running: ['🏃', 'Running'], walking: ['🚶', 'Walking'],
     hiking: ['🥾', 'Hiking'], swimming: ['🏊', 'Swimming'], strength: ['🏋', 'Strength'],
     workout: ['⚡', 'Workout'],
   };
-  const iconOptions = {...eventIcons, ...activityIcons};
-  const ITEM_TYPES={meeting:'Meeting',email:'Email',phone:'Phone call',teams:'Teams message',message:'Message',task:'Task',milestone:'Milestone'};
+  const nutritionGlyph = paths => `<svg class="sl-nutrition-icon" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  const nutritionIcons = {
+    Food: ['nutrition-food', nutritionGlyph('<path d="M4 3v5a3 3 0 0 0 6 0V3M7 3v18m10 0V3c-3 2-4 6-4 10h4"/>'), 'Food'],
+    Drinks: ['nutrition-drink', nutritionGlyph('<path d="M5 8h14l-2 13H7L5 8Zm7 0 2-5h5M6 13h12"/>'), 'Drinks'],
+    Vitamins: ['nutrition-vitamin', nutritionGlyph('<rect x="7" y="3" width="10" height="18" rx="5" transform="rotate(38 12 12)"/><path d="m8 9 8 6"/>'), 'Vitamins'],
+    Supplements: ['nutrition-supplement', nutritionGlyph('<path d="M7 3h10v4H7zM8 7v3l-2 2v8a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-8l-2-2V7m-10 7h12"/>'), 'Supplements'],
+  };
+  const iconOptions = {...eventIcons, ...activityIcons,
+    ...Object.fromEntries(Object.values(nutritionIcons).map(([key, glyph, label]) => [key, [glyph, label]]))};
+  const nutritionIconForLane = lane => selectedMode === 'health' && Object.hasOwn(nutritionIcons, lane)
+    ? nutritionIcons[lane] : null;
+  const workActivityIcon = type => type === 'phone' ? 'call' : type;
+  const defaultWorkLane = type => type === 'milestone' ? 'Delivery' :
+    ['development', 'drone-flight'].includes(type) ? 'Development' : 'Research';
   const eventIconChoices = new Map();
   try {
     for (const [id, icon] of JSON.parse(localStorage.getItem(ICON_KEY) || '[]')) {
       const value = icon === 'dot' ? 'task' : icon === 'flag' ? 'milestone' : icon;
-      if (typeof id === 'string' && Object.hasOwn(iconOptions, value)) eventIconChoices.set(id, value);
+      if (typeof id === 'string' && (value === 'card' || Object.hasOwn(iconOptions, value))) eventIconChoices.set(id, value);
     }
   } catch (_) {}
   const canChooseIcon = item => item && !item.event.githubActivity &&
     !item.event.render?.metric && item.event.circaevumSourceDetail !== 'garmin_sleep';
-  const iconsForItem = item => window.CalendarLaneEvents.isGarminActivity(item?.event) ||
-    selectedMode==='health' ? activityIcons : eventIcons;
+  const iconsForItem = item => {
+    const nutrition = nutritionIconForLane(item?.lane);
+    if (nutrition) return { [nutrition[0]]: iconOptions[nutrition[0]] };
+    return window.CalendarLaneEvents.isGarminActivity(item?.event) ||
+      selectedMode==='health' ? activityIcons : eventIcons;
+  };
   const chosenIcon = item => {
     if (!canChooseIcon(item)) return undefined;
     const choice = eventIconChoices.get(item.id);
-    return Object.hasOwn(iconsForItem(item), choice) ? choice : undefined;
+    if (choice === 'card') return undefined;
+    const available = iconsForItem(item);
+    if (Object.hasOwn(available, choice)) return choice;
+    const fallback = nutritionIconForLane(item.lane)?.[0] ?? workActivityIcon(item.event.work?.activityType);
+    return Object.hasOwn(available, fallback) ? fallback : undefined;
   };
   const SLEEP_COLOR = '#8b5cf6';
   const STATUS_ICONS = {done:'✓',blocked:'!',cancelled:'×',waiting:'…'};
@@ -313,6 +334,7 @@
   }
   function laneColor(lane){
     if (reviewColors?.has(lane)) return reviewColors.get(lane);
+    if(selectedMode==='health'&&['Food','Drinks','Vitamins','Supplements'].includes(lane))return '#f97316';
     if(selectedMode==='health'&&/^(garmin )?sleep$/i.test(lane))return SLEEP_COLOR;
     return MODE_COLORS[selectedMode]||MODE_COLORS.basic;
   }
@@ -363,15 +385,15 @@
       <button type="button" data-action="next" aria-label="Next ${stepLabel}" title="Next ${stepLabel}">→</button>
       <input id="sl-date" type="date" title="Selected time: ${esc(new Date(focus).toLocaleString())}" aria-label="Go to date" value="${localDate(focus)}">`;
     const selectedEvent=list.find(item=>item.id===selected&&item.start<end&&(item.end>start||item.start>=start));
-    const iconRibbon=`<div class="sl-icon-ribbon" role="group" aria-label="${selectedMode==='health'?'Activity icon':'Event icon'}">
+    const iconRibbon=`<div class="sl-icon-ribbon" role="group" aria-label="${selectedMode==='health'?'Activity icon':'Change selected event icon'}">
       <span>${canChooseIcon(selectedEvent)?esc(selectedEvent.event.summary||'Event'):selectedMode==='health'?'Select an activity':'Select an event'}</span>
-      ${[['card',selectedMode==='health'||iconsForItem(selectedEvent)===activityIcons?['↺','Default icon']:['📄','Event card']],...Object.entries(iconsForItem(selectedEvent))].map(([value,[glyph,label]])=>
+      ${[['card',iconsForItem(selectedEvent)===activityIcons?['↺','Default icon']:['📄','Event card']],...Object.entries(iconsForItem(selectedEvent))].map(([value,[glyph,label]])=>
         `<button type="button" data-event-icon="${value}" title="${label}" aria-label="${label}"
           aria-pressed="${(chosenIcon(selectedEvent)||'card')===value}" ${canChooseIcon(selectedEvent)?'':'disabled'}><span aria-hidden="true">${glyph}</span> ${label}</button>`).join('')}
     </div>`;
     const creationRibbon=collectionId==='linked-project'&&canCreateProjectMarker
-      ? `<details class="sl-create-work"><summary>New Work item</summary><div class="sl-icon-ribbon">${Object.entries(ITEM_TYPES).map(([type,label])=>
-        `<button type="button" data-create-work-type="${type}">${label}</button>`).join('')}</div></details>`:'';
+      ? `<div class="sl-icon-ribbon" role="group" aria-label="New Work item"><span>New Work item</span>${Object.entries(eventIcons).map(([icon,[glyph,label]])=>
+        `<button type="button" data-create-work-type="${icon === 'call' ? 'phone' : icon}" title="New ${label}"><span aria-hidden="true">${glyph}</span> ${label}</button>`).join('')}</div>`:'';
     const connectButton=selectedMode==='work'||source==='example'
       ? `<button type="button" data-action="connect" aria-pressed="${connect}">Connect events</button>`:'';
     const toolBits=`<label class="sl-sr">Source<select id="sl-source"><option value="example" ${source==='example'?'selected':''}>OpenAMI / ISV example</option><option value="loaded" ${source==='loaded'?'selected':''}>My & shared work layers</option></select></label>
@@ -382,14 +404,14 @@
       ${source==='example'?'<button data-action="new">+ Item</button>':'<button data-action="refresh">Refresh</button>'}
       `;
     const chrome=`<header class="sl-head"><div><span class="sl-kicker">Circaevum / Work</span><h1 tabindex="-1">Swim Lanes</h1></div><div class="sl-actions"><button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div></header>
-      <div class="sl-tools">${toolBits}</div>${iconRibbon}
+      <div class="sl-tools">${toolBits}</div>${creationRibbon&&!canChooseIcon(selectedEvent)?'':iconRibbon}
       ${showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([, [label,icon]])=>`<span style="--workflow:var(--mode-rgb,37,99,235)">${icon} ${label}</span>`).join('')}</div>`:''}
       <div class="sl-caption"><span>${fmt(start)} – ${fmt(end)} ${new Date(focus).getFullYear()} · ${list.length} items</span></div>
       <p class="sl-notice" role="status">${esc(notice||accessMessage||'')}</p>`;
     const healthStatus=(selectedMode==='health'||reviewColors||unavailableLanes.size)?`<p class="sl-health-status" role="status" aria-live="polite">${laneLoading?'<span class="sl-loading-spinner"></span> Loading Health events…':laneError?'Health data could not load. Retry below.':`${list.length} events loaded for ${esc(dateWindow)}`}${unavailableLanes.size?` · Couldn’t fully load ${esc([...unavailableLanes].join(', '))}. <button data-action="retry-lanes">Retry</button>`:''}</p>`:'';
     const dockChrome=(collectionId
-      ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${dateControls}${connectButton}${creationRibbon}${reviewColors?`<button data-action="review-empty" aria-pressed="${reviewShowEmpty}">${reviewShowEmpty?'Hide empty lanes':'Show empty lanes'}</button><small>Powered by Garmin Connect™</small>`:selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}${iconRibbon}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
-      : `<div class="sl-bar" tabindex="-1">${toolBits}${iconRibbon}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`)
+      ? `<div class="sl-bar" tabindex="-1"><strong>${esc(collectionLabel)}</strong>${dateControls}${connectButton}${creationRibbon}${reviewColors?`<button data-action="review-empty" aria-pressed="${reviewShowEmpty}">${reviewShowEmpty?'Hide empty lanes':'Show empty lanes'}</button><small>Powered by Garmin Connect™</small>`:selectedMode==='basic'?`<button data-action="basic-size" ${expanded&&!kept.size?'disabled':''}>${expanded?'Show selected ('+kept.size+'/3)':'Choose lanes'}</button>`:''}${creationRibbon&&!canChooseIcon(selectedEvent)?'':iconRibbon}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`
+      : `<div class="sl-bar" tabindex="-1">${toolBits}${creationRibbon&&!canChooseIcon(selectedEvent)?'':iconRibbon}<button class="sl-minimize" data-action="close" aria-label="Minimize Swim Lanes" title="Minimize">−</button></div>`)
       + (showWorkflow?`<div class="sl-workflow-legend">${Object.entries(M.workflows).map(([, [label,icon]])=>`<span style="--workflow:var(--mode-rgb,37,99,235)">${icon} ${label}</span>`).join('')}</div>`:'')
       + (overlayHeart&&!laneLoading&&!laneError?`<p class="sl-heart-legend">${heartTrace.length
         ? `<span aria-hidden="true"></span> Heart rate · ${esc(localZone)}`
@@ -454,7 +476,7 @@
       const addMarker=collectionId==='linked-project'&&canCreateProjectMarker&&workLaneOrder.has(representative.lane)
         ? `<button type="button" class="sl-add-marker" data-create-marker="${esc(representative.lane)}" title="Add ${esc(representative.lane)} marker to ${esc(rowProject)}" aria-label="Add ${esc(representative.lane)} marker to ${esc(rowProject)}">${workMarkerIcons[representative.lane]} +</button>`
         : '';
-      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" data-project="${esc(rowProject)}" style="height:${height}px;--workflow:${rgb}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc((projectRow?.label||representative.lane)+' / '+(projectRow?collectionLabel:rowProject)+' · '+access)}">${sleep?'●':workflow[1]} ${esc(projectRow?.label||representative.lane)}</button>${addMarker}<small>${esc(projectRow?collectionLabel:rowProject)}</small></div>`;
+      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" data-project="${esc(rowProject)}" style="height:${height}px;--workflow:${rgb}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc((projectRow?.label||representative.lane)+' / '+(projectRow?collectionLabel:rowProject)+' · '+access)}">${nutritionIconForLane(representative.lane)?.[1] || (sleep ? '●' : workflow[1])} ${esc(projectRow?.label||representative.lane)}</button>${addMarker}<small>${esc(projectRow?collectionLabel:rowProject)}</small></div>`;
       if(docked&&!namesInBoard)titles.push(label);
       markup.push(`<section class="sl-lane ${on?'sl-kept':''}" data-row="${rowKey}" data-drop-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}">${namesInBoard?label:''}<div class="sl-track">${weekendMarkup}${ticks.map(t=>`<span class="sl-gridline" style="left:${pct(t)}%"></span>`).join('')}${context?`<span class="sl-context" style="left:${pct(context.t0)}%;width:${Math.max(0,pct(context.t1)-pct(context.t0))}%"></span>`:''}
       ${collectionId==='layers'&&laneLoading?'<div class="sl-load-state" role="status"><span class="sl-loading-spinner"></span>Loading events…</div>':collectionId==='layers'&&laneError?`<div class="sl-load-state" role="alert">${esc(laneError)} <button data-action="retry-lanes">Retry</button></div>`:collectionId==='layers'&&!visible.length?`<div class="sl-load-state">${unavailableLanes.has(representative.lane)?'Data unavailable':'No events in this time window'}</div>`:''}${visible.map(({item:e,row})=>{
@@ -662,7 +684,7 @@
       const item=rows().find(row=>row.id===selected);
       const icon=iconButton.dataset.eventIcon;
       if(!canChooseIcon(item))return;
-      if(icon==='card')eventIconChoices.delete(item.id);
+      if(icon==='card')eventIconChoices.set(item.id,'card');
       else if(Object.hasOwn(iconsForItem(item),icon))eventIconChoices.set(item.id,icon);
       else return;
       try{localStorage.setItem(ICON_KEY,JSON.stringify([...eventIconChoices]));}catch(_){}
@@ -673,7 +695,11 @@
     const card=e.target.closest('[data-id]');if(card){selected=card.dataset.id;panelMode='event';render();return;}
     const createWork=e.target.closest('[data-create-work-type]');
     if(createWork&&collectionId==='linked-project'&&canCreateProjectMarker){
-      parentSend({type:'CIRCAEVUM_CREATE_PROJECT_MARKER',project,lane:'Research',time:focus,activityType:createWork.dataset.createWorkType});
+      const activityType=createWork.dataset.createWorkType;
+      const item=rows().find(row=>row.id===selected);
+      const time=focus>=start&&focus<start+span?focus:start+span/2;
+      const lane=workLaneOrder.has(item?.lane)?item.lane:defaultWorkLane(activityType);
+      parentSend({type:'CIRCAEVUM_CREATE_PROJECT_MARKER',project:item?.project||project,lane,time,activityType});
       return;
     }
     const addMarker=e.target.closest('[data-create-marker]');
@@ -791,7 +817,7 @@
   }
   window.openSwimCollection=function(colId){
     if(!modeEnabled(colId))return;
-    if(appLayout()&&colId==='health'){window.openSwimLayerNames(['Garmin Sleep','Garmin Activity','Garmin Workout'],'Garmin','health');return;}
+    if(appLayout()&&colId==='health'){window.openSwimLayerNames(['Garmin Sleep','Garmin Activity','Garmin Workout'],'Health','health');return;}
     reviewColors=null;
     const g=gl();
     const ids=(g?.getLayerIds?.()||[]).filter(id=>g.getLayer(id)?.collection===colId).sort((a,b)=>(g.getLayer(a).laneOrder||0)-(g.getLayer(b).laneOrder||0));

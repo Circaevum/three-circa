@@ -1,5 +1,7 @@
 # Circaevum Zhong Changelog
 
+- Garmin swim lanes show Garmin layers only. Nutrition has its own calendar lanes.
+
 ## 2026-11-10 — Work follow-up planning
 
 - Added waiting-on, dead-end notes, earlier-task relationships and scheduled/linked follow-ups for editable Work items.

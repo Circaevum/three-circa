@@ -144,6 +144,7 @@
       }
     } else if (data.type === 'CIRCAEVUM_CLEAR_EVENTS' && data.layerId) {
       gl.updateEvents(data.layerId, []);
+      window.TimeseriesRenderer?.resetRefreshCache();
       window.dispatchEvent(new CustomEvent('circaevum:calendar-events-updated'));
       if (typeof window.refreshCalendarLayersList === 'function') window.refreshCalendarLayersList();
       if (typeof window.refreshEventsList === 'function') window.refreshEventsList(false);

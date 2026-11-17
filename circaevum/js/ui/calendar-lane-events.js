@@ -28,8 +28,9 @@
   }
   function selectionNames(names,title,mode){
     const selected=[...new Set(names||[])];
-    return mode==='health'&&(String(title).toLowerCase().includes('garmin')||selected.some(name=>name.startsWith('Garmin ')))
-      ? [...new Set(['Garmin Workout',...selected.filter(name=>!Object.hasOwn(labels,name)),'Garmin Sleep','Garmin Activity'])] : selected;
+    const garminLayers=selected.filter(name=>/^garmin\b/i.test(name));
+    if(mode!=='health'||(!/^garmin$/i.test(title)&&!garminLayers.length)) return selected;
+    return ['Garmin Workout',...garminLayers.filter(name=>!Object.hasOwn(labels,name)),'Garmin Sleep','Garmin Activity'];
   }
   function isGarminActivity(event) {
     return event?.circaevumSourceDetail === 'garmin_activity' || event?.category === 'Garmin Workout';

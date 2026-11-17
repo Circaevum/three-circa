@@ -36,7 +36,9 @@ test('calendar lane selection survives arrival of calendar and owner metadata',(
 
 test('Garmin Health selection always includes structured lanes, Basic stays custom',()=>{
  const {selectionNames}=require('./calendar-lane-events.js');
- assert.deepEqual(selectionNames(['Garmin Sleep'],'Garmin','health'),['Garmin Workout','Garmin Sleep','Garmin Activity']);
+ const nutrition=['Food','Drinks','Vitamins','Supplements'];
+ assert.deepEqual(selectionNames(['Garmin Sleep',...nutrition,'Meals'],'Garmin','health'),['Garmin Workout','Garmin Sleep','Garmin Activity']);
+ assert.deepEqual(selectionNames(nutrition,'Nutrition','health'),nutrition);
  assert.deepEqual(selectionNames(['Garmin Sleep'],'Garmin','basic'),['Garmin Sleep']);
  assert.deepEqual(selectionNames(['Research'],'Project','work'),['Research']);
 });

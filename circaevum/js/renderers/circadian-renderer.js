@@ -667,7 +667,7 @@
   /**
    * One point on a flat day ring in the vertical stack anchored at selected Earth (not helix Y per day).
    */
-  function diskPointOnSelectedTimeStack(date, r, currentHeight, calculateDateHeightFn) {
+  function diskPointOnSelectedTimeStack(date, r, currentHeight, calculateDateHeightFn, previewDay) {
     if (!SceneGeometry || !date || !calculateDateHeightFn) return null;
     const ctx = readCircadianSceneTimeContext(currentHeight);
     const sel =
@@ -675,9 +675,14 @@
       (typeof global.getSelectedDateTime === 'function' ? global.getSelectedDateTime() : new Date());
     const timelineRef = ctx.selectedDateHeight;
     const selMidnight = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
-    const dayMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+    const stackDate = previewDay || date;
+    const dayMidnight = new Date(stackDate.getFullYear(), stackDate.getMonth(), stackDate.getDate(), 0, 0, 0, 0);
     const k = Math.round((dayMidnight.getTime() - selMidnight.getTime()) / MS_PER_DAY);
-    const yPos = sceneYForLogicalHeight(timelineRef + k * getCircadianDayStackSpacing());
+    const stackOffset = k * getCircadianDayStackSpacing();
+    // Keep the wake-day stack readable in Shift preview even when the scene is flattened.
+    const yPos = previewDay
+      ? sceneYForLogicalHeight(timelineRef) + stackOffset
+      : sceneYForLogicalHeight(timelineRef + stackOffset);
     let earthX = ctx.earthX;
     let earthZ = ctx.earthZ;
     if (!Number.isFinite(earthX) || !Number.isFinite(earthZ)) {
@@ -708,8 +713,8 @@
   }
 
   /** Sub-day events + connectors: stack at selected time (blend kept for legacy callers only). */
-  function blendedDiskPointAtDate(date, r, currentHeight, calculateDateHeightFn, blend) {
-    const stacked = diskPointOnSelectedTimeStack(date, r, currentHeight, calculateDateHeightFn);
+  function blendedDiskPointAtDate(date, r, currentHeight, calculateDateHeightFn, blend, previewDay) {
+    const stacked = diskPointOnSelectedTimeStack(date, r, currentHeight, calculateDateHeightFn, previewDay);
     if (stacked) return stacked;
     const b = parseStraightenBlend(blend);
     const pW = diskPointWrappedAtDate(date, r, currentHeight, calculateDateHeightFn);

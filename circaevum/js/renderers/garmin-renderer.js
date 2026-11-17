@@ -344,14 +344,14 @@
   }
 
   /** Unit normal of the day disk at `date`/`r`, scaled by `offsetMul` (× hand). */
-  function diskNormalOffset(CR, date, r, currentHeight, calculateDateHeightFn, blend, offsetMul) {
+  function diskNormalOffset(project, date, r, offsetMul) {
     const mag = hand() * (offsetMul != null ? offsetMul : 0);
-    if (!mag || !CR || typeof CR.blendedDiskPointAtDate !== 'function') {
+    if (!mag) {
       return { x: 0, y: mag || 0, z: 0 };
     }
-    const p = CR.blendedDiskPointAtDate(date, r, currentHeight, calculateDateHeightFn, blend);
-    const pT = CR.blendedDiskPointAtDate(new Date(date.getTime() + 60000), r, currentHeight, calculateDateHeightFn, blend);
-    const pIn = CR.blendedDiskPointAtDate(date, Math.max(r * 0.25, 0.4), currentHeight, calculateDateHeightFn, blend);
+    const p = project(date, r);
+    const pT = project(new Date(date.getTime() + 60000), r);
+    const pIn = project(date, Math.max(r * 0.25, 0.4));
     if (!p || !pT || !pIn) return { x: 0, y: mag, z: 0 };
     const tx = pT.x - p.x;
     const ty = pT.y - p.y;
@@ -619,13 +619,19 @@
     const startMs = eventStartMs(event);
     if (!isFinite(startMs)) return;
 
-    const { THREE, CR, currentHeight, calculateDateHeightFn, blend, layerId } = ctx;
+    const { THREE, CR, currentHeight, calculateDateHeightFn, blend, layerId, showOtherDays } = ctx;
+    const previewDay = showOtherDays && render.metric === 'sleepStage'
+      ? new Date(sleepWakeDayStartMs(event, startMs))
+      : undefined;
+    const project = (date, r) => CR.blendedDiskPointAtDate(
+      date, r, currentHeight, calculateDateHeightFn, blend, previewDay
+    );
 
     const point = (ms, r, offsetMul) => {
       const d = new Date(ms);
-      const p = CR.blendedDiskPointAtDate(d, r, currentHeight, calculateDateHeightFn, blend);
+      const p = project(d, r);
       if (!p || !offsetMul) return p;
-      const off = diskNormalOffset(CR, d, r, currentHeight, calculateDateHeightFn, blend, offsetMul);
+      const off = diskNormalOffset(project, d, r, offsetMul);
       p.x += off.x;
       p.y += off.y;
       p.z += off.z;
@@ -760,6 +766,7 @@
     const group = new global.THREE.Group();
     group.userData = { circadianTimeseriesAnim: true };
     activeGroup = group;
+    resetRefreshCache();
     return group;
   }
 
@@ -820,7 +827,9 @@
     const winEnd = hrWin.end;
     // Selected day when layer on; Shift additionally reveals other days (one HR arc per day).
     const selDayStart = selMid;
-    const selDayEnd = selMid + MS_PER_DAY;
+    const nextDay = new Date(selMid);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const selDayEnd = nextDay.getTime();
     const showOtherDays = shiftActive();
 
     const ctx = {
@@ -828,7 +837,8 @@
       CR,
       currentHeight,
       calculateDateHeightFn,
-      blend: straightenBlend
+      blend: straightenBlend,
+      showOtherDays
     };
 
     const zl = currentZoomLevel();
@@ -859,7 +869,8 @@
     clearGroup,
     buildArcForEvent,
     applyEventFocus,
-    resetRefreshCache
+    resetRefreshCache,
+    needsRefresh: () => lastRefreshKey === ''
   };
 
   if (typeof module !== 'undefined' && module.exports) {
