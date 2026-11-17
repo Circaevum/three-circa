@@ -1,5 +1,8 @@
 (() => {
   const status = document.getElementById('api-reference-status');
+  const fallback = document.getElementById('docs-fallback');
+  const dialog = document.getElementById('account-dialog');
+  const connect = document.getElementById('api-connect-button');
   if (!window.Scalar?.createApiReference) {
     status.textContent = 'Scalar could not load. The OpenAPI document is available above.';
     return;
@@ -7,16 +10,18 @@
 
   const local = ['localhost', '127.0.0.1'].includes(location.hostname) && location.port === '8080';
   const portal = new URL(local ? '/.local-yin-portal/' : 'https://app.circaevum.com/', location.origin);
-  document.getElementById('api-account-link').href = new URL('?view=account', portal);
-  const spec = new URL('docs/garmin-openapi.json', location.href);
-  const operations = new Set(['/api/garmin/storage', '/api/garmin/journal', '/api/garmin/backfill/status', '/api/garmin/backfill']);
+  const accountUrl = new URL('?view=account', portal);
+  document.getElementById('api-account-link').href = accountUrl;
+  document.getElementById('account-full-link').href = accountUrl;
+  const spec = new URL('docs/garmin-openapi.json?v=agent-discovery', location.href);
+  const connectPath = '/api/account/connect';
+  const operations = new Set([connectPath, '/api/garmin/metadata', '/api/account/events', '/api/account/work-tasks', '/api/account/calendar-layout', '/api/garmin/storage', '/api/garmin/journal', '/api/garmin/backfill/status', '/api/garmin/backfill']);
   let bridge;
   let bridgeReady;
 
   function openBridge() {
     if (bridgeReady) return bridgeReady;
     bridge = document.createElement('iframe');
-    bridge.hidden = true;
     bridge.title = 'Circaevum account API connection';
     bridge.src = new URL('?view=garmin-api-bridge', portal);
     bridgeReady = new Promise((resolve, reject) => {
@@ -35,7 +40,7 @@
       }, 12000);
       window.addEventListener('message', onReady);
     });
-    document.body.append(bridge);
+    document.getElementById('account-frame').append(bridge);
     return bridgeReady;
   }
 
@@ -71,6 +76,11 @@
         port1.onmessage = ({ data }) => {
           clearTimeout(timeout);
           port1.close();
+          if (url.pathname === connectPath) {
+            if (data.status === 401 && !dialog.open) dialog.showModal();
+            if (data.status === 200 && dialog.open) dialog.close();
+            status.textContent = data.status === 200 ? 'Connected to Nakama' : data.body.error;
+          }
           resolve(jsonResponse(data.status, data.body));
         };
         frame.postMessage({ type: 'CIRCAEVUM_GARMIN_DOCS_REQUEST', operation: url.pathname, parameters }, portal.origin, [port2]);
@@ -82,7 +92,8 @@
 
   window.Scalar.createApiReference('#scalar-api-reference', {
     url: spec.href,
-    layout: 'classic',
+    layout: 'modern',
+    showSidebar: true,
     defaultOpenAllTags: true,
     hideModels: true,
     hiddenClients: true,
@@ -91,5 +102,23 @@
     customFetch: request,
     servers: [{ url: location.origin, description: 'Circaevum browser reference' }],
   });
-  status.textContent = 'Use Test Request to run an operation. Sign in to Circaevum in this browser first.';
+  fallback.hidden = true;
+  connect.hidden = false;
+  async function checkConnection() {
+    connect.disabled = true;
+    status.textContent = 'Checking Nakama session…';
+    try {
+      const response = await request(new URL(connectPath, location.origin), { method: 'POST' });
+      const result = await response.json();
+      status.textContent = response.ok ? 'Connected to Nakama' : result.error;
+    } finally {
+      connect.disabled = false;
+    }
+  }
+  connect.addEventListener('click', checkConnection);
+  window.addEventListener('message', event => {
+    if (event.origin !== portal.origin || event.source !== bridge?.contentWindow ||
+        event.data?.type !== 'CIRCAEVUM_DOCS_SIGNED_IN' || !dialog.open) return;
+    void checkConnection();
+  });
 })();
