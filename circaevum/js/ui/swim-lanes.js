@@ -95,6 +95,8 @@
   let canCreateProjectMarker=false, projectSourceLayers={};
   const workLaneOrder=new Map(['Research','Development','Delivery'].map((name,index)=>[name,index]));
   const appLayout=()=>window.circaevumHostLayout?.managed===true;
+  const canPlanNutrition = lane => appLayout() && window.circaevumHostLayout?.signedIn === true &&
+    collectionId === 'layers' && !reviewColors && selectedLayerNames.includes(lane) && !!nutritionIconForLane(lane);
   const modeEnabled=mode=>!appLayout()||!window.circaevumHostLayout?.modes||window.circaevumHostLayout.modes[mode||'basic']===true;
   try {const saved=JSON.parse(localStorage.getItem(KEY));if(Array.isArray(saved)&&saved.every(e=>M.normalize(e)))demo=saved;}catch(_){}
   const gl=()=>window.circaevumGL||window.getGL?.();
@@ -476,7 +478,11 @@
       const addMarker=collectionId==='linked-project'&&canCreateProjectMarker&&workLaneOrder.has(representative.lane)
         ? `<button type="button" class="sl-add-marker" data-create-marker="${esc(representative.lane)}" title="Add ${esc(representative.lane)} marker to ${esc(rowProject)}" aria-label="Add ${esc(representative.lane)} marker to ${esc(rowProject)}">${workMarkerIcons[representative.lane]} +</button>`
         : '';
-      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" data-project="${esc(rowProject)}" style="height:${height}px;--workflow:${rgb}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc((projectRow?.label||representative.lane)+' / '+(projectRow?collectionLabel:rowProject)+' · '+access)}">${nutritionIconForLane(representative.lane)?.[1] || (sleep ? '●' : workflow[1])} ${esc(projectRow?.label||representative.lane)}</button>${addMarker}<small>${esc(projectRow?collectionLabel:rowProject)}</small></div>`;
+      const nutritionAction = representative.lane === 'Food' ? 'Plan meal' : 'Plan item in ' + representative.lane;
+      const planNutrition = canPlanNutrition(representative.lane)
+        ? `<button type="button" class="sl-add-marker" data-plan-nutrition="${esc(representative.lane)}" title="${esc(nutritionAction)}" aria-label="${esc(nutritionAction)}">+</button>`
+        : '';
+      const label=`<div class="sl-label ${on?'sl-kept':''}" data-row="${rowKey}" data-work-lane="${esc(representative.lane)}" data-project="${esc(rowProject)}" style="height:${height}px;--workflow:${rgb}"><button class="sl-lane-title" data-lane="${rowKey}" aria-pressed="${on}" title="${esc((projectRow?.label||representative.lane)+' / '+(projectRow?collectionLabel:rowProject)+' · '+access)}">${nutritionIconForLane(representative.lane)?.[1] || (sleep ? '●' : workflow[1])} ${esc(projectRow?.label||representative.lane)}</button>${addMarker}${planNutrition}<small>${esc(projectRow?collectionLabel:rowProject)}</small></div>`;
       if(docked&&!namesInBoard)titles.push(label);
       markup.push(`<section class="sl-lane ${on?'sl-kept':''}" data-row="${rowKey}" data-drop-lane="${esc(representative.lane)}" style="height:${height}px;--workflow:${rgb}">${namesInBoard?label:''}<div class="sl-track">${weekendMarkup}${ticks.map(t=>`<span class="sl-gridline" style="left:${pct(t)}%"></span>`).join('')}${context?`<span class="sl-context" style="left:${pct(context.t0)}%;width:${Math.max(0,pct(context.t1)-pct(context.t0))}%"></span>`:''}
       ${collectionId==='layers'&&laneLoading?'<div class="sl-load-state" role="status"><span class="sl-loading-spinner"></span>Loading events…</div>':collectionId==='layers'&&laneError?`<div class="sl-load-state" role="alert">${esc(laneError)} <button data-action="retry-lanes">Retry</button></div>`:collectionId==='layers'&&!visible.length?`<div class="sl-load-state">${unavailableLanes.has(representative.lane)?'Data unavailable':'No events in this time window'}</div>`:''}${visible.map(({item:e,row})=>{
@@ -700,6 +706,12 @@
       const time=focus>=start&&focus<start+span?focus:start+span/2;
       const lane=workLaneOrder.has(item?.lane)?item.lane:defaultWorkLane(activityType);
       parentSend({type:'CIRCAEVUM_CREATE_PROJECT_MARKER',project:item?.project||project,lane,time,activityType});
+      return;
+    }
+    const nutritionButton = e.target.closest('[data-plan-nutrition]');
+    if (nutritionButton && canPlanNutrition(nutritionButton.dataset.planNutrition)) {
+      const time = focus >= start && focus < start + span ? focus : start + span / 2;
+      parentSend({type:'CIRCAEVUM_CREATE_NUTRITION_EVENT', lane:nutritionButton.dataset.planNutrition, time});
       return;
     }
     const addMarker=e.target.closest('[data-create-marker]');
