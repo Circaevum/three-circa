@@ -57,8 +57,8 @@
     <div id="main-after-nav">
         <div id="canvas-container" role="application" aria-label="Circaevum time visualization">
             <div id="circadian-render-mode" role="group" aria-label="Daily display renderer" hidden>
-                <button type="button" value="2D" aria-pressed="true" title="2D circadian view">2D</button>
-                <button type="button" value="3D" aria-pressed="false" title="3D circadian view">3D</button>
+                <button type="button" value="2D" aria-pressed="false" title="2D circadian view">2D</button>
+                <button type="button" value="3D" aria-pressed="true" title="3D circadian view">3D</button>
             </div>
             <section id="circadian-2d" aria-label="Daily circadian clock" hidden>
                 <div class="circadian-date">
@@ -70,7 +70,7 @@
                     <g class="circadian-face"></g>
                     <g class="circadian-selection" pointer-events="none"></g>
                 </svg>
-                <div class="circadian-day-status"></div>
+                <div class="circadian-day-status" hidden></div>
             </section>
         </div>
     </div>
@@ -728,8 +728,8 @@
     <!-- Main Application Script -->
     <script src="circaevum/js/ui/keyboard-focus.js?v=1"></script>
     <script src="circaevum/js/vendor/d3-arc/d3-arc.min.js?v=3.2.0"></script>
-    <script src="circaevum/js/ui/circadian-2d.js?v=health-traces-1"></script>
-    <script src="circaevum/js/main.js?v=shift-refresh-1"></script>
+    <script src="circaevum/js/ui/circadian-2d.js?v=hide-day-summary-1"></script>
+    <script src="circaevum/js/main.js?v=mode-scene-1"></script>
     
     <!-- Circaevum GL API (optional - for programmatic access, loaded after main) -->
     <script src="circaevum/js/api/circaevum-gl.js?v=circadian-2d-1"></script>

@@ -23,7 +23,7 @@
   ]);
   const turn = 2 * Math.PI;
   const empty = [];
-  let prefer3D = false;
+  let prefer3D = true;
   let lastFrame = -Infinity;
   let lastDay, lastClock, lastLayers, lastObserver, lastZoom, bounds;
   let observer;
@@ -171,7 +171,7 @@
   }
 
   function drawDaylight(observer) {
-    if (observer?.lat == null || observer?.lon == null || !window.Astronomy) return false;
+    if (observer?.lat == null || observer?.lon == null || !window.Astronomy) return;
     const location = new Astronomy.Observer(observer.lat, observer.lon, 0);
     const step = 15 * 60000;
     let runStart = bounds.start;
@@ -187,7 +187,6 @@
       daylight = above;
     }
     band(clock, runStart, bounds.end, 149, 162, { class: daylight ? 'circadian-daylight' : 'circadian-night' });
-    return true;
   }
 
   function heartRadius(bpm) {
@@ -241,7 +240,7 @@
   function drawFace(selected, gl, layers, observer) {
     clock.replaceChildren();
     svg(clock, 'circle', { r: 163, class: 'circadian-dial-bg' });
-    const hasDaylight = drawDaylight(observer);
+    drawDaylight(observer);
     for (let ms = bounds.start; ms < bounds.end; ms += hour) {
       const date = new Date(ms);
       const major = date.getHours() % 3 === 0;
@@ -298,12 +297,8 @@
     dateLabel.textContent = dayFormat.format(selected);
     dateLabel.dateTime = selected.getFullYear() + '-' + String(selected.getMonth() + 1).padStart(2, '0') +
       '-' + String(selected.getDate()).padStart(2, '0');
-    const visible = [];
-    if (events.length) visible.push(events.length + (events.length === 1 ? ' event' : ' events'));
-    if (sleepSegments.length) visible.push('Sleep stages');
-    if (heartSamples.length) visible.push('Heart rate');
-    status.textContent = (accountStatus || visible.join(' · ') || 'No visible events') +
-      (hasDaylight ? (observer.source === 'timezone' ? ' · Estimated daylight' : ' · Local daylight') : '');
+    status.textContent = accountStatus;
+    status.hidden = !accountStatus;
   }
 
   function drawSelection(selected) {

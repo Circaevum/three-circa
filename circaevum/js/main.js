@@ -1288,6 +1288,7 @@ function initScene() {
         
         // Sync our stars reference with SceneCore's (so we remove the right one when recreating)
         if (typeof window.stars !== 'undefined') stars = window.stars;
+        syncModeStarFieldVisibility();
         flattenableGroup = new THREE.Group();
         sceneContentGroup.add(flattenableGroup);
         timeMarkersGroup = new THREE.Group();
@@ -1448,6 +1449,7 @@ function createStarField() {
     
     starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
     stars = new THREE.Points(starGeometry, starMaterial);
+    syncModeStarFieldVisibility();
     sceneContentGroup.add(stars);
 }
 
@@ -12240,8 +12242,15 @@ function rotate90Right() {
     sceneRollTargetRad -= Math.PI / 2;
 }
 
-// Helper function to get background color based on view mode and appearance theme
+function syncModeStarFieldVisibility() {
+    if (stars) stars.visible = document.body.dataset.mode !== 'work';
+}
+
+// Account mode palettes take precedence over camera angle and appearance theme.
 function getBackgroundColor(viewMode, appearance) {
+    const accountMode = document.body.dataset.mode;
+    if (accountMode === 'work') return 0x06152b;
+    if (accountMode === 'health') return 0x300b16;
     const vm = viewMode % 3;
     if (appearance === 'sky') {
         return [
@@ -14099,9 +14108,11 @@ if (typeof window !== 'undefined') {
     window.createPlanets = createPlanets;
 }
 
-// Recolor selected-time geometry without changing time, zoom, or camera framing.
+// Update the scene palette without changing time, zoom, or camera framing.
 window.addEventListener('circaevum:mode-theme', () => {
-    if (!sceneContentGroup) return;
+    if (!scene || !sceneContentGroup) return;
+    scene.background = new THREE.Color(getBackgroundColor(viewMode, appearanceTheme));
+    syncModeStarFieldVisibility();
     disposeListHorizonEarthRing();
     updateListHorizonEarthRing(currentZoom);
     createTimeMarkers(currentZoom);
