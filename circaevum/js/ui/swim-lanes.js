@@ -619,7 +619,29 @@
     const all=items(),deps=M.dependencyState(item,all),next=all.filter(e=>e.dependencies.includes(id)),r=M.report([item])[0];
     const follow=M.followUp(item,all);
     syncPanel(true);
-    eventMode.querySelector('#sl-detail').innerHTML=`<section class="sl-detail"><div class="sl-actions"><strong>${esc(item.kind)} · ${esc(item.status)}</strong><button data-action="dismiss-detail" aria-label="Close item details">×</button></div><h2>${esc(item.event.summary)}</h2><p>${esc(item.project)} / ${esc(item.lane)}</p><p>${new Date(item.start).toLocaleString()}${item.kind==='milestone'?'':' → '+new Date(item.end).toLocaleString()}</p><p>${esc(item.event.description||'')}</p>${item.event.githubActivity&&/^https:\/\/github\.com\//.test(item.event.url)?`<p><a href="${esc(item.event.url)}" target="_blank" rel="noreferrer">Open on GitHub</a></p>`:''}<p>${M.workflows[item.workflow][1]} ${M.workflows[item.workflow][0]}</p><p>Access: ${esc(source==='example'?'Local example':item.access.label)}${item.access.ownerId?'<br>Owner: '+esc(item.access.ownerId):''}</p><p>Responsible: ${esc(item.assignee||'Unassigned')}<br>Follow-up: ${Number.isFinite(item.followUpAt)?new Date(item.followUpAt).toLocaleString():'Not set'}</p>
+    const event = item.event;
+    const isGarmin = event.circaevumSource === 'garmin' || String(event.circaevumSourceDetail || '').startsWith('garmin_');
+    const garminType = window.CalendarLaneEvents.isGarminActivity(event)
+      ? event.activityType || 'Activity'
+      : item.lane;
+    const workDetails = !isGarmin && Boolean(
+      event.work?.kind || event.githubActivity || item.access?.canTrack || (collectionId !== 'layers' && writable(item))
+    );
+    const accessLabel = source === 'example' ? 'Local example' : item.access.label;
+    eventMode.querySelector('#sl-detail').innerHTML=`<section class="sl-detail">
+      <div class="sl-actions"><h2>${esc(event.summary)}</h2><button data-action="dismiss-detail" aria-label="Close item details">×</button></div>
+      <section class="sl-event-essentials"><h3>Event essentials</h3>
+        <p><strong>${workDetails && item.kind === 'milestone' ? 'Time' : 'Start'}</strong> ${new Date(item.start).toLocaleString()}</p>
+        ${workDetails && item.kind === 'milestone' ? '' : `<p><strong>End</strong> ${new Date(item.end).toLocaleString()}</p>`}
+      </section>
+      <section><h3>Calendar details</h3>
+        <p><strong>Layer</strong> ${esc(item.lane)}</p>
+        ${event.location ? `<p><strong>Location</strong> ${esc(event.location)}</p>` : ''}
+        ${event.description ? `<p><strong>Notes</strong> ${esc(event.description)}</p>` : ''}
+        ${event.url && /^https?:\/\//i.test(event.url) ? `<p><a href="${esc(event.url)}" target="_blank" rel="noopener noreferrer">${event.githubActivity ? 'Open on GitHub' : 'Open link'}</a></p>` : ''}
+      </section>
+      ${isGarmin ? `<section><h3>Garmin details</h3><p><strong>Reading type</strong> ${esc(garminType)}</p><p>Garmin Connect™ · Read only</p></section>` : ''}
+      ${workDetails ? `<section><h3>Work details</h3><p>${esc(item.project)} / ${esc(item.lane)}</p><p>${esc(ITEM_TYPES[event.work?.activityType] || item.kind)} · ${esc(item.status)}</p><p>${M.workflows[item.workflow][1]} ${M.workflows[item.workflow][0]}</p><p>Access: ${esc(source==='example'?'Local example':item.access.label)}${item.access.ownerId?'<br>Owner: '+esc(item.access.ownerId):''}</p><p>Responsible: ${esc(item.assignee||'Unassigned')}<br>Follow-up: ${Number.isFinite(item.followUpAt)?new Date(item.followUpAt).toLocaleString():'Not set'}</p>
       ${r.overdue||r.followUpDue||r.noFollowUp?`<p class="sl-attention">${r.overdue?'Past due. ':''}${r.followUpDue?'Follow-up due. ':''}${r.noFollowUp?'Past meeting has no linked next step.':''}</p>`:''}
       ${collectionId==='linked-project'&&item.event.projectLinkId?`<div class="sl-actions" aria-label="Move event to work lane">${['Attached calendars',...workLaneOrder.keys()].filter(l=>l!==item.lane).map(l=>`<button data-assign-lane="${esc(l)}" data-assign-id="${esc(item.id)}">Move to ${esc(l)}</button>`).join('')}</div>`:''}
       ${chosenIcon(item)?`<p>Swim Lanes icon · ${iconOptions[chosenIcon(item)][1]}</p>`:''}
@@ -631,7 +653,8 @@
       <h3>Depends on</h3><ul>${deps.length?deps.map(d=>`<li>${d.item?`<button data-id="${esc(d.id)}">${esc(d.item.event.summary)}</button>`:'Unavailable item (not loaded or not shared)'} · ${d.unresolved?'unresolved':'done'}${canLink(item)?` <button data-remove-link="${esc(d.id)}" aria-label="Remove dependency">×</button>`:''}</li>`).join(''):'<li>None</li>'}</ul>
       <h3>Next steps</h3><ul>${next.length?next.map(e=>`<li><button data-id="${esc(e.id)}">${esc(e.event.summary)}</button></li>`).join(''):'<li>No linked follow-up</li>'}</ul>
       ${selectedLink?.to===item.id&&writable(item)?`<div class="sl-link-editor"><strong>Selected connection</strong><p>Endpoints stay attached to their objects. In Connect mode, drag its handle to snap the curve in 8 px steps.</p><button data-action="route-style">Reset curve</button></div>`:''}
-      <div class="sl-actions">${(calendarEditKey(item)||writable(item))?'<button data-action="edit">Edit event</button>':''}<button data-action="focus">Focus time</button>${source==='loaded'&&item.access.canWrite?'<button data-action="share-lane">Lane access & sharing</button>':''}</div></section>`;
+      </section>` : accessLabel && !isGarmin ? `<p>${esc(accessLabel)}</p>` : ''}
+      <div class="sl-actions">${(!isGarmin&&(calendarEditKey(item)||writable(item)))?'<button data-action="edit">Edit event</button>':''}<button data-action="focus">Focus time</button>${source==='loaded'&&item.access.canWrite?'<button data-action="share-lane">Lane access & sharing</button>':''}</div></section>`;
     const progressForm=eventMode.querySelector('#sl-work-progress');
     progressForm?.elements.waitingFollowUp.addEventListener('change',e=>{progressForm.elements.status.value=e.target.checked?'waiting':'todo';});
     progressForm?.elements.status.addEventListener('change',e=>{progressForm.elements.waitingFollowUp.checked=e.target.value==='waiting';});

@@ -92,8 +92,12 @@
     };
   }
 
+  function isGarminRecord(event) {
+    return event?.circaevumSource === 'garmin' || String(event?.circaevumSourceDetail || '').startsWith('garmin_');
+  }
+
   function canEditEvent() {
-    if (currentPayload?.layerId === 'work-activity') return false;
+    if (currentPayload?.layerId === 'work-activity' || isGarminRecord(currentPayload?.vevent)) return false;
     if (window.self !== window.top && window.parent && window.parent.postMessage) return true;
     return !!buildFullAppUrl(false);
   }
@@ -183,8 +187,12 @@
       parts.push('<div class="event-detail-sheet-field"><span class="event-detail-sheet-label">Category</span><div class="event-detail-sheet-value">' +
         escapeHtml(ve.categories.join(', ')) + '</div></div>');
     }
-    if (!parts.length) {
-      parts.push('<p class="event-detail-sheet-muted">No extra details for this event.</p>');
+    if (parts.length) parts.unshift('<h3>Calendar details</h3>');
+    if (isGarminRecord(ve)) {
+      var readingType = ve.activityType || (ve.render?.metric === 'hr' ? 'Heart rate' : ve.summary);
+      parts.push('<h3>Garmin details</h3>' +
+        (readingType ? '<p>' + escapeHtml(readingType) + '</p>' : '') +
+        '<p>Garmin Connect™ · Read only</p>');
     }
     bodyEl.innerHTML = parts.join('');
 
